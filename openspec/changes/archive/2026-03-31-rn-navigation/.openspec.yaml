@@ -1,0 +1,7 @@
+id: rn-navigation
+created: 2026-03-31
+archived: 2026-03-31
+status: archived
+summary: React Navigation structure — auth routing, bottom tabs, stacks, CallNavigator modal
+modules:
+  - rn-navigation

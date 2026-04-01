@@ -1,0 +1,11 @@
+id: backend-webrtc
+created: 2026-03-31
+archived: 2026-03-31
+status: archived
+summary: WebRTC signaling gateway + Coturn health check for audio/video calls
+modules:
+  - backend-webrtc
+  - backend-health
+specs:
+  - webrtc-signaling
+  - coturn-server

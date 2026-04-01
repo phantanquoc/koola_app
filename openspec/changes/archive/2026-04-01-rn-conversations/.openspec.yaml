@@ -1,0 +1,7 @@
+id: rn-conversations
+created: 2026-03-31
+archived: 2026-04-01
+status: archived
+summary: Conversation list screen, group creation modal, ChatScreen placeholder
+modules:
+  - rn-conversations

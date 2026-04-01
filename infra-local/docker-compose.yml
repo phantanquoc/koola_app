@@ -1,0 +1,33 @@
+# Root docker-compose — starts ALL services locally
+# Usage: docker compose up -d (from this directory)
+
+services:
+  mongodb:
+    build:
+      context: ./mongodb
+    container_name: chat-mongodb
+
+  redis:
+    build:
+      context: ./redis
+    container_name: chat-redis
+
+  minio:
+    build:
+      context: ./storage
+    container_name: chat-minio
+
+  coturn:
+    build:
+      context: ./storage
+    container_name: chat-coturn
+
+  backend:
+    build:
+      context: ./backend
+    container_name: chat-backend
+    depends_on:
+      - mongodb
+      - redis
+      - minio
+      - coturn

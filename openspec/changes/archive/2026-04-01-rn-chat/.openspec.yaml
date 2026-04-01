@@ -1,0 +1,7 @@
+id: rn-chat
+created: 2026-04-01
+archived: 2026-04-01
+status: archived
+summary: Full chat screen with GiftedChat — send/receive messages, optimistic updates, typing, read receipts, pagination
+modules:
+  - rn-chat
