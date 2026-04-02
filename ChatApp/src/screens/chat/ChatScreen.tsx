@@ -1,299 +1,194 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { GiftedChat, Bubble, IMessage, Send, LoadEarlier } from 'react-native-gifted-chat';
+import React, { useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+} from 'react-native';
+import { GiftedChat, Bubble, Send, SystemMessage, IMessage, BubbleProps, SendProps, SystemMessageProps } from 'react-native-gifted-chat';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { useCall } from '../../contexts/CallContext';
-import { socketService } from '../../services/socket/SocketService';
+import { socketService } from '../../services/socket/socketService';
 import { useMessages } from './hooks/useMessages';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReadReceipts } from './hooks/useReadReceipts';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
-import { OfflineBanner } from '../../components/OfflineBanner';
-import type { ChatScreenProps } from '../../navigation/types';
+import OfflineBanner from '../../components/OfflineBanner';
+import { webrtcService } from '../../services/webrtc/webrtcService';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../navigation/types';
 
-// Re-export GiftedMessage for convenience
-export type { GiftedMessage } from './hooks/useMessages';
-
-export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
+const ChatScreen: React.FC = () => {
+  const navigation = useNavigation<ChatScreenNavigationProp>();
+  const route = useRoute<ChatScreenRouteProp>();
   const { conversationId } = route.params;
   const { user } = useAuth();
-  const { initiateCall } = useCall();
-  const currentUserId = user?._id ?? '';
-  const [isJoined, setIsJoined] = useState(false);
+  const currentUserId = user?._id || '';
 
-  // ── Offline infrastructure ────────────────────────────────────────────────────
-  const isConnected = useNetworkStatus();
-  const { queue } = useOfflineQueue();
-
-  // Map from clientMessageId → tempId for tracking failed queue items
-  const clientIdToTempRef = useRef<Map<string, string>>(new Map());
+  const { isConnected } = useNetworkStatus();
+  const { sendViaQueue } = useOfflineQueue();
 
   const {
     messages,
-    isLoadingEarlier,
-    hasEarlier,
     sendMessage,
     loadEarlier,
-    deleteMessage,
-    updateMessageStatus,
-  } = useMessages({ conversationId, currentUserId });
+    isLoadingEarlier,
+    hasEarlier,
+  } = useMessages(conversationId, currentUserId);
 
-  const { typingUserIds, emitTyping, stopTyping } = useTypingIndicator({ conversationId });
+  const { typingUsers, emitTyping } = useTypingIndicator(conversationId);
+  useReadReceipts(conversationId, messages, currentUserId);
 
-  const { markLastVisibleMessageRead } = useReadReceipts({ conversationId, messages });
-
-  // ── Sync queue tempId map whenever queue changes ───────────────────────────────
+  // ─── Join/leave conversation room ──────────────────────────────────────────
   useEffect(() => {
-    queue.forEach((item) => {
-      if (item.conversationId === conversationId && item.status === 'pending') {
-        clientIdToTempRef.current.set(item.id, item.tempId);
-      }
-    });
-  }, [queue, conversationId]);
-
-  // ── Mark failed messages in UI when queue item exhausts retries ───────────────
-  useEffect(() => {
-    const failedItems = queue.filter(
-      (m) => m.conversationId === conversationId && m.status === 'failed',
-    );
-    failedItems.forEach((item) => {
-      const tempId = clientIdToTempRef.current.get(item.id);
-      if (tempId) {
-        updateMessageStatus(tempId, 'failed');
-        clientIdToTempRef.current.delete(item.id);
-      }
-    });
-  }, [queue, conversationId, updateMessageStatus]);
-
-  // ── Join conversation room on mount ─────────────────────────────────────────
-  useEffect(() => {
-    if (!currentUserId) return;
-
     socketService.emit('join_conversation', { conversationId });
-    setIsJoined(true);
-
     return () => {
       socketService.emit('leave_conversation', { conversationId });
     };
-  }, [conversationId, currentUserId]);
+  }, [conversationId]);
 
-  // ── Call handlers ──────────────────────────────────────────────────────────
-  const handleAudioCall = useCallback(() => {
-    // For direct chats, conversationId is used; the backend resolves the other participant
-    initiateCall('', conversationId, 'audio');
-  }, [initiateCall, conversationId]);
-
-  const handleVideoCall = useCallback(() => {
-    initiateCall('', conversationId, 'video');
-  }, [initiateCall, conversationId]);
-
-  // ── Send message ──────────────────────────────────────────────────────────────
-  // useMessages.sendMessage handles online vs offline internally.
-  // It always shows optimistic UI and queues when offline.
-  const handleSend = useCallback(
-    async (msgs: IMessage[] = []) => {
-      const text = msgs[0]?.text ?? '';
-      if (!text.trim()) return;
-      stopTyping();
-      await sendMessage(text);
+  // ─── Handlers ──────────────────────────────────────────────────────────────
+  const onSend = useCallback(
+    (newMessages: IMessage[] = []) => {
+      if (newMessages.length > 0) {
+        const text = newMessages[0].text;
+        if (isConnected) {
+          sendMessage(text);
+        } else {
+          // Offline: queue message for later
+          sendViaQueue(conversationId, text, 'text');
+        }
+      }
     },
-    [sendMessage, stopTyping],
+    [sendMessage, isConnected, sendViaQueue, conversationId],
   );
 
-  const handleInputTextChanged = useCallback(
+  const onInputTextChanged = useCallback(
     (text: string) => {
       emitTyping(text);
     },
     [emitTyping],
   );
 
-  const handleLoadEarlier = useCallback(() => {
-    loadEarlier();
-  }, [loadEarlier]);
-
-  const handleLongPress = useCallback(
-    (context: any, message: IMessage) => {
-      // Only allow delete of own messages
-      if (String(message.user._id) !== String(currentUserId)) return;
-    },
-    [currentUserId],
-  );
-
-  // Convert GiftedMessage to IMessage for GiftedChat
-  const giftedMessages: IMessage[] = messages.map((m) => ({
-    _id: String(m._id),
-    text: m.text,
-    createdAt: m.createdAt,
-    user: m.user,
-    image: m.image,
-    status: m.status,
-  }));
-
-  const renderBubble = useCallback((props: any) => {
-    const isCurrentUser = String(props.currentMessage?.user?._id) === String(currentUserId);
-    return (
+  // ─── Custom renders ────────────────────────────────────────────────────────
+  const renderBubble = useCallback(
+    (props: BubbleProps<IMessage>) => (
       <Bubble
         {...props}
         wrapperStyle={{
-          left: { backgroundColor: '#f0f0f0', marginBottom: 4 },
-          right: { backgroundColor: '#007AFF', marginBottom: 4 },
+          right: { backgroundColor: '#2196F3' },
+          left: { backgroundColor: '#E8E8E8' },
         }}
         textStyle={{
-          left: { color: '#1a1a1a' },
           right: { color: '#fff' },
+          left: { color: '#333' },
         }}
       />
-    );
-  }, [currentUserId]);
+    ),
+    [],
+  );
 
-  const renderSend = useCallback((props: any) => (
-    <Send {...props} containerStyle={styles.sendContainer}>
-      <View style={styles.sendBtn}>
+  const renderSend = useCallback(
+    (props: SendProps<IMessage>) => (
+      <Send {...props} containerStyle={styles.sendContainer}>
         <Text style={styles.sendText}>Send</Text>
-      </View>
-    </Send>
-  ), []);
+      </Send>
+    ),
+    [],
+  );
 
-  const renderLoadEarlier = useCallback(() => {
-    if (!hasEarlier) return null;
-    if (isLoadingEarlier) {
-      return (
-        <View style={styles.loadEarlier}>
-          <ActivityIndicator size="small" color="#007AFF" />
-        </View>
-      );
-    }
+  const renderSystemMessage = useCallback(
+    (props: SystemMessageProps<IMessage>) => (
+      <SystemMessage
+        {...props}
+        textStyle={styles.systemMessage}
+      />
+    ),
+    [],
+  );
+
+  const renderFooter = useCallback(() => {
+    if (typingUsers.length === 0) return null;
     return (
-      // @ts-ignore
-      <LoadEarlier label="Load more messages" wrapperStyle={styles.loadEarlier} />
-    );
-  }, [hasEarlier, isLoadingEarlier, handleLoadEarlier]);
-
-  const renderSystemMessage = useCallback((props: any) => {
-    return (
-      <View style={styles.systemMsg}>
-        <Text style={styles.systemText}>{props.currentMessage?.text}</Text>
-      </View>
-    );
-  }, []);
-
-  // GiftedChat user
-  const giftedUser = {
-    _id: currentUserId,
-    name: user?.displayName ?? '',
-    avatar: user?.avatar,
-  };
-
-  if (!currentUserId) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator color="#007AFF" />
+      <View style={styles.typingContainer}>
+        <Text style={styles.typingText}>
+          {typingUsers.length === 1
+            ? 'Someone is typing...'
+            : `${typingUsers.length} people are typing...`}
+        </Text>
       </View>
     );
-  }
+  }, [typingUsers]);
 
   return (
-    <View style={styles.container}>
-      {/* Offline banner */}
+    <SafeAreaView style={styles.container}>
+      {/* Offline Banner */}
       <OfflineBanner isVisible={!isConnected} />
 
-      {/* Call buttons header */}
-      <View style={styles.callHeader}>
-        <TouchableOpacity style={styles.callBtn} onPress={handleAudioCall}>
-          <Text style={styles.callBtnText}>Audio Call</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.callBtn} onPress={handleVideoCall}>
-          <Text style={styles.callBtnText}>Video Call</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Chat</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={() => {
+              webrtcService.initiateCall('', conversationId, 'audio');
+              (navigation as unknown as NativeStackNavigationProp<RootStackParamList>)
+                .getParent()
+                ?.navigate('CallModal', {
+                  sessionId: '',
+                  callType: 'audio',
+                  isInitiator: true,
+                });
+            }}
+            style={styles.callButton}>
+            <Text style={styles.callIcon}>📞</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Typing indicator */}
-      {typingUserIds.length > 0 && (
-        <View style={styles.typingBar}>
-          <Text style={styles.typingText}>
-            {typingUserIds.length === 1
-              ? 'Someone is typing...'
-              : `${typingUserIds.length} people are typing...`}
-          </Text>
-        </View>
-      )}
-
       <GiftedChat
-        messages={giftedMessages}
-        onSend={handleSend}
-        // @ts-ignore - onInputTextChanged exists at runtime
-        onInputTextChanged={handleInputTextChanged}
-        onLongPress={handleLongPress}
-        user={giftedUser}
+        messages={messages}
+        onSend={onSend}
+        user={{ _id: currentUserId, name: user?.displayName }}
         renderBubble={renderBubble}
         renderSend={renderSend}
-        renderLoadEarlier={renderLoadEarlier}
         renderSystemMessage={renderSystemMessage}
+        renderFooter={renderFooter}
+        onInputTextChanged={onInputTextChanged}
         loadEarlier={hasEarlier}
-        onLoadEarlier={handleLoadEarlier}
-        placeholder="Type a message..."
+        onLoadEarlier={loadEarlier}
+        isLoadingEarlier={isLoadingEarlier}
         alwaysShowSend
-        renderAvatar={undefined}
-        showAvatarForEveryMessage={false}
+        infiniteScroll
+        placeholder="Type a message..."
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  callHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+  header: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
-  callBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#007AFF',
-  },
-  callBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  typingBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    backgroundColor: '#f9f9f9',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-  },
+  backButton: { padding: 4, marginRight: 12 },
+  backText: { fontSize: 24, color: '#2196F3' },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', color: '#333' },
+  headerRight: { width: 40, alignItems: 'flex-end' },
+  callButton: { padding: 4 },
+  callIcon: { fontSize: 20 },
+  sendContainer: { justifyContent: 'center', alignItems: 'center', marginRight: 8, marginBottom: 4 },
+  sendText: { color: '#2196F3', fontSize: 16, fontWeight: '600' },
+  systemMessage: { color: '#999', fontSize: 12, fontStyle: 'italic' },
+  typingContainer: { paddingHorizontal: 16, paddingVertical: 8 },
   typingText: { fontSize: 12, color: '#999', fontStyle: 'italic' },
-  sendContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingRight: 4,
-  },
-  sendBtn: {
-    width: 52,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  loadEarlier: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  loadEarlierLabel: { color: '#007AFF', fontSize: 14 },
-  systemMsg: {
-    alignItems: 'center',
-    marginVertical: 8,
-  },
-  systemText: { fontSize: 12, color: '#999', fontStyle: 'italic' },
 });
+
+export default ChatScreen;

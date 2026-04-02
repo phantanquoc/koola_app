@@ -1,7 +1,3 @@
-/**
- * WebRTCService — manages the /webrtc Socket.io namespace and RTCPeerConnection lifecycle.
- * Separate from SocketService which handles /chat namespace.
- */
 import { io, Socket } from 'socket.io-client';
 import {
   RTCPeerConnection,
@@ -10,130 +6,134 @@ import {
   mediaDevices,
   MediaStream,
 } from 'react-native-webrtc';
-import { WEBRTC_WS_URL } from '../../config/env';
-import { getAccessToken } from '../../utils/apiClient';
+import ENV from '../../config/env';
 
-export interface IceServer {
+export type CallState = 'idle' | 'initiating' | 'ringing' | 'active' | 'ended';
+
+export interface CallInfo {
+  sessionId: string;
+  callType: 'audio' | 'video';
+  isInitiator: boolean;
+  remoteUserId: string;
+  remoteUser?: { userId: string; displayName: string; avatar?: string };
+}
+
+export interface IceServerConfig {
   urls: string;
   username?: string;
   credential?: string;
 }
 
-export interface CallSession {
-  sessionId: string;
-  callType: 'audio' | 'video';
-  isInitiator: boolean;
-  remoteUserId?: string;
-  remoteUser?: { _id: string; displayName: string; avatar?: string };
-  conversationId?: string;
-}
-
-export type CallState =
-  | 'idle'
-  | 'initiating'
-  | 'ringing'
-  | 'connecting'
-  | 'active'
-  | 'ended';
-
-type WebRTCEventHandler = (data: any) => void;
+type WebRTCEventCallback = (...args: unknown[]) => void;
 
 class WebRTCService {
   private socket: Socket | null = null;
-  private pc: RTCPeerConnection | null = null;
+  private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
-  private iceServers: IceServer[] = [];
-  private listeners: Map<string, Set<WebRTCEventHandler>> = new Map();
+  private listeners: Map<string, Set<WebRTCEventCallback>> = new Map();
+  private iceServers: IceServerConfig[] = [];
 
-  // ── Socket connection ────────────────────────────────────────────────────────
+  // ─── Socket Connection ──────────────────────────────────────────────────────
 
-  connect(): void {
+  connect(token: string): void {
     if (this.socket?.connected) return;
 
-    const token = getAccessToken();
-    if (!token) return;
-
-    this.socket = io(WEBRTC_WS_URL, {
+    this.socket = io(`${ENV.WS_URL}/webrtc`, {
       query: { token },
       transports: ['websocket'],
+      autoConnect: true,
       reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
       reconnectionAttempts: 5,
     });
 
     this.socket.on('connect', () => {
-      console.log('[WebRTC Socket] Connected');
+      console.log('[WebRTC] Socket connected');
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('[WebRTC Socket] Disconnected:', reason);
-    });
-
-    // Re-attach stored listeners on reconnect
-    this.listeners.forEach((callbacks, event) => {
-      callbacks.forEach((cb) => this.socket?.on(event, cb));
-    });
+    this.setupSocketListeners();
   }
 
   disconnect(): void {
     this.cleanup();
-    this.socket?.disconnect();
-    this.socket = null;
-  }
-
-  on(event: string, callback: WebRTCEventHandler): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
-    }
-    this.listeners.get(event)?.add(callback);
-    this.socket?.on(event, callback);
-  }
-
-  off(event: string, callback?: WebRTCEventHandler): void {
-    if (callback) {
-      this.listeners.get(event)?.delete(callback);
-      this.socket?.off(event, callback);
-    } else {
-      this.listeners.delete(event);
-      this.socket?.off(event);
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
     }
   }
 
-  emit(event: string, data?: any): void {
-    this.socket?.emit(event, data);
+  // ─── Socket Listeners ───────────────────────────────────────────────────────
+
+  private setupSocketListeners(): void {
+    if (!this.socket) return;
+
+    this.socket.on('incoming_call', (data) => this.emit('incoming_call', data));
+    this.socket.on('call_initiated', (data) => this.emit('call_initiated', data));
+    this.socket.on('call_accepted', (data) => this.emit('call_accepted', data));
+    this.socket.on('call_declined', (data) => this.emit('call_declined', data));
+    this.socket.on('call_ended', (data) => this.emit('call_ended', data));
+    this.socket.on('call_missed', (data) => this.emit('call_missed', data));
+
+    this.socket.on('call_offer', async (data) => {
+      await this.handleRemoteOffer(data);
+    });
+    this.socket.on('call_answer', async (data) => {
+      await this.handleRemoteAnswer(data);
+    });
+    this.socket.on('call_ice_candidate', async (data) => {
+      await this.handleRemoteIceCandidate(data);
+    });
+
+    this.socket.on('error', (data) => this.emit('error', data));
   }
 
-  // ── Call initiation ──────────────────────────────────────────────────────────
+  // ─── Event Emitter ──────────────────────────────────────────────────────────
+
+  on(event: string, callback: WebRTCEventCallback): void {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    this.listeners.get(event)!.add(callback);
+  }
+
+  off(event: string, callback: WebRTCEventCallback): void {
+    this.listeners.get(event)?.delete(callback);
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
+    this.listeners.get(event)?.forEach((cb) => cb(...args));
+  }
+
+  // ─── Call Actions ───────────────────────────────────────────────────────────
 
   initiateCall(targetUserId: string, conversationId: string, callType: 'audio' | 'video'): void {
-    this.emit('call_initiate', { targetUserId, conversationId, callType });
+    this.socket?.emit('call_initiate', { targetUserId, conversationId, callType });
   }
 
   acceptCall(sessionId: string): void {
-    this.emit('call_accept', { sessionId });
+    this.socket?.emit('call_accept', { sessionId });
   }
 
   declineCall(sessionId: string): void {
-    this.emit('call_decline', { sessionId });
+    this.socket?.emit('call_decline', { sessionId });
   }
 
   endCall(sessionId: string): void {
-    this.emit('call_end', { sessionId });
+    this.socket?.emit('call_end', { sessionId });
     this.cleanup();
   }
 
-  // ── Media ────────────────────────────────────────────────────────────────────
+
+  // ─── Media ──────────────────────────────────────────────────────────────────
 
   async getLocalStream(callType: 'audio' | 'video'): Promise<MediaStream> {
+    if (this.localStream) return this.localStream;
+
     const constraints = {
       audio: true,
       video: callType === 'video' ? { facingMode: 'user', width: 640, height: 480 } : false,
     };
 
-    const stream = await mediaDevices.getUserMedia(constraints);
-    this.localStream = stream as MediaStream;
+    this.localStream = await mediaDevices.getUserMedia(constraints) as MediaStream;
     return this.localStream;
   }
 
@@ -141,12 +141,119 @@ class WebRTCService {
     return this.remoteStream;
   }
 
+  // ─── Peer Connection ────────────────────────────────────────────────────────
+
+  async createPeerConnection(sessionId: string, iceServers: IceServerConfig[]): Promise<RTCPeerConnection> {
+    this.iceServers = iceServers;
+
+    const config = {
+      iceServers: iceServers.map((s) => ({
+        urls: s.urls,
+        username: s.username,
+        credential: s.credential,
+      })),
+    };
+
+    this.peerConnection = new RTCPeerConnection(config);
+
+    // Add local tracks
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => {
+        this.peerConnection!.addTrack(track, this.localStream!);
+      });
+    }
+
+    // ICE candidates
+    this.peerConnection.addEventListener('icecandidate', (event: { candidate: RTCIceCandidate | null }) => {
+      if (event.candidate) {
+        this.socket?.emit('call_ice_candidate', {
+          sessionId,
+          candidate: event.candidate,
+        });
+      }
+    });
+
+    // Remote stream
+    this.peerConnection.addEventListener('track', (event: { streams: MediaStream[] }) => {
+      if (event.streams && event.streams[0]) {
+        this.remoteStream = event.streams[0];
+        this.emit('remote_stream', this.remoteStream);
+      }
+    });
+
+    // Connection state
+    this.peerConnection.addEventListener('connectionstatechange', () => {
+      const state = this.peerConnection?.connectionState;
+      this.emit('connection_state', state);
+      if (state === 'failed' || state === 'disconnected') {
+        this.emit('peer_disconnected');
+      }
+    });
+
+    return this.peerConnection;
+  }
+
+  // ─── SDP Exchange ───────────────────────────────────────────────────────────
+
+  async createAndSendOffer(sessionId: string): Promise<void> {
+    if (!this.peerConnection) return;
+
+    const offer = await this.peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
+    await this.peerConnection.setLocalDescription(offer);
+
+    this.socket?.emit('call_offer', { sessionId, sdp: offer });
+  }
+
+  private async handleRemoteOffer(data: { sessionId: string; sdp: RTCSessionDescription }): Promise<void> {
+    if (!this.peerConnection) return;
+
+    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    const answer = await this.peerConnection.createAnswer();
+    await this.peerConnection.setLocalDescription(answer);
+
+    this.socket?.emit('call_answer', { sessionId: data.sessionId, sdp: answer });
+    this.emit('call_offer', data);
+  }
+
+  private async handleRemoteAnswer(data: { sessionId: string; sdp: RTCSessionDescription }): Promise<void> {
+    if (!this.peerConnection) return;
+    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+  }
+
+  private async handleRemoteIceCandidate(data: { candidate: RTCIceCandidate }): Promise<void> {
+    if (!this.peerConnection) return;
+    try {
+      await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (err) {
+      console.error('[WebRTC] Failed to add ICE candidate:', err);
+    }
+  }
+
+  // ─── Cleanup ────────────────────────────────────────────────────────────────
+
+  cleanup(): void {
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream = null;
+    }
+    this.remoteStream = null;
+    if (this.peerConnection) {
+      this.peerConnection.close();
+      this.peerConnection = null;
+    }
+  }
+
+  // ─── Mute/Camera Toggle ─────────────────────────────────────────────────────
+
   toggleMute(): boolean {
     if (!this.localStream) return false;
     const audioTrack = this.localStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
-      return !audioTrack.enabled; // true = muted
+      return !audioTrack.enabled;
     }
     return false;
   }
@@ -156,103 +263,11 @@ class WebRTCService {
     const videoTrack = this.localStream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
-      return !videoTrack.enabled; // true = camera off
+      return !videoTrack.enabled;
     }
     return false;
-  }
-
-  toggleSpeaker(): void {
-    // Speaker toggle is handled natively — no-op placeholder
-  }
-
-  // ── RTCPeerConnection lifecycle ─────────────────────────────────────────────
-
-  async createPeerConnection(
-    iceServers: IceServer[],
-    sessionId: string,
-    onRemoteStream: (stream: MediaStream) => void,
-  ): Promise<RTCPeerConnection> {
-    this.iceServers = iceServers;
-
-    this.pc = new RTCPeerConnection({ iceServers });
-
-    // Add local tracks
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        this.pc?.addTrack(track, this.localStream!);
-      });
-    }
-
-    // ICE candidates → emit to server
-    this.pc.addEventListener('icecandidate', (event: any) => {
-      if (event.candidate) {
-        this.emit('call_ice_candidate', {
-          sessionId,
-          candidate: event.candidate,
-        });
-      }
-    });
-
-    // Remote stream
-    this.pc.addEventListener('track', (event: any) => {
-      if (event.streams && event.streams[0]) {
-        this.remoteStream = event.streams[0] as MediaStream;
-        onRemoteStream(this.remoteStream);
-      }
-    });
-
-    this.pc.addEventListener('iceconnectionstatechange', () => {
-      console.log('[WebRTC] ICE state:', this.pc?.iceConnectionState);
-    });
-
-    return this.pc;
-  }
-
-  async createOffer(sessionId: string): Promise<void> {
-    if (!this.pc) return;
-    const offer = await this.pc.createOffer({});
-    await this.pc.setLocalDescription(offer);
-    this.emit('call_offer', {
-      sessionId,
-      sdp: offer,
-    });
-  }
-
-  async handleRemoteOffer(sdp: RTCSessionDescription, sessionId: string): Promise<void> {
-    if (!this.pc) return;
-    await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-    this.emit('call_answer', {
-      sessionId,
-      sdp: answer,
-    });
-  }
-
-  async handleRemoteAnswer(sdp: RTCSessionDescription): Promise<void> {
-    if (!this.pc) return;
-    await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-  }
-
-  async handleRemoteIceCandidate(candidate: any): Promise<void> {
-    if (!this.pc) return;
-    await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-  }
-
-  // ── Cleanup ─────────────────────────────────────────────────────────────────
-
-  cleanup(): void {
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop());
-      this.localStream = null;
-    }
-    this.remoteStream = null;
-
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
-    }
   }
 }
 
 export const webrtcService = new WebRTCService();
+export default webrtcService;

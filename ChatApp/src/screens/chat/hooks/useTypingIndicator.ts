@@ -1,85 +1,63 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { socketService } from '../../../services/socket/SocketService';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { socketService } from '../../../services/socket/socketService';
 
-interface UseTypingIndicatorOptions {
-  conversationId: string;
-}
+export function useTypingIndicator(conversationId: string) {
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const typingTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const lastEmitRef = useRef<number>(0);
 
-interface UseTypingIndicatorResult {
-  typingUserIds: string[];
-  emitTyping: (text: string) => void;
-  stopTyping: () => void;
-}
-
-const TYPING_TIMEOUT_MS = 3000;
-const EMIT_DEBOUNCE_MS = 500;
-
-export function useTypingIndicator({
-  conversationId,
-}: UseTypingIndicatorOptions): UseTypingIndicatorResult {
-  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
-  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const emitDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // ─── Listen for typing events ──────────────────────────────────────────────
   useEffect(() => {
-    const handleTyping = (payload: {
-      conversationId: string;
-      userId: string;
-      isTyping: boolean;
-    }) => {
-      if (payload.conversationId !== conversationId) return;
+    const handleUserTyping = (data: { conversationId: string; userId: string; isTyping: boolean }) => {
+      if (data.conversationId !== conversationId) return;
 
-      if (payload.isTyping) {
-        setTypingUserIds((prev) =>
-          prev.includes(payload.userId) ? prev : [...prev, payload.userId],
+      if (data.isTyping) {
+        setTypingUsers((prev) =>
+          prev.includes(data.userId) ? prev : [...prev, data.userId],
         );
-        // Auto-remove after timeout
-        const existing = typingTimers.current.get(payload.userId);
-        if (existing) clearTimeout(existing);
-        const timer = setTimeout(() => {
-          setTypingUserIds((prev) => prev.filter((id) => id !== payload.userId));
-          typingTimers.current.delete(payload.userId);
-        }, TYPING_TIMEOUT_MS);
-        typingTimers.current.set(payload.userId, timer);
+
+        // Auto-remove after 3 seconds
+        const existingTimeout = typingTimeoutsRef.current.get(data.userId);
+        if (existingTimeout) clearTimeout(existingTimeout);
+
+        const timeout = setTimeout(() => {
+          setTypingUsers((prev) => prev.filter((id) => id !== data.userId));
+          typingTimeoutsRef.current.delete(data.userId);
+        }, 3000);
+        typingTimeoutsRef.current.set(data.userId, timeout);
       } else {
-        setTypingUserIds((prev) => prev.filter((id) => id !== payload.userId));
-        const t = typingTimers.current.get(payload.userId);
-        if (t) {
-          clearTimeout(t);
-          typingTimers.current.delete(payload.userId);
+        setTypingUsers((prev) => prev.filter((id) => id !== data.userId));
+        const existingTimeout = typingTimeoutsRef.current.get(data.userId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+          typingTimeoutsRef.current.delete(data.userId);
         }
       }
     };
 
-    socketService.on('user_typing', handleTyping);
+    socketService.on('user_typing', handleUserTyping as (...args: unknown[]) => void);
+
     return () => {
-      socketService.off('user_typing', handleTyping);
-      typingTimers.current.forEach((t) => clearTimeout(t));
+      socketService.off('user_typing', handleUserTyping as (...args: unknown[]) => void);
+      // Clear all timeouts
+      typingTimeoutsRef.current.forEach((t) => clearTimeout(t));
+      typingTimeoutsRef.current.clear();
     };
   }, [conversationId]);
 
+  // ─── Emit typing ───────────────────────────────────────────────────────────
   const emitTyping = useCallback(
     (text: string) => {
-      if (!text.trim()) {
-        socketService.emit('typing_stop', { conversationId });
-        return;
-      }
-      if (emitDebounceTimer.current) return; // already scheduled
-      emitDebounceTimer.current = setTimeout(() => {
+      const now = Date.now();
+      if (text.length > 0 && now - lastEmitRef.current > 500) {
         socketService.emit('typing_start', { conversationId });
-        emitDebounceTimer.current = null;
-      }, EMIT_DEBOUNCE_MS);
+        lastEmitRef.current = now;
+      } else if (text.length === 0) {
+        socketService.emit('typing_stop', { conversationId });
+      }
     },
     [conversationId],
   );
 
-  const stopTyping = useCallback(() => {
-    if (emitDebounceTimer.current) {
-      clearTimeout(emitDebounceTimer.current);
-      emitDebounceTimer.current = null;
-    }
-    socketService.emit('typing_stop', { conversationId });
-  }, [conversationId]);
-
-  return { typingUserIds, emitTyping, stopTyping };
+  return { typingUsers, emitTyping };
 }

@@ -1,208 +1,156 @@
-import React, { useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-} from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
-import { useCall } from '../../contexts/CallContext';
-import type { CallScreenProps } from '../../navigation/types';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../navigation/types';
+import { useWebRTC } from '../../hooks/useWebRTC';
 
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
+type CallScreenRouteProp = {
+  key: string;
+  name: 'CallModal';
+  params: RootStackParamList['CallModal'];
+};
 
-export const CallScreen: React.FC<CallScreenProps> = ({ route, navigation }) => {
-  const { callType } = route.params;
+const CallScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<CallScreenRouteProp>();
+  const { sessionId, callType, isInitiator } = route.params;
+
+  const handleCallEnded = useCallback(() => {
+    setTimeout(() => {
+      if (navigation.canGoBack()) navigation.goBack();
+    }, 1500);
+  }, [navigation]);
+
   const {
     callState,
-    localStream,
-    remoteStream,
     isMuted,
     isCameraOff,
-    callDuration,
-    endCall,
+    localStream,
+    remoteStream,
+    formattedDuration,
     toggleMute,
     toggleCamera,
-  } = useCall();
+    endCall,
+  } = useWebRTC({
+    sessionId,
+    callType,
+    isInitiator,
+    onCallEnded: handleCallEnded,
+  });
 
-  // Auto-dismiss when call ends
-  useEffect(() => {
-    if (callState === 'idle' || callState === 'ended') {
-      navigation.goBack();
-    }
-  }, [callState, navigation]);
-
-  const statusText = (() => {
+  const statusText = (): string => {
     switch (callState) {
-      case 'initiating':
-        return 'Calling...';
-      case 'ringing':
-        return 'Ringing...';
-      case 'connecting':
-        return 'Connecting...';
-      case 'active':
-        return formatDuration(callDuration);
-      default:
-        return '';
+      case 'initiating': return 'Connecting...';
+      case 'ringing': return isInitiator ? 'Ringing...' : 'Incoming call...';
+      case 'active': return formattedDuration;
+      case 'ended': return 'Call ended';
+      default: return '';
     }
-  })();
-
-  const isVideo = callType === 'video';
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* Remote video (full screen background) */}
-      {isVideo && remoteStream ? (
+      {callType === 'video' && remoteStream && (
         <RTCView
           streamURL={remoteStream.toURL()}
           style={styles.remoteVideo}
           objectFit="cover"
-          zOrder={0}
         />
-      ) : (
-        <View style={styles.audioBg}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>
-              {callType === 'audio' ? 'Audio Call' : 'No Video'}
-            </Text>
-          </View>
+      )}
+
+      {/* Local video (small overlay) */}
+      {callType === 'video' && localStream && !isCameraOff && (
+        <View style={styles.localVideoContainer}>
+          <RTCView
+            streamURL={localStream.toURL()}
+            style={styles.localVideo}
+            objectFit="cover"
+            mirror
+          />
         </View>
       )}
 
-      {/* Local video (picture-in-picture) */}
-      {isVideo && localStream && !isCameraOff && (
-        <RTCView
-          streamURL={localStream.toURL()}
-          style={styles.localVideo}
-          objectFit="cover"
-          zOrder={1}
-          mirror
-        />
-      )}
+      {/* Call info overlay */}
+      <View style={styles.overlay}>
+        <View style={styles.infoSection}>
+          <Text style={styles.title}>
+            {callType === 'video' ? '📹 Video Call' : '📞 Audio Call'}
+          </Text>
+          <Text style={styles.statusText}>{statusText()}</Text>
+        </View>
 
-      {/* Status overlay */}
-      <View style={styles.statusOverlay}>
-        <Text style={styles.statusText}>{statusText}</Text>
-      </View>
+        {/* Controls */}
+        {callState !== 'ended' && (
+          <View style={styles.controls}>
+            <TouchableOpacity
+              style={[styles.controlButton, isMuted && styles.controlActive]}
+              onPress={toggleMute}>
+              <Text style={styles.controlIcon}>{isMuted ? '🔇' : '🎤'}</Text>
+              <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+            </TouchableOpacity>
 
-      {/* Controls */}
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.controlBtn, isMuted && styles.controlBtnActive]}
-          onPress={toggleMute}
-        >
-          <Text style={styles.controlIcon}>{isMuted ? 'Unmute' : 'Mute'}</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.controlButton, styles.endButton]}
+              onPress={endCall}>
+              <Text style={styles.controlIcon}>📵</Text>
+              <Text style={styles.controlLabel}>End</Text>
+            </TouchableOpacity>
 
-        {isVideo && (
-          <TouchableOpacity
-            style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}
-            onPress={toggleCamera}
-          >
-            <Text style={styles.controlIcon}>{isCameraOff ? 'Cam On' : 'Cam Off'}</Text>
-          </TouchableOpacity>
+            {callType === 'video' && (
+              <TouchableOpacity
+                style={[styles.controlButton, isCameraOff && styles.controlActive]}
+                onPress={toggleCamera}>
+                <Text style={styles.controlIcon}>{isCameraOff ? '📷' : '🚫'}</Text>
+                <Text style={styles.controlLabel}>{isCameraOff ? 'Camera On' : 'Camera Off'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
-        <TouchableOpacity style={styles.endBtn} onPress={endCall}>
-          <Text style={styles.endIcon}>End</Text>
-        </TouchableOpacity>
+        {callState === 'ended' && (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111',
+  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  remoteVideo: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  localVideoContainer: {
+    position: 'absolute', top: 60, right: 16, width: 120, height: 160,
+    borderRadius: 12, overflow: 'hidden', zIndex: 10,
+    borderWidth: 2, borderColor: '#fff',
   },
-  remoteVideo: {
-    ...StyleSheet.absoluteFillObject,
+  localVideo: { flex: 1 },
+  overlay: {
+    flex: 1, justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: 100, paddingBottom: 60,
   },
-  audioBg: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
+  infoSection: { alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
+  statusText: { fontSize: 18, color: '#ccc' },
+  controls: { flexDirection: 'row', gap: 32 },
+  controlButton: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
+  controlActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
+  endButton: { backgroundColor: '#ff4444' },
+  controlIcon: { fontSize: 24 },
+  controlLabel: { color: '#fff', fontSize: 10, marginTop: 4 },
+  backButton: {
+    paddingHorizontal: 32, paddingVertical: 14, backgroundColor: '#333', borderRadius: 8,
   },
-  avatarText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  localVideo: {
-    position: 'absolute',
-    top: 60,
-    right: 16,
-    width: 100,
-    height: 140,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  statusOverlay: {
-    position: 'absolute',
-    top: 100,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '500',
-  },
-  controls: {
-    position: 'absolute',
-    bottom: 50,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 24,
-  },
-  controlBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  controlBtnActive: {
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  controlIcon: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  endBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#ff3b30',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  endIcon: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
+
+export default CallScreen;

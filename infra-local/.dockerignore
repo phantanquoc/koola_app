@@ -1,0 +1,11 @@
+# Build context: project root (APP_KOOLA)
+# Ignore everything except chat-backend source
+
+**
+
+# Allow chat-backend source
+!chat-backend/src
+!chat-backend/dist
+!chat-backend/package*.json
+!chat-backend/tsconfig*.json
+!chat-backend/nest-cli.json

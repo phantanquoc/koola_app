@@ -1,90 +1,68 @@
-/**
- * ContactSearchBar — text input with debounced onSearch callback.
- * Shows search icon, clear button when text present.
- */
-import React, { useCallback, useRef } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import React, { useRef, useCallback } from 'react';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
 
-const DEBOUNCE_MS = 300;
-
-export interface ContactSearchBarProps {
+interface Props {
   onSearch: (query: string) => void;
-  placeholder?: string;
 }
 
-export const ContactSearchBar: React.FC<ContactSearchBarProps> = ({
-  onSearch,
-  placeholder = 'Search people by name or email',
-}) => {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<TextInput>(null);
+const ContactSearchBar: React.FC<Props> = ({ onSearch }) => {
+  const [text, setText] = React.useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleChangeText = useCallback(
-    (text: string) => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+  const handleChange = useCallback(
+    (value: string) => {
+      setText(value);
 
-      if (text.length < 2) {
-        onSearch(text);
-        return;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
       }
 
-      timerRef.current = setTimeout(() => {
-        onSearch(text);
-      }, DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => {
+        if (value.trim().length >= 2) {
+          onSearch(value.trim());
+        } else {
+          onSearch('');
+        }
+      }, 300);
     },
     [onSearch],
   );
 
-  const handleClear = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    inputRef.current?.clear();
+  const handleClear = () => {
+    setText('');
     onSearch('');
-  }, [onSearch]);
+  };
 
   return (
     <View style={styles.container}>
-      <MaterialIcons name="search" size={20} color="#888" style={styles.searchIcon} />
+      <Text style={styles.icon}>🔍</Text>
       <TextInput
-        ref={inputRef}
         style={styles.input}
-        placeholder={placeholder}
+        placeholder="Search by name or email"
         placeholderTextColor="#999"
+        value={text}
+        onChangeText={handleChange}
         autoCapitalize="none"
         autoCorrect={false}
-        onChangeText={handleChangeText}
-        returnKeyType="search"
       />
-      <TouchableOpacity onPress={handleClear} style={styles.clearBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <MaterialIcons name="close" size={18} color="#aaa" />
-      </TouchableOpacity>
+      {text.length > 0 && (
+        <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
+          <Text style={styles.clearText}>✕</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    paddingHorizontal: 12,
-    height: 40,
+    flexDirection: 'row', alignItems: 'center', margin: 12,
+    backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 12, height: 44,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1a1a1a',
-    padding: 0,
-    height: 40,
-  },
-  clearBtn: {
-    marginLeft: 4,
-    padding: 2,
-  },
+  icon: { fontSize: 16, marginRight: 8 },
+  input: { flex: 1, fontSize: 16, color: '#333' },
+  clearButton: { padding: 4 },
+  clearText: { fontSize: 16, color: '#999' },
 });
+
+export default ContactSearchBar;

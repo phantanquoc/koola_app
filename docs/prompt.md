@@ -186,4 +186,4 @@ Service: camelCase, e.g. apiService.ts
 
 ---
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02

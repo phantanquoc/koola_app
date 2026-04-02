@@ -1,75 +1,54 @@
-/**
- * UserAvatar — circular avatar component.
- * Shows image if avatar URL provided, otherwise renders initials with deterministic background color.
- */
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 
-const PALETTE = [
-  '#E57373', // red
-  '#64B5F6', // blue
-  '#81C784', // green
-  '#FFD54F', // yellow
-  '#FF8A65', // orange
-  '#BA68C8', // purple
-  '#4DB6AC', // teal
-  '#F06292', // pink
+const AVATAR_COLORS = [
+  '#F44336', '#E91E63', '#9C27B0', '#673AB7',
+  '#3F51B5', '#2196F3', '#009688', '#FF9800',
 ];
 
-export interface UserAvatarProps {
+interface Props {
   displayName: string;
   avatar?: string;
   size?: number;
 }
 
-export const UserAvatar: React.FC<UserAvatarProps> = ({
-  displayName,
-  avatar,
-  size = 44,
-}) => {
-  const initials = displayName.trim()[0]?.toUpperCase() ?? '?';
-  const backgroundColor = PALETTE[displayName.charCodeAt(0) % PALETTE.length];
-  const fontSize = size * 0.4;
-
+const UserAvatar: React.FC<Props> = ({ displayName, avatar, size = 48 }) => {
   if (avatar) {
     return (
       <Image
         source={{ uri: avatar }}
         style={[
-          styles.image,
+          styles.avatar,
           { width: size, height: size, borderRadius: size / 2 },
         ]}
       />
     );
   }
 
+  const initial = displayName?.[0]?.toUpperCase() || '?';
+  const colorIndex = displayName ? displayName.charCodeAt(0) % AVATAR_COLORS.length : 0;
+  const backgroundColor = AVATAR_COLORS[colorIndex];
+
   return (
     <View
       style={[
-        styles.initials,
+        styles.placeholder,
         {
           width: size,
           height: size,
           borderRadius: size / 2,
           backgroundColor,
         },
-      ]}
-    >
-      <Text style={[styles.initialsText, { fontSize }]}>{initials}</Text>
+      ]}>
+      <Text style={[styles.initial, { fontSize: size * 0.4 }]}>{initial}</Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  image: {
-    backgroundColor: '#e0e0e0',
-  },
-  initials: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  initialsText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
+  avatar: { resizeMode: 'cover' },
+  placeholder: { justifyContent: 'center', alignItems: 'center' },
+  initial: { color: '#fff', fontWeight: 'bold' },
 });
+
+export default UserAvatar;

@@ -1,5 +1,16 @@
-// User
+// ─── User ──────────────────────────────────────────────────────────────────────
+
 export interface User {
+  _id: string;
+  email: string;
+  displayName: string;
+  avatar: string;
+  isOnline: boolean;
+  lastSeen: string;
+  settings: { notificationsEnabled: boolean };
+}
+
+export interface UserSearchResult {
   _id: string;
   email: string;
   displayName: string;
@@ -8,16 +19,29 @@ export interface User {
   lastSeen: string;
 }
 
-// Conversation
+// ─── Conversation ──────────────────────────────────────────────────────────────
+
+export type ConversationType = 'direct' | 'group';
+export type MemberRole = 'admin' | 'member';
+
+export interface ConversationMember {
+  userId: string;
+  role: MemberRole;
+  joinedAt: string;
+}
+
 export interface Conversation {
   _id: string;
-  type: 'direct' | 'group';
+  type: ConversationType;
   name?: string;
   avatar?: string;
-  members: User[];
-  lastMessage?: Message;
+  members: (ConversationMember & { user?: User })[];
+  createdBy: string;
   lastMessageAt?: string;
+  lastMessagePreview?: string;
   unreadCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ConversationListResponse {
@@ -26,37 +50,73 @@ export interface ConversationListResponse {
   total: number;
 }
 
-// Message
+// ─── Message ───────────────────────────────────────────────────────────────────
+
+export type MessageType = 'text' | 'image' | 'file' | 'voice' | 'system';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
 export interface Message {
   _id: string;
   conversationId: string;
   senderId: string;
-  sender?: User;
-  type: 'text' | 'image' | 'file' | 'voice' | 'system';
+  type: MessageType;
   content: string;
-  mediaUrl?: string;
-  mediaMimeType?: string;
-  mediaSize?: number;
-  thumbnailKey?: string;
-  status: 'sending' | 'sent' | 'delivered' | 'read';
+  status: MessageStatus;
+  mediaUrl: string;
+  mediaMimeType: string;
+  mediaSize: number;
   deleted: boolean;
+  clientMessageId: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-// Auth
+export interface MessageListResponse {
+  messages: Message[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+export interface SyncMessagesResponse {
+  items: Message[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+// ─── Offline Queue ─────────────────────────────────────────────────────────────
+
+export interface QueuedMessage {
+  id: string;
+  conversationId: string;
+  content: string;
+  type: MessageType;
+  mediaUrl?: string;
+  mediaMimeType?: string;
+  mediaSize?: number;
+  status: 'pending' | 'failed';
+  createdAt: string;
+  retryCount: number;
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────────────────
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
 
-export interface LoginCredentials {
-  email: string;
-  password: string;
+export interface LoginResponse extends AuthTokens {
+  message: string;
 }
 
-export interface RegisterData {
-  email: string;
-  password: string;
-  displayName: string;
+export interface RegisterResponse extends AuthTokens {
+  message: string;
+}
+
+// ─── Paginated ─────────────────────────────────────────────────────────────────
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  hasMore: boolean;
+  nextCursor: string | null;
 }

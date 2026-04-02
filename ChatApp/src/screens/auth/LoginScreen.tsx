@@ -1,30 +1,42 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { AuthStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-type Props = { navigation: NativeStackNavigationProp<any> };
+type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-export const LoginScreen: React.FC<Props> = ({ navigation }) => {
+const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) {
+    if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
     setLoading(true);
     try {
-      await login(email.trim(), password);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Login failed';
-      Alert.alert('Login Failed', Array.isArray(msg) ? msg.join('\n') : msg);
+      await login(email.trim().toLowerCase(), password);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string | string[] } } };
+      const msg = error.response?.data?.message;
+      Alert.alert(
+        'Login Failed',
+        Array.isArray(msg) ? msg.join('\n') : msg || 'Invalid credentials',
+      );
     } finally {
       setLoading(false);
     }
@@ -34,64 +46,70 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Chat App</Text>
+      <View style={styles.form}>
+        <Text style={styles.title}>Koola Chat</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Login</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="#999"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="#999"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>Don't have an account? Register</Text>
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleLogin}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Login</Text>
+          )}
         </TouchableOpacity>
-      </ScrollView>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => navigation.navigate('Register')}>
+          <Text style={styles.linkText}>
+            Don't have an account? <Text style={styles.linkBold}>Register</Text>
+          </Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  title: { fontSize: 32, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
-  form: { gap: 16 },
+  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
+  form: { paddingHorizontal: 32 },
+  title: { fontSize: 32, fontWeight: 'bold', textAlign: 'center', color: '#2196F3', marginBottom: 4 },
+  subtitle: { fontSize: 14, textAlign: 'center', color: '#999', marginBottom: 32 },
   input: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 12,
-    padding: 16, fontSize: 16, backgroundColor: '#f9f9f9',
+    height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
+    paddingHorizontal: 16, fontSize: 16, marginBottom: 12, color: '#333',
   },
   button: {
-    backgroundColor: '#007AFF', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 8,
+    height: 48, backgroundColor: '#2196F3', borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center', marginTop: 8,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  link: { color: '#007AFF', fontSize: 14, textAlign: 'center', marginTop: 24 },
+  linkButton: { marginTop: 16, alignItems: 'center' },
+  linkText: { color: '#666', fontSize: 14 },
+  linkBold: { color: '#2196F3', fontWeight: '600' },
 });
+
+export default LoginScreen;

@@ -1,55 +1,53 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { socketService } from '../../../services/socket/SocketService';
-import type { GiftedMessage } from './useMessages';
+import { useEffect, useRef, useCallback } from 'react';
+import { socketService } from '../../../services/socket/socketService';
+import type { IMessage } from 'react-native-gifted-chat';
 
-interface UseReadReceiptsOptions {
-  conversationId: string;
-  messages: GiftedMessage[];
-}
+export function useReadReceipts(
+  conversationId: string,
+  messages: IMessage[],
+  currentUserId: string,
+) {
+  const lastReadRef = useRef<string | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-const MARK_READ_DEBOUNCE_MS = 500;
-
-export function useReadReceipts({ conversationId, messages }: UseReadReceiptsOptions) {
-  const lastReadMessageId = useRef<string | null>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const handleMessageRead = (payload: { messageId: string; readBy: string }) => {
-      // Update all messages from this reader
-      // (handled by updating status in useMessages via message_ack)
-    };
-
-    socketService.on('message_read', handleMessageRead);
-    return () => {
-      socketService.off('message_read', handleMessageRead);
-    };
-  }, []);
-
+  // ─── Mark read ─────────────────────────────────────────────────────────────
   const markRead = useCallback(
     (messageId: string) => {
-      if (lastReadMessageId.current === messageId) return; // already marked
-      lastReadMessageId.current = messageId;
+      if (messageId === lastReadRef.current) return;
 
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      debounceTimerRef.current = setTimeout(() => {
         socketService.emit('mark_read', { conversationId, messageId });
-        debounceTimer.current = null;
-      }, MARK_READ_DEBOUNCE_MS);
+        lastReadRef.current = messageId;
+      }, 500);
     },
     [conversationId],
   );
 
-  // Called from FlatList scroll — mark the last visible message from another user
-  const markLastVisibleMessageRead = useCallback(
-    (visibleMessages: GiftedMessage[]) => {
-      if (visibleMessages.length === 0) return;
-      const lastMsg = visibleMessages[visibleMessages.length - 1];
-      if (lastMsg?.user?._id !== 'system') {
-        markRead(String(lastMsg._id));
-      }
-    },
-    [markRead],
-  );
+  // ─── Auto-mark first visible message as read ──────────────────────────────
+  useEffect(() => {
+    if (messages.length === 0) return;
 
-  return { markLastVisibleMessageRead };
+    // Find the most recent message not from current user
+    const firstUnread = messages.find(
+      (m) => m.user._id !== currentUserId && !m.system,
+    );
+    if (firstUnread) {
+      markRead(firstUnread._id as string);
+    }
+  }, [messages, currentUserId, markRead]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  return { markRead };
 }

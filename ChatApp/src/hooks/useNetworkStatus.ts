@@ -1,40 +1,27 @@
-/**
- * useNetworkStatus — monitors device connectivity using @react-native-community/netinfo.
- * Exposes `isConnected` and calls `onConnectivityChange` whenever connectivity changes.
- */
-import { useEffect, useState, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 
-export interface UseNetworkStatusOptions {
-  /** Called on every connectivity change. Pass null if no callback needed. */
+interface UseNetworkStatusOptions {
   onConnectivityChange?: (isConnected: boolean) => void;
 }
 
-/** Returns `true` once confirmed connected, `false` once confirmed disconnected, `null` while unknown. */
-export function useNetworkStatus(options: UseNetworkStatusOptions = {}): boolean {
-  const { onConnectivityChange } = options;
-
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const onChangeRef = useRef(onConnectivityChange);
-  onChangeRef.current = onConnectivityChange;
+export function useNetworkStatus(options?: UseNetworkStatusOptions) {
+  const [isConnected, setIsConnected] = useState<boolean>(true);
+  const prevConnected = useRef<boolean>(true);
 
   useEffect(() => {
-    // Get initial state
-    NetInfo.fetch().then((state: NetInfoState) => {
-      const connected = state.isConnected === true;
-      setIsConnected(connected);
-      onChangeRef.current?.(connected);
-    });
-
-    // Subscribe to changes
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const connected = state.isConnected === true;
-      setIsConnected(connected);
-      onChangeRef.current?.(connected);
+      const connected = !!(state.isConnected && state.isInternetReachable !== false);
+
+      if (connected !== prevConnected.current) {
+        prevConnected.current = connected;
+        setIsConnected(connected);
+        options?.onConnectivityChange?.(connected);
+      }
     });
 
-    return unsubscribe;
-  }, []);
+    return () => unsubscribe();
+  }, [options?.onConnectivityChange]);
 
-  return isConnected;
+  return { isConnected };
 }

@@ -1,0 +1,7 @@
+# Infra local — data volumes (gitignore these)
+mongodb/data/
+redis/data/
+storage/data/
+
+# Env files
+backend/.env

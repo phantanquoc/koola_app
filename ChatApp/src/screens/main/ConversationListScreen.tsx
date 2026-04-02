@@ -2,240 +2,206 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   FlatList,
-  RefreshControl,
-  Text,
   TouchableOpacity,
+  Text,
   StyleSheet,
-  ActivityIndicator,
+  RefreshControl,
+  SafeAreaView,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { Conversation } from '../../types';
+import type { ConversationListScreenNavigationProp } from '../../navigation/types';
 import { conversationsApi } from '../../services/api/apiService';
-import { socketService } from '../../services/socket/SocketService';
-import { storage } from '../../utils/asyncStorage';
-import { ConversationListItem } from '../../components/ConversationListItem';
-import { EmptyConversations } from '../../components/EmptyConversations';
-import { LoadingFooter } from '../../components/LoadingFooter';
-import { GroupCreateModal } from '../../components/GroupCreateModal';
-import type { Conversation, User } from '../../types';
-import type { ConversationListScreenProps } from '../../navigation/types';
+import { socketService } from '../../services/socket/socketService';
+import { useAuth } from '../../contexts/AuthContext';
+import ConversationListItem from '../../components/ConversationListItem';
+import EmptyConversations from '../../components/EmptyConversations';
+import LoadingFooter from '../../components/LoadingFooter';
+import GroupCreateModal from '../../components/GroupCreateModal';
+import { useMessageSync } from '../../hooks/useMessageSync';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { offlineQueueService } from '../../services/OfflineQueueService';
+import OfflineBanner from '../../components/OfflineBanner';
 
-const PAGE_SIZE = 20;
+const ConversationListScreen: React.FC = () => {
+  const navigation = useNavigation<ConversationListScreenNavigationProp>();
+  const { user } = useAuth();
+  const { sync } = useMessageSync();
+  const { isConnected } = useNetworkStatus();
 
-export const ConversationListScreen: React.FC<ConversationListScreenProps> = ({
-  navigation,
-}) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [groupModalVisible, setGroupModalVisible] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
 
-  const fetchConversations = useCallback(async (reset = false) => {
-    const targetPage = reset ? 1 : page;
-    try {
-      setError(null);
-      const { data } = await conversationsApi.list(targetPage, PAGE_SIZE);
-      if (reset) {
-        setConversations(data.conversations);
-      } else {
-        setConversations((prev) => [...prev, ...data.conversations]);
+  const fetchConversations = useCallback(
+    async (reset = false) => {
+      const targetPage = reset ? 1 : page;
+      if (reset) setRefreshing(true);
+      else setLoading(true);
+
+      try {
+        const data = await conversationsApi.list(targetPage, 20);
+        if (reset) {
+          setConversations(data.conversations);
+          setPage(2);
+        } else {
+          setConversations((prev) => [...prev, ...data.conversations]);
+          setPage((p) => p + 1);
+        }
+        setHasMore(data.hasMore);
+        setError(null);
+      } catch {
+        setError('Failed to load conversations');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-      setHasMore(data.hasMore);
-      if (!reset) setPage(targetPage);
-    } catch {
-      setError('Failed to load conversations');
-    }
-  }, [page]);
+    },
+    [page],
+  );
 
-  // Initial fetch + sync missed messages on mount
-  useEffect(() => {
-    setLoading(true);
-    (async () => {
-      // Sync missed messages on reconnect (handled centrally in AuthContext;
-      // here we just restore lastSyncAt so ConversationListScreen has fresh data)
-      const since = await storage.getLastSyncAt();
-      // Sync is done in AuthContext — ConversationListScreen refreshes on focus
-      await fetchConversations(true);
-    })().finally(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-fetch on screen focus
+  // Fetch on first mount and on focus
   useFocusEffect(
     useCallback(() => {
       fetchConversations(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
-  // Socket listeners
+  // Sync missed messages + flush offline queue on reconnect
   useEffect(() => {
-    const handlePresenceUpdate = (payload: { userId: string; isOnline: boolean }) => {
+    if (isConnected) {
+      sync().then(() => {
+        offlineQueueService.processQueue();
+      });
+    }
+  }, [isConnected, sync]);
+
+  // Socket: new_message → update list
+  useEffect(() => {
+    const handleNewMessage = (data: { message: { conversationId: string; content: string; createdAt: string } }) => {
+      const msg = data.message;
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c._id === msg.conversationId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        const conv = { ...updated[idx] };
+        conv.lastMessagePreview = msg.content;
+        conv.lastMessageAt = msg.createdAt;
+        conv.unreadCount = (conv.unreadCount || 0) + 1;
+        updated.splice(idx, 1);
+        return [conv, ...updated];
+      });
+    };
+
+    const handlePresenceUpdate = (data: { userId: string; isOnline: boolean }) => {
       setConversations((prev) =>
         prev.map((conv) => ({
           ...conv,
-          members: conv.members.map((m: User) =>
-            m._id === payload.userId ? { ...m, isOnline: payload.isOnline } : m,
+          members: conv.members.map((m) =>
+            m.userId === data.userId && m.user
+              ? { ...m, user: { ...m.user, isOnline: data.isOnline } }
+              : m,
           ),
         })),
       );
     };
 
-    const handleNewMessage = (payload: { message: any; conversationId: string }) => {
-      setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv._id !== payload.conversationId) return conv;
-          return {
-            ...conv,
-            lastMessage: payload.message,
-            lastMessageAt: payload.message.createdAt,
-            unreadCount: conv.unreadCount + 1,
-          };
-        }),
-      );
-    };
-
-    socketService.on('presence_update', handlePresenceUpdate);
-    socketService.on('new_message', handleNewMessage);
+    socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
+    socketService.on('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
 
     return () => {
-      socketService.off('presence_update', handlePresenceUpdate);
-      socketService.off('new_message', handleNewMessage);
+      socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
+      socketService.off('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
     };
   }, []);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setPage(1);
-    await fetchConversations(true);
-    setRefreshing(false);
-  }, [fetchConversations]);
+  const handleRefresh = () => fetchConversations(true);
+  const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
 
-  const handleLoadMore = useCallback(async () => {
-    if (!hasMore || loading) return;
-    setLoading(true);
-    setPage((p) => p + 1);
-    await fetchConversations(false);
-    setLoading(false);
-  }, [hasMore, loading, fetchConversations]);
+  const handleConversationPress = (conv: Conversation) => {
+    navigation.navigate('Chat', { conversationId: conv._id });
+  };
 
-  const handleConversationPress = useCallback(
-    (conv: Conversation) => {
-      navigation.navigate('Chat', { conversationId: conv._id });
-    },
-    [navigation],
-  );
-
-  const handleGroupCreated = useCallback((conv: Conversation) => {
+  const handleGroupCreated = (conv: Conversation) => {
     setConversations((prev) => [conv, ...prev]);
-  }, []);
+  };
 
-  const renderItem = useCallback(
-    ({ item }: { item: Conversation }) => (
-      <ConversationListItem conversation={item} onPress={handleConversationPress} />
-    ),
-    [handleConversationPress],
-  );
+  const handleStartChat = () => {
+    navigation.getParent()?.navigate('ContactsTab');
+  };
 
-  const keyExtractor = useCallback((item: Conversation) => item._id, []);
+  if (error && conversations.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchConversations(true)}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chats</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <OfflineBanner isVisible={!isConnected} />
+      <FlatList
+        data={conversations}
+        keyExtractor={(item) => item._id}
+        renderItem={({ item }) => (
+          <ConversationListItem
+            conversation={item}
+            onPress={() => handleConversationPress(item)}
+          />
+        )}
+        ListEmptyComponent={
+          !loading && !refreshing ? <EmptyConversations onStartChat={handleStartChat} /> : null
+        }
+        ListFooterComponent={
+          hasMore ? <LoadingFooter loading={loading} onLoadMore={handleLoadMore} /> : null
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2196F3" />
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+      />
 
-      {/* Error banner */}
-      {error ? (
-        <TouchableOpacity style={styles.errorBanner} onPress={() => fetchConversations(true)}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Text style={styles.errorRetry}>Tap to retry</Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {/* List */}
-      {loading && conversations.length === 0 ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#007AFF" />
-        </View>
-      ) : conversations.length === 0 ? (
-        <EmptyConversations onCreateGroup={() => setGroupModalVisible(true)} />
-      ) : (
-        <FlatList
-          data={conversations}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#007AFF" />
-          }
-          ListFooterComponent={
-            <LoadingFooter
-              loading={loading}
-              hasMore={hasMore}
-              onLoadMore={handleLoadMore}
-            />
-          }
-          contentContainerStyle={styles.list}
-        />
-      )}
-
-      {/* FAB */}
+      {/* FAB for new group */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setGroupModalVisible(true)}
+        onPress={() => setShowGroupModal(true)}
         activeOpacity={0.8}>
-        <MaterialIcons name="add" size={28} color="#fff" />
+        <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
-      {/* Group creation modal */}
       <GroupCreateModal
-        visible={groupModalVisible}
-        onClose={() => setGroupModalVisible(false)}
+        visible={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
         onCreated={handleGroupCreated}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  header: {
-    paddingTop: 8,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-    backgroundColor: '#fff',
-  },
-  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#1a1a1a' },
-  list: { paddingBottom: 80 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorBanner: {
-    backgroundColor: '#fff3cd',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ffe69c',
-  },
-  errorText: { color: '#856404', fontSize: 14, textAlign: 'center' },
-  errorRetry: { color: '#856404', fontSize: 12, textAlign: 'center', marginTop: 4 },
+  separator: { height: 1, backgroundColor: '#f0f0f0' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errorText: { fontSize: 16, color: '#ff4444', marginBottom: 12 },
+  retryButton: { paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#2196F3', borderRadius: 8 },
+  retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    position: 'absolute', bottom: 24, right: 24, width: 56, height: 56,
+    borderRadius: 28, backgroundColor: '#2196F3', justifyContent: 'center',
+    alignItems: 'center', elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4,
   },
+  fabText: { fontSize: 28, color: '#fff', fontWeight: 'bold', marginTop: -2 },
 });
+
+export default ConversationListScreen;

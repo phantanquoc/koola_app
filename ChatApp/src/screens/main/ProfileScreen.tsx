@@ -1,144 +1,147 @@
-import React, { useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { ProfileScreenNavigationProp, ProfileScreenRouteProp } from '../../navigation/types';
+import { usersApi, conversationsApi } from '../../services/api/apiService';
+import UserAvatar from '../../components/UserAvatar';
+import type { User } from '../../types';
 import { formatDistanceToNow } from 'date-fns';
-import { UserAvatar } from '../../components/UserAvatar';
-import { conversationsApi } from '../../services/api/apiService';
-import type { ProfileScreenProps } from '../../navigation/types';
-import type { RootStackParamList } from '../../navigation/types';
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ route, navigation }) => {
+const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const route = useRoute<ProfileScreenRouteProp>();
   const { userId } = route.params;
 
-  // User data is passed via navigation params from ContactsScreen
-  const params = route.params as any;
-  const displayName = params?.displayName ?? 'User';
-  const email = params?.email ?? '';
-  const avatar = params?.avatar;
-  const isOnline = params?.isOnline ?? false;
-  const lastSeen = params?.lastSeen;
+  const [profileUser, setProfileUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [chatLoading, setChatLoading] = useState(false);
 
-  const lastSeenText = lastSeen
-    ? formatDistanceToNow(new Date(lastSeen), { addSuffix: true })
-    : null;
-
-  const statusText = isOnline ? 'Online' : lastSeenText ?? 'Offline';
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        // For now, get presence - full profile fetch if available
+        const presence = await usersApi.searchUsers(userId);
+        // This is a workaround — ideally we'd have GET /users/:id
+        if (presence.items.length > 0) {
+          const u = presence.items[0];
+          setProfileUser({
+            _id: u._id,
+            email: u.email,
+            displayName: u.displayName,
+            avatar: u.avatar || '',
+            isOnline: u.isOnline,
+            lastSeen: u.lastSeen,
+            settings: { notificationsEnabled: true },
+          });
+        }
+      } catch {
+        // Ignore errors
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, [userId]);
 
   const handleStartChat = useCallback(async () => {
+    setChatLoading(true);
     try {
-      const res = await conversationsApi.startDirectChat(userId);
-      const conv = (res.data as any).conversation;
-      if (conv?._id) {
-        // Navigate via parent (MainTab → ChatsStack → Chat)
-        const parentNav = navigation.getParent();
-        (parentNav as any).navigate('ChatsTab', {
-          screen: 'Chat',
-          params: { conversationId: conv._id },
-        });
-      }
-    } catch {
-      // ignore
+      const { conversation } = await conversationsApi.startDirectChat(userId);
+      const parent = navigation.getParent();
+      parent?.navigate('ChatsTab', {
+        screen: 'Chat',
+        params: { conversationId: conversation._id },
+      } as never);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      Alert.alert('Error', error.response?.data?.message || 'Failed to start chat');
+    } finally {
+      setChatLoading(false);
     }
   }, [userId, navigation]);
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.avatarSection}>
-        <UserAvatar displayName={displayName} avatar={avatar} size={96} />
-      </View>
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 60 }} />
+      </SafeAreaView>
+    );
+  }
 
-      <View style={styles.infoSection}>
-        <Text style={styles.displayName}>{displayName}</Text>
-        <Text style={styles.email}>{email}</Text>
+  if (!profileUser) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.errorText}>User not found</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const lastSeenText = profileUser.isOnline
+    ? 'Online'
+    : profileUser.lastSeen
+      ? `Last seen ${formatDistanceToNow(new Date(profileUser.lastSeen), { addSuffix: true })}`
+      : 'Offline';
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.profileSection}>
+        <UserAvatar
+          displayName={profileUser.displayName}
+          avatar={profileUser.avatar || undefined}
+          size={80}
+        />
+        <Text style={styles.name}>{profileUser.displayName}</Text>
+        <Text style={styles.email}>{profileUser.email}</Text>
         <View style={styles.statusRow}>
           <View
             style={[
               styles.statusDot,
-              {
-                backgroundColor: isOnline
-                  ? 'rgb(76, 175, 80)'
-                  : 'rgb(189, 189, 189)',
-              },
+              profileUser.isOnline ? styles.online : styles.offline,
             ]}
           />
-          <Text style={styles.statusText}>{statusText}</Text>
+          <Text style={styles.statusText}>{lastSeenText}</Text>
         </View>
       </View>
 
       <TouchableOpacity
-        style={styles.startChatBtn}
+        style={[styles.chatButton, chatLoading && styles.chatButtonDisabled]}
         onPress={handleStartChat}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel="Start Chat"
-      >
-        <Text style={styles.startChatBtnText}>Start Chat</Text>
+        disabled={chatLoading}>
+        {chatLoading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.chatButtonText}>Start Chat</Text>
+        )}
       </TouchableOpacity>
-    </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
+  container: { flex: 1, backgroundColor: '#fff' },
+  profileSection: { alignItems: 'center', paddingVertical: 32 },
+  name: { fontSize: 24, fontWeight: 'bold', color: '#333', marginTop: 16 },
+  email: { fontSize: 14, color: '#999', marginTop: 4 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  online: { backgroundColor: '#4CAF50' },
+  offline: { backgroundColor: '#ccc' },
+  statusText: { fontSize: 14, color: '#666' },
+  chatButton: {
+    marginHorizontal: 24, height: 48, backgroundColor: '#2196F3', borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center', marginTop: 24,
   },
-  content: {
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
-  },
-  avatarSection: {
-    marginBottom: 20,
-  },
-  infoSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  displayName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 15,
-    color: '#888',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 14,
-    color: '#888',
-  },
-  startChatBtn: {
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    width: '100%',
-    alignItems: 'center',
-  },
-  startChatBtnText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '600',
-  },
+  chatButtonDisabled: { opacity: 0.6 },
+  chatButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  errorText: { fontSize: 16, color: '#999', textAlign: 'center', marginTop: 60 },
 });
+
+export default ProfileScreen;

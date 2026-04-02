@@ -1,30 +1,14 @@
-/**
- * useContactsSearch — manages user search state with loading/error/empty/pagination support.
- * Debouncing is handled by ContactSearchBar — this hook receives raw queries.
- */
 import { useState, useCallback, useRef } from 'react';
 import { usersApi } from '../services/api/apiService';
-import type { User } from '../types';
+import type { UserSearchResult } from '../types';
 
-export interface SearchResult extends User {}
-
-export interface UseContactsSearchReturn {
-  results: SearchResult[];
-  isLoading: boolean;
-  error: string | null;
-  hasMore: boolean;
-  search: (query: string) => Promise<void>;
-  loadMore: () => Promise<void>;
-  clear: () => void;
-}
-
-export function useContactsSearch(): UseContactsSearchReturn {
-  const [results, setResults] = useState<SearchResult[]>([]);
+export function useContactsSearch() {
+  const [results, setResults] = useState<UserSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const lastQueryRef = useRef('');
+  const cursorRef = useRef<string | null>(null);
+  const lastQueryRef = useRef<string>('');
 
   const search = useCallback(async (query: string) => {
     lastQueryRef.current = query;
@@ -33,59 +17,49 @@ export function useContactsSearch(): UseContactsSearchReturn {
       setResults([]);
       setError(null);
       setHasMore(false);
-      setCursor(undefined);
+      cursorRef.current = null;
       return;
     }
 
     setIsLoading(true);
     setError(null);
-    setCursor(undefined);
 
     try {
-      const res = await usersApi.searchUsers(query);
-      const data = res.data as { items: SearchResult[]; hasMore: boolean; nextCursor: string | null };
-      setResults(data.items ?? []);
-      setHasMore(data.hasMore ?? false);
-      setCursor(data.nextCursor ?? undefined);
-    } catch (err: any) {
-      if (lastQueryRef.current !== query) return; // stale
-      const message = err?.response?.data?.message ?? 'Search failed. Please try again.';
-      setError(message);
+      const data = await usersApi.searchUsers(query);
+      if (lastQueryRef.current !== query) return; // Stale request
+      setResults(data.items);
+      setHasMore(data.hasMore);
+      cursorRef.current = data.nextCursor;
+    } catch {
+      setError('Search failed. Tap to retry.');
       setResults([]);
-      setHasMore(false);
     } finally {
-      if (lastQueryRef.current === query) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || isLoading || !cursor) return;
+    if (!hasMore || isLoading || !cursorRef.current) return;
 
     setIsLoading(true);
-    const query = lastQueryRef.current;
-
     try {
-      const res = await usersApi.searchUsers(query, cursor);
-      const data = res.data as { items: SearchResult[]; hasMore: boolean; nextCursor: string | null };
-      setResults((prev) => [...prev, ...(data.items ?? [])]);
-      setHasMore(data.hasMore ?? false);
-      setCursor(data.nextCursor ?? undefined);
-    } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Failed to load more results.';
-      setError(message);
+      const data = await usersApi.searchUsers(lastQueryRef.current, cursorRef.current);
+      setResults((prev) => [...prev, ...data.items]);
+      setHasMore(data.hasMore);
+      cursorRef.current = data.nextCursor;
+    } catch {
+      // Silent fail on load more
     } finally {
       setIsLoading(false);
     }
-  }, [hasMore, isLoading, cursor]);
+  }, [hasMore, isLoading]);
 
   const clear = useCallback(() => {
-    lastQueryRef.current = '';
     setResults([]);
     setError(null);
     setHasMore(false);
-    setCursor(undefined);
+    cursorRef.current = null;
+    lastQueryRef.current = '';
   }, []);
 
   return { results, isLoading, error, hasMore, search, loadMore, clear };

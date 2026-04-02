@@ -1,33 +1,33 @@
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { RouteProp } from '@react-navigation/native';
+import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-// ─── Auth Stack ────────────────────────────────────────────────────────────────
+// ─── Auth Stack ──────────────────────────────────────────────────────────────
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
 };
 
-// ─── Chats Stack ──────────────────────────────────────────────────────────────
+// ─── Chats Stack ─────────────────────────────────────────────────────────────
 export type ChatsStackParamList = {
   ConversationList: undefined;
   Chat: { conversationId: string };
 };
 
-// ─── Contacts Stack ────────────────────────────────────────────────────────────
+// ─── Contacts Stack ──────────────────────────────────────────────────────────
 export type ContactsStackParamList = {
   Contacts: undefined;
   Profile: { userId: string };
 };
 
-// ─── Settings Stack ────────────────────────────────────────────────────────────
+// ─── Settings Stack ──────────────────────────────────────────────────────────
 export type SettingsStackParamList = {
   Settings: undefined;
   MyProfile: undefined;
   EditProfile: undefined;
 };
 
-// ─── Call Stack ────────────────────────────────────────────────────────────────
+// ─── Call Stack ──────────────────────────────────────────────────────────────
 export type CallStackParamList = {
   Call: {
     sessionId: string;
@@ -36,31 +36,43 @@ export type CallStackParamList = {
   };
 };
 
-// ─── Main Tab ─────────────────────────────────────────────────────────────────
+// ─── Main Bottom Tabs ────────────────────────────────────────────────────────
 export type MainTabParamList = {
   ChatsTab: undefined;
   ContactsTab: undefined;
   SettingsTab: undefined;
 };
 
-// ─── Root Stack ───────────────────────────────────────────────────────────────
+// ─── Root Stack ──────────────────────────────────────────────────────────────
 export type RootStackParamList = {
-  AuthGroup: undefined;
-  MainGroup: undefined;
-  CallModal: undefined;
+  Main: undefined;
+  CallModal: CallStackParamList['Call'];
 };
 
-// ─── Screen Props ───────────────────────────────────────────────────────────────
-// Auth screens
-export type LoginScreenProps = NativeStackScreenProps<AuthStackParamList, 'Login'>;
-export type RegisterScreenProps = NativeStackScreenProps<AuthStackParamList, 'Register'>;
+// ─── Composite Navigation Types ──────────────────────────────────────────────
 
-// Stack screens (inside native stacks)
-export type ConversationListScreenProps = NativeStackScreenProps<ChatsStackParamList, 'ConversationList'>;
-export type ChatScreenProps = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
-export type ContactsScreenProps = NativeStackScreenProps<ContactsStackParamList, 'Contacts'>;
-export type ProfileScreenProps = NativeStackScreenProps<ContactsStackParamList, 'Profile'>;
-export type SettingsScreenProps = NativeStackScreenProps<SettingsStackParamList, 'Settings'>;
-export type MyProfileScreenProps = NativeStackScreenProps<SettingsStackParamList, 'MyProfile'>;
-export type EditProfileScreenProps = NativeStackScreenProps<SettingsStackParamList, 'EditProfile'>;
-export type CallScreenProps = NativeStackScreenProps<CallStackParamList, 'Call'>;
+export type ConversationListScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatsStackParamList, 'ConversationList'>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+export type ChatScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatsStackParamList, 'Chat'>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+export type ContactsScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ContactsStackParamList, 'Contacts'>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+export type ProfileScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ContactsStackParamList, 'Profile'>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+// ─── Route Props ─────────────────────────────────────────────────────────────
+
+export type ChatScreenRouteProp = RouteProp<ChatsStackParamList, 'Chat'>;
+export type ProfileScreenRouteProp = RouteProp<ContactsStackParamList, 'Profile'>;
+export type CallScreenRouteProp = RouteProp<CallStackParamList, 'Call'>;

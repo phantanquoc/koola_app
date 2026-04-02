@@ -1,97 +1,36 @@
-/**
- * ContactItem — tappable user row for contact search results.
- * Shows avatar, display name, and online status indicator.
- */
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { UserAvatar } from './UserAvatar';
+import UserAvatar from './UserAvatar';
+import type { UserSearchResult } from '../types';
 
-export interface ContactItemProps {
-  userId: string;
-  displayName: string;
-  email: string;
-  avatar?: string;
-  isOnline: boolean;
-  onPress: (userId: string) => void;
-  onLongPress?: (userId: string) => void;
+interface Props {
+  user: UserSearchResult;
+  onPress: () => void;
 }
 
-export const ContactItem: React.FC<ContactItemProps> = ({
-  userId,
-  displayName,
-  email,
-  avatar,
-  isOnline,
-  onPress,
-  onLongPress,
-}) => {
+const ContactItem: React.FC<Props> = ({ user, onPress }) => {
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={() => onPress(userId)}
-      onLongPress={onLongPress ? () => onLongPress(userId) : undefined}
-      activeOpacity={0.6}
-      accessibilityRole="button"
-      accessibilityLabel={`${displayName}, ${isOnline ? 'online' : 'offline'}`}
-    >
-      <View style={styles.avatarWrapper}>
-        <UserAvatar displayName={displayName} avatar={avatar} size={44} />
-        <View
-          style={[
-            styles.onlineDot,
-            { backgroundColor: isOnline ? 'rgb(76, 175, 80)' : 'rgb(189, 189, 189)' },
-          ]}
-        />
-      </View>
-
+    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
+      <UserAvatar displayName={user.displayName} avatar={user.avatar} size={44} />
       <View style={styles.info}>
-        <Text style={styles.displayName} numberOfLines={1}>
-          {displayName}
-        </Text>
-        <Text style={styles.email} numberOfLines={1}>
-          {email}
-        </Text>
+        <Text style={styles.name} numberOfLines={1}>{user.displayName}</Text>
+        <Text style={styles.email} numberOfLines={1}>{user.email}</Text>
       </View>
+      <View style={[styles.statusDot, user.isOnline ? styles.online : styles.offline]} />
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-    backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff',
   },
-  avatarWrapper: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  info: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  displayName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1a1a1a',
-  },
-  email: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 2,
-  },
+  info: { flex: 1, marginLeft: 12 },
+  name: { fontSize: 16, fontWeight: '600', color: '#333' },
+  email: { fontSize: 13, color: '#999', marginTop: 2 },
+  statusDot: { width: 10, height: 10, borderRadius: 5, marginLeft: 8 },
+  online: { backgroundColor: '#4CAF50' },
+  offline: { backgroundColor: '#ccc' },
 });
+
+export default ContactItem;

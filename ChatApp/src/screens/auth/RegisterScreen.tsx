@@ -1,40 +1,47 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { AuthStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-type Props = { navigation: NativeStackNavigationProp<any> };
+type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
-export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
+const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const { register } = useAuth();
-  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!displayName.trim() || !email.trim() || !password || !confirmPassword) {
+    if (!email.trim() || !password.trim() || !displayName.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-    if (password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
     setLoading(true);
     try {
-      await register(email.trim(), password, displayName.trim());
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Registration failed';
-      Alert.alert('Registration Failed', Array.isArray(msg) ? msg.join('\n') : msg);
+      await register(email.trim().toLowerCase(), password, displayName.trim());
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string | string[] } } };
+      const msg = error.response?.data?.message;
+      Alert.alert(
+        'Registration Failed',
+        Array.isArray(msg) ? msg.join('\n') : msg || 'Something went wrong',
+      );
     } finally {
       setLoading(false);
     }
@@ -44,80 +51,78 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.form}>
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join Chat App today</Text>
+        <Text style={styles.subtitle}>Join Koola Chat</Text>
 
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Display Name"
-            placeholderTextColor="#999"
-            value={displayName}
-            onChangeText={setDisplayName}
-            autoCapitalize="words"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password (min 8 chars)"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            placeholderTextColor="#999"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleRegister}
-            disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Register</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Display Name"
+          placeholderTextColor="#999"
+          value={displayName}
+          onChangeText={setDisplayName}
+          autoCapitalize="words"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="#999"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="#999"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.link}>Already have an account? Login</Text>
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleRegister}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Register</Text>
+          )}
         </TouchableOpacity>
-      </ScrollView>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => navigation.goBack()}>
+          <Text style={styles.linkText}>
+            Already have an account? <Text style={styles.linkBold}>Login</Text>
+          </Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  title: { fontSize: 32, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
-  form: { gap: 16 },
+  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
+  form: { paddingHorizontal: 32 },
+  title: { fontSize: 32, fontWeight: 'bold', textAlign: 'center', color: '#2196F3', marginBottom: 4 },
+  subtitle: { fontSize: 14, textAlign: 'center', color: '#999', marginBottom: 32 },
   input: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 12,
-    padding: 16, fontSize: 16, backgroundColor: '#f9f9f9',
+    height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
+    paddingHorizontal: 16, fontSize: 16, marginBottom: 12, color: '#333',
   },
   button: {
-    backgroundColor: '#007AFF', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 8,
+    height: 48, backgroundColor: '#2196F3', borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center', marginTop: 8,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  link: { color: '#007AFF', fontSize: 14, textAlign: 'center', marginTop: 24 },
+  linkButton: { marginTop: 16, alignItems: 'center' },
+  linkText: { color: '#666', fontSize: 14 },
+  linkBold: { color: '#2196F3', fontWeight: '600' },
 });
+
+export default RegisterScreen;

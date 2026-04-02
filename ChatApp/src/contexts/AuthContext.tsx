@@ -6,21 +6,18 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
-import NetInfo from '@react-native-community/netinfo';
-import { authApi } from '../services/api/apiService';
-import { storage } from '../utils/asyncStorage';
-import { setTokens, clearTokens } from '../utils/apiClient';
-import { socketService } from '../services/socket/SocketService';
-import { notificationService } from '../services/NotificationService';
-import { offlineQueueService } from '../services/OfflineQueueService';
-import { messagesApi } from '../services/api/apiService';
-import type { Message } from '../types';
+import { AppState, AppStateStatus } from 'react-native';
+import { authApi, usersApi, setAccessTokenInMemory } from '../services/api/apiService';
+import { asyncStorage } from '../services/storage/asyncStorage';
+import { socketService } from '../services/socket/socketService';
+import { pushNotificationService } from '../services/push/pushNotificationService';
+import { webrtcService } from '../services/webrtc/webrtcService';
 import type { User } from '../types';
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -31,163 +28,145 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const wasOfflineRef = useRef(false);
-  const lastSyncAtRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const isAuthenticated = !!user;
 
-  const syncAndFlush = useCallback(async () => {
-    // 1. Sync missed messages from server
-    const since = lastSyncAtRef.current ?? new Date(0).toISOString();
-    const allMessages: Message[] = [];
-    let cursor: string | undefined;
-    let hasMore = true;
-
-    try {
-      while (hasMore) {
-        const res = await messagesApi.sync(since, cursor);
-        const data = res.data as { items: Message[]; hasMore: boolean; nextCursor: string | null };
-        allMessages.push(...(data.items ?? []));
-        hasMore = data.hasMore ?? false;
-        cursor = data.nextCursor ?? undefined;
-      }
-      const newSyncAt = new Date().toISOString();
-      lastSyncAtRef.current = newSyncAt;
-      await storage.setLastSyncAt(newSyncAt);
-    } catch {
-      // Sync failure is non-fatal — queue still processes
-    }
-
-    // 2. Flush offline queue (pending messages sent while offline)
-    await offlineQueueService.processQueue();
-  }, []);
-
-  // ── Auto-login on app start ─────────────────────────────────────────────────
-
+  // ─── Restore session on mount ──────────────────────────────────────────────
   useEffect(() => {
-    const restoreSession = async () => {
-      try {
-        const refreshToken = await storage.getRefreshToken();
-        if (refreshToken) {
-          const res = await authApi.refresh(refreshToken);
-          const { accessToken, refreshToken: newRefresh } = res.data;
-          setTokens(accessToken, newRefresh);
-          await storage.setRefreshToken(newRefresh);
-          const me = await authApi.getMe();
-          setUser(me.data);
-        }
-      } catch {
-        clearTokens();
-        await storage.clearRefreshToken();
-      } finally {
-        setIsLoading(false);
-      }
-    };
     restoreSession();
   }, []);
 
-  // ── Network connectivity monitoring ─────────────────────────────────────────
-
+  // ─── AppState listener — reconnect socket on foreground ────────────────────
   useEffect(() => {
-    const handleConnectivityChange = async (isConnected: boolean) => {
-      if (!user) return;
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription.remove();
+  }, [user]);
 
-      if (isConnected) {
-        if (wasOfflineRef.current) {
-          // Was offline → now online: sync + flush queue
-          await syncAndFlush();
-        }
-        wasOfflineRef.current = false;
-        socketService.connect();
-      } else {
-        wasOfflineRef.current = true;
-        socketService.disconnect();
+  const handleAppStateChange = useCallback(
+    (nextState: AppStateStatus) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextState === 'active' &&
+        user
+      ) {
+        // Reconnect socket when app comes to foreground
+        const reconnect = async () => {
+          const token = await asyncStorage.getAccessToken();
+          if (token && !socketService.isConnected()) {
+            socketService.connect(token);
+          }
+        };
+        reconnect();
       }
-    };
+      appStateRef.current = nextState;
+    },
+    [user],
+  );
 
-    let prevConnected = false;
-    const unsubscribe = NetInfo.addEventListener((state) => {
-      const isConnected = state.isConnected === true;
-      if (isConnected !== prevConnected) {
-        prevConnected = isConnected;
-        handleConnectivityChange(isConnected);
+  const restoreSession = async () => {
+    try {
+      const refreshToken = await asyncStorage.getRefreshToken();
+      if (!refreshToken) {
+        setIsLoading(false);
+        return;
       }
-    });
 
-    return unsubscribe;
-  }, [user, syncAndFlush]);
+      const tokens = await authApi.refresh(refreshToken);
+      setAccessTokenInMemory(tokens.accessToken);
+      await asyncStorage.setAccessToken(tokens.accessToken);
+      await asyncStorage.setRefreshToken(tokens.refreshToken);
 
-  // ── On auth success: connect socket + sync + flush queue + register push ────
+      const me = await usersApi.getMe();
+      setUser(me);
 
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      socketService.connect();
-      lastSyncAtRef.current = await storage.getLastSyncAt();
-      await syncAndFlush();
-      // Register for push notifications (non-blocking)
-      notificationService.registerToken().catch(() => {});
-    })();
+      // Connect socket + webrtc
+      socketService.connect(tokens.accessToken);
+      webrtcService.connect(tokens.accessToken);
 
-    const unsubTokenRefresh = notificationService.onTokenRefresh();
-    return () => unsubTokenRefresh();
-  }, [user, syncAndFlush]);
-
-  // ── Login / Register / Logout ────────────────────────────────────────────────
+      // Register push notifications
+      pushNotificationService.registerToken().catch(() => {});
+    } catch {
+      // Session restore failed — clear tokens
+      await asyncStorage.clearTokens();
+      setAccessTokenInMemory(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await authApi.login({ email, password });
-    const { accessToken, refreshToken } = res.data;
-    setTokens(accessToken, refreshToken);
-    await storage.setRefreshToken(refreshToken);
-    const me = await authApi.getMe();
-    setUser(me.data);
-    // Socket + sync handled by the user effect above
+    const data = await authApi.login(email, password);
+    setAccessTokenInMemory(data.accessToken);
+    await asyncStorage.setAccessToken(data.accessToken);
+    await asyncStorage.setRefreshToken(data.refreshToken);
+
+    const me = await usersApi.getMe();
+    setUser(me);
+
+    // Connect socket + webrtc
+    socketService.connect(data.accessToken);
+    webrtcService.connect(data.accessToken);
+
+    // Register push notifications
+    pushNotificationService.registerToken().catch(() => {});
   }, []);
 
-  const register = useCallback(async (email: string, password: string, displayName: string) => {
-    const res = await authApi.register({ email, password, displayName });
-    const { accessToken, refreshToken } = res.data;
-    setTokens(accessToken, refreshToken);
-    await storage.setRefreshToken(refreshToken);
-    const me = await authApi.getMe();
-    setUser(me.data);
-    // Socket + sync handled by the user effect above
-  }, []);
+  const register = useCallback(
+    async (email: string, password: string, displayName: string) => {
+      const data = await authApi.register(email, password, displayName);
+      setAccessTokenInMemory(data.accessToken);
+      await asyncStorage.setAccessToken(data.accessToken);
+      await asyncStorage.setRefreshToken(data.refreshToken);
+
+      const me = await usersApi.getMe();
+      setUser(me);
+
+      // Connect socket + webrtc
+      socketService.connect(data.accessToken);
+      webrtcService.connect(data.accessToken);
+
+      // Register push notifications
+      pushNotificationService.registerToken().catch(() => {});
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {
-      await notificationService.unregisterToken();
-    } catch {
-      // Best-effort
-    }
-    try {
-      const refreshToken = await storage.getRefreshToken();
+      await pushNotificationService.unregisterToken();
+      webrtcService.disconnect();
+      socketService.disconnect();
+      const refreshToken = await asyncStorage.getRefreshToken();
       if (refreshToken) {
         await authApi.logout(refreshToken);
       }
     } catch {
-      // ignore
+      // Ignore logout errors
+    } finally {
+      setAccessTokenInMemory(null);
+      await asyncStorage.clearAll();
+      setUser(null);
     }
-    socketService.disconnect();
-    clearTokens();
-    await storage.clearRefreshToken();
-    await storage.clearUser();
-    setUser(null);
-    lastSyncAtRef.current = null;
-    wasOfflineRef.current = false;
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isAuthenticated: !!user, login, register, logout }}>
+      value={{ user, isAuthenticated, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
+
+export default AuthContext;

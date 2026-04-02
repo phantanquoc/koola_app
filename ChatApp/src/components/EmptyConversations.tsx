@@ -1,51 +1,33 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 interface Props {
-  onCreateGroup: () => void;
+  onStartChat: () => void;
 }
 
-export const EmptyConversations: React.FC<Props> = ({ onCreateGroup }) => (
-  <View style={styles.container}>
-    <MaterialIcons name="chat-bubble-outline" size={64} color="#ddd" />
-    <Text style={styles.title}>No conversations yet</Text>
-    <Text style={styles.subtitle}>Start a conversation with someone</Text>
-    <TouchableOpacity style={styles.button} onPress={onCreateGroup}>
-      <Text style={styles.buttonText}>Create Group</Text>
-    </TouchableOpacity>
-  </View>
-);
+const EmptyConversations: React.FC<Props> = ({ onStartChat }) => {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.icon}>💬</Text>
+      <Text style={styles.title}>No conversations yet</Text>
+      <Text style={styles.subtitle}>Start chatting with someone!</Text>
+      <TouchableOpacity style={styles.button} onPress={onStartChat}>
+        <Text style={styles.buttonText}>Start a conversation</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  icon: { fontSize: 64, marginBottom: 16 },
+  title: { fontSize: 20, fontWeight: '600', color: '#333', marginBottom: 8 },
+  subtitle: { fontSize: 14, color: '#999', marginBottom: 24 },
   button: {
-    marginTop: 24,
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    backgroundColor: '#2196F3', paddingHorizontal: 24, paddingVertical: 12,
+    borderRadius: 8,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
+
+export default EmptyConversations;

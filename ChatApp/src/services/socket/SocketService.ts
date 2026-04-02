@@ -1,91 +1,126 @@
 import { io, Socket } from 'socket.io-client';
-import { WS_URL } from '../../config/env';
-import { getAccessToken } from '../../utils/apiClient';
+import ENV from '../../config/env';
+
+type EventCallback = (...args: unknown[]) => void;
 
 class SocketService {
   private socket: Socket | null = null;
-  private listeners: Map<string, Set<(data: any) => void>> = new Map();
-  private reconnectAttempts = 0;
+  private listeners: Map<string, Set<EventCallback>> = new Map();
+  private reconnectAttempt = 0;
   private maxReconnectAttempts = 10;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
-  connect(): void {
+  connect(token: string): void {
     if (this.socket?.connected) return;
 
-    const token = getAccessToken();
-    if (!token) {
-      console.warn('[Socket] No access token, cannot connect');
-      return;
-    }
-
-    this.socket = io(WS_URL, {
+    this.socket = io(`${ENV.WS_URL}/chat`, {
       query: { token },
       transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
-      reconnectionAttempts: this.maxReconnectAttempts,
+      autoConnect: true,
+      reconnection: false, // We handle reconnection manually
     });
 
     this.socket.on('connect', () => {
-      console.log('[Socket] Connected:', this.socket?.id);
-      this.reconnectAttempts = 0;
+      console.log('[SocketService] Connected');
+      this.reconnectAttempt = 0;
+      this.startHeartbeat();
+      // Re-attach all existing listeners
+      this.listeners.forEach((callbacks, event) => {
+        callbacks.forEach((cb) => {
+          this.socket?.on(event, cb);
+        });
+      });
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
+      console.log('[SocketService] Disconnected:', reason);
+      this.stopHeartbeat();
+      if (reason !== 'io client disconnect') {
+        this.scheduleReconnect(token);
+      }
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error.message);
-      this.reconnectAttempts++;
-    });
-
-    // Re-emit stored listeners
-    this.listeners.forEach((callbacks, event) => {
-      callbacks.forEach((cb) => {
-        this.socket?.on(event, cb);
-      });
+      console.error('[SocketService] Connection error:', error.message);
+      this.scheduleReconnect(token);
     });
   }
 
   disconnect(): void {
-    this.socket?.disconnect();
-    this.socket = null;
-  }
-
-  on(event: string, callback: (data: any) => void): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
-    this.listeners.get(event)?.add(callback);
-    this.socket?.on(event, callback);
-  }
-
-  off(event: string, callback?: (data: any) => void): void {
-    if (callback) {
-      this.listeners.get(event)?.delete(callback);
-      this.socket?.off(event, callback);
-    } else {
-      this.listeners.delete(event);
-      this.socket?.off(event);
+    this.reconnectAttempt = 0;
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
     }
   }
 
-  emit(event: string, data?: any): void {
-    this.socket?.emit(event, data);
-  }
-
-  get connected(): boolean {
+  isConnected(): boolean {
     return this.socket?.connected ?? false;
   }
 
-  // Heartbeat
-  startHeartbeat(): void {
-    setInterval(() => {
-      if (this.connected) {
-        this.emit('ping');
-      }
+  // ─── Event management ──────────────────────────────────────────────────────
+
+  on(event: string, callback: EventCallback): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback);
+    this.socket?.on(event, callback);
+  }
+
+  off(event: string, callback: EventCallback): void {
+    this.listeners.get(event)?.delete(callback);
+    this.socket?.off(event, callback);
+  }
+
+  emit(event: string, data?: unknown): void {
+    this.socket?.emit(event, data);
+  }
+
+  // ─── Heartbeat ─────────────────────────────────────────────────────────────
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      this.socket?.emit('ping');
     }, 15000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  // ─── Reconnect ─────────────────────────────────────────────────────────────
+
+  private scheduleReconnect(token: string): void {
+    if (this.reconnectAttempt >= this.maxReconnectAttempts) {
+      console.warn('[SocketService] Max reconnect attempts reached');
+      return;
+    }
+
+    const delay = Math.min(
+      Math.pow(2, this.reconnectAttempt) * 1000,
+      30000,
+    );
+    this.reconnectAttempt++;
+
+    console.log(
+      `[SocketService] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`,
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      this.connect(token);
+    }, delay);
   }
 }
 

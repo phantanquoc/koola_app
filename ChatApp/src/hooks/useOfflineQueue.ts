@@ -1,75 +1,48 @@
-/**
- * useOfflineQueue — React hook wrapping OfflineQueueService.
- *
- * Exposes the current queue and operations for sending via queue,
- * retrying failed messages, and removing queued messages.
- */
 import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { offlineQueueService, QueuedMessage } from '../services/OfflineQueueService';
+import { offlineQueueService } from '../services/OfflineQueueService';
+import type { QueuedMessage, MessageType } from '../types';
 
-export interface SendViaQueueParams {
-  conversationId: string;
-  content: string;
-  type?: 'text' | 'image' | 'file' | 'voice' | 'system';
-  mediaUrl?: string;
-  mediaMimeType?: string;
-  mediaSize?: number;
-  /** If provided, the optimistic message will use this _id so ChatScreen can track it */
-  tempId?: string;
-}
-
-export interface UseOfflineQueueReturn {
-  /** Current queue state */
-  queue: QueuedMessage[];
-  /**
-   * Add a message to the offline queue.
-   * Returns the tempId so callers can track the optimistic message.
-   */
-  sendViaQueue: (params: SendViaQueueParams) => Promise<string>;
-  /** Reset a failed message back to pending and re-process the queue */
-  retryMessage: (id: string) => Promise<void>;
-  /** Permanently remove a message from the queue */
-  removeFromQueue: (id: string) => Promise<void>;
-}
-
-export function useOfflineQueue(): UseOfflineQueueReturn {
-  const [queue, setQueue] = useState<QueuedMessage[]>(offlineQueueService.getAll());
+export function useOfflineQueue() {
+  const [queue, setQueue] = useState<QueuedMessage[]>(offlineQueueService.getQueue());
 
   useEffect(() => {
     const unsubscribe = offlineQueueService.subscribe(() => {
-      setQueue(offlineQueueService.getAll());
+      setQueue(offlineQueueService.getQueue());
     });
     return unsubscribe;
   }, []);
 
-  const sendViaQueue = useCallback(async (params: SendViaQueueParams): Promise<string> => {
-    const clientMessageId = uuidv4();
-    const tempId = params.tempId ?? `temp_${clientMessageId}`;
-    const now = new Date().toISOString();
+  const sendViaQueue = useCallback(
+    (conversationId: string, content: string, type: MessageType = 'text') => {
+      const id = uuidv4();
+      const msg: QueuedMessage = {
+        id,
+        conversationId,
+        content,
+        type,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      };
+      offlineQueueService.add(msg);
+      return msg;
+    },
+    [],
+  );
 
-    await offlineQueueService.add({
-      id: clientMessageId,
-      conversationId: params.conversationId,
-      content: params.content,
-      type: params.type ?? 'text',
-      mediaUrl: params.mediaUrl,
-      mediaMimeType: params.mediaMimeType,
-      mediaSize: params.mediaSize,
-      createdAt: now,
-      tempId,
-    });
-
-    return tempId;
+  const retryMessage = useCallback(async (id: string) => {
+    // Reset retry
+    const q = offlineQueueService.getQueue();
+    const msg = q.find((m) => m.id === id);
+    if (msg) {
+      await offlineQueueService.updateStatus(id, 'pending');
+      // Reset retryCount manually
+      await offlineQueueService.processQueue();
+    }
   }, []);
 
-  const retryMessage = useCallback(async (id: string): Promise<void> => {
-    await offlineQueueService.resetRetryCount(id);
-    await offlineQueueService.updateStatus(id, 'pending');
-    await offlineQueueService.processQueue();
-  }, []);
-
-  const removeFromQueue = useCallback(async (id: string): Promise<void> => {
+  const removeFromQueue = useCallback(async (id: string) => {
     await offlineQueueService.remove(id);
   }, []);
 

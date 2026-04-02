@@ -1,250 +1,172 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import NetInfo from '@react-native-community/netinfo';
 import { messagesApi } from '../../../services/api/apiService';
-import { socketService } from '../../../services/socket/SocketService';
-import { offlineQueueService } from '../../../services/OfflineQueueService';
+import { socketService } from '../../../services/socket/socketService';
 import type { Message } from '../../../types';
+import type { IMessage } from 'react-native-gifted-chat';
 
-export interface GiftedMessage {
-  _id: string | number;
-  text: string;
-  createdAt: Date;
-  user: { _id: string; name?: string; avatar?: string };
-  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
-  image?: string;
-  type?: 'text' | 'image' | 'file' | 'system';
-  clientMessageId?: string;
-}
-
-interface UseMessagesOptions {
-  conversationId: string;
-  currentUserId: string;
-}
-
-function toGifted(msg: Message): GiftedMessage {
+/**
+ * Convert backend Message to GiftedChat IMessage format
+ */
+function toGiftedMessage(msg: Message, currentUserId: string): IMessage {
   return {
     _id: msg._id,
-    text: msg.content,
+    text: msg.deleted ? 'This message was deleted' : msg.content,
     createdAt: new Date(msg.createdAt),
     user: {
       _id: msg.senderId,
-      name: msg.sender?.displayName,
-      avatar: msg.sender?.avatar,
+      name: msg.senderId === currentUserId ? 'You' : undefined,
     },
-    status: msg.status,
-    image: msg.type === 'image' ? msg.mediaUrl : undefined,
-    type: (msg.type === 'voice' ? 'text' : msg.type) as GiftedMessage['type'],
+    image: msg.type === 'image' && msg.mediaUrl ? msg.mediaUrl : undefined,
+    system: msg.type === 'system',
   };
 }
 
-export function useMessages({ conversationId, currentUserId }: UseMessagesOptions) {
-  const [messages, setMessages] = useState<GiftedMessage[]>([]);
+export function useMessages(conversationId: string, currentUserId: string) {
+  const [messages, setMessages] = useState<IMessage[]>([]);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   const [hasEarlier, setHasEarlier] = useState(true);
-  const cursorRef = useRef<string | undefined>(undefined);
+  const cursorRef = useRef<string | null>(null);
 
-  const fetchMessages = useCallback(
-    async (cursor?: string) => {
+  // ─── Fetch initial messages ────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchInitial = async () => {
       try {
-        const res = await messagesApi.list(conversationId, cursor, 20);
-        const items: Message[] = (res.data as any).items ?? [];
-        const gifted = items.reverse().map(toGifted);
-
-        if (cursor) {
-          setMessages((prev) => {
-            const merged = [...gifted, ...prev];
-            return merged;
-          });
-        } else {
-          setMessages(gifted);
-        }
-
-        if (items.length > 0) {
-          cursorRef.current = items[items.length - 1]._id;
-        }
-        setHasEarlier((res.data as any).hasMore ?? false);
-      } catch {
-        // silent
+        const data = await messagesApi.list(conversationId, undefined, 20);
+        const gifted = data.messages.map((m: Message) => toGiftedMessage(m, currentUserId));
+        setMessages(gifted);
+        setHasEarlier(data.hasMore);
+        cursorRef.current = data.nextCursor;
+      } catch (err) {
+        console.error('[useMessages] fetchInitial error:', err);
       }
-    },
-    [conversationId],
-  );
+    };
+    fetchInitial();
+  }, [conversationId, currentUserId]);
 
-  // Initial load
+  // ─── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
-    fetchMessages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Socket listeners
-  useEffect(() => {
-    const handleNewMessage = (payload: { message: Message }) => {
-      if (payload.message.conversationId !== conversationId) return;
+    const handleNewMessage = (data: { message: Record<string, unknown> }) => {
+      const msg = data.message as unknown as Message;
+      if (msg.conversationId !== conversationId) return;
+      // Deduplicate
       setMessages((prev) => {
-        const alreadyExists = prev.some(
-          (m) => String(m._id) === String(payload.message._id),
-        );
-        if (alreadyExists) return prev;
-        return [toGifted(payload.message), ...prev];
+        if (prev.find((m) => m._id === msg._id)) return prev;
+        return [toGiftedMessage(msg, currentUserId), ...prev];
       });
     };
 
-    const handleMessageAck = (payload: any) => {
-      const tempId = payload.clientMessageId ?? payload.message?._id;
-      if (!tempId) return;
+    const handleMessageAck = (data: Record<string, unknown>) => {
+      const ackData = data as unknown as Message & { messageId: string };
+      const clientMessageId = ackData.clientMessageId;
+      if (!clientMessageId) return;
       setMessages((prev) =>
         prev.map((m) =>
-          String(m._id) === String(tempId)
-            ? { ...m, _id: payload.message?._id ?? tempId, status: 'sent' as const }
+          (m as IMessage & { clientMessageId?: string }).clientMessageId === clientMessageId
+            ? { ...m, _id: ackData.messageId || ackData._id, pending: false }
             : m,
         ),
       );
     };
 
-    const handleMessageDeleted = (payload: { messageId: string }) => {
-      setMessages((prev) =>
-        prev.filter((m) => String(m._id) !== String(payload.messageId)),
-      );
+    const handleMessageDeleted = (data: { messageId: string }) => {
+      setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
     };
 
-    socketService.on('new_message', handleNewMessage);
-    socketService.on('message_ack', handleMessageAck);
-    socketService.on('message_deleted', handleMessageDeleted);
+    socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
+    socketService.on('message_ack', handleMessageAck as (...args: unknown[]) => void);
+    socketService.on('message_deleted', handleMessageDeleted as (...args: unknown[]) => void);
 
     return () => {
-      socketService.off('new_message', handleNewMessage);
-      socketService.off('message_ack', handleMessageAck);
-      socketService.off('message_deleted', handleMessageDeleted);
+      socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
+      socketService.off('message_ack', handleMessageAck as (...args: unknown[]) => void);
+      socketService.off('message_deleted', handleMessageDeleted as (...args: unknown[]) => void);
     };
-  }, [conversationId]);
+  }, [conversationId, currentUserId]);
 
+  // ─── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-
       const clientMessageId = uuidv4();
       const tempId = `temp_${clientMessageId}`;
 
-      const optimisticMsg: GiftedMessage = {
+      // Optimistic prepend
+      const optimisticMsg: IMessage & { clientMessageId: string } = {
         _id: tempId,
-        text: trimmed,
+        text,
         createdAt: new Date(),
-        user: { _id: currentUserId },
-        status: 'sending',
+        user: { _id: currentUserId, name: 'You' },
+        pending: true,
         clientMessageId,
       };
+      setMessages((prev) => [optimisticMsg, ...prev]);
 
-      setMessages((prev) => [...prev, optimisticMsg]);
-
-      // Check connectivity
-      const state = await NetInfo.fetch();
-      const isConnected = state.isConnected === true;
-
-      if (isConnected) {
-        // Online: send directly via API
-        try {
-          await messagesApi.send(conversationId, {
-            type: 'text',
-            content: trimmed,
-            clientMessageId,
-          });
-          // ACK will arrive via socket → handleMessageAck updates status to 'sent'
-        } catch {
-          setMessages((prev) =>
-            prev.map((m) =>
-              String(m._id) === tempId ? { ...m, status: 'failed' as const } : m,
-            ),
-          );
-        }
-      } else {
-        // Offline: add to queue for retry when back online
-        // Status stays 'sending' until queue processes it (ACK from socket) or fails
-        await offlineQueueService.add({
-          id: clientMessageId,
-          conversationId,
-          content: trimmed,
+      try {
+        const result = await messagesApi.send(conversationId, {
+          content: text,
           type: 'text',
-          createdAt: new Date().toISOString(),
-          tempId,
+          clientMessageId,
         });
-        // Queue will retry on reconnect; message_ack from socket will update status to 'sent'
-        // If queue fails after max retries, ChatScreen's queue watcher marks it 'failed'
+        // Replace optimistic with real
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === tempId
+              ? { ...m, _id: result.message._id, pending: false }
+              : m,
+          ),
+        );
+      } catch {
+        // Mark as failed
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === tempId ? { ...m, pending: false, sent: false } : m,
+          ),
+        );
       }
     },
     [conversationId, currentUserId],
   );
 
+  // ─── Load earlier messages ─────────────────────────────────────────────────
   const loadEarlier = useCallback(async () => {
-    if (isLoadingEarlier || !hasEarlier) return;
+    if (!hasEarlier || isLoadingEarlier) return;
     setIsLoadingEarlier(true);
-    await fetchMessages(cursorRef.current);
-    setIsLoadingEarlier(false);
-  }, [isLoadingEarlier, hasEarlier, fetchMessages]);
+    try {
+      const data = await messagesApi.list(
+        conversationId,
+        cursorRef.current || undefined,
+        20,
+      );
+      const gifted = data.messages.map((m: Message) => toGiftedMessage(m, currentUserId));
+      setMessages((prev) => [...prev, ...gifted]);
+      setHasEarlier(data.hasMore);
+      cursorRef.current = data.nextCursor;
+    } catch (err) {
+      console.error('[useMessages] loadEarlier error:', err);
+    } finally {
+      setIsLoadingEarlier(false);
+    }
+  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier]);
 
+  // ─── Delete message ────────────────────────────────────────────────────────
   const deleteMessage = useCallback(
     async (messageId: string) => {
-      setMessages((prev) =>
-        prev.filter((m) => String(m._id) !== String(messageId)),
-      );
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
       try {
-        await messagesApi.delete(conversationId, messageId);
+        await messagesApi.deleteMessage(conversationId, messageId);
       } catch {
-        // silent
+        // Re-fetch to restore if delete failed
       }
     },
     [conversationId],
   );
 
-  const prependMessage = useCallback((msg: Message) => {
-    setMessages((prev) => {
-      const alreadyExists = prev.some(
-        (m) => String(m._id) === String(msg._id),
-      );
-      if (alreadyExists) return prev;
-      return [toGifted(msg), ...prev];
-    });
-  }, []);
-
-  const replaceMessage = useCallback(
-    (tempId: string, serverMsg: Message) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          String(m._id) === tempId ? toGifted(serverMsg) : m,
-        ),
-      );
-    },
-    [],
-  );
-
-  const updateMessageStatus = useCallback(
-    (messageId: string, status: GiftedMessage['status']) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          String(m._id) === messageId ? { ...m, status } : m,
-        ),
-      );
-    },
-    [],
-  );
-
-  const removeMessage = useCallback((messageId: string) => {
-    setMessages((prev) =>
-      prev.filter((m) => String(m._id) !== String(messageId)),
-    );
-  }, []);
-
   return {
     messages,
-    isLoadingEarlier,
-    hasEarlier,
     sendMessage,
     loadEarlier,
     deleteMessage,
-    prependMessage,
-    replaceMessage,
-    updateMessageStatus,
-    removeMessage,
+    isLoadingEarlier,
+    hasEarlier,
   };
 }
