@@ -214,7 +214,7 @@ export class ConversationsService {
       lastReadMessageId: null,
     });
 
-    const displayName = user.displayName || user.email || memberId;
+    const displayName = user.displayName || user.phone || user.email || memberId;
     await this.createSystemMessage(
       conversationId,
       `${displayName} was added to the group`,
@@ -245,7 +245,7 @@ export class ConversationsService {
     if (!targetMember)
       throw new NotFoundException('User not found in this conversation');
     const targetUser = await this.usersService.findById(targetId);
-    const targetName = targetUser?.displayName || targetUser?.email || targetId;
+    const targetName = targetUser?.displayName || targetUser?.phone || targetUser?.email || targetId;
     const isTargetAdmin = targetMember.role === MemberRole.ADMIN;
     const remainingMembers = conv.members.filter(
       (m) => m.userId.toString() !== targetId,
@@ -289,7 +289,7 @@ export class ConversationsService {
     if (!member) throw new NotFoundException('Conversation not found');
 
     const user = await this.usersService.findById(userId);
-    const displayName = user?.displayName || user?.email || userId;
+    const displayName = user?.displayName || user?.phone || user?.email || userId;
 
     const isLastAdmin =
       member.role === MemberRole.ADMIN &&
@@ -345,7 +345,7 @@ export class ConversationsService {
         .sort({ lastMessageAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('members.userId', '_id email displayName avatar isOnline'),
+        .populate('members.userId', '_id phone email displayName avatar isOnline'),
       this.conversationModel.countDocuments({ _id: { $in: convIds } }),
     ]);
 
@@ -364,9 +364,12 @@ export class ConversationsService {
     conversationId: string,
     userId: string,
   ): Promise<{ conversation: any; messages: any[] }> {
-    const conv = await this.findByIdOrFail(conversationId);
+    const conv = await this.conversationModel
+      .findById(conversationId)
+      .populate('members.userId', '_id phone email displayName avatar isOnline');
+    if (!conv) throw new NotFoundException('Conversation not found');
 
-    const isMember = conv.members.some((m) => m.userId.toString() === userId);
+    const isMember = conv.members.some((m) => m.userId?.toString() === userId || (m.userId as any)?._id?.toString() === userId);
     if (!isMember) throw new NotFoundException('Conversation not found');
 
     const uc = await this.userConversationModel.findOne({
@@ -378,7 +381,7 @@ export class ConversationsService {
       .find({ conversationId, deleted: false })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate('senderId', '_id email displayName avatar');
+      .populate('senderId', '_id phone email displayName avatar');
 
     return {
       conversation: { ...conv.toObject(), unreadCount: uc?.unreadCount ?? 0 },
@@ -405,43 +408,6 @@ export class ConversationsService {
     if (data.name !== undefined) conv.name = data.name.trim();
     if (data.avatar !== undefined) conv.avatar = data.avatar;
     return conv.save();
-  }
-
-  // ─── Unread ─────────────────────────────────────────────────────────────
-
-  async incrementUnreadCount(
-    conversationId: string,
-    senderId: string,
-  ): Promise<void> {
-    const conv = await this.conversationModel.findById(conversationId);
-    if (!conv) return;
-
-    const memberIds = conv.members
-      .filter((m) => m.userId.toString() !== senderId)
-      .map((m) => m.userId);
-
-    if (memberIds.length === 0) return;
-
-    await this.userConversationModel.updateMany(
-      {
-        conversationId: new Types.ObjectId(conversationId),
-        userId: { $in: memberIds },
-      },
-      { $inc: { unreadCount: 1 } },
-    );
-  }
-
-  async resetUnreadCount(
-    conversationId: string,
-    userId: string,
-  ): Promise<void> {
-    await this.userConversationModel.updateOne(
-      {
-        conversationId: new Types.ObjectId(conversationId),
-        userId: new Types.ObjectId(userId),
-      },
-      { $set: { unreadCount: 0 } },
-    );
   }
 
   // ─── Delete ─────────────────────────────────────────────────────────────
@@ -486,5 +452,33 @@ export class ConversationsService {
       userId: new Types.ObjectId(userId),
     });
     return userConvs.map((uc) => uc.conversationId.toString());
+  }
+
+  // ─── Pin/Unpin ────────────────────────────────────────────────────────────
+
+  async pinMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
+    const conv = await this.findByIdOrFail(conversationId);
+    const isMember = conv.members.some((m) => m.userId.toString() === userId);
+    if (!isMember) throw new ForbiddenException();
+
+    // Check if already pinned
+    const alreadyPinned = conv.pinnedMessages?.some((p) => p.messageId === messageId);
+    if (alreadyPinned) return;
+
+    await this.conversationModel.updateOne(
+      { _id: conversationId },
+      { $push: { pinnedMessages: { messageId, pinnedBy: userId, pinnedAt: new Date() } } },
+    );
+  }
+
+  async unpinMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
+    const conv = await this.findByIdOrFail(conversationId);
+    const isMember = conv.members.some((m) => m.userId.toString() === userId);
+    if (!isMember) throw new ForbiddenException();
+
+    await this.conversationModel.updateOne(
+      { _id: conversationId },
+      { $pull: { pinnedMessages: { messageId } } },
+    );
   }
 }

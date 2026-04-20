@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConversationsController } from './conversations.controller';
 import { ConversationsService } from './conversations.service';
+import { MembershipService } from './services/membership.service';
+import { UnreadService } from './services/unread.service';
 import { ConversationDoc, ConversationDocSchema } from './conversation.schema';
 import {
   UserConversation,
@@ -33,7 +35,7 @@ export {
     UsersModule,
   ],
   controllers: [ConversationsController],
-  providers: [ConversationsService],
-  exports: [ConversationsService, MongooseModule],
+  providers: [ConversationsService, MembershipService, UnreadService],
+  exports: [ConversationsService, MembershipService, UnreadService, MongooseModule],
 })
 export class ConversationsModule {}

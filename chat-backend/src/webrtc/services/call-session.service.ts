@@ -26,6 +26,38 @@ export class CallSessionService {
 
   constructor(private readonly redis: RedisService) {}
 
+  /**
+   * Adds sessionId to the active_calls Set for both the initiator and target,
+   * then sets the TTL on both Sets in a pipeline.
+   */
+  async createActiveCallIndex(
+    initiatorId: string,
+    targetId: string,
+    sessionId: string,
+    ttlSeconds: number,
+  ): Promise<void> {
+    const pipeline = this.redis.getClient().pipeline();
+    pipeline.sadd(`active_calls:${initiatorId}`, sessionId);
+    pipeline.expire(`active_calls:${initiatorId}`, ttlSeconds);
+    pipeline.sadd(`active_calls:${targetId}`, sessionId);
+    pipeline.expire(`active_calls:${targetId}`, ttlSeconds);
+    await pipeline.exec();
+  }
+
+  /**
+   * Removes sessionId from the active_calls Set for both the initiator and target.
+   */
+  async removeActiveCallIndex(
+    initiatorId: string,
+    targetId: string,
+    sessionId: string,
+  ): Promise<void> {
+    await Promise.all([
+      this.redis.getClient().srem(`active_calls:${initiatorId}`, sessionId),
+      this.redis.getClient().srem(`active_calls:${targetId}`, sessionId),
+    ]);
+  }
+
   async createSession(params: {
     initiatorId: string;
     targetUserId: string | null;
@@ -55,6 +87,16 @@ export class CallSessionService {
       this.redis.getClient().sadd(participantsKey, params.initiatorId),
       this.redis.getClient().expire(participantsKey, SESSION_TTL),
     ]);
+
+    // Index both users so hasExistingSession can find this session without KEYS/SCAN
+    if (params.targetUserId) {
+      await this.createActiveCallIndex(
+        params.initiatorId,
+        params.targetUserId,
+        sessionId,
+        SESSION_TTL,
+      );
+    }
 
     this.logger.log(`[CallSession] Created session ${sessionId}`);
     return session;
@@ -94,11 +136,39 @@ export class CallSessionService {
   }
 
   async endSession(sessionId: string): Promise<void> {
+    // Fetch session before state change so we have initiatorId / targetUserId
+    const session = await this.getSession(sessionId);
+
     await Promise.all([
       this.updateSessionState(sessionId, 'ended'),
       this.redis.getClient().del(`call_participants:${sessionId}`),
     ]);
+
+    if (session && session.initiatorId && session.targetUserId) {
+      await this.removeActiveCallIndex(session.initiatorId, session.targetUserId, sessionId);
+    }
+
     this.logger.log(`[CallSession] Session ${sessionId} ended`);
+  }
+
+  /**
+   * Hard-deletes all Redis keys for a session and removes it from the active-call index.
+   * Intended for forced cleanup (e.g., disconnect events or admin operations).
+   */
+  async cleanupSession(sessionId: string): Promise<void> {
+    const session = await this.getSession(sessionId);
+
+    await Promise.all([
+      this.redis.getClient().del(`call:${sessionId}`),
+      this.redis.getClient().del(`call_participants:${sessionId}`),
+      this.redis.getClient().del(`call_timeout:${sessionId}`),
+    ]);
+
+    if (session && session.initiatorId && session.targetUserId) {
+      await this.removeActiveCallIndex(session.initiatorId, session.targetUserId, sessionId);
+    }
+
+    this.logger.log(`[CallSession] Session ${sessionId} cleaned up`);
   }
 
   async isActive(sessionId: string): Promise<boolean> {
@@ -106,24 +176,40 @@ export class CallSessionService {
     return session?.state === 'initiated' || session?.state === 'active';
   }
 
+  /**
+   * Returns the sessionId of an active/initiated session between initiatorId and targetUserId
+   * for the given conversationId, or null if none exists.
+   *
+   * Uses SMEMBERS active_calls:{userId} + HGETALL per session — no KEYS/SCAN.
+   * Stale entries (hash expired but still in Set) are cleaned up automatically.
+   */
   async hasExistingSession(
     initiatorId: string,
     targetUserId: string,
     conversationId: string,
   ): Promise<string | null> {
-    // Scan all session keys — acceptable for MVP scale (hundreds of sessions)
-    const keys = await this.redis.getClient().keys('call:*');
-    for (const key of keys) {
-      const data = await this.redis.getClient().hgetall(key);
+    const sessionIds = await this.redis.getClient().smembers(`active_calls:${initiatorId}`);
+
+    for (const sessionId of sessionIds) {
+      const data = await this.redis.getClient().hgetall(`call:${sessionId}`);
+
+      // Stale entry: hash has expired but sessionId is still in the Set
+      if (!data || Object.keys(data).length === 0) {
+        await this.redis.getClient().srem(`active_calls:${initiatorId}`, sessionId);
+        continue;
+      }
+
+      const session = data as unknown as CallSession;
       if (
-        (data as unknown as CallSession).initiatorId === initiatorId &&
-        (data as unknown as CallSession).targetUserId === targetUserId &&
-        (data as unknown as CallSession).conversationId === conversationId &&
-        ((data as unknown as CallSession).state === 'initiated' || (data as unknown as CallSession).state === 'active')
+        session.initiatorId === initiatorId &&
+        session.targetUserId === targetUserId &&
+        session.conversationId === conversationId &&
+        (session.state === 'initiated' || session.state === 'active')
       ) {
-        return key.replace('call:', '');
+        return sessionId;
       }
     }
+
     return null;
   }
 }

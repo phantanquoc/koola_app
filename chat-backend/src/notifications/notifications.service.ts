@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { forwardRef, Inject } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { ConversationsService } from '../conversations/conversations.service';
 import { RedisService } from '../common/redis/redis.service';
 import { getMessaging } from './fcm-client';
 import { MessageType } from '../messages/message.schema';
@@ -33,8 +32,6 @@ export class NotificationsService {
   constructor(
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
-    @Inject(forwardRef(() => ConversationsService))
-    private readonly conversationsService: ConversationsService,
     private readonly redisService: RedisService,
   ) {}
 

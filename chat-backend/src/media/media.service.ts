@@ -15,7 +15,7 @@ import {
   SUPPORTED_MIME_TYPES,
 } from './dto/request-presigned-url.dto';
 import { minioClient, BUCKET, ensureBucketExists } from './minio-client';
-import { ConversationsService } from '../conversations/conversations.service';
+import { MembershipService } from '../conversations/services/membership.service';
 
 const MAGIC_BYTES_MAP: Record<
   string,
@@ -95,7 +95,7 @@ export class MediaService implements OnModuleInit {
   constructor(
     @InjectModel(Media.name)
     private mediaModel: Model<MediaDocument>,
-    private conversationsService: ConversationsService,
+    private membershipService: MembershipService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -239,10 +239,10 @@ export class MediaService implements OnModuleInit {
 
     // Access control: if conversationId is set, check membership
     if (media.conversationId) {
-      const conv = await this.conversationsService.findByIdOrFail(
+      const isMember = await this.membershipService.isMember(
+        userId,
         media.conversationId,
       );
-      const isMember = conv.members.some((m) => m.userId.toString() === userId);
       if (!isMember) {
         throw new ForbiddenException(
           'You are not authorized to access this media',
@@ -256,6 +256,32 @@ export class MediaService implements OnModuleInit {
     ).toISOString();
 
     return { url, expiresAt };
+  }
+
+  async getObjectStream(
+    userId: string,
+    mediaKey: string,
+  ): Promise<{ stream: NodeJS.ReadableStream; mimeType: string; size: number }> {
+    const media = await this.mediaModel.findOne({ mediaKey });
+    if (!media || media.deleted) {
+      throw new NotFoundException('Media not found');
+    }
+
+    // Access control: if conversationId is set, check membership
+    if (media.conversationId) {
+      const isMember = await this.membershipService.isMember(
+        userId,
+        media.conversationId,
+      );
+      if (!isMember) {
+        throw new ForbiddenException(
+          'You are not authorized to access this media',
+        );
+      }
+    }
+
+    const stream = await minioClient.getObject(BUCKET, mediaKey);
+    return { stream, mimeType: media.mimeType, size: media.size };
   }
 
   async deleteMedia(userId: string, mediaKey: string): Promise<void> {

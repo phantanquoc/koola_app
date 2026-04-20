@@ -10,7 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsAuthGuard } from '../gateway/guards/ws-auth.guard';
-import { ConversationsService } from '../conversations/conversations.service';
+import { MembershipService } from '../conversations/services/membership.service';
 import { UsersService } from '../users/users.service';
 import { CallSessionService } from './services/call-session.service';
 import { TurnService } from './services/turn.service';
@@ -24,7 +24,7 @@ import { CallEndDto } from './dto/call-end.dto';
 import { CallJoinDto } from './dto/call-join.dto';
 
 interface AuthSocketData {
-  user?: { sub: string; email: string };
+  user?: { sub: string; phone: string };
 }
 
 type AuthSocket = Socket & { data: AuthSocketData };
@@ -39,7 +39,7 @@ export class WebrtcGateway
   private readonly logger = new Logger(WebrtcGateway.name);
 
   constructor(
-    private readonly conversationsService: ConversationsService,
+    private readonly membershipService: MembershipService,
     private readonly usersService: UsersService,
     private readonly callSessionService: CallSessionService,
     private readonly turnService: TurnService,
@@ -77,9 +77,9 @@ export class WebrtcGateway
 
     // Validate caller is conversation member
     try {
-      const conv = await this.conversationsService.findByIdOrFail(conversationId);
-      const isMember = conv.members.some(
-        (m) => m.userId.toString() === callerId,
+      const isMember = await this.membershipService.isMember(
+        callerId,
+        conversationId,
       );
       if (!isMember) {
         client.emit('error', { code: 403, message: 'Not a member of this conversation' });
@@ -120,7 +120,7 @@ export class WebrtcGateway
     const caller = await this.usersService.findById(callerId);
     const callerInfo = {
       userId: callerId,
-      displayName: caller?.displayName ?? caller?.email ?? callerId,
+      displayName: caller?.displayName ?? caller?.phone ?? caller?.email ?? callerId,
       avatar: caller?.avatar,
     };
 
@@ -192,7 +192,7 @@ export class WebrtcGateway
     const user = await this.usersService.findById(userId);
     const userInfo = {
       userId,
-      displayName: user?.displayName ?? user?.email ?? userId,
+      displayName: user?.displayName ?? user?.phone ?? user?.email ?? userId,
       avatar: user?.avatar,
     };
     for (const pid of participants) {

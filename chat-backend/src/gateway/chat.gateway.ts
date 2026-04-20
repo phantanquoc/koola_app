@@ -14,6 +14,7 @@ import { Server, Socket } from 'socket.io';
 import { WsAuthGuard } from './guards/ws-auth.guard';
 import { UsersService } from '../users/users.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { MembershipService } from '../conversations/services/membership.service';
 import { MessagesService } from '../messages/messages.service';
 import { TypingService } from '../messages/typing.service';
 import { SendMessageDto } from '../messages/dto/send-message.dto';
@@ -22,7 +23,7 @@ import { MessageType } from '../messages/message.schema';
 const HEARTBEAT_TIMEOUT_MS = 30_000; // 30 seconds
 
 interface AuthSocketData {
-  user?: { sub: string; email: string };
+  user?: { sub: string; phone: string };
   heartbeatTimer?: NodeJS.Timeout;
 }
 
@@ -40,6 +41,7 @@ export class ChatGateway
   constructor(
     private readonly usersService: UsersService,
     private readonly conversationsService: ConversationsService,
+    private readonly membershipService: MembershipService,
     private readonly messagesService: MessagesService,
     private readonly typingService: TypingService,
     private readonly jwtService: JwtService,
@@ -60,6 +62,19 @@ export class ChatGateway
         });
       },
     );
+
+    // Wire blurhash callback → broadcast message_updated with blurhash
+    this.messagesService.setBlurhashCallback(
+      (messageId: string, conversationId: string, blurhash: string, width: number, height: number) => {
+        this.io.to(`conversation:${conversationId}`).emit('message_updated', {
+          messageId,
+          conversationId,
+          blurhash,
+          imageWidth: width,
+          imageHeight: height,
+        });
+      },
+    );
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────────
@@ -72,7 +87,7 @@ export class ChatGateway
       return;
     }
 
-    let payload: { sub: string; email: string };
+    let payload: { sub: string; phone: string };
     try {
       payload = this.jwtService.verify(token, {
         secret: process.env.JWT_SECRET,
@@ -85,7 +100,7 @@ export class ChatGateway
     const userId = payload.sub;
     (client.data as AuthSocketData).user = {
       sub: payload.sub,
-      email: payload.email,
+      phone: payload.phone,
     };
 
     this.logger.log(
@@ -169,9 +184,10 @@ export class ChatGateway
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
 
     try {
-      const conv =
-        await this.conversationsService.findByIdOrFail(conversationId);
-      const isMember = conv.members.some((m) => m.userId.toString() === userId);
+      const isMember = await this.membershipService.isMember(
+        userId,
+        conversationId,
+      );
       if (!isMember) {
         client.emit('error', {
           code: 403,
@@ -318,6 +334,73 @@ export class ChatGateway
     });
   }
 
+  // ─── Reactions ────────────────────────────────────────────────────────────
+
+  @UseGuards(WsAuthGuard)
+  @SubscribeMessage('react_message')
+  async handleReactMessage(
+    @MessageBody() payload: { conversationId: string; messageId: string; emoji: string },
+    @ConnectedSocket() client: AuthSocket,
+  ): Promise<void> {
+    const userId = (client.data as AuthSocketData).user?.sub ?? '';
+    try {
+      const result = await this.messagesService.toggleReaction(
+        payload.conversationId,
+        payload.messageId,
+        userId,
+        payload.emoji,
+      );
+      this.io.to(`conversation:${payload.conversationId}`).emit('message_reaction', {
+        messageId: payload.messageId,
+        conversationId: payload.conversationId,
+        userId,
+        emoji: result.emoji,
+        action: result.action,
+      });
+    } catch (err) {
+      client.emit('error', { code: 400, message: (err as Error).message });
+    }
+  }
+
+  // ─── Pin ──────────────────────────────────────────────────────────────────
+
+  @UseGuards(WsAuthGuard)
+  @SubscribeMessage('pin_message')
+  async handlePinMessage(
+    @MessageBody() payload: { conversationId: string; messageId: string },
+    @ConnectedSocket() client: AuthSocket,
+  ): Promise<void> {
+    const userId = (client.data as AuthSocketData).user?.sub ?? '';
+    try {
+      await this.conversationsService.pinMessage(payload.conversationId, payload.messageId, userId);
+      this.io.to(`conversation:${payload.conversationId}`).emit('message_pinned', {
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+        pinnedBy: userId,
+      });
+    } catch (err) {
+      client.emit('error', { code: 400, message: (err as Error).message });
+    }
+  }
+
+  @UseGuards(WsAuthGuard)
+  @SubscribeMessage('unpin_message')
+  async handleUnpinMessage(
+    @MessageBody() payload: { conversationId: string; messageId: string },
+    @ConnectedSocket() client: AuthSocket,
+  ): Promise<void> {
+    const userId = (client.data as AuthSocketData).user?.sub ?? '';
+    try {
+      await this.conversationsService.unpinMessage(payload.conversationId, payload.messageId, userId);
+      this.io.to(`conversation:${payload.conversationId}`).emit('message_unpinned', {
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+      });
+    } catch (err) {
+      client.emit('error', { code: 400, message: (err as Error).message });
+    }
+  }
+
   // ─── Mark Read ──────────────────────────────────────────────────────────────
 
   @UseGuards(WsAuthGuard)
@@ -330,7 +413,7 @@ export class ChatGateway
     const { messageId } = payload;
 
     try {
-      // Get message to find sender
+      // Get message to find sender and conversationId
       const messageDoc = await this.messagesService.findById(messageId);
       if (!messageDoc) {
         client.emit('error', { code: 404, message: 'Message not found' });
@@ -339,10 +422,19 @@ export class ChatGateway
 
       await this.messagesService.markAsRead(messageId, userId);
 
-      // Emit to sender's personal room
-      this.io.to(`user:${messageDoc.senderId}`).emit('message_read', {
+      // Fetch updated readBy array after the write
+      const updatedMsg = await this.messagesService.findById(messageId);
+      const readBy: string[] = (updatedMsg as any)?.readBy ?? [userId];
+      const conversationId: string =
+        payload.conversationId || (messageDoc as any).conversationId;
+      const readAt = new Date();
+
+      // Emit to conversation room so all members receive the read receipt
+      this.io.to(`conversation:${conversationId}`).emit('message_read', {
         messageId,
-        readBy: userId,
+        conversationId,
+        readBy,
+        readAt,
       });
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string };
