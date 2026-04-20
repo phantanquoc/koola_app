@@ -36,7 +36,7 @@
 
 ## 8. RN: Navigation Types
 
-- [ ] 8.1 Add `userId: string` param to `ContactsStackParamList` profile screen in `ChatApp/src/navigation/types.ts` ← (verify: navigation passes userId to ProfileScreen correctly)
+- [x] 8.1 Add `userId: string` param to `ContactsStackParamList` profile screen in `ChatApp/src/navigation/types.ts` ← (verify: navigation passes userId to ProfileScreen correctly)
 
 ## 9. TypeScript + Verification
 

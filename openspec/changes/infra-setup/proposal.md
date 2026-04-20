@@ -1,3 +1,7 @@
+> **STATUS: DEFERRED** (as of 2026-04-20)
+>
+> This change covers production deployment of 4 Proxmox VMs (NestJS, MongoDB, MinIO+Coturn, Redis). It is paused until the team is ready to deploy to production. Local development continues to use `infra-local/docker-compose.yml`. Do not attempt to action these tasks in regular dev work — re-open this change explicitly when production deploy starts.
+
 ## Why
 
 The chat application requires a self-hosted backend infrastructure running on Proxmox. Before any application code can run, four virtual machines must be provisioned and configured: MongoDB for data persistence, Redis for caching and Socket.io scaling, MinIO for media file storage, Coturn for WebRTC TURN/STUN relay, and the NestJS backend itself.
