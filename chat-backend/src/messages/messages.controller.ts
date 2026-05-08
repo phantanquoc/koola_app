@@ -110,7 +110,10 @@ export class MessagesController {
       'For group conversations, only the readBy array is updated.',
   })
   @ApiResponse({ status: 200, description: '{ updated: number }' })
-  @ApiResponse({ status: 403, description: 'Not a member of this conversation' })
+  @ApiResponse({
+    status: 403,
+    description: 'Not a member of this conversation',
+  })
   async markRead(
     @Param('conversationId') convId: string,
     @Body() dto: MarkReadDto,
@@ -126,14 +129,12 @@ export class MessagesController {
     // Preserves the existing per-message event pattern from handleMarkRead.
     for (const messageId of result.messageIds) {
       const readBy = result.readByMap.get(messageId) ?? [];
-      this.chatGateway.io
-        .to(`conversation:${convId}`)
-        .emit('message_read', {
-          messageId,
-          conversationId: convId,
-          readBy,
-          readAt: result.readAt,
-        });
+      this.chatGateway.io.to(`conversation:${convId}`).emit('message_read', {
+        messageId,
+        conversationId: convId,
+        readBy,
+        readAt: result.readAt,
+      });
     }
 
     return { updated: result.updated };
@@ -176,18 +177,21 @@ export class MessagesController {
     @Body('emoji') emoji: string,
     @CurrentUser('id') userId: string,
   ) {
-    const result = await this.messagesService.toggleReaction(convId, messageId, userId, emoji);
+    const result = await this.messagesService.toggleReaction(
+      convId,
+      messageId,
+      userId,
+      emoji,
+    );
 
     // Broadcast reaction to conversation room via socket
-    this.chatGateway.io
-      .to(`conversation:${convId}`)
-      .emit('message_reaction', {
-        messageId,
-        conversationId: convId,
-        userId,
-        emoji: result.emoji,
-        action: result.action,
-      });
+    this.chatGateway.io.to(`conversation:${convId}`).emit('message_reaction', {
+      messageId,
+      conversationId: convId,
+      userId,
+      emoji: result.emoji,
+      action: result.action,
+    });
 
     return { messageId, conversationId: convId, userId, ...result };
   }

@@ -29,12 +29,13 @@ export class MessagesSyncController {
     @Query() query: SyncMessagesDto,
     @CurrentUser('id') userId: string,
   ) {
-    const { items, hasMore, nextCursor } = await this.messagesService.syncMessages(
-      userId,
-      query.since ?? new Date(0).toISOString(),
-      query.cursor,
-      query.limit,
-    );
+    const { items, hasMore, nextCursor } =
+      await this.messagesService.syncMessages(
+        userId,
+        query.since ?? new Date(0).toISOString(),
+        query.cursor,
+        query.limit,
+      );
     return { items, hasMore, nextCursor };
   }
 }

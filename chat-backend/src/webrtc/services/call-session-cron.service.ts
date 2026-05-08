@@ -1,0 +1,57 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { CallSessionService } from './call-session.service';
+import { CallLogsService } from '../../call-logs/call-logs.service';
+import { WebrtcGateway } from '../webrtc.gateway';
+
+@Injectable()
+export class CallSessionCronService {
+  private readonly logger = new Logger(CallSessionCronService.name);
+
+  constructor(
+    private readonly callSessionService: CallSessionService,
+    private readonly callLogsService: CallLogsService,
+    private readonly webrtcGateway: WebrtcGateway,
+  ) {}
+
+  @Cron('*/15 * * * * *') // Every 15 seconds (6-field: seconds minutes hours dom month dow)
+  async cleanupStaleSessions(): Promise<void> {
+    const cleaned = await this.callSessionService.cleanupStaleSessions();
+
+    if (cleaned.length === 0) return;
+
+    for (const session of cleaned) {
+      await this.callLogsService
+        .updateLog(session.sessionId, {
+          status: 'missed',
+          endedAt: new Date(),
+          duration: 0,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `[CallCron] Failed to update log for ${session.sessionId}: ${err.message}`,
+          );
+        });
+
+      // Notify both parties via socket so they know the call timed out
+      // (covers crash-recovery path where the in-memory timeout never fired)
+      try {
+        this.webrtcGateway.io
+          .to(`user:${session.initiatorId}`)
+          .emit('call_missed', { sessionId: session.sessionId });
+
+        if (session.targetUserId) {
+          this.webrtcGateway.io
+            .to(`user:${session.targetUserId}`)
+            .emit('call_timeout', { sessionId: session.sessionId });
+        }
+      } catch (err) {
+        this.logger.warn(
+          `[CallCron] Failed to emit socket events for ${session.sessionId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(`[CallCron] Cleaned ${cleaned.length} stale session(s)`);
+  }
+}

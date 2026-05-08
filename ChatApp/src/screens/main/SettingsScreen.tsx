@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import UserAvatar from '../../components/UserAvatar';
 
 const SettingsScreen: React.FC = () => {
   const { user, logout } = useAuth();
@@ -8,10 +9,12 @@ const SettingsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.profileSection}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.displayName?.[0]?.toUpperCase() || '?'}
-          </Text>
+        <View style={styles.avatarWrapper}>
+          <UserAvatar
+            displayName={user?.displayName || ''}
+            avatar={user?.avatar}
+            size={80}
+          />
         </View>
         <Text style={styles.name}>{user?.displayName || 'Unknown'}</Text>
         <Text style={styles.email}>{user?.email || ''}</Text>
@@ -39,11 +42,7 @@ const SettingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   profileSection: { alignItems: 'center', paddingVertical: 32, backgroundColor: '#fff' },
-  avatar: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: '#2196F3',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-  },
-  avatarText: { fontSize: 32, fontWeight: 'bold', color: '#fff' },
+  avatarWrapper: { marginBottom: 12 },
   name: { fontSize: 20, fontWeight: '600', color: '#333' },
   email: { fontSize: 14, color: '#999', marginTop: 4 },
   section: { marginTop: 16, backgroundColor: '#fff' },

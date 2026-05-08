@@ -35,7 +35,7 @@ const ContactsScreen: React.FC = () => {
         const { conversation } = await conversationsApi.startDirectChat(user._id);
         // Navigate to ChatsTab then to Chat screen
         const parent = navigation.getParent();
-        parent?.navigate('ChatsTab', {
+        parent?.navigate('ChatTab', {
           screen: 'Chat',
           params: { conversationId: conversation._id },
         } as never);

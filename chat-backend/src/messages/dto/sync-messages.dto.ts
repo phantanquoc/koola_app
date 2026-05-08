@@ -1,4 +1,12 @@
-import { IsOptional, IsDateString, IsString, IsInt, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsDateString,
+  IsString,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SyncMessagesDto {
@@ -20,6 +28,7 @@ export class SyncMessagesDto {
 
   @ApiPropertyOptional({ description: 'Max messages per page', example: 100 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)

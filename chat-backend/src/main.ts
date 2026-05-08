@@ -57,6 +57,12 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      // Allow query/path string values to be implicitly converted to their
+      // target primitive types (e.g. `?limit=100` → number) based on DTO
+      // reflected types. Needed for `@Query()` params without manual
+      // @Type(() => Number) everywhere, and fixes `limit must be an integer
+      // number` 400s on /messages/sync and similar endpoints.
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 

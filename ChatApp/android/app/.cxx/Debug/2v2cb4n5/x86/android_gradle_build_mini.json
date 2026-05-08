@@ -1,0 +1,163 @@
+{
+  "buildFiles": [
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\@react-native-async-storage\\async-storage\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\@react-native-clipboard\\clipboard\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\@react-native-community\\netinfo\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\@react-native-community\\slider\\android\\src\\main\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-blob-util\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-blurhash\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-compressor\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-document-picker\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-gesture-handler\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-image-picker\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-keyboard-controller\\android\\src\\main\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-pager-view\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-reanimated\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-safe-area-context\\android\\src\\main\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-screens\\android\\src\\main\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-svg\\android\\src\\main\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native-vector-icons\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\node_modules\\react-native\\ReactAndroid\\cmake-utils\\default-app-setup\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\kieth\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\.cxx\\Debug\\2v2cb4n5\\x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\kieth\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\.cxx\\Debug\\2v2cb4n5\\x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "react_codegen_RNCSlider::@4898bc4726ecf1751b6a": {
+      "artifactName": "react_codegen_RNCSlider",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_RNCSlider.so",
+      "runtimeFiles": [
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so"
+      ]
+    },
+    "react_codegen_blurhash_codegen::@2a1b9d1641fbfbad480a": {
+      "artifactName": "react_codegen_blurhash_codegen",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_RNVectorIconsSpec::@479809fae146501fd34d": {
+      "artifactName": "react_codegen_RNVectorIconsSpec",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "artifactName": "react_codegen_safeareacontext",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so"
+      ]
+    },
+    "react_codegen_rngesturehandler_codegen::@39f233abcd2c728bc6ec": {
+      "artifactName": "react_codegen_rngesturehandler_codegen",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "artifactName": "appmodules",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libappmodules.so",
+      "runtimeFiles": [
+        "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_RNCSlider.so",
+        "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_RNKC.so",
+        "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_safeareacontext.so",
+        "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_rnscreens.so",
+        "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_rnsvg.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so"
+      ]
+    },
+    "react_codegen_ReactNativeBlobUtilSpec::@7d3cc6108106e04bb830": {
+      "artifactName": "react_codegen_ReactNativeBlobUtilSpec",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rndocumentpicker::@1e246c1f1267e461f98b": {
+      "artifactName": "react_codegen_rndocumentpicker",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnsvg::@4f40eb209d0c0b4a3b65": {
+      "artifactName": "react_codegen_rnsvg",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_rnsvg.so",
+      "runtimeFiles": [
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so"
+      ]
+    },
+    "react_codegen_RNCNetInfoSpec::@c36c96bfd5b5770618a5": {
+      "artifactName": "react_codegen_RNCNetInfoSpec",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_Compressor::@408161e29a6d5b274579": {
+      "artifactName": "react_codegen_Compressor",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnasyncstorage::@1596841e19ec5b9eeffe": {
+      "artifactName": "react_codegen_rnasyncstorage",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnclipboard::@6385240493dfcaf22ab7": {
+      "artifactName": "react_codegen_rnclipboard",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnreanimated::@8afabad14bfffa3f8b9a": {
+      "artifactName": "react_codegen_rnreanimated",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_pagerview::@7032a8921530ec438d60": {
+      "artifactName": "react_codegen_pagerview",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_RNImagePickerSpec::@f66ee9a2efecfb28bee4": {
+      "artifactName": "react_codegen_RNImagePickerSpec",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnscreens::@25bcbd507e98d3a854ad": {
+      "artifactName": "react_codegen_rnscreens",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_rnscreens.so",
+      "runtimeFiles": [
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so"
+      ]
+    },
+    "react_codegen_RNKC::@01e3c54a97c6e9d385b6": {
+      "artifactName": "react_codegen_RNKC",
+      "abi": "x86",
+      "output": "D:\\Desktop\\APP_KOOLA\\ChatApp\\android\\app\\build\\intermediates\\cxx\\Debug\\2v2cb4n5\\obj\\x86\\libreact_codegen_RNKC.so",
+      "runtimeFiles": [
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\reactnative\\libs\\android.x86\\libreactnative.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\5bfdf811371c923347fe339a9da5996d\\transformed\\react-android-0.76.9-debug\\prefab\\modules\\jsi\\libs\\android.x86\\libjsi.so",
+        "C:\\Users\\kieth\\.gradle\\caches\\8.10.2\\transforms\\ecaf85af74491e145fd7c1a1474ff70a\\transformed\\fbjni-0.6.0\\prefab\\modules\\fbjni\\libs\\android.x86\\libfbjni.so"
+      ]
+    }
+  }
+}

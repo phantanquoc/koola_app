@@ -46,4 +46,21 @@ export class RedisService implements OnModuleDestroy {
   async del(key: string): Promise<void> {
     await this.client.del(key);
   }
+
+  /**
+   * Atomically increments a counter key and sets its TTL on first creation.
+   * Uses a Lua script so the INCR + EXPIRE are executed as a single atomic op.
+   * Returns the new counter value after increment.
+   */
+  async incrementWithExpiry(key: string, ttlSeconds: number): Promise<number> {
+    const script = `
+      local current = redis.call('INCR', KEYS[1])
+      if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+      end
+      return current
+    `;
+    const result = await this.client.eval(script, 1, key, String(ttlSeconds));
+    return result as number;
+  }
 }

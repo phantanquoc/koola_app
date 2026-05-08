@@ -3,7 +3,12 @@ import { RedisService } from '../../common/redis/redis.service';
 import { CallType } from '../dto/call-initiate.dto';
 import { v4 as uuidv4 } from 'uuid';
 
-export type CallState = 'initiated' | 'active' | 'ended' | 'missed' | 'declined';
+export type CallState =
+  | 'initiated'
+  | 'active'
+  | 'ended'
+  | 'missed'
+  | 'declined';
 
 export interface CallSession {
   sessionId: string;
@@ -14,11 +19,14 @@ export interface CallSession {
   state: CallState;
   createdAt: string;
   participantCount: number;
+  /** ISO timestamp set when an FCM incoming-call push was sent for this session */
+  pushSentAt?: string;
 }
 
 const SESSION_TTL = 3600; // seconds
 const TIMEOUT_TTL = 60; // seconds
 const MAX_PARTICIPANTS = 8;
+const INITIATED_SESSIONS_KEY = 'initiated_sessions';
 
 @Injectable()
 export class CallSessionService {
@@ -81,11 +89,16 @@ export class CallSessionService {
     const participantsKey = `call_participants:${sessionId}`;
 
     await Promise.all([
-      this.redis.getClient().hset(key, session as unknown as Record<string, string>),
+      this.redis
+        .getClient()
+        .hset(key, session as unknown as Record<string, string>),
       this.redis.getClient().expire(key, SESSION_TTL),
       this.redis.getClient().set(timeoutKey, 'pending', 'EX', TIMEOUT_TTL),
       this.redis.getClient().sadd(participantsKey, params.initiatorId),
       this.redis.getClient().expire(participantsKey, SESSION_TTL),
+      this.redis
+        .getClient()
+        .zadd(INITIATED_SESSIONS_KEY, Date.now(), sessionId),
     ]);
 
     // Index both users so hasExistingSession can find this session without KEYS/SCAN
@@ -112,8 +125,16 @@ export class CallSessionService {
     const key = `call:${sessionId}`;
     await this.redis.getClient().hset(key, 'state', state);
 
-    if (state === 'active' || state === 'declined' || state === 'missed' || state === 'ended') {
-      await this.redis.getClient().del(`call_timeout:${sessionId}`);
+    if (
+      state === 'active' ||
+      state === 'declined' ||
+      state === 'missed' ||
+      state === 'ended'
+    ) {
+      await Promise.all([
+        this.redis.getClient().del(`call_timeout:${sessionId}`),
+        this.redis.getClient().zrem(INITIATED_SESSIONS_KEY, sessionId),
+      ]);
     }
 
     this.logger.log(`[CallSession] Session ${sessionId} → ${state}`);
@@ -126,7 +147,9 @@ export class CallSessionService {
 
     await Promise.all([
       this.redis.getClient().sadd(participantsKey, userId),
-      this.redis.getClient().hincrby(`call:${sessionId}`, 'participantCount', 1),
+      this.redis
+        .getClient()
+        .hincrby(`call:${sessionId}`, 'participantCount', 1),
     ]);
     return true;
   }
@@ -145,10 +168,27 @@ export class CallSessionService {
     ]);
 
     if (session && session.initiatorId && session.targetUserId) {
-      await this.removeActiveCallIndex(session.initiatorId, session.targetUserId, sessionId);
+      await this.removeActiveCallIndex(
+        session.initiatorId,
+        session.targetUserId,
+        sessionId,
+      );
     }
 
     this.logger.log(`[CallSession] Session ${sessionId} ended`);
+  }
+
+  /**
+   * Records that an FCM incoming-call push was sent for this session.
+   * Sets pushSentAt to the current ISO timestamp on the session hash.
+   * Used for observability — not for control flow.
+   */
+  async markPushSent(sessionId: string): Promise<void> {
+    const key = `call:${sessionId}`;
+    await this.redis
+      .getClient()
+      .hset(key, 'pushSentAt', new Date().toISOString());
+    this.logger.debug(`[CallSession] pushSentAt set for session ${sessionId}`);
   }
 
   /**
@@ -165,7 +205,11 @@ export class CallSessionService {
     ]);
 
     if (session && session.initiatorId && session.targetUserId) {
-      await this.removeActiveCallIndex(session.initiatorId, session.targetUserId, sessionId);
+      await this.removeActiveCallIndex(
+        session.initiatorId,
+        session.targetUserId,
+        sessionId,
+      );
     }
 
     this.logger.log(`[CallSession] Session ${sessionId} cleaned up`);
@@ -174,6 +218,49 @@ export class CallSessionService {
   async isActive(sessionId: string): Promise<boolean> {
     const session = await this.getSession(sessionId);
     return session?.state === 'initiated' || session?.state === 'active';
+  }
+
+  /**
+   * Returns all sessionIds from the active_calls index for a given user.
+   */
+  async getActiveSessionIds(userId: string): Promise<string[]> {
+    return this.redis.getClient().smembers(`active_calls:${userId}`);
+  }
+
+  /**
+   * Finds sessions that have been in 'initiated' state beyond the timeout threshold
+   * and marks them as 'missed'. Returns the sessions that were cleaned up.
+   * Used by CallSessionCronService as a safety-net for server-restart scenarios.
+   */
+  async cleanupStaleSessions(): Promise<CallSession[]> {
+    const cutoff = Date.now() - TIMEOUT_TTL * 1000;
+    const staleSessionIds = await this.redis
+      .getClient()
+      .zrangebyscore(INITIATED_SESSIONS_KEY, 0, cutoff);
+
+    const cleaned: CallSession[] = [];
+
+    for (const sessionId of staleSessionIds) {
+      const session = await this.getSession(sessionId);
+
+      // Session expired from Redis or already transitioned
+      if (!session || session.state !== 'initiated') {
+        await this.redis.getClient().zrem(INITIATED_SESSIONS_KEY, sessionId);
+        continue;
+      }
+
+      await this.updateSessionState(sessionId, 'missed');
+      if (session.initiatorId && session.targetUserId) {
+        await this.removeActiveCallIndex(
+          session.initiatorId,
+          session.targetUserId,
+          sessionId,
+        );
+      }
+      cleaned.push(session);
+    }
+
+    return cleaned;
   }
 
   /**
@@ -188,14 +275,18 @@ export class CallSessionService {
     targetUserId: string,
     conversationId: string,
   ): Promise<string | null> {
-    const sessionIds = await this.redis.getClient().smembers(`active_calls:${initiatorId}`);
+    const sessionIds = await this.redis
+      .getClient()
+      .smembers(`active_calls:${initiatorId}`);
 
     for (const sessionId of sessionIds) {
       const data = await this.redis.getClient().hgetall(`call:${sessionId}`);
 
       // Stale entry: hash has expired but sessionId is still in the Set
       if (!data || Object.keys(data).length === 0) {
-        await this.redis.getClient().srem(`active_calls:${initiatorId}`, sessionId);
+        await this.redis
+          .getClient()
+          .srem(`active_calls:${initiatorId}`, sessionId);
         continue;
       }
 

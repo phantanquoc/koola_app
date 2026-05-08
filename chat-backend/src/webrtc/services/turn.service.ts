@@ -17,11 +17,17 @@ export class TurnService {
 
   constructor(private readonly configService: ConfigService) {
     this.coturnHost = this.configService.get<string>('COTURN_IP', 'localhost');
-    this.coturnSecret = this.configService.get<string>('TURN_STATIC_SECRET', '');
+    this.coturnSecret = this.configService.get<string>(
+      'TURN_STATIC_SECRET',
+      '',
+    );
     this.coturnPort = this.configService.get<number>('COTURN_PORT', 3478);
   }
 
-  generateCredentials(targetUserId: string): { username: string; password: string } {
+  generateCredentials(targetUserId: string): {
+    username: string;
+    password: string;
+  } {
     const timestamp = Math.floor(Date.now() / 1000) + this.ttl;
     const username = `${timestamp}:${targetUserId}`;
     const password = crypto

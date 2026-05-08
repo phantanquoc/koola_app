@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
-import { webrtcService } from '../services/webrtc/webrtcService';
+import { webrtcService } from '../services/webrtc/WebRTCService';
 import { navigationRef } from '../navigation/RootNavigator';
 import { getAccessTokenInMemory } from '../services/api/apiService';
 
@@ -50,11 +50,14 @@ export function useIncomingCall() {
           onPress: () => {
             webrtcService.acceptCall(call.sessionId);
             if (navigationRef.isReady()) {
-              navigationRef.navigate('CallModal' as never, {
-                sessionId: call.sessionId,
-                callType: call.callType,
-                isInitiator: false,
-              } as never);
+              (navigationRef.navigate as (...args: unknown[]) => void)(
+                'CallModal',
+                {
+                  sessionId: call.sessionId,
+                  callType: call.callType,
+                  isInitiator: false,
+                },
+              );
             }
           },
         },

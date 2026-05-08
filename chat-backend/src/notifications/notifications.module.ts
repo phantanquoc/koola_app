@@ -3,9 +3,7 @@ import { NotificationsService } from './notifications.service';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [
-    forwardRef(() => UsersModule),
-  ],
+  imports: [forwardRef(() => UsersModule)],
   providers: [NotificationsService],
   exports: [NotificationsService],
 })

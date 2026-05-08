@@ -1,6 +1,5 @@
 import {
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -20,8 +19,22 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/gif',
   'image/webp',
   'image/svg+xml',
+  // Audio (voice notes)
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/mp4',
+  'audio/webm',
+  // Video
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
   // Documents
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   // Archives
   'application/zip',
   'application/x-rar-compressed',
@@ -47,7 +60,6 @@ export class SendMessageDto {
   @ApiPropertyOptional({ example: 'Hello!' })
   @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'content is required for text messages' })
   @MaxLength(10000, { message: 'Message exceeds 10,000 character limit' })
   content?: string;
 
@@ -72,4 +84,10 @@ export class SendMessageDto {
   @IsOptional()
   @IsString()
   clientMessageId?: string;
+
+  /** Duration in seconds for audio/video media */
+  @ApiPropertyOptional({ example: 12.5 })
+  @IsOptional()
+  @Min(0)
+  mediaDuration?: number;
 }

@@ -75,7 +75,11 @@ describe('CallSessionService — hasExistingSession', () => {
     // smembers returns [] — no sessions indexed for this user
     mockClient.smembers.mockResolvedValue([]);
 
-    const result = await service.hasExistingSession('user-A', 'user-B', 'conv-1');
+    const result = await service.hasExistingSession(
+      'user-A',
+      'user-B',
+      'conv-1',
+    );
 
     expect(result).toBeNull();
     expect(mockClient.smembers).toHaveBeenCalledWith('active_calls:user-A');
@@ -99,7 +103,11 @@ describe('CallSessionService — hasExistingSession', () => {
       participantCount: '1',
     });
 
-    const result = await service.hasExistingSession('user-A', 'user-B', 'conv-1');
+    const result = await service.hasExistingSession(
+      'user-A',
+      'user-B',
+      'conv-1',
+    );
 
     expect(result).toBe(sessionId);
     expect(mockClient.smembers).toHaveBeenCalledWith('active_calls:user-A');
@@ -117,14 +125,18 @@ describe('CallSessionService — hasExistingSession', () => {
       sessionId,
       initiatorId: 'user-A',
       targetUserId: 'user-B',
-      conversationId: 'conv-OTHER',  // different conversation
+      conversationId: 'conv-OTHER', // different conversation
       callType: 'audio',
       state: 'active',
       createdAt: new Date().toISOString(),
       participantCount: '2',
     });
 
-    const result = await service.hasExistingSession('user-A', 'user-B', 'conv-1');
+    const result = await service.hasExistingSession(
+      'user-A',
+      'user-B',
+      'conv-1',
+    );
 
     expect(result).toBeNull();
     expect(mockClient.smembers).toHaveBeenCalledWith('active_calls:user-A');
@@ -141,12 +153,19 @@ describe('CallSessionService — hasExistingSession', () => {
     // hgetall returns {} — the hash key has expired in Redis
     mockClient.hgetall.mockResolvedValue({});
 
-    const result = await service.hasExistingSession('user-A', 'user-B', 'conv-1');
+    const result = await service.hasExistingSession(
+      'user-A',
+      'user-B',
+      'conv-1',
+    );
 
     expect(result).toBeNull();
     expect(mockClient.smembers).toHaveBeenCalledWith('active_calls:user-A');
     expect(mockClient.hgetall).toHaveBeenCalledWith(`call:${staleSessionId}`);
     // stale entry must be cleaned up from the Set
-    expect(mockClient.srem).toHaveBeenCalledWith('active_calls:user-A', staleSessionId);
+    expect(mockClient.srem).toHaveBeenCalledWith(
+      'active_calls:user-A',
+      staleSessionId,
+    );
   });
 });

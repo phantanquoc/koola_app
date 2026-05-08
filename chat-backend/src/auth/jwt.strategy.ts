@@ -24,11 +24,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(
     payload: JwtPayload,
-  ): Promise<{ userId: string; email: string }> {
+  ): Promise<{ id: string; userId: string; email: string }> {
     const user = await this.userModel.findById(payload.sub).select('_id email');
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-    return { userId: payload.sub, email: payload.email };
+    // Expose the user id under both `id` (used by `@CurrentUser('id')` in
+    // controllers) and `userId` (kept for backward-compat with any older
+    // code that reads `request.user.userId`). Both refer to the same value.
+    return { id: payload.sub, userId: payload.sub, email: payload.email };
   }
 }

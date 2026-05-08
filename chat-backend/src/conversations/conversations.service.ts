@@ -214,7 +214,8 @@ export class ConversationsService {
       lastReadMessageId: null,
     });
 
-    const displayName = user.displayName || user.phone || user.email || memberId;
+    const displayName =
+      user.displayName || user.phone || user.email || memberId;
     await this.createSystemMessage(
       conversationId,
       `${displayName} was added to the group`,
@@ -245,7 +246,11 @@ export class ConversationsService {
     if (!targetMember)
       throw new NotFoundException('User not found in this conversation');
     const targetUser = await this.usersService.findById(targetId);
-    const targetName = targetUser?.displayName || targetUser?.phone || targetUser?.email || targetId;
+    const targetName =
+      targetUser?.displayName ||
+      targetUser?.phone ||
+      targetUser?.email ||
+      targetId;
     const isTargetAdmin = targetMember.role === MemberRole.ADMIN;
     const remainingMembers = conv.members.filter(
       (m) => m.userId.toString() !== targetId,
@@ -289,7 +294,8 @@ export class ConversationsService {
     if (!member) throw new NotFoundException('Conversation not found');
 
     const user = await this.usersService.findById(userId);
-    const displayName = user?.displayName || user?.phone || user?.email || userId;
+    const displayName =
+      user?.displayName || user?.phone || user?.email || userId;
 
     const isLastAdmin =
       member.role === MemberRole.ADMIN &&
@@ -345,7 +351,10 @@ export class ConversationsService {
         .sort({ lastMessageAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('members.userId', '_id phone email displayName avatar isOnline'),
+        .populate(
+          'members.userId',
+          '_id phone email displayName avatar isOnline',
+        ),
       this.conversationModel.countDocuments({ _id: { $in: convIds } }),
     ]);
 
@@ -366,10 +375,17 @@ export class ConversationsService {
   ): Promise<{ conversation: any; messages: any[] }> {
     const conv = await this.conversationModel
       .findById(conversationId)
-      .populate('members.userId', '_id phone email displayName avatar isOnline');
+      .populate(
+        'members.userId',
+        '_id phone email displayName avatar isOnline',
+      );
     if (!conv) throw new NotFoundException('Conversation not found');
 
-    const isMember = conv.members.some((m) => m.userId?.toString() === userId || (m.userId as any)?._id?.toString() === userId);
+    const isMember = conv.members.some(
+      (m) =>
+        m.userId?.toString() === userId ||
+        (m.userId as any)?._id?.toString() === userId,
+    );
     if (!isMember) throw new NotFoundException('Conversation not found');
 
     const uc = await this.userConversationModel.findOne({
@@ -456,22 +472,36 @@ export class ConversationsService {
 
   // ─── Pin/Unpin ────────────────────────────────────────────────────────────
 
-  async pinMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
+  async pinMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ): Promise<void> {
     const conv = await this.findByIdOrFail(conversationId);
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException();
 
     // Check if already pinned
-    const alreadyPinned = conv.pinnedMessages?.some((p) => p.messageId === messageId);
+    const alreadyPinned = conv.pinnedMessages?.some(
+      (p) => p.messageId === messageId,
+    );
     if (alreadyPinned) return;
 
     await this.conversationModel.updateOne(
       { _id: conversationId },
-      { $push: { pinnedMessages: { messageId, pinnedBy: userId, pinnedAt: new Date() } } },
+      {
+        $push: {
+          pinnedMessages: { messageId, pinnedBy: userId, pinnedAt: new Date() },
+        },
+      },
     );
   }
 
-  async unpinMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
+  async unpinMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ): Promise<void> {
     const conv = await this.findByIdOrFail(conversationId);
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException();

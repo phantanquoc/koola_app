@@ -261,7 +261,11 @@ export class MediaService implements OnModuleInit {
   async getObjectStream(
     userId: string,
     mediaKey: string,
-  ): Promise<{ stream: NodeJS.ReadableStream; mimeType: string; size: number }> {
+  ): Promise<{
+    stream: NodeJS.ReadableStream;
+    mimeType: string;
+    size: number;
+  }> {
     const media = await this.mediaModel.findOne({ mediaKey });
     if (!media || media.deleted) {
       throw new NotFoundException('Media not found');

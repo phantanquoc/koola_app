@@ -36,6 +36,11 @@ export {
   ],
   controllers: [ConversationsController],
   providers: [ConversationsService, MembershipService, UnreadService],
-  exports: [ConversationsService, MembershipService, UnreadService, MongooseModule],
+  exports: [
+    ConversationsService,
+    MembershipService,
+    UnreadService,
+    MongooseModule,
+  ],
 })
 export class ConversationsModule {}

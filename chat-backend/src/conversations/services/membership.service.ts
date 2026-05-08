@@ -1,10 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  ConversationDoc,
-  ConversationDocument,
-} from '../conversation.schema';
+import { ConversationDoc, ConversationDocument } from '../conversation.schema';
 
 @Injectable()
 export class MembershipService {
@@ -25,7 +22,10 @@ export class MembershipService {
   ): Promise<ConversationDocument> {
     const conv = await this.conversationModel
       .findById(conversationId)
-      .populate('members.userId', '_id phone email displayName avatar isOnline');
+      .populate(
+        'members.userId',
+        '_id phone email displayName avatar isOnline',
+      );
     if (!conv) throw new NotFoundException('Conversation not found');
 
     const isMember = conv.members.some(
@@ -42,10 +42,7 @@ export class MembershipService {
    * Return true if userId is a member of conversationId; false otherwise.
    * Never throws.
    */
-  async isMember(
-    userId: string,
-    conversationId: string,
-  ): Promise<boolean> {
+  async isMember(userId: string, conversationId: string): Promise<boolean> {
     if (!Types.ObjectId.isValid(conversationId)) return false;
     const conv = await this.conversationModel
       .findById(conversationId)
@@ -66,7 +63,7 @@ export class MembershipService {
       .select('members')
       .lean();
     if (!conv) return [];
-    return conv.members.map((m) => m.userId?.toString()).filter(Boolean) as string[];
+    return conv.members.map((m) => m.userId?.toString()).filter(Boolean);
   }
 
   /**
@@ -84,6 +81,18 @@ export class MembershipService {
       })
       .select('_id')
       .lean();
-    return convs.map((c) => (c._id as Types.ObjectId).toString());
+    return convs.map((c) => c._id.toString());
+  }
+
+  /**
+   * Return the IDs of all conversations where userId is a member.
+   */
+  async getUserConversationIds(userId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(userId)) return [];
+    const convs = await this.conversationModel
+      .find({ 'members.userId': new Types.ObjectId(userId) })
+      .select('_id')
+      .lean();
+    return convs.map((c) => c._id.toString());
   }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { offlineQueueService } from '../services/OfflineQueueService';
+import { generateClientId } from '../utils/clientId';
 import type { QueuedMessage, MessageType } from '../types';
 
 export function useOfflineQueue() {
@@ -15,7 +15,7 @@ export function useOfflineQueue() {
 
   const sendViaQueue = useCallback(
     (conversationId: string, content: string, type: MessageType = 'text') => {
-      const id = uuidv4();
+      const id = generateClientId();
       const msg: QueuedMessage = {
         id,
         conversationId,

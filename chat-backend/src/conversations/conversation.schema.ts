@@ -27,6 +27,20 @@ export class Member {
 
 export const MemberSchema = SchemaFactory.createForClass(Member);
 
+@Schema()
+export class PinnedMessage {
+  @Prop({ required: true, type: String })
+  messageId: string;
+
+  @Prop({ required: true, type: String })
+  pinnedBy: string;
+
+  @Prop({ required: true, type: Date, default: () => new Date() })
+  pinnedAt: Date;
+}
+
+export const PinnedMessageSchema = SchemaFactory.createForClass(PinnedMessage);
+
 @Schema({ timestamps: true })
 export class ConversationDoc {
   @Prop({ required: true, enum: ConversationType })
@@ -49,6 +63,9 @@ export class ConversationDoc {
 
   @Prop({ type: String, default: null })
   lastMessagePreview: string | null;
+
+  @Prop({ type: [PinnedMessageSchema], default: [] })
+  pinnedMessages: PinnedMessage[];
 }
 
 export const ConversationDocSchema =

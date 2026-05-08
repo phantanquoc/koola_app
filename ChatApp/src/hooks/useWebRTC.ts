@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { webrtcService, CallState, IceServerConfig } from '../services/webrtc/webrtcService';
+import { webrtcService, CallState, IceServerConfig } from '../services/webrtc/WebRTCService';
 import { MediaStream } from 'react-native-webrtc';
 
 interface UseWebRTCParams {
@@ -116,6 +116,17 @@ export function useWebRTC(params: UseWebRTCParams) {
     onCallEnded?.();
   }, [sessionId, onCallEnded]);
 
+  const cancelCall = useCallback(() => {
+    webrtcService.cancelCall(sessionId);
+    setCallState('ended');
+    if (timerRef.current) clearInterval(timerRef.current);
+    onCallEnded?.();
+  }, [sessionId, onCallEnded]);
+
+  const switchCamera = useCallback(() => {
+    webrtcService.switchCamera();
+  }, []);
+
   const formatDuration = useCallback((seconds: number): string => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -133,5 +144,7 @@ export function useWebRTC(params: UseWebRTCParams) {
     toggleMute,
     toggleCamera,
     endCall,
+    cancelCall,
+    switchCamera,
   };
 }

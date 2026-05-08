@@ -116,7 +116,11 @@ export class UsersService {
     currentUserId: string,
     cursor?: string,
     limit = 20,
-  ): Promise<{ items: UserDocument[]; hasMore: boolean; nextCursor: string | null }> {
+  ): Promise<{
+    items: UserDocument[];
+    hasMore: boolean;
+    nextCursor: string | null;
+  }> {
     // Escape regex special characters to prevent injection
     const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const searchRegex = new RegExp(escapedQuery, 'i');
@@ -143,7 +147,9 @@ export class UsersService {
     const hasMore = results.length > limit;
     const items = hasMore ? results.slice(0, limit) : results;
     const nextCursor =
-      hasMore && items.length > 0 ? (items[items.length - 1] as any)._id.toString() : null;
+      hasMore && items.length > 0
+        ? (items[items.length - 1] as any)._id.toString()
+        : null;
 
     return { items: items as UserDocument[], hasMore, nextCursor };
   }

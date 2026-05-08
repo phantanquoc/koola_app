@@ -65,7 +65,13 @@ export class ChatGateway
 
     // Wire blurhash callback → broadcast message_updated with blurhash
     this.messagesService.setBlurhashCallback(
-      (messageId: string, conversationId: string, blurhash: string, width: number, height: number) => {
+      (
+        messageId: string,
+        conversationId: string,
+        blurhash: string,
+        width: number,
+        height: number,
+      ) => {
         this.io.to(`conversation:${conversationId}`).emit('message_updated', {
           messageId,
           conversationId,
@@ -339,7 +345,8 @@ export class ChatGateway
   @UseGuards(WsAuthGuard)
   @SubscribeMessage('react_message')
   async handleReactMessage(
-    @MessageBody() payload: { conversationId: string; messageId: string; emoji: string },
+    @MessageBody()
+    payload: { conversationId: string; messageId: string; emoji: string },
     @ConnectedSocket() client: AuthSocket,
   ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
@@ -350,13 +357,15 @@ export class ChatGateway
         userId,
         payload.emoji,
       );
-      this.io.to(`conversation:${payload.conversationId}`).emit('message_reaction', {
-        messageId: payload.messageId,
-        conversationId: payload.conversationId,
-        userId,
-        emoji: result.emoji,
-        action: result.action,
-      });
+      this.io
+        .to(`conversation:${payload.conversationId}`)
+        .emit('message_reaction', {
+          messageId: payload.messageId,
+          conversationId: payload.conversationId,
+          userId,
+          emoji: result.emoji,
+          action: result.action,
+        });
     } catch (err) {
       client.emit('error', { code: 400, message: (err as Error).message });
     }
@@ -372,12 +381,18 @@ export class ChatGateway
   ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
     try {
-      await this.conversationsService.pinMessage(payload.conversationId, payload.messageId, userId);
-      this.io.to(`conversation:${payload.conversationId}`).emit('message_pinned', {
-        conversationId: payload.conversationId,
-        messageId: payload.messageId,
-        pinnedBy: userId,
-      });
+      await this.conversationsService.pinMessage(
+        payload.conversationId,
+        payload.messageId,
+        userId,
+      );
+      this.io
+        .to(`conversation:${payload.conversationId}`)
+        .emit('message_pinned', {
+          conversationId: payload.conversationId,
+          messageId: payload.messageId,
+          pinnedBy: userId,
+        });
     } catch (err) {
       client.emit('error', { code: 400, message: (err as Error).message });
     }
@@ -391,11 +406,17 @@ export class ChatGateway
   ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
     try {
-      await this.conversationsService.unpinMessage(payload.conversationId, payload.messageId, userId);
-      this.io.to(`conversation:${payload.conversationId}`).emit('message_unpinned', {
-        conversationId: payload.conversationId,
-        messageId: payload.messageId,
-      });
+      await this.conversationsService.unpinMessage(
+        payload.conversationId,
+        payload.messageId,
+        userId,
+      );
+      this.io
+        .to(`conversation:${payload.conversationId}`)
+        .emit('message_unpinned', {
+          conversationId: payload.conversationId,
+          messageId: payload.messageId,
+        });
     } catch (err) {
       client.emit('error', { code: 400, message: (err as Error).message });
     }

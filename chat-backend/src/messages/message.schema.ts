@@ -96,3 +96,7 @@ MessageSchema.index({ conversationId: 1, createdAt: -1 });
 MessageSchema.index({ senderId: 1 });
 MessageSchema.index({ clientMessageId: 1, conversationId: 1 });
 MessageSchema.index({ readBy: 1 }); // multikey index for per-member read tracking
+MessageSchema.index(
+  { content: 'text' },
+  { default_language: 'none', name: 'content_text' },
+); // full-text search; default_language 'none' preserves diacritics

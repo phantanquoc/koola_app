@@ -1,0 +1,203 @@
+# AGENTS.md
+
+Instructions for AI agents (Claude Code, Cursor, Copilot, etc.) working in this repository.
+
+A symlink/pointer `CLAUDE.md` can reference this file so Claude Code picks up the same rules.
+
+---
+
+## Project Overview
+
+**APP_KOOLA** — A chat application monorepo with three components:
+
+| Component | Path | Stack |
+|-----------|------|-------|
+| Mobile app | `ChatApp/` | React Native 0.76 + TypeScript + React Navigation |
+| Backend API | `chat-backend/` | NestJS 11 + MongoDB (Mongoose) + Socket.IO |
+| Local infra | `infra-local/` | Docker Compose: MongoDB, Redis, MinIO, Coturn |
+
+Feature workflow is driven by **OpenSpec** (`openspec/` directory) — proposals, specs, and archived changes.
+
+---
+
+## Commands
+
+### Backend (`chat-backend/`)
+```bash
+npm run start:dev        # NestJS watch mode, listens on :3000
+npm run build            # Compile TS → dist/
+npm run lint             # ESLint --fix
+npm test                 # Jest (*.spec.ts)
+npm run test:e2e         # E2E Jest config
+```
+
+### Mobile (`ChatApp/`)
+```bash
+npx react-native start               # Metro bundler on :8081
+npx react-native run-android         # Build + install debug APK
+npm run tsc                          # tsc --noEmit
+npm run lint                         # ESLint
+```
+
+### Infrastructure (`infra-local/`)
+```bash
+docker compose up -d                 # Start MongoDB + Redis + MinIO + Coturn
+docker compose down                  # Stop
+docker compose down -v               # Stop + wipe volumes (reset data)
+docker ps                            # Verify containers healthy
+```
+
+### Emulator setup (first run each session)
+```bash
+emulator -avd Pixel_8 &              # Launch AVD
+adb reverse tcp:3000 tcp:3000        # Map backend to emulator
+adb reverse tcp:8081 tcp:8081        # Map Metro to emulator
+```
+
+---
+
+## Architecture
+
+### Backend — NestJS modules
+- **`auth/`** — JWT + refresh token, phone OTP (Plivo), email OTP (Nodemailer)
+- **`users/`** — Profile, search
+- **`conversations/`** — 1-1 + group, member management
+- **`messages/`** — Send/list/react/delete, sync (incremental pull)
+- **`media/`** — MinIO presigned URLs (upload + download direct from MinIO, not proxied)
+- **`gateway/`** — Socket.IO gateway for chat events, **Redis pub/sub adapter** (`main.ts:11`) for horizontal scale
+- **`webrtc/`** — WebRTC signaling over separate namespace
+- **Global:** `HttpExceptionFilter` + `LoggingInterceptor` + `ValidationPipe` (whitelist + forbidNonWhitelisted)
+
+### Mobile — React Native
+- **`navigation/`** — Root → Auth/Main → tab stacks (Chats/Contacts/Settings)
+- **`contexts/AuthContext.tsx`** — Session restore via refresh token, socket + webrtc singletons connect on login
+- **`services/`**
+  - `api/apiService.ts` — Axios with access token in-memory, auto-refresh on 401
+  - `socket/socketService.ts` — Socket.IO singleton
+  - `webrtc/webrtcService.ts` — WebRTC signaling singleton
+  - `OfflineQueueService.ts` — Queues sends when offline, flushes on reconnect
+  - `push/pushNotificationService.ts` — FCM token registration
+- **`config/env.ts`** — `API_URL` points to `localhost:3000` in dev (requires `adb reverse`)
+
+### Data flow — sending a message
+```
+RN screen → apiService.post → NestJS controller → service (saves to Mongo)
+                                    ↓
+                              Socket.IO gateway emits to conversation room
+                                    ↓
+                        Redis adapter fanout → other connected clients
+```
+
+---
+
+## OpenSpec Workflow
+
+Feature work is tracked through spec artifacts — **do not skip this when adding features**.
+
+```
+openspec/
+├── changes/
+│   ├── <active-change>/        # In-progress: proposal.md, tasks.md, specs/
+│   └── archive/YYYY-MM-DD-*/   # Completed changes
+└── specs/
+    └── <capability>/spec.md    # Current living specs
+```
+
+Available skills (invoke with `/<name>`):
+- `/proposal` — create new change artifacts
+- `/apply` — implement tasks from a change
+- `/verify` — validate implementation matches spec
+- `/archive` — finalize and move to archive
+- `/autopilot` — runs proposal → apply → verify → archive autonomously
+
+**Rule:** For non-trivial features, create a proposal first. Bug fixes and chores can skip this.
+
+---
+
+## Conventions
+
+- TypeScript strict on both ends
+- Backend tests: `*.spec.ts` colocated with source in `src/`
+- DTOs use `class-validator` decorators (`whitelist` strips unknown props)
+- Mongoose schemas define indexes via `schema.index()` — avoid `index: true` on the decorator (duplicate warning)
+- Socket events: use typed payloads; include `conversationId` so Redis adapter can route
+- Env: backend reads from `chat-backend/.env` (see `infra-local/backend/.env.example`)
+
+---
+
+## Gotchas
+
+| Issue | Fix |
+|-------|-----|
+| Android build fails with `allowBackup` manifest merger error | `tools:replace="android:allowBackup"` already set in `AndroidManifest.xml` — don't remove |
+| Emulator can't reach backend | Run `adb reverse tcp:3000 tcp:3000` (env.ts uses `localhost`, not `10.0.2.2`) |
+| Login returns "Thông tin không hợp lệ" with no server response | Backend not running — start `npm run start:dev` in `chat-backend/` |
+| MongoDB "Duplicate schema index" warning | Harmless, comes from `Media` schema using both `index: true` and `schema.index()` |
+| Gradle build says `gradlew.bat` not recognized | Run from `ChatApp/android/` using `./gradlew.bat app:installDebug` (forward slash) |
+| Coturn on Windows Docker Desktop | STUN/TURN won't work locally — test calls on Linux/WSL or Proxmox |
+
+---
+
+## Self-Check Before Finishing
+
+Before declaring a task done:
+
+- [ ] Backend: `npm run lint` + `npm test` pass
+- [ ] Mobile: `npm run tsc` + `npm run lint` pass
+- [ ] No new `any` types introduced without justification
+- [ ] If feature touched OpenSpec change, tasks in `tasks.md` are marked complete
+- [ ] No commits created unless the user explicitly asked
+
+---
+
+## Never Do
+
+- **Never** modify `.env` files or commit secrets
+- **Never** run `docker compose down -v` without confirming — it wipes MongoDB data
+- **Never** bypass `ValidationPipe` in backend (no `@SkipValidation` hacks)
+- **Never** use `find`/`grep` bash commands when `Glob`/`Grep` tools are available
+- **Never** force-push to `master` without explicit request
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **APP_KOOLA** (4357 symbols, 6463 relationships, 140 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/APP_KOOLA/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/APP_KOOLA/clusters` | All functional areas |
+| `gitnexus://repo/APP_KOOLA/processes` | All execution flows |
+| `gitnexus://repo/APP_KOOLA/process/{name}` | Step-by-step execution trace |
+
+## CLI
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->

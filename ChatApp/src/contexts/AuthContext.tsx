@@ -11,7 +11,7 @@ import { authApi, usersApi, setAccessTokenInMemory } from '../services/api/apiSe
 import { asyncStorage } from '../services/storage/asyncStorage';
 import { socketService } from '../services/socket/socketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
-import { webrtcService } from '../services/webrtc/webrtcService';
+import { webrtcService } from '../services/webrtc/WebRTCService';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -20,6 +20,14 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
+  registerInit: (body: {
+    phone: string;
+    email: string;
+    password: string;
+    displayName: string;
+  }) => Promise<void>;
+  verifyOtp: (email: string, otp: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -135,6 +143,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [],
   );
 
+  const registerInit = useCallback(
+    async (body: {
+      phone: string;
+      email: string;
+      password: string;
+      displayName: string;
+    }) => {
+      await authApi.registerInit(body);
+    },
+    [],
+  );
+
+  const verifyOtp = useCallback(async (email: string, otp: string) => {
+    const data = await authApi.verifyOtp(email, otp);
+    setAccessTokenInMemory(data.accessToken);
+    await asyncStorage.setAccessToken(data.accessToken);
+    await asyncStorage.setRefreshToken(data.refreshToken);
+
+    const me = await usersApi.getMe();
+    setUser(me);
+
+    socketService.connect(data.accessToken);
+    webrtcService.connect(data.accessToken);
+    pushNotificationService.registerToken().catch(() => {});
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const me = await usersApi.getMe();
+    setUser(me);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await pushNotificationService.unregisterToken();
@@ -155,7 +194,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated, isLoading, login, register, logout }}>
+      value={{
+        user,
+        isAuthenticated,
+        isLoading,
+        login,
+        register,
+        registerInit,
+        verifyOtp,
+        refreshUser,
+        logout,
+      }}>
       {children}
     </AuthContext.Provider>
   );

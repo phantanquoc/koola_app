@@ -95,12 +95,87 @@ src/webrtc/
     ws-auth.guard.ts          ← reuse from gateway
 ```
 
-## Files to Modify
+## Offline-Push Flow (added 2026-05-08)
+
+### Overview
+
+When a caller initiates a call and the callee has no active `/webrtc` socket, the backend now sends a high-priority FCM data-only push to all of the callee's registered FCM tokens and holds the session alive for a 25-second grace window.
+
+### Flow
 
 ```
-src/app.module.ts              ← import WebrtcModule
-.env.example                   ← COTURN_HOST, COTURN_SECRET, COTURN_PORT
+call_initiate received
+  → fetchSockets('user:<calleeId>') returns []  (callee offline)
+  → usersService.findById(calleeId) → check fcmTokens[]
+  → if fcmTokens empty:
+      updateSessionState('missed')
+      emit call_missed to caller (reason: 'User unreachable')
+      return
+  → if fcmTokens present:
+      emit call_initiated to caller (same payload as online case)
+      callNotificationsService.sendIncomingCallPush(...)  ← non-blocking
+      callSessionService.markPushSent(sessionId)          ← sets pushSentAt in Redis
+      setTimeout(25s) → if still 'initiated': endSession + emit call_missed (reason: 'No answer')
+      callTimeouts.set(sessionId, handle)
 ```
+
+### FCM Payload Shape
+
+Data-only (no `notification` field) so the mobile FCM background handler can wake the app:
+
+```json
+{
+  "data": {
+    "type": "incoming_call",
+    "sessionId": "<uuid>",
+    "callerId": "<userId>",
+    "callerName": "<displayName>",
+    "callerAvatar": "<url or empty string>",
+    "callType": "audio | video",
+    "conversationId": "<convId>",
+    "expiresAt": "<epoch ms as string>"
+  },
+  "android": { "priority": "high", "ttl": 20000 },
+  "apns": {
+    "headers": { "apns-priority": "10", "apns-push-type": "background" },
+    "payload": { "aps": { "content-available": 1 } }
+  }
+}
+```
+
+All `data` values are strings (FCM protocol requirement). `expiresAt` is `String(Date.now() + 25000)`.
+
+### Grace Period
+
+- Duration: 25 seconds (shorter than online 30s timeout — device needs wake-up time but holding infra longer is wasteful)
+- Timer stored in `callTimeouts` Map (same as online timeout — only ONE timer per sessionId)
+- Cleared by: `call_accept`, `call_decline`, `call_cancel`, `call_end`, `call_failed`, disconnect
+- Safety-net: `CallSessionCronService` (every 15s) reaps stale `initiated` sessions after 60s threshold — covers server-restart scenario (~75s recovery window)
+
+### Redis Session Fields
+
+```
+call:<sessionId> = {
+  ...existing fields...
+  pushSentAt?: ISO string   ← set when FCM push was attempted (observability only)
+}
+```
+
+### FCM Error Handling
+
+`sendIncomingCallPush` never throws. If FCM fails:
+- Error is logged with `sessionId`
+- `pushSentAt` is still set (marks that a push attempt happened)
+- Grace timer still starts
+- Worst case: call times out at 25s (same as pre-change offline UX — no regression)
+
+### Mobile-Side Follow-Up (Deferred)
+
+Mobile must implement an FCM background data handler for `type='incoming_call'` to surface full-screen incoming-call UI (CallKit on iOS / ConnectionService + foreground service on Android). This is deferred to a separate change. Until then, the push is a no-op on the device side — behavior is identical to the pre-change offline experience.
+
+iOS VoIP push (PushKit + APNs VoIP cert) is also deferred. Current APNs delivery uses `apns-push-type: background` with regular FCM tokens, which is best-effort on iOS.
+
+
 
 ## Dependencies
 

@@ -56,7 +56,7 @@ const ProfileScreen: React.FC = () => {
     try {
       const { conversation } = await conversationsApi.startDirectChat(userId);
       const parent = navigation.getParent();
-      parent?.navigate('ChatsTab', {
+      parent?.navigate('ChatTab', {
         screen: 'Chat',
         params: { conversationId: conversation._id },
       } as never);

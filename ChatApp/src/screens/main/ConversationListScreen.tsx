@@ -131,7 +131,8 @@ const ConversationListScreen: React.FC = () => {
   };
 
   const handleStartChat = () => {
-    navigation.getParent()?.navigate('ContactsTab');
+    // Contacts are now a sub-tab within ChatHomeScreen (ChatSubTabParamList)
+    navigation.getParent()?.navigate('Contacts');
   };
 
   if (error && conversations.length === 0) {

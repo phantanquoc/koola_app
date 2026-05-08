@@ -19,7 +19,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     }),
     UsersModule,
     ConversationsModule,
-    MessagesModule,
+    forwardRef(() => MessagesModule),
     forwardRef(() => NotificationsModule),
   ],
   providers: [ChatGateway, WsAuthGuard],

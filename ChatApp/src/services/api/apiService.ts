@@ -11,6 +11,10 @@ import type {
   PaginatedResponse,
   UserSearchResult,
   User,
+  Business,
+  BusinessListResponse,
+  CreateBusinessPayload,
+  MessageSearchItem,
 } from '../../types';
 
 // ─── Axios Instance ───────────────────────────────────────────────────────────
@@ -99,6 +103,31 @@ export const authApi = {
   async logout(refreshToken: string) {
     await apiClient.post('/auth/logout', { refreshToken });
   },
+  async registerInit(body: {
+    phone: string;
+    email: string;
+    password: string;
+    displayName: string;
+  }): Promise<{ message: string }> {
+    const { data } = await apiClient.post('/auth/register/init', body);
+    return data;
+  },
+  async verifyOtp(
+    email: string,
+    otp: string,
+  ): Promise<LoginResponse> {
+    const { data } = await apiClient.post('/auth/register/verify', {
+      email,
+      otp,
+    });
+    return data;
+  },
+  async resendOtp(email: string): Promise<{ message: string }> {
+    const { data } = await apiClient.post('/auth/register/resend-otp', {
+      email,
+    });
+    return data;
+  },
 };
 
 // ─── Users API ────────────────────────────────────────────────────────────────
@@ -131,28 +160,96 @@ export const usersApi = {
     const { data } = await apiClient.get('/users/search', { params });
     return data;
   },
+  async getUserById(userId: string): Promise<User | null> {
+    // Workaround: backend doesn't yet expose GET /users/:id.
+    // Use search with exact _id and filter client-side.
+    try {
+      const { data } = await apiClient.get('/users/search', {
+        params: { q: userId },
+      });
+      const items = (data as PaginatedResponse<UserSearchResult>).items;
+      const match = items.find((u) => u._id === userId);
+      if (!match) return null;
+      return {
+        _id: match._id,
+        email: match.email,
+        displayName: match.displayName,
+        avatar: match.avatar || '',
+        isOnline: match.isOnline,
+        lastSeen: match.lastSeen,
+        settings: { notificationsEnabled: true },
+      };
+    } catch {
+      return null;
+    }
+  },
 };
 
 // ─── Conversations API ────────────────────────────────────────────────────────
+
+/**
+ * Normalize a conversation returned by the backend.
+ *
+ * Backend populates `members.userId` into a full User object via Mongoose
+ * `.populate()`. Mobile code — and the `Conversation` type — expects
+ * `userId: string` plus a separate `user?: User` field. This adapter
+ * flattens the populated form into that shape so callers do not need to
+ * defensively unwrap it.
+ */
+function normalizeConversation(raw: unknown): Conversation {
+  const conv = raw as Omit<Conversation, 'members'> & {
+    members: Array<{
+      userId: string | (User & { _id: string });
+      user?: User;
+      role: 'admin' | 'member';
+      joinedAt: string;
+    }>;
+  };
+  const members = conv.members.map((m) => {
+    const uid: unknown = m.userId;
+    if (uid && typeof uid === 'object' && '_id' in (uid as object)) {
+      const populated = uid as User & { _id: string };
+      return {
+        role: m.role,
+        joinedAt: m.joinedAt,
+        userId: populated._id,
+        user: populated,
+      };
+    }
+    return {
+      role: m.role,
+      joinedAt: m.joinedAt,
+      userId: uid as string,
+      user: m.user,
+    };
+  });
+  return { ...conv, members } as Conversation;
+}
 
 export const conversationsApi = {
   async list(page = 1, limit = 20): Promise<ConversationListResponse> {
     const { data } = await apiClient.get('/conversations', {
       params: { page, limit },
     });
-    return data;
+    return {
+      ...data,
+      conversations: (data.conversations as unknown[]).map(normalizeConversation),
+    };
   },
   async getDetails(conversationId: string) {
     const { data } = await apiClient.get(`/conversations/${conversationId}`);
-    return data;
+    return {
+      ...data,
+      conversation: normalizeConversation(data.conversation),
+    };
   },
   async createGroup(name: string, memberIds: string[]): Promise<{ conversation: Conversation }> {
     const { data } = await apiClient.post('/conversations', { name, memberIds });
-    return data;
+    return { ...data, conversation: normalizeConversation(data.conversation) };
   },
   async startDirectChat(userId: string): Promise<{ conversation: Conversation; isNew: boolean }> {
     const { data } = await apiClient.post(`/conversations/direct/${userId}`);
-    return data;
+    return { ...data, conversation: normalizeConversation(data.conversation) };
   },
 };
 
@@ -181,6 +278,7 @@ export const messagesApi = {
       mediaUrl?: string;
       mediaMimeType?: string;
       mediaSize?: number;
+      mediaDuration?: number;
     },
   ) {
     const { data } = await apiClient.post(
@@ -204,6 +302,127 @@ export const messagesApi = {
     if (since) params.since = since;
     if (cursor) params.cursor = cursor;
     const { data } = await apiClient.get('/messages/sync', { params });
+    return data;
+  },
+  async forward(messageId: string, targetConversationIds: string[]) {
+    const { data } = await apiClient.post(`/messages/${messageId}/forward`, {
+      targetConversationIds,
+    });
+    return data;
+  },
+  async searchMessages(
+    q: string,
+    cursor?: string,
+    limit = 20,
+  ): Promise<{
+    items: MessageSearchItem[];
+    nextCursor: string | null;
+    total: number;
+  }> {
+    const params: Record<string, string | number> = { q, limit };
+    if (cursor) params.cursor = cursor;
+    const { data } = await apiClient.get('/messages/search', { params });
+    return data;
+  },
+  async toggleReaction(
+    conversationId: string,
+    messageId: string,
+    emoji: string,
+  ) {
+    const { data } = await apiClient.put(
+      `/conversations/${conversationId}/messages/${messageId}/react`,
+      { emoji },
+    );
+    return data;
+  },
+  async deleteForMe(conversationId: string, messageId: string) {
+    const { data } = await apiClient.put(
+      `/conversations/${conversationId}/messages/${messageId}/delete-for-me`,
+    );
+    return data;
+  },
+  async markRead(conversationId: string, upToTimestamp?: string) {
+    const { data } = await apiClient.post(
+      `/conversations/${conversationId}/messages/read`,
+      upToTimestamp ? { upToTimestamp } : {},
+    );
+    return data;
+  },
+};
+
+// ─── Media API ────────────────────────────────────────────────────────────────
+
+export const mediaApi = {
+  async requestUploadUrl(body: {
+    filename: string;
+    mimeType: string;
+    size: number;
+    conversationId?: string;
+  }): Promise<{ uploadUrl: string; mediaKey: string; expiresAt: string }> {
+    const { data } = await apiClient.post('/media/upload', body);
+    return data;
+  },
+  async getDownloadUrl(
+    mediaKey: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    const { data } = await apiClient.get(
+      `/media/${encodeURIComponent(mediaKey)}`,
+    );
+    return data;
+  },
+  async deleteMedia(mediaKey: string): Promise<{ deleted: boolean }> {
+    const { data } = await apiClient.delete(
+      `/media/${encodeURIComponent(mediaKey)}`,
+    );
+    return data;
+  },
+};
+
+// ─── Businesses API ───────────────────────────────────────────────────────────
+
+export const businessesApi = {
+  async list(params?: {
+    q?: string;
+    relationshipType?: string;
+    category?: string;
+    province?: string;
+    cursor?: string;
+    limit?: number | string;
+  }): Promise<BusinessListResponse> {
+    const { data } = await apiClient.get('/businesses', { params });
+    return data;
+  },
+  async getById(id: string): Promise<Business> {
+    const { data } = await apiClient.get(`/businesses/${id}`);
+    return data;
+  },
+  async getMine(): Promise<Business[]> {
+    const { data } = await apiClient.get('/businesses/me');
+    return data;
+  },
+  async getMyConnections(): Promise<{ items: Business[] }> {
+    const { data } = await apiClient.get('/businesses/connected');
+    return data;
+  },
+  async create(
+    body: CreateBusinessPayload,
+  ): Promise<{ business: Business }> {
+    const { data } = await apiClient.post('/businesses', body);
+    return data;
+  },
+  async update(
+    id: string,
+    body: Partial<CreateBusinessPayload>,
+  ): Promise<{ business: Business }> {
+    const { data } = await apiClient.put(`/businesses/${id}`, body);
+    return data;
+  },
+  async connect(id: string): Promise<{ message: string }> {
+    const { data } = await apiClient.post(`/businesses/${id}/connect`);
+    return data;
+  },
+  async disconnect(id: string): Promise<{ message: string }> {
+    const { data } = await apiClient.delete(`/businesses/${id}/connect`);
     return data;
   },
 };

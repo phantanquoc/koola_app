@@ -8,7 +8,14 @@ import {
 } from 'react-native-webrtc';
 import ENV from '../../config/env';
 
-export type CallState = 'idle' | 'initiating' | 'ringing' | 'active' | 'ended';
+export type CallState =
+  | 'idle'
+  | 'initiating'
+  | 'connecting'
+  | 'ringing'
+  | 'active'
+  | 'failed'
+  | 'ended';
 
 export interface CallInfo {
   sessionId: string;
@@ -61,6 +68,10 @@ class WebRTCService {
       this.socket.disconnect();
       this.socket = null;
     }
+  }
+
+  isConnected(): boolean {
+    return !!this.socket?.connected;
   }
 
   // ─── Socket Listeners ───────────────────────────────────────────────────────
@@ -120,6 +131,15 @@ class WebRTCService {
   endCall(sessionId: string): void {
     this.socket?.emit('call_end', { sessionId });
     this.cleanup();
+  }
+
+  cancelCall(sessionId: string): void {
+    this.socket?.emit('call_cancel', { sessionId });
+    this.cleanup();
+  }
+
+  emitRinging(sessionId: string): void {
+    this.socket?.emit('call_ringing', { sessionId });
   }
 
 
@@ -266,6 +286,18 @@ class WebRTCService {
       return !videoTrack.enabled;
     }
     return false;
+  }
+
+  switchCamera(): void {
+    if (!this.localStream) return;
+    const videoTrack = this.localStream.getVideoTracks()[0] as
+      | { _switchCamera?: () => void }
+      | undefined;
+    try {
+      videoTrack?._switchCamera?.();
+    } catch (err) {
+      console.warn('[WebRTC] switchCamera failed:', err);
+    }
   }
 }
 

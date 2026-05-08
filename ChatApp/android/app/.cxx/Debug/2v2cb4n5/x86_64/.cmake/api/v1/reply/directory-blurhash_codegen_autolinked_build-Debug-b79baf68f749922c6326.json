@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "blurhash_codegen_autolinked_build",
+		"source" : "D:/Desktop/APP_KOOLA/ChatApp/node_modules/react-native-blurhash/android/build/generated/source/codegen/jni"
+	}
+}

@@ -8,6 +8,7 @@ import { Message, MessageSchema } from './message.schema';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ConversationsModule,
     forwardRef(() => UsersModule),
     NotificationsModule,
+    forwardRef(() => GatewayModule),
   ],
   controllers: [MessagesController, MessagesSyncController],
   providers: [MessagesService, TypingService],

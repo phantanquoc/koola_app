@@ -85,7 +85,7 @@ class PushNotificationService {
 
     // Background/quit → user tapped notification
     messaging().onNotificationOpenedApp((remoteMessage) => {
-      this.handleNotificationTap(remoteMessage.data);
+      this.handleNotificationTap(remoteMessage.data as Record<string, string> | undefined);
     });
 
     // App opened from quit state via notification
@@ -93,7 +93,7 @@ class PushNotificationService {
       .getInitialNotification()
       .then((remoteMessage) => {
         if (remoteMessage) {
-          this.handleNotificationTap(remoteMessage.data);
+          this.handleNotificationTap(remoteMessage.data as Record<string, string> | undefined);
         }
       });
   }
@@ -109,13 +109,13 @@ class PushNotificationService {
       // Navigate to chat screen
       setTimeout(() => {
         if (navigationRef.isReady()) {
-          navigationRef.navigate('Main' as never, {
-            screen: 'ChatsTab',
+          (navigationRef.navigate as (...args: unknown[]) => void)('Main', {
+            screen: 'ChatTab',
             params: {
               screen: 'Chat',
               params: { conversationId },
             },
-          } as never);
+          });
         }
       }, 500);
     }

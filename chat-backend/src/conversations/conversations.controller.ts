@@ -33,7 +33,10 @@ export class ConversationsController {
   @ApiOperation({
     summary: 'Find or create a direct 1-on-1 conversation with a user',
   })
-  @ApiResponse({ status: 201, description: 'Direct conversation (new or existing)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Direct conversation (new or existing)',
+  })
   @ApiResponse({ status: 400, description: 'Cannot message yourself' })
   @ApiResponse({ status: 404, description: 'Target user not found' })
   async findOrCreateDirect(

@@ -4,7 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
-import CallScreen from '../screens/main/CallScreen';
+import CallScreen from '../screens/call/CallScreen';
+import IncomingCallScreen from '../screens/call/IncomingCallScreen';
+import ImageViewerScreen from '../screens/chat/ImageViewerScreen';
 import SplashScreen from '../components/SplashScreen';
 import type { RootStackParamList } from './types';
 
@@ -30,6 +32,21 @@ const RootNavigator: React.FC = () => {
             options={{
               presentation: 'fullScreenModal',
               animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="IncomingCallModal"
+            component={IncomingCallScreen}
+            options={{
+              presentation: 'fullScreenModal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="ImageViewer"
+            component={ImageViewerScreen}
+            options={{
+              presentation: 'modal',
             }}
           />
         </Stack.Navigator>

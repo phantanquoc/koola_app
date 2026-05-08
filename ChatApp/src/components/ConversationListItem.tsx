@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { formatDistanceToNow } from 'date-fns';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import UserAvatar from './UserAvatar';
 
 interface Props {
   conversation: Conversation;
@@ -32,7 +33,6 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
 
   const displayName = getDisplayName();
   const avatar = getAvatar();
-  const initial = displayName[0]?.toUpperCase() || '?';
   const lastMessagePreview = conversation.lastMessagePreview || 'No messages yet';
   const timestamp = conversation.lastMessageAt
     ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true })
@@ -41,13 +41,7 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
 
   return (
     <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
-      {avatar ? (
-        <Image source={{ uri: avatar }} style={styles.avatar} />
-      ) : (
-        <View style={[styles.avatar, styles.avatarPlaceholder]}>
-          <Text style={styles.avatarText}>{initial}</Text>
-        </View>
-      )}
+      <UserAvatar displayName={displayName} avatar={avatar} size={48} />
 
       <View style={styles.content}>
         <View style={styles.topRow}>
@@ -71,9 +65,6 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
 
 const styles = StyleSheet.create({
   container: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff' },
-  avatar: { width: 48, height: 48, borderRadius: 24 },
-  avatarPlaceholder: { backgroundColor: '#2196F3', justifyContent: 'center', alignItems: 'center' },
-  avatarText: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   content: { flex: 1, marginLeft: 12 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name: { fontSize: 16, fontWeight: '600', color: '#333', flex: 1, marginRight: 8 },

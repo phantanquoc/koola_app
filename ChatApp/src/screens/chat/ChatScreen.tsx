@@ -1,12 +1,27 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  Alert,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
-import { GiftedChat, Bubble, Send, SystemMessage, IMessage, BubbleProps, SendProps, SystemMessageProps } from 'react-native-gifted-chat';
+import {
+  GiftedChat,
+  Bubble,
+  Send,
+  SystemMessage,
+  IMessage,
+  BubbleProps,
+  SendProps,
+  SystemMessageProps,
+  MessageImageProps,
+  MessageVideoProps,
+  ActionsProps,
+} from 'react-native-gifted-chat';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,9 +32,24 @@ import { useReadReceipts } from './hooks/useReadReceipts';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import OfflineBanner from '../../components/OfflineBanner';
-import { webrtcService } from '../../services/webrtc/webrtcService';
+import MediaImage from '../../components/MediaImage';
+import VideoMessage from '../../components/VideoMessage';
+import VideoPlayerModal from '../../components/VideoPlayerModal';
+import { getOrDownload } from '../../services/media/mediaCacheService';
+import { webrtcService } from '../../services/webrtc/WebRTCService';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
+import { pickImage, pickVideo } from '../../services/media/mediaUploadService';
+import type { MessageType } from '../../types';
+
+type MediaMessage = IMessage & {
+  messageType?: MessageType;
+  mediaKey?: string;
+  mediaMimeType?: string;
+  mediaSize?: number;
+  mediaDuration?: number;
+  isUploading?: boolean;
+};
 
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
@@ -34,6 +64,7 @@ const ChatScreen: React.FC = () => {
   const {
     messages,
     sendMessage,
+    sendMediaMessage,
     loadEarlier,
     isLoadingEarlier,
     hasEarlier,
@@ -41,6 +72,43 @@ const ChatScreen: React.FC = () => {
 
   const { typingUsers, emitTyping } = useTypingIndicator(conversationId);
   useReadReceipts(conversationId, messages, currentUserId);
+  const [videoViewerUri, setVideoViewerUri] = useState<string | null>(null);
+
+  /**
+   * Open the fullscreen image viewer as a modal route. We navigate instead of
+   * rendering a local Modal so that pinch/pan/zoom gestures (which live in
+   * ImageViewerScreen using react-native-reanimated + GestureDetector) have a
+   * dedicated screen to own the gesture context — nesting a Modal inside
+   * GiftedChat's input-aware KeyboardControllerView conflicts with gesture
+   * handlers.
+   *
+   * The caller passes either a server mediaKey (which we resolve to a local
+   * cached URI via getOrDownload) or an in-flight file:// URI from an
+   * optimistic send — we show that directly without a round-trip.
+   */
+  const openImageViewer = useCallback(
+    async (mediaKey?: string, fallbackUri?: string) => {
+      if (!mediaKey && !fallbackUri) return;
+      if (fallbackUri && fallbackUri.startsWith('file:')) {
+        navigation.navigate('ImageViewer', { imageUrl: fallbackUri });
+        return;
+      }
+      if (!mediaKey) return;
+      const uri = await getOrDownload(mediaKey).catch(() => null);
+      if (uri) navigation.navigate('ImageViewer', { imageUrl: uri });
+    },
+    [navigation],
+  );
+
+  const openVideoViewer = useCallback(async (mediaKey?: string, fallbackUri?: string) => {
+    if (fallbackUri && fallbackUri.startsWith('file:')) {
+      setVideoViewerUri(fallbackUri);
+      return;
+    }
+    if (!mediaKey) return;
+    const uri = await getOrDownload(mediaKey).catch(() => null);
+    if (uri) setVideoViewerUri(uri);
+  }, []);
 
   // ─── Join/leave conversation room ──────────────────────────────────────────
   useEffect(() => {
@@ -53,6 +121,11 @@ const ChatScreen: React.FC = () => {
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const onSend = useCallback(
     (newMessages: IMessage[] = []) => {
+      console.log('[ChatScreen] onSend invoked', {
+        count: newMessages.length,
+        isConnected,
+        conversationId,
+      });
       if (newMessages.length > 0) {
         const text = newMessages[0].text;
         if (isConnected) {
@@ -65,6 +138,67 @@ const ChatScreen: React.FC = () => {
     },
     [sendMessage, isConnected, sendViaQueue, conversationId],
   );
+
+  // ─── Attach media ─────────────────────────────────────────────────────────
+  const handlePickImage = useCallback(async () => {
+    console.log('[ChatScreen] handlePickImage: start');
+    const result = await pickImage();
+    console.log('[ChatScreen] handlePickImage: result', result);
+    if (!result) return;
+    if (result === 'TOO_LARGE') {
+      Alert.alert('Ảnh quá lớn', 'Kích thước tối đa là 200MB.');
+      return;
+    }
+    await sendMediaMessage({
+      fileUri: result.uri,
+      filename: result.filename,
+      mimeType: result.mimeType,
+      size: result.size,
+      type: 'image',
+    });
+  }, [sendMediaMessage]);
+
+  const handlePickVideo = useCallback(async () => {
+    console.log('[ChatScreen] handlePickVideo: start');
+    const result = await pickVideo();
+    console.log('[ChatScreen] handlePickVideo: result', result);
+    if (!result) return;
+    if (result === 'TOO_LARGE') {
+      Alert.alert('Video quá lớn', 'Kích thước tối đa là 200MB.');
+      return;
+    }
+    if (result === 'UNSUPPORTED_FORMAT') {
+      Alert.alert('Định dạng không hỗ trợ', 'Chỉ hỗ trợ MP4, MOV, WEBM.');
+      return;
+    }
+    await sendMediaMessage({
+      fileUri: result.uri,
+      filename: result.filename,
+      mimeType: result.mimeType,
+      size: result.fileSize,
+      type: 'video',
+      duration: result.duration,
+    });
+  }, [sendMediaMessage]);
+
+  const openAttachMenu = useCallback(() => {
+    console.log('[ChatScreen] openAttachMenu pressed');
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Hủy', 'Ảnh', 'Video'], cancelButtonIndex: 0 },
+        (idx) => {
+          if (idx === 1) handlePickImage();
+          if (idx === 2) handlePickVideo();
+        },
+      );
+    } else {
+      Alert.alert('Đính kèm', 'Chọn loại tệp', [
+        { text: 'Ảnh', onPress: handlePickImage },
+        { text: 'Video', onPress: handlePickVideo },
+        { text: 'Hủy', style: 'cancel' },
+      ]);
+    }
+  }, [handlePickImage, handlePickVideo]);
 
   const onInputTextChanged = useCallback(
     (text: string) => {
@@ -123,6 +257,61 @@ const ChatScreen: React.FC = () => {
     );
   }, [typingUsers]);
 
+  const renderActions = useCallback(
+    (_props: ActionsProps) => (
+      <TouchableOpacity
+        onPress={openAttachMenu}
+        style={styles.actionButton}
+        accessibilityLabel="Đính kèm"
+      >
+        <Text style={styles.actionIcon}>＋</Text>
+      </TouchableOpacity>
+    ),
+    [openAttachMenu],
+  );
+
+  const renderMessageImage = useCallback(
+    (props: MessageImageProps<IMessage>) => {
+      const msg = props.currentMessage as MediaMessage | undefined;
+      if (!msg) return null;
+      const localUri = typeof msg.image === 'string' && msg.image.startsWith('file:')
+        ? msg.image
+        : undefined;
+      if (msg.isUploading) {
+        return (
+          <MediaImage mediaKey="media-pending" isUploading uploadProgress={0} />
+        );
+      }
+      return (
+        <MediaImage
+          mediaKey={msg.mediaKey}
+          onPress={() => openImageViewer(msg.mediaKey, localUri)}
+        />
+      );
+    },
+    [openImageViewer],
+  );
+
+  const renderMessageVideo = useCallback(
+    (props: MessageVideoProps<IMessage>) => {
+      const msg = props.currentMessage as MediaMessage | undefined;
+      if (!msg) return null;
+      const localUri = typeof msg.video === 'string' && msg.video.startsWith('file:')
+        ? msg.video
+        : undefined;
+      return (
+        <VideoMessage
+          message={{
+            mediaKey: msg.mediaKey,
+            mediaDuration: msg.mediaDuration,
+          }}
+          onPress={() => openVideoViewer(msg.mediaKey, localUri)}
+        />
+      );
+    },
+    [openVideoViewer],
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Offline Banner */}
@@ -160,6 +349,9 @@ const ChatScreen: React.FC = () => {
         renderSend={renderSend}
         renderSystemMessage={renderSystemMessage}
         renderFooter={renderFooter}
+        renderActions={renderActions}
+        renderMessageImage={renderMessageImage}
+        renderMessageVideo={renderMessageVideo}
         onInputTextChanged={onInputTextChanged}
         loadEarlier={hasEarlier}
         onLoadEarlier={loadEarlier}
@@ -167,6 +359,14 @@ const ChatScreen: React.FC = () => {
         alwaysShowSend
         infiniteScroll
         placeholder="Type a message..."
+      />
+
+      {/* Video viewer. Image viewer lives in a dedicated modal route
+          (ImageViewerScreen) so gesture handlers get a clean ancestor. */}
+      <VideoPlayerModal
+        visible={!!videoViewerUri}
+        uri={videoViewerUri || ''}
+        onClose={() => setVideoViewerUri(null)}
       />
     </SafeAreaView>
   );
@@ -189,6 +389,13 @@ const styles = StyleSheet.create({
   systemMessage: { color: '#999', fontSize: 12, fontStyle: 'italic' },
   typingContainer: { paddingHorizontal: 16, paddingVertical: 8 },
   typingText: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  actionButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionIcon: { fontSize: 26, color: '#2196F3', fontWeight: '300' },
 });
 
 export default ChatScreen;

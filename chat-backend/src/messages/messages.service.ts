@@ -145,15 +145,12 @@ export class MessagesService {
     await this.conversationsService.updateLastMessage(conversationId, preview);
 
     // Increment unread count for all other members
-    await this.unreadService.incrementUnreadCount(
-      conversationId,
-      [senderId],
-    );
+    await this.unreadService.incrementUnreadCount(conversationId, [senderId]);
 
     // Fire-and-forget: generate blurhash for image messages
     if (dto.type === MessageType.IMAGE && dto.mediaUrl) {
-      this.generateBlurhash(message._id.toString(), dto.mediaUrl).catch(
-        (err) => console.error('[MessagesService] blurhash generation failed:', err),
+      this.generateBlurhash(message._id.toString(), dto.mediaUrl).catch((err) =>
+        console.error('[MessagesService] blurhash generation failed:', err),
       );
     }
 
@@ -165,13 +162,30 @@ export class MessagesService {
   /**
    * Callback set by ChatGateway to broadcast blurhash updates via socket.
    */
-  private blurhashCallback?: (messageId: string, conversationId: string, blurhash: string, width: number, height: number) => void;
+  private blurhashCallback?: (
+    messageId: string,
+    conversationId: string,
+    blurhash: string,
+    width: number,
+    height: number,
+  ) => void;
 
-  setBlurhashCallback(cb: (messageId: string, conversationId: string, blurhash: string, width: number, height: number) => void): void {
+  setBlurhashCallback(
+    cb: (
+      messageId: string,
+      conversationId: string,
+      blurhash: string,
+      width: number,
+      height: number,
+    ) => void,
+  ): void {
     this.blurhashCallback = cb;
   }
 
-  private async generateBlurhash(messageId: string, mediaKey: string): Promise<void> {
+  private async generateBlurhash(
+    messageId: string,
+    mediaKey: string,
+  ): Promise<void> {
     const sharp = require('sharp');
     const { encode } = require('blurhash') as typeof import('blurhash');
 
@@ -216,7 +230,13 @@ export class MessagesService {
     // Broadcast via socket if callback set
     const message = await this.messageModel.findById(messageId).lean();
     if (message && this.blurhashCallback) {
-      this.blurhashCallback(messageId, message.conversationId, blurhash, width, height);
+      this.blurhashCallback(
+        messageId,
+        message.conversationId,
+        blurhash,
+        width,
+        height,
+      );
     }
   }
 
@@ -365,10 +385,7 @@ export class MessagesService {
     );
 
     // Reset unread for this user in this conversation
-    await this.unreadService.resetUnreadCount(
-      userId,
-      message.conversationId,
-    );
+    await this.unreadService.resetUnreadCount(userId, message.conversationId);
 
     return { messageId, readBy: userId };
   }
@@ -392,7 +409,8 @@ export class MessagesService {
     // Verify caller is a member (throws ForbiddenException if not)
     const conv = await this.conversationsService.findByIdOrFail(conversationId);
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
-    if (!isMember) throw new ForbiddenException('Not a member of this conversation');
+    if (!isMember)
+      throw new ForbiddenException('Not a member of this conversation');
 
     const readAt = new Date();
     const upTo = upToTimestamp ? new Date(upToTimestamp) : readAt;
@@ -454,7 +472,8 @@ export class MessagesService {
 
     const message = await this.messageModel.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
-    if (message.conversationId !== conversationId) throw new ForbiddenException();
+    if (message.conversationId !== conversationId)
+      throw new ForbiddenException();
 
     const existing = message.reactions.find((r) => r.userId === userId);
 
@@ -589,9 +608,14 @@ export class MessagesService {
     since: string,
     cursor?: string,
     limit = 100,
-  ): Promise<{ items: MessageDocument[]; hasMore: boolean; nextCursor: string | null }> {
+  ): Promise<{
+    items: MessageDocument[];
+    hasMore: boolean;
+    nextCursor: string | null;
+  }> {
     // Get all conversation IDs the user is a member of
-    const conversationIds = await this.conversationsService.getSharedConversationIds(userId);
+    const conversationIds =
+      await this.conversationsService.getSharedConversationIds(userId);
 
     if (conversationIds.length === 0) {
       return { items: [], hasMore: false, nextCursor: null };
@@ -606,7 +630,10 @@ export class MessagesService {
     };
 
     if (cursor) {
-      const cursorDoc = await this.messageModel.findById(cursor).select('createdAt').lean() as any;
+      const cursorDoc = (await this.messageModel
+        .findById(cursor)
+        .select('createdAt')
+        .lean()) as any;
       if (cursorDoc) {
         query = {
           conversationId: { $in: conversationIds },
@@ -630,7 +657,9 @@ export class MessagesService {
     const hasMore = messages.length > limit;
     const results = hasMore ? messages.slice(0, limit) : messages;
     const nextCursor =
-      hasMore && results.length > 0 ? (results[results.length - 1] as any)._id.toString() : null;
+      hasMore && results.length > 0
+        ? (results[results.length - 1] as any)._id.toString()
+        : null;
 
     // Normalize readBy: ensure field is present on old documents
     const normalized = results.map((msg) => {
@@ -661,5 +690,68 @@ export class MessagesService {
     conversationId: string,
   ): MessageDeletedPayload {
     return { messageId, conversationId };
+  }
+
+  /**
+   * Full-text search across messages in conversations where the user is a
+   * member. Uses MongoDB $text index on `content`. Excludes deleted messages.
+   * Cursor is an opaque base64-encoded message _id; paginates by createdAt DESC.
+   */
+  async searchMessages(
+    userId: string,
+    q: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<{
+    items: MessageDocument[];
+    nextCursor: string | null;
+    total: number;
+  }> {
+    const conversationIds =
+      await this.membershipService.getUserConversationIds(userId);
+    if (conversationIds.length === 0) {
+      return { items: [], nextCursor: null, total: 0 };
+    }
+
+    const filter: Record<string, unknown> = {
+      conversationId: { $in: conversationIds },
+      deleted: { $ne: true },
+      $text: { $search: q },
+    };
+
+    if (cursor) {
+      try {
+        const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+        const cursorDoc = (await this.messageModel
+          .findById(decoded)
+          .select('createdAt')
+          .lean()) as { createdAt?: Date } | null;
+        if (cursorDoc?.createdAt) {
+          filter.createdAt = { $lt: cursorDoc.createdAt };
+        }
+      } catch {
+        // invalid cursor → ignore
+      }
+    }
+
+    const [items, total] = await Promise.all([
+      this.messageModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit + 1)
+        .exec(),
+      this.messageModel.countDocuments(filter),
+    ]);
+
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const nextCursor =
+      hasMore && pageItems.length > 0
+        ? Buffer.from(pageItems[pageItems.length - 1]._id.toString()).toString(
+            'base64',
+          )
+        : null;
+
+    return { items: pageItems, nextCursor, total };
   }
 }
