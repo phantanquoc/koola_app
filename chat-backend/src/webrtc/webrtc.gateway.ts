@@ -28,6 +28,7 @@ import { CallDeclineDto } from './dto/call-decline.dto';
 import { CallEndDto } from './dto/call-end.dto';
 import { CallFailedDto } from './dto/call-failed.dto';
 import { CallJoinDto } from './dto/call-join.dto';
+import { CallRingingDto } from './dto/call-ringing.dto';
 
 interface AuthSocketData {
   user?: { sub: string; phone: string };
@@ -391,6 +392,34 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.logger.log(
       `[WebrtcGateway] call_cancel: session ${sessionId} by ${callerId}`,
+    );
+  }
+
+  // ─── Call Ringing ─────────────────────────────────────────────────────────────
+
+  @UseGuards(WsAuthGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage('call_ringing')
+  async handleCallRinging(
+    @MessageBody() dto: CallRingingDto,
+    @ConnectedSocket() client: AuthSocket,
+  ): Promise<void> {
+    const { sessionId } = dto;
+
+    const session = await this.callSessionService.getSession(sessionId);
+    if (!session) {
+      this.logger.debug(
+        `[WebrtcGateway] call_ringing: session ${sessionId} not found — ignoring`,
+      );
+      return;
+    }
+
+    this.io
+      .to(`user:${session.initiatorId}`)
+      .emit('call_ringing', { sessionId });
+
+    this.logger.log(
+      `[WebrtcGateway] call_ringing: session ${sessionId} → initiator ${session.initiatorId}`,
     );
   }
 
