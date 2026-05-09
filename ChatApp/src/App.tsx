@@ -1,5 +1,7 @@
+import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
 import { LogBox } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './contexts/AuthContext';
 import RootNavigator from './navigation/RootNavigator';
@@ -33,11 +35,13 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <AppInner />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <AppInner />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 

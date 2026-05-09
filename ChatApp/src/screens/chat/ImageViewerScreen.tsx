@@ -25,7 +25,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 // Lazy import — avoid crash if native module not yet linked
 const getBlobUtil = () => require('react-native-blob-util').default;
 
-const { width: SW, height: SH } = Dimensions.get('screen');
+const { width: SW, height: SH } = Dimensions.get('window');
 
 const SPRING_CONFIG = { damping: 15, stiffness: 180, mass: 0.5 };
 const MAX_SCALE = 4;
