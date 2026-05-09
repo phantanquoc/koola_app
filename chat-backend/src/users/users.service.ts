@@ -55,8 +55,12 @@ export class UsersService {
     fcmToken: string,
     platform: string,
   ): Promise<void> {
+    // Two-step to avoid MongoDB "conflict at 'fcmTokens'" when $pull and $push
+    // target the same path in one update.
     await this.userModel.findByIdAndUpdate(userId, {
-      $pull: { fcmTokens: { token: fcmToken } }, // remove duplicates
+      $pull: { fcmTokens: { token: fcmToken } },
+    });
+    await this.userModel.findByIdAndUpdate(userId, {
       $push: {
         fcmTokens: { token: fcmToken, platform, createdAt: new Date() },
       },
