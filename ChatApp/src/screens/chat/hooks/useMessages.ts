@@ -1,47 +1,48 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { messagesApi } from '../../../services/api/apiService';
 import { socketService } from '../../../services/socket/socketService';
-import { uploadMedia } from '../../../services/media/mediaUploadService';
-import { generateClientId } from '../../../utils/clientId';
-import type { Message, MessageType } from '../../../types';
+import type { Message, MessageReaction } from '../../../types';
+
+/** Simple unique ID generator — no crypto dependency */
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
+}
 import type { IMessage } from 'react-native-gifted-chat';
 
 /**
- * Convert backend Message to GiftedChat IMessage format.
- *
- * For media messages we stash the raw domain fields (mediaKey, type, size,
- * duration) under non-standard IMessage props so custom renderers in
- * ChatScreen can pick them up without re-fetching.
+ * Convert backend Message to GiftedChat IMessage format
  */
-function toGiftedMessage(msg: Message, currentUserId: string): IMessage {
-  const base: IMessage & {
-    messageType?: MessageType;
-    mediaKey?: string;
-    mediaMimeType?: string;
-    mediaSize?: number;
-    mediaDuration?: number;
-  } = {
+function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record<string, unknown> {
+  // Filter deletedFor on client side as well
+  const base: IMessage & Record<string, unknown> = {
     _id: msg._id,
-    text: msg.deleted ? 'This message was deleted' : msg.content,
+    text: msg.deleted ? 'This message was deleted' : ((msg.type === 'image' || msg.type === 'video') ? '' : msg.content),
     createdAt: new Date(msg.createdAt),
     user: {
       _id: msg.senderId,
       name: msg.senderId === currentUserId ? 'You' : undefined,
     },
     system: msg.type === 'system',
-    messageType: msg.type,
-    mediaKey: msg.mediaUrl || undefined,
-    mediaMimeType: msg.mediaMimeType || undefined,
-    mediaSize: msg.mediaSize || undefined,
-    mediaDuration: msg.mediaDuration || undefined,
+    reactions: msg.reactions || [],
   };
-  // Mark GiftedChat's image/video slots so the library recognizes media bubbles.
-  if (msg.type === 'image' && msg.mediaUrl) {
-    base.image = msg.mediaUrl;
+
+  // Pass media metadata as custom props — do NOT set image to raw mediaKey
+  if ((msg.type === 'image' || msg.type === 'file' || msg.type === 'video') && msg.mediaUrl) {
+    base.mediaKey = msg.mediaUrl;
+    base.mediaMimeType = msg.mediaMimeType;
+    base.mediaSize = msg.mediaSize;
+    base.mediaDuration = (msg as Message & { mediaDuration?: number }).mediaDuration;
+    base.mediaType = msg.type;
+    base.blurhash = (msg as Message & { blurhash?: string }).blurhash || null;
+    // Set image/video placeholder so GiftedChat calls the correct render slot
+    if (msg.type === 'image') {
+      base.image = 'media-pending';
+    }
+    if (msg.type === 'video') {
+      base.video = 'media-pending';
+    }
   }
-  if (msg.type === 'video' && msg.mediaUrl) {
-    base.video = msg.mediaUrl;
-  }
+
   return base;
 }
 
@@ -51,81 +52,40 @@ export function useMessages(conversationId: string, currentUserId: string) {
   const [hasEarlier, setHasEarlier] = useState(true);
   const cursorRef = useRef<string | null>(null);
 
-  /**
-   * GiftedChat expects messages sorted newest-first (index 0 = newest) because
-   * it renders into an inverted FlatList. We guarantee that ordering after
-   * every mutation so that socket arrivals, optimistic sends, and paginated
-   * loads stay chronological regardless of insertion order.
-   *
-   * Tie-breaker: when two messages share the same createdAt timestamp (common
-   * for bulk imports or high-throughput sends), fall back to the Mongo
-   * ObjectId, whose leading 4 bytes are a second-resolution timestamp and
-   * whose trailing bytes make the ID strictly increasing per-process.
-   *
-   * Also dedupes on `_id` to survive the case where a socket event races the
-   * POST response, or where fetchInitial + loadEarlier overlap and return
-   * overlapping cursors. Deduping here is cheap (Map build + iteration) and
-   * makes every setMessages call idempotent — crucial for React's list diff
-   * to stop emitting "two children with the same key" warnings.
-   */
-  const sortDesc = useCallback((arr: IMessage[]): IMessage[] => {
-    const seen = new Map<string, IMessage>();
-    for (const m of arr) {
-      const key = String(m._id);
-      // Prefer the entry that is NOT pending (server-confirmed wins over
-      // optimistic) when both share an _id.
-      const existing = seen.get(key);
-      if (!existing || existing.pending) {
-        seen.set(key, m);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => {
-      const ta = new Date(a.createdAt).getTime();
-      const tb = new Date(b.createdAt).getTime();
-      if (tb !== ta) return tb - ta;
-      return String(b._id).localeCompare(String(a._id));
-    });
-  }, []);
-
   // ─── Fetch initial messages ────────────────────────────────────────────────
   useEffect(() => {
     const fetchInitial = async () => {
       try {
         const data = await messagesApi.list(conversationId, undefined, 20);
-        const gifted = data.messages.map((m: Message) => toGiftedMessage(m, currentUserId));
-        setMessages(sortDesc(gifted));
+        const filtered = data.messages.filter(
+          (m: Message) => !m.deletedFor?.includes(currentUserId),
+        );
+        const gifted = filtered.map((m: Message) => toGiftedMessage(m, currentUserId));
+        // GiftedChat expects newest first (index 0 = newest)
+        gifted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setMessages(gifted);
         setHasEarlier(data.hasMore);
         cursorRef.current = data.nextCursor;
       } catch (err) {
-        console.error('[useMessages] fetchInitial error:', err);
+        console.warn('[useMessages] fetchInitial:', (err as Error)?.message);
       }
     };
     fetchInitial();
-  }, [conversationId, currentUserId, sortDesc]);
+  }, [conversationId, currentUserId]);
 
   // ─── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
     const handleNewMessage = (data: { message: Record<string, unknown> }) => {
       const msg = data.message as unknown as Message;
       if (msg.conversationId !== conversationId) return;
-      // Deduplicate — a message may arrive via socket while the optimistic
-      // placeholder (tempId) is still in state. Match by clientMessageId first,
-      // then by real _id.
+      // Skip own messages (already added optimistically)
+      if (msg.senderId === currentUserId) return;
+      // Deduplicate by _id and clientMessageId (handles temp/real ID race)
       setMessages((prev) => {
-        const byRealId = prev.findIndex((m) => m._id === msg._id);
-        if (byRealId !== -1) return prev;
-        const byClientId = prev.findIndex(
-          (m) =>
-            (m as IMessage & { clientMessageId?: string }).clientMessageId ===
-              msg.clientMessageId && msg.clientMessageId,
-        );
-        if (byClientId !== -1) {
-          // Replace optimistic in place, then re-sort.
-          const next = [...prev];
-          next[byClientId] = toGiftedMessage(msg, currentUserId);
-          return sortDesc(next);
-        }
-        return sortDesc([toGiftedMessage(msg, currentUserId), ...prev]);
+        if (prev.find((m) => m._id === msg._id)) return prev;
+        const cid = (msg as Message & { clientMessageId?: string }).clientMessageId;
+        if (cid && prev.find((m) => (m as IMessage & { clientMessageId?: string }).clientMessageId === cid)) return prev;
+        return [toGiftedMessage(msg, currentUserId), ...prev];
       });
     };
 
@@ -134,12 +94,10 @@ export function useMessages(conversationId: string, currentUserId: string) {
       const clientMessageId = ackData.clientMessageId;
       if (!clientMessageId) return;
       setMessages((prev) =>
-        sortDesc(
-          prev.map((m) =>
-            (m as IMessage & { clientMessageId?: string }).clientMessageId === clientMessageId
-              ? { ...m, _id: ackData.messageId || ackData._id, pending: false }
-              : m,
-          ),
+        prev.map((m) =>
+          (m as IMessage & { clientMessageId?: string }).clientMessageId === clientMessageId
+            ? { ...m, _id: ackData.messageId || ackData._id, pending: false }
+            : m,
         ),
       );
     };
@@ -148,23 +106,75 @@ export function useMessages(conversationId: string, currentUserId: string) {
       setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
     };
 
+    const handleMessageReaction = (data: {
+      messageId: string;
+      conversationId: string;
+      userId: string;
+      emoji: string;
+      action: 'add' | 'remove';
+    }) => {
+      if (data.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (String(m._id) !== data.messageId) return m;
+          const msg = m as IMessage & Record<string, unknown>;
+          const reactions = [...((msg.reactions as MessageReaction[]) || [])];
+          if (data.action === 'remove') {
+            const idx = reactions.findIndex((r) => r.userId === data.userId && r.emoji === data.emoji);
+            if (idx >= 0) reactions.splice(idx, 1);
+          } else {
+            // Replace existing reaction from this user or add new
+            const idx = reactions.findIndex((r) => r.userId === data.userId);
+            if (idx >= 0) {
+              reactions[idx] = { userId: data.userId, emoji: data.emoji };
+            } else {
+              reactions.push({ userId: data.userId, emoji: data.emoji });
+            }
+          }
+          return { ...m, reactions } as IMessage;
+        }),
+      );
+    };
+
+    const handleMessageUpdated = (data: {
+      messageId: string;
+      conversationId: string;
+      blurhash?: string;
+      imageWidth?: number;
+      imageHeight?: number;
+    }) => {
+      if (data.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (String(m._id) !== data.messageId) return m;
+          return {
+            ...m,
+            blurhash: data.blurhash ?? (m as IMessage & Record<string, unknown>).blurhash,
+          } as IMessage;
+        }),
+      );
+    };
+
     socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
     socketService.on('message_ack', handleMessageAck as (...args: unknown[]) => void);
     socketService.on('message_deleted', handleMessageDeleted as (...args: unknown[]) => void);
+    socketService.on('message_reaction', handleMessageReaction as (...args: unknown[]) => void);
+    socketService.on('message_updated', handleMessageUpdated as (...args: unknown[]) => void);
 
     return () => {
       socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
       socketService.off('message_ack', handleMessageAck as (...args: unknown[]) => void);
       socketService.off('message_deleted', handleMessageDeleted as (...args: unknown[]) => void);
+      socketService.off('message_reaction', handleMessageReaction as (...args: unknown[]) => void);
+      socketService.off('message_updated', handleMessageUpdated as (...args: unknown[]) => void);
     };
-  }, [conversationId, currentUserId, sortDesc]);
+  }, [conversationId, currentUserId]);
 
   // ─── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (text: string) => {
-      const clientMessageId = generateClientId();
+      const clientMessageId = generateId();
       const tempId = `temp_${clientMessageId}`;
-      console.log('[useMessages] sendMessage:', { clientMessageId, text });
 
       // Optimistic prepend
       const optimisticMsg: IMessage & { clientMessageId: string } = {
@@ -175,27 +185,29 @@ export function useMessages(conversationId: string, currentUserId: string) {
         pending: true,
         clientMessageId,
       };
-      setMessages((prev) => sortDesc([optimisticMsg, ...prev]));
+      console.log('[useMessages] sendMessage optimistic:', tempId, text);
+      setMessages((prev) => [optimisticMsg, ...prev]);
 
       try {
+        console.log('[useMessages] Calling messagesApi.send for:', conversationId);
         const result = await messagesApi.send(conversationId, {
           content: text,
           type: 'text',
           clientMessageId,
         });
-        console.log('[useMessages] sendMessage: POST success', result.message?._id);
-        // Replace optimistic with real
-        setMessages((prev) =>
-          sortDesc(
-            prev.map((m) =>
-              m._id === tempId
-                ? { ...m, _id: result.message._id, pending: false }
-                : m,
-            ),
-          ),
-        );
+        console.log('[useMessages] Send success:', result.message?._id);
+        // Replace optimistic with real, and deduplicate if socket already added it
+        setMessages((prev) => {
+          const realId = result.message._id;
+          const withoutDupe = prev.filter((m) => m._id !== realId);
+          return withoutDupe.map((m) =>
+            m._id === tempId
+              ? { ...m, _id: realId, pending: false }
+              : m,
+          );
+        });
       } catch (err) {
-        console.error('[useMessages] sendMessage: POST failed', err);
+        console.log('[useMessages] Send FAILED:', (err as Error)?.message, err);
         // Mark as failed
         setMessages((prev) =>
           prev.map((m) =>
@@ -204,97 +216,7 @@ export function useMessages(conversationId: string, currentUserId: string) {
         );
       }
     },
-    [conversationId, currentUserId, sortDesc],
-  );
-
-  // ─── Send media message (image/video/file) ────────────────────────────────
-  const sendMediaMessage = useCallback(
-    async (params: {
-      fileUri: string;
-      filename: string;
-      mimeType: string;
-      size: number;
-      type: 'image' | 'video' | 'file';
-      duration?: number;
-    }) => {
-      const clientMessageId = generateClientId();
-      const tempId = `temp_${clientMessageId}`;
-
-      // Optimistic prepend — show local URI while uploading
-      const optimisticMsg: IMessage & {
-        clientMessageId: string;
-        messageType: MessageType;
-        mediaMimeType?: string;
-        mediaSize?: number;
-        mediaDuration?: number;
-        isUploading?: boolean;
-      } = {
-        _id: tempId,
-        text: '',
-        createdAt: new Date(),
-        user: { _id: currentUserId, name: 'You' },
-        pending: true,
-        clientMessageId,
-        messageType: params.type,
-        mediaMimeType: params.mimeType,
-        mediaSize: params.size,
-        mediaDuration: params.duration,
-        isUploading: true,
-        ...(params.type === 'image' ? { image: params.fileUri } : {}),
-        ...(params.type === 'video' ? { video: params.fileUri } : {}),
-      };
-      setMessages((prev) => sortDesc([optimisticMsg, ...prev]));
-
-      try {
-        console.log('[useMessages] sendMediaMessage: requesting presigned URL', {
-          filename: params.filename,
-          mimeType: params.mimeType,
-          size: params.size,
-        });
-        // 1. Upload to MinIO via presigned URL
-        const uploaded = await uploadMedia(
-          params.fileUri,
-          params.filename,
-          params.mimeType,
-          params.size,
-          conversationId,
-        );
-        console.log('[useMessages] sendMediaMessage: uploaded', uploaded.mediaKey);
-
-        // 2. Persist message via REST (backend fans out via socket).
-        // NOTE: omit `content` entirely for media messages — sending an empty
-        // string here would fail the @IsNotEmpty() validator on
-        // SendMessageDto.content, yielding a 400 "content is required".
-        const result = await messagesApi.send(conversationId, {
-          type: params.type,
-          mediaUrl: uploaded.mediaKey,
-          mediaMimeType: params.mimeType,
-          mediaSize: params.size,
-          mediaDuration: params.duration,
-          clientMessageId,
-        });
-        console.log('[useMessages] sendMediaMessage: posted message', result.message?._id);
-
-        // 3. Replace optimistic with real
-        setMessages((prev) =>
-          sortDesc(
-            prev.map((m) =>
-              m._id === tempId
-                ? toGiftedMessage(result.message as Message, currentUserId)
-                : m,
-            ),
-          ),
-        );
-      } catch (err) {
-        console.error('[useMessages] sendMediaMessage error:', err);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === tempId ? { ...m, pending: false, sent: false } : m,
-          ),
-        );
-      }
-    },
-    [conversationId, currentUserId, sortDesc],
+    [conversationId, currentUserId],
   );
 
   // ─── Load earlier messages ─────────────────────────────────────────────────
@@ -308,15 +230,151 @@ export function useMessages(conversationId: string, currentUserId: string) {
         20,
       );
       const gifted = data.messages.map((m: Message) => toGiftedMessage(m, currentUserId));
-      setMessages((prev) => sortDesc([...prev, ...gifted]));
+      // Sort oldest last (GiftedChat: index 0 = newest)
+      gifted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((m) => m._id));
+        const newItems = gifted.filter((m) => !existingIds.has(m._id));
+        return [...prev, ...newItems];
+      });
       setHasEarlier(data.hasMore);
       cursorRef.current = data.nextCursor;
     } catch (err) {
-      console.error('[useMessages] loadEarlier error:', err);
+      console.warn('[useMessages] loadEarlier:', (err as Error)?.message);
     } finally {
       setIsLoadingEarlier(false);
     }
-  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier, sortDesc]);
+  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier]);
+
+  // ─── Send media message ──────────────────────────────────────────────────
+  const sendMediaMessage = useCallback(
+    async (mediaUrl: string, mediaMimeType: string, mediaSize: number, type: 'image' | 'file' | 'voice' | 'video', filename?: string, mediaDuration?: number) => {
+      const clientMessageId = generateId();
+      const tempId = `temp_${clientMessageId}`;
+      const content = filename || (type === 'image' ? '📷 Photo' : type === 'voice' ? '🎤 Voice' : type === 'video' ? '🎬 Video' : '📄 File');
+
+      // Optimistic prepend — use placeholder for media, not raw mediaKey
+      const optimisticMsg: IMessage & { clientMessageId: string } & Record<string, unknown> = {
+        _id: tempId,
+        text: (type === 'image' || type === 'video') ? '' : content,
+        createdAt: new Date(),
+        user: { _id: currentUserId, name: 'You' },
+        pending: true,
+        clientMessageId,
+        mediaKey: mediaUrl,
+        mediaMimeType,
+        mediaSize,
+        mediaDuration,
+        mediaType: type,
+        image: type === 'image' ? 'media-pending' : undefined,
+        video: type === 'video' ? 'media-pending' : undefined,
+        isUploading: true,
+        uploadProgress: 0,
+      };
+      setMessages((prev) => [optimisticMsg, ...prev]);
+
+      try {
+        const result = await messagesApi.send(conversationId, {
+          content,
+          type,
+          clientMessageId,
+          mediaUrl,
+          mediaMimeType,
+          mediaSize,
+          mediaDuration,
+        });
+        setMessages((prev) => {
+          const realId = result.message._id;
+          const withoutDupe = prev.filter((m) => m._id !== realId);
+          return withoutDupe.map((m) =>
+            m._id === tempId
+              ? { ...m, _id: realId, pending: false, isUploading: false }
+              : m,
+          );
+        });
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === tempId ? { ...m, pending: false, sent: false } : m,
+          ),
+        );
+      }
+    },
+    [conversationId, currentUserId],
+  );
+
+  // ─── Create optimistic media message ─────────────────────────────────────
+  const createOptimisticMedia = useCallback(
+    (mediaKey: string, mediaMimeType: string, mediaSize: number, type: 'image' | 'file' | 'voice' | 'video', filename?: string, mediaDuration?: number): string => {
+      const clientMessageId = generateId();
+      const tempId = `temp_${clientMessageId}`;
+      const content = filename || (type === 'image' ? '📷 Photo' : type === 'voice' ? '🎤 Voice' : type === 'video' ? '🎬 Video' : '📄 File');
+
+      const optimisticMsg: IMessage & { clientMessageId: string } & Record<string, unknown> = {
+        _id: tempId,
+        text: (type === 'image' || type === 'video') ? '' : content,
+        createdAt: new Date(),
+        user: { _id: currentUserId, name: 'You' },
+        pending: true,
+        clientMessageId,
+        mediaKey,
+        mediaMimeType,
+        mediaSize,
+        mediaDuration,
+        mediaType: type,
+        image: type === 'image' ? 'media-pending' : undefined,
+        video: type === 'video' ? 'media-pending' : undefined,
+        isUploading: true,
+        uploadProgress: 0,
+      };
+      setMessages((prev) => [optimisticMsg, ...prev]);
+      return tempId;
+    },
+    [currentUserId],
+  );
+
+  // ─── Confirm media message after upload ───────────────────────────────────
+  const confirmMediaMessage = useCallback(
+    async (tempId: string, mediaUrl: string, mediaMimeType: string, mediaSize: number, type: 'image' | 'file' | 'voice' | 'video', filename?: string, mediaDuration?: number) => {
+      const clientMessageId = tempId.replace('temp_', '');
+      const content = filename || (type === 'image' ? '📷 Photo' : type === 'voice' ? '🎤 Voice' : type === 'video' ? '🎬 Video' : '📄 File');
+
+      // Mark as no longer uploading
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === tempId ? { ...m, isUploading: false, mediaKey: mediaUrl } as IMessage : m,
+        ),
+      );
+
+      try {
+        const result = await messagesApi.send(conversationId, {
+          content,
+          type,
+          clientMessageId,
+          mediaUrl,
+          mediaMimeType,
+          mediaSize,
+          mediaDuration,
+        });
+        setMessages((prev) => {
+          const realId = result.message._id;
+          const withoutDupe = prev.filter((m) => m._id !== realId);
+          return withoutDupe.map((m) =>
+            m._id === tempId
+              ? { ...m, _id: realId, pending: false, isUploading: false }
+              : m,
+          );
+        });
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === tempId ? { ...m, pending: false, sent: false, isUploading: false } : m,
+          ),
+        );
+      }
+    },
+    [conversationId],
+  );
 
   // ─── Delete message ────────────────────────────────────────────────────────
   const deleteMessage = useCallback(
@@ -331,12 +389,71 @@ export function useMessages(conversationId: string, currentUserId: string) {
     [conversationId],
   );
 
+  // ─── React to message ─────────────────────────────────────────────────────
+  const reactToMessage = useCallback(
+    async (messageId: string, emoji: string) => {
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (String(m._id) !== messageId) return m;
+          const msg = m as IMessage & Record<string, unknown>;
+          const reactions = [...((msg.reactions as MessageReaction[]) || [])];
+          const existingIdx = reactions.findIndex((r) => r.userId === currentUserId);
+          if (existingIdx >= 0 && reactions[existingIdx].emoji === emoji) {
+            reactions.splice(existingIdx, 1);
+          } else if (existingIdx >= 0) {
+            reactions[existingIdx] = { userId: currentUserId, emoji };
+          } else {
+            reactions.push({ userId: currentUserId, emoji });
+          }
+          return { ...m, reactions } as IMessage;
+        }),
+      );
+      try {
+        await messagesApi.toggleReaction(conversationId, messageId, emoji);
+      } catch {
+        // Could revert optimistic update but API react is idempotent
+      }
+    },
+    [conversationId, currentUserId],
+  );
+
+  // ─── Delete for me ────────────────────────────────────────────────────────
+  const deleteForMe = useCallback(
+    async (messageId: string) => {
+      setMessages((prev) => prev.filter((m) => String(m._id) !== messageId));
+      try {
+        await messagesApi.deleteForMe(conversationId, messageId);
+      } catch {
+        // Re-fetch if needed
+      }
+    },
+    [conversationId],
+  );
+
+  // ─── Update upload progress on optimistic message ──────────────────────────
+  const updateUploadProgress = useCallback(
+    (tempId: string, progress: number) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === tempId ? { ...m, uploadProgress: progress } as IMessage : m,
+        ),
+      );
+    },
+    [],
+  );
+
   return {
     messages,
     sendMessage,
     sendMediaMessage,
+    createOptimisticMedia,
+    confirmMediaMessage,
     loadEarlier,
     deleteMessage,
+    reactToMessage,
+    deleteForMe,
+    updateUploadProgress,
     isLoadingEarlier,
     hasEarlier,
   };

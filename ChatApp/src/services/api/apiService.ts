@@ -251,6 +251,14 @@ export const conversationsApi = {
     const { data } = await apiClient.post(`/conversations/direct/${userId}`);
     return { ...data, conversation: normalizeConversation(data.conversation) };
   },
+  async pinMessage(conversationId: string, messageId: string) {
+    const { data } = await apiClient.post(`/conversations/${conversationId}/pin/${messageId}`);
+    return data;
+  },
+  async unpinMessage(conversationId: string, messageId: string) {
+    const { data } = await apiClient.delete(`/conversations/${conversationId}/pin/${messageId}`);
+    return data;
+  },
 };
 
 // ─── Messages API ─────────────────────────────────────────────────────────────

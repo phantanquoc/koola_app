@@ -22,7 +22,7 @@ export type ChatSubTabParamList = {
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────
 export type ChatTabStackParamList = {
   ChatHome: undefined;
-  Chat: { conversationId: string };
+  Chat: { conversationId: string; displayName?: string; avatar?: string };
   GroupInfo: { conversationId: string };
   Profile: { userId: string };
   UniversalSearch: undefined;

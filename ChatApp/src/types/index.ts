@@ -41,6 +41,7 @@ export interface Conversation {
   lastMessageAt?: string;
   lastMessagePreview?: string;
   unreadCount: number;
+  pinnedMessages?: PinnedMessage[];
   createdAt: string;
   updatedAt: string;
 }

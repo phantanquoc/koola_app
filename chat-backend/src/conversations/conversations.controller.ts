@@ -153,6 +153,36 @@ export class ConversationsController {
     return { message: 'Left conversation' };
   }
 
+  @Post(':id/pin/:messageId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Pin a message in a conversation' })
+  @ApiResponse({ status: 200, description: 'Message pinned' })
+  @ApiResponse({ status: 403, description: 'Not a member' })
+  @ApiResponse({ status: 404, description: 'Conversation not found' })
+  async pinMessage(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.conversationsService.pinMessage(conversationId, messageId, userId);
+    return { message: 'Message pinned' };
+  }
+
+  @Delete(':id/pin/:messageId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Unpin a message in a conversation' })
+  @ApiResponse({ status: 200, description: 'Message unpinned' })
+  @ApiResponse({ status: 403, description: 'Not a member' })
+  @ApiResponse({ status: 404, description: 'Conversation not found' })
+  async unpinMessage(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.conversationsService.unpinMessage(conversationId, messageId, userId);
+    return { message: 'Message unpinned' };
+  }
+
   @Put(':id')
   @ApiOperation({ summary: 'Update group name or avatar (admin only)' })
   @ApiResponse({ status: 200, description: 'Updated' })
