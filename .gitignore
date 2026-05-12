@@ -54,3 +54,24 @@ infra-local/storage/
 
 # Test coverage
 coverage/
+
+# React Native / Android build artifacts (explicit)
+ChatApp/android/.gradle/
+ChatApp/android/.kotlin/
+ChatApp/android/app/build/
+ChatApp/android/app/.cxx/
+ChatApp/android/build/
+ChatApp/android/local.properties
+
+# iOS (nếu sau này dùng)
+ChatApp/ios/build/
+ChatApp/ios/Pods/
+ChatApp/ios/DerivedData/
+
+# React Native bundle output (tạo lại mỗi build release)
+ChatApp/android/app/src/main/assets/index.android.bundle
+ChatApp/android/app/src/main/res/drawable-*/
+ChatApp/android/app/src/main/res/raw/
+
+# Task / tmp runtime
+.claude/tasks/
