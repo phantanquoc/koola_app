@@ -66,7 +66,10 @@ export class MessagesSyncController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Forward a message to one or more conversations' })
   @ApiResponse({ status: 200, description: 'Message forwarded successfully' })
-  @ApiResponse({ status: 400, description: 'Validation error or max 10 conversations exceeded' })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error or max 10 conversations exceeded',
+  })
   @ApiResponse({ status: 404, description: 'Original message not found' })
   async forwardMessage(
     @Param('messageId') messageId: string,

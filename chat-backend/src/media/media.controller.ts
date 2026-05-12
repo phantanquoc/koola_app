@@ -53,10 +53,7 @@ export class MediaController {
     description:
       'Streams the file from MinIO through the backend. Accepts JWT via query param ?token= for use with Image components that cannot set headers.',
   })
-  async streamMedia(
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
+  async streamMedia(@Req() req: Request, @Res() res: Response) {
     // Authenticate via query param token (Image components can't set Authorization header)
     const token = req.query.token as string | undefined;
     if (!token) {
@@ -77,7 +74,8 @@ export class MediaController {
     // Extract mediaKey from URL path after /media/download/
     const prefix = '/media/download/';
     const idx = req.originalUrl.indexOf(prefix);
-    let mediaKey = idx >= 0 ? req.originalUrl.substring(idx + prefix.length) : '';
+    let mediaKey =
+      idx >= 0 ? req.originalUrl.substring(idx + prefix.length) : '';
     // Strip query string
     const qIdx = mediaKey.indexOf('?');
     if (qIdx >= 0) mediaKey = mediaKey.substring(0, qIdx);
@@ -90,10 +88,8 @@ export class MediaController {
     }
 
     try {
-      const { stream, mimeType, size } = await this.mediaService.getObjectStream(
-        userId,
-        mediaKey,
-      );
+      const { stream, mimeType, size } =
+        await this.mediaService.getObjectStream(userId, mediaKey);
 
       res.set({
         'Content-Type': mimeType,
@@ -101,11 +97,15 @@ export class MediaController {
         'Cache-Control': 'private, max-age=3600',
       });
 
-      (stream as NodeJS.ReadableStream & { pipe: (dest: Response) => void }).pipe(res);
+      (
+        stream as NodeJS.ReadableStream & { pipe: (dest: Response) => void }
+      ).pipe(res);
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string };
       const status = error?.status ?? 500;
-      res.status(status).json({ message: error?.message ?? 'Failed to stream media' });
+      res
+        .status(status)
+        .json({ message: error?.message ?? 'Failed to stream media' });
     }
   }
 
@@ -113,7 +113,8 @@ export class MediaController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Get a presigned GET URL for a media file',
-    description: 'Accepts mediaKey in body to avoid URL path issues with slashes.',
+    description:
+      'Accepts mediaKey in body to avoid URL path issues with slashes.',
   })
   async getPresignedGetUrl(
     @CurrentUser('id') userId: string,

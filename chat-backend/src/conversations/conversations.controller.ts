@@ -164,7 +164,11 @@ export class ConversationsController {
     @Param('messageId') messageId: string,
     @CurrentUser('id') userId: string,
   ) {
-    await this.conversationsService.pinMessage(conversationId, messageId, userId);
+    await this.conversationsService.pinMessage(
+      conversationId,
+      messageId,
+      userId,
+    );
     return { message: 'Message pinned' };
   }
 
@@ -179,7 +183,11 @@ export class ConversationsController {
     @Param('messageId') messageId: string,
     @CurrentUser('id') userId: string,
   ) {
-    await this.conversationsService.unpinMessage(conversationId, messageId, userId);
+    await this.conversationsService.unpinMessage(
+      conversationId,
+      messageId,
+      userId,
+    );
     return { message: 'Message unpinned' };
   }
 

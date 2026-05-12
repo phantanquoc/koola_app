@@ -22,6 +22,12 @@ export class TurnService {
       '',
     );
     this.coturnPort = this.configService.get<number>('COTURN_PORT', 3478);
+
+    // D7: Fail-fast if TURN_STATIC_SECRET is not set outside of test environments.
+    // An empty secret produces a deterministic HMAC that attackers can forge.
+    if (!this.coturnSecret && process.env.NODE_ENV !== 'test') {
+      throw new Error('TURN_STATIC_SECRET must be set for production safety');
+    }
   }
 
   generateCredentials(targetUserId: string): {
