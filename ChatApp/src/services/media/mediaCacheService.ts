@@ -1,4 +1,5 @@
-import apiClient from '../api/apiService';
+import { getAccessTokenInMemory } from '../api/apiService';
+import ENV from '../../config/env';
 
 const BlobUtil = require('react-native-blob-util').default;
 
@@ -6,19 +7,6 @@ const CACHE_DIR = `${BlobUtil.fs.dirs.CacheDir}/media-cache`;
 
 // In-memory URI map — avoids async flash on re-mount
 const memoryCache = new Map<string, string>();
-
-/**
- * Rewrite MinIO presigned URL hostname from Docker-internal to device-reachable.
- * In dev, MinIO generates URLs with the Docker service name (e.g. chat-minio:9000)
- * which the mobile device cannot resolve. Replace with the dev host.
- */
-function rewriteMinioUrl(url: string): string {
-  if (!__DEV__) return url;
-  // Replace Docker-internal MinIO hostname (e.g. chat-minio:9000) with localhost.
-  // Both emulator and physical device reach MinIO via adb reverse tcp:9000 tcp:9000.
-  // Do NOT replace localhost — it's already correct.
-  return url.replace(/http:\/\/(?!localhost)[^:/]+:9000/, 'http://localhost:9000');
-}
 
 function cacheKeyFromMediaKey(mediaKey: string): string {
   return mediaKey.replace(/[/\\:?*"<>|]/g, '_');
@@ -68,17 +56,17 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
     return uri;
   }
 
-  // Fetch presigned GET URL from backend
-  let presignedUrl: string;
-  try {
-    const { data } = await apiClient.post('/media/presigned-get', { mediaKey });
-    presignedUrl = rewriteMinioUrl(data.url);
-  } catch (err: unknown) {
-    console.warn('[mediaCacheService] Failed to get presigned URL:', (err as Error)?.message || err);
-    return null;
-  }
+  // Build proxy URL — backend enforces auth via ?token=<JWT>
+  const accessToken = getAccessTokenInMemory();
+  if (!accessToken) return null;
 
-  console.log('[mediaCacheService] Downloading via presigned URL for:', mediaKey);
+  const encodedMediaKey = mediaKey
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/');
+  const proxyUrl = `${ENV.API_URL}/media/download/${encodedMediaKey}?token=${accessToken}`;
+
+  console.log('[mediaCacheService] Downloading via proxy for:', mediaKey);
 
   try {
     const res = await BlobUtil.config({
@@ -86,7 +74,7 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
       timeout: 120000,
       indicator: false,
       overwrite: true,
-    }).fetch('GET', presignedUrl);
+    }).fetch('GET', proxyUrl);
     const status = res.info().status;
     console.log('[mediaCacheService] Response status:', status, 'path:', res.path());
     if (status === 200) {
