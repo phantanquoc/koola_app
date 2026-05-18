@@ -46,21 +46,21 @@
 
 ## 6. Backend — Unit Tests
 
-- [ ] 6.1 Create `chat-backend/src/webrtc/webrtc.gateway.call-log.spec.ts` with Jest test suite; set up `describe('WebrtcGateway — call log lifecycle')` with `beforeEach` that mocks `CallLogsService`, `CallSessionService`, `TurnService`, `CallNotificationsService`, `UsersService`, `MembershipService`, `RedisService`, `JwtService`, and an `io` Server mock with `.in().except().emit()` chain
-- [ ] 6.2 Test: `handleCallInitiate` (online) → `CallLogsService.createLog` is called once with `{status: 'missed', ...}` after session creation
-- [ ] 6.3 Test: `handleCallInitiate` (offline with tokens) → `createLog` is called once with `{status: 'missed', ...}` before FCM send
-- [ ] 6.4 Test: `handleCallInitiate` (offline no tokens) → `createLog` is called once; `call_missed` is emitted to caller
-- [ ] 6.5 Test: `handleCallInitiate` busy (target has active) → `createLog` is NOT called; `call_busy` emitted to caller
-- [ ] 6.6 Test: `handleCallAccept` → `updateLog(sessionId, {status: 'answered', answeredAt: <Date>})` called once
-- [ ] 6.7 Test: `handleCallDecline` → `updateLog(sessionId, {status: 'declined', endedAt: <Date>, duration: 0})` called once
-- [ ] 6.8 Test: `handleCallCancel` → `updateLog(sessionId, {status: 'cancelled', endedAt: <Date>, duration: 0})` called once
-- [ ] 6.9 Test: `handleCallEnd` with prior answeredAt → `updateLog` called with status='ended' and duration computed from `Date.now() - answeredAt`
-- [ ] 6.10 Test: `handleCallEnd` with answeredAt=null → `updateLog` called with duration=0
-- [ ] 6.11 Test: online timeout callback (use `jest.useFakeTimers`, advance 30s) → `updateLog({status: 'missed', ...})` is called
-- [ ] 6.12 Test: `createLog` throwing → gateway continues: `call_initiated` is still emitted to caller, session is still created
-- [ ] 6.13 Test: `call_initiated` payload contains `remoteUser` with `displayName` and `avatar` from mocked UsersService
-- [ ] 6.14 Test: `handleCallInitiate` with target busy emits `call_busy` with `{targetUserId}` and does NOT create session
-- [ ] 6.15 Test: `handleCallAccept` → `io.in('user:<userId>').except(client.id).emit('call_cancelled', {sessionId})` is called exactly once ← (verify: all 14 tests pass; mocks assert exact call count and argument shape; no flaky timer tests)
+- [x] 6.1 Create `chat-backend/src/webrtc/webrtc.gateway.call-log.spec.ts` with Jest test suite; set up `describe('WebrtcGateway — call log lifecycle')` with `beforeEach` that mocks `CallLogsService`, `CallSessionService`, `TurnService`, `CallNotificationsService`, `UsersService`, `MembershipService`, `RedisService`, `JwtService`, and an `io` Server mock with `.in().except().emit()` chain
+- [x] 6.2 Test: `handleCallInitiate` (online) → `CallLogsService.createLog` is called once with `{status: 'missed', ...}` after session creation
+- [x] 6.3 Test: `handleCallInitiate` (offline with tokens) → `createLog` is called once with `{status: 'missed', ...}` before FCM send
+- [x] 6.4 Test: `handleCallInitiate` (offline no tokens) → `createLog` is called once; `call_missed` is emitted to caller
+- [x] 6.5 Test: `handleCallInitiate` busy (target has active) → `createLog` is NOT called; `call_busy` emitted to caller
+- [x] 6.6 Test: `handleCallAccept` → `updateLog(sessionId, {status: 'answered', answeredAt: <Date>})` called once
+- [x] 6.7 Test: `handleCallDecline` → `updateLog(sessionId, {status: 'declined', endedAt: <Date>, duration: 0})` called once
+- [x] 6.8 Test: `handleCallCancel` → `updateLog(sessionId, {status: 'cancelled', endedAt: <Date>, duration: 0})` called once
+- [x] 6.9 Test: `handleCallEnd` with prior answeredAt → `updateLog` called with status='ended' and duration computed from `Date.now() - answeredAt`
+- [x] 6.10 Test: `handleCallEnd` with answeredAt=null → `updateLog` called with duration=0
+- [x] 6.11 Test: online timeout callback (use `jest.useFakeTimers`, advance 30s) → `updateLog({status: 'missed', ...})` is called
+- [x] 6.12 Test: `createLog` throwing → gateway continues: `call_initiated` is still emitted to caller, session is still created
+- [x] 6.13 Test: `call_initiated` payload contains `remoteUser` with `displayName` and `avatar` from mocked UsersService
+- [x] 6.14 Test: `handleCallInitiate` with target busy emits `call_busy` with `{targetUserId}` and does NOT create session
+- [x] 6.15 Test: `handleCallAccept` → `io.in('user:<userId>').except(client.id).emit('call_cancelled', {sessionId})` is called exactly once ← (verify: all 14 tests pass; mocks assert exact call count and argument shape; no flaky timer tests)
 
 ## 7. Mobile — AndroidManifest
 
@@ -161,7 +161,7 @@
 ## 18. Final Checks
 
 - [ ] 18.1 Run `npm run lint` in `chat-backend/` — zero new errors
-- [ ] 18.2 Run `npm run test` in `chat-backend/` — all tests pass including new `webrtc.gateway.call-log.spec.ts` and updated `turn.service.spec.ts`
-- [ ] 18.3 Run `npx tsc --noEmit` in `ChatApp/` — zero type errors
+- [x] 18.2 Run `npm run test` in `chat-backend/` — all tests pass including new `webrtc.gateway.call-log.spec.ts` and updated `turn.service.spec.ts`
+- [x] 18.3 Run `npx tsc --noEmit` in `ChatApp/` — zero type errors
 - [ ] 18.4 Build Android debug APK: `cd ChatApp/android && ./gradlew assembleDebug` — build succeeds
 - [ ] 18.5 Verify `gitnexus_detect_changes()` shows only expected symbols (webrtc.gateway handlers, TurnService, WebRTCService methods, useIncomingCall, fcmCallHandler exports, CallSessionCronService) were touched
