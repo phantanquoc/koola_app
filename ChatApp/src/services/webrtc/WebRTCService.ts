@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { Platform } from 'react-native';
 import {
   RTCPeerConnection,
   RTCSessionDescription,
@@ -6,7 +7,13 @@ import {
   mediaDevices,
   MediaStream,
 } from 'react-native-webrtc';
+import {
+  PERMISSIONS,
+  RESULTS,
+  requestMultiple,
+} from 'react-native-permissions';
 import ENV from '../../config/env';
+import { callAudioService } from '../audio/callAudioService';
 
 export type CallState =
   | 'idle'
@@ -41,6 +48,50 @@ class WebRTCService {
   private listeners: Map<string, Set<WebRTCEventCallback>> = new Map();
   private iceServers: IceServerConfig[] = [];
 
+  // ─── State Machine ──────────────────────────────────────────────────────────
+  // See design.md D9. Guard transitions so concurrent events (e.g. ICE
+  // restart racing with a hangup, or echoed call_offer arriving after end)
+  // cannot leave the UI in an inconsistent state.
+  private callState: CallState = 'idle';
+  private isInitiator: boolean = false;
+  private iceRestartCount: number = 0;
+  private currentSessionId: string | null = null;
+
+  private static readonly VALID_TRANSITIONS: Record<CallState, CallState[]> = {
+    idle: ['initiating'],
+    initiating: ['connecting', 'ended', 'failed'],
+    connecting: ['ringing', 'active', 'failed', 'ended'],
+    ringing: ['active', 'ended', 'failed'],
+    active: ['ended', 'failed'],
+    failed: ['ended'],
+    ended: ['idle'],
+  };
+
+  /**
+   * Attempt to move into `next`. Returns true on success, false if the
+   * transition is invalid (caller can use the boolean to short-circuit).
+   * Emits `call_state_changed` on success so UI hooks can react.
+   */
+  private transition(next: CallState): boolean {
+    const allowed = WebRTCService.VALID_TRANSITIONS[this.callState];
+    if (!allowed.includes(next)) {
+      console.warn(
+        '[WebRTC] Invalid transition:',
+        this.callState,
+        '→',
+        next,
+      );
+      return false;
+    }
+    this.callState = next;
+    this.emit('call_state_changed', next);
+    return true;
+  }
+
+  getCallState(): CallState {
+    return this.callState;
+  }
+
   // ─── Socket Connection ──────────────────────────────────────────────────────
 
   connect(token: string): void {
@@ -48,7 +99,9 @@ class WebRTCService {
 
     this.socket = io(`${ENV.WS_URL}/webrtc`, {
       query: { token },
-      transports: ['websocket'],
+      // Start with polling — more reliable in RN Bridgeless mode — then
+      // socket.io upgrades to websocket automatically.
+      transports: ['polling', 'websocket'],
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 5,
@@ -80,11 +133,32 @@ class WebRTCService {
     if (!this.socket) return;
 
     this.socket.on('incoming_call', (data) => this.emit('incoming_call', data));
-    this.socket.on('call_initiated', (data) => this.emit('call_initiated', data));
-    this.socket.on('call_accepted', (data) => this.emit('call_accepted', data));
+    this.socket.on('call_initiated', (data) => {
+      // Server confirms session — capture sessionId so ICE restart can use it.
+      const payload = data as { sessionId?: string } | null;
+      if (payload?.sessionId) this.currentSessionId = payload.sessionId;
+      this.emit('call_initiated', data);
+    });
+    this.socket.on('call_accepted', (data) => {
+      // Caller-side: ringback was playing while waiting; switch to voice mode
+      // (earpiece routing) for the actual conversation. Order matters —
+      // stop ringback first so the audio session is free when start() is
+      // called inside setVoiceMode.
+      callAudioService.stopRingback();
+      callAudioService.setVoiceMode();
+      this.emit('call_accepted', data);
+    });
     this.socket.on('call_declined', (data) => this.emit('call_declined', data));
     this.socket.on('call_ended', (data) => this.emit('call_ended', data));
     this.socket.on('call_missed', (data) => this.emit('call_missed', data));
+    // Additional terminal/state events forwarded to subscribers (Task 11).
+    // IncomingCallScreen listens for call_cancelled / call_timeout to dismiss
+    // itself; ChatScreen caller-side listens for call_busy.
+    this.socket.on('call_ringing', (data) => this.emit('call_ringing', data));
+    this.socket.on('call_cancelled', (data) => this.emit('call_cancelled', data));
+    this.socket.on('call_timeout', (data) => this.emit('call_timeout', data));
+    this.socket.on('call_busy', (data) => this.emit('call_busy', data));
+    this.socket.on('call_failed', (data) => this.emit('call_failed', data));
 
     this.socket.on('call_offer', async (data) => {
       await this.handleRemoteOffer(data);
@@ -117,10 +191,17 @@ class WebRTCService {
   // ─── Call Actions ───────────────────────────────────────────────────────────
 
   initiateCall(targetUserId: string, conversationId: string, callType: 'audio' | 'video'): void {
+    this.isInitiator = true;
+    this.transition('initiating');
     this.socket?.emit('call_initiate', { targetUserId, conversationId, callType });
+    // Start ringback so the caller hears feedback while the callee rings.
+    // Stopped on call_accepted, or in cleanup() for any terminal path.
+    callAudioService.startRingback();
   }
 
   acceptCall(sessionId: string): void {
+    this.isInitiator = false;
+    this.currentSessionId = sessionId;
     this.socket?.emit('call_accept', { sessionId });
   }
 
@@ -147,6 +228,23 @@ class WebRTCService {
 
   async getLocalStream(callType: 'audio' | 'video'): Promise<MediaStream> {
     if (this.localStream) return this.localStream;
+
+    // Android 6+ requires runtime permission for mic/camera. Request only
+    // what's needed for the call type — audio call should not prompt for
+    // camera. iOS handles permission via the Info.plist usage descriptions
+    // and getUserMedia itself, so we skip the explicit check there.
+    if (Platform.OS === 'android') {
+      const perms =
+        callType === 'video'
+          ? [PERMISSIONS.ANDROID.RECORD_AUDIO, PERMISSIONS.ANDROID.CAMERA]
+          : [PERMISSIONS.ANDROID.RECORD_AUDIO];
+      const result = await requestMultiple(perms);
+      for (const p of perms) {
+        if (result[p] !== RESULTS.GRANTED) {
+          throw new Error(`Permission denied: ${p}`);
+        }
+      }
+    }
 
     const constraints = {
       audio: true,
@@ -210,6 +308,52 @@ class WebRTCService {
       }
     });
 
+    // ICE connection state — drives auto-recovery (Task 12).
+    // On a transient network blip the peer connection enters 'failed';
+    // we attempt up to 3 ICE restarts before declaring the call failed.
+    // Counter is reset on every successful 'connected' so a long-running
+    // call survives many independent blips.
+    this.peerConnection.addEventListener('iceconnectionstatechange', () => {
+      const state = this.peerConnection?.iceConnectionState;
+      if (state === 'connected') {
+        this.iceRestartCount = 0;
+        return;
+      }
+      if (state === 'failed' && this.callState === 'active') {
+        if (this.iceRestartCount < 3) {
+          this.iceRestartCount += 1;
+          console.log(
+            '[WebRTC] ICE restart attempt',
+            this.iceRestartCount,
+            'for session',
+            this.currentSessionId,
+          );
+          void (async () => {
+            try {
+              if (!this.peerConnection || !this.currentSessionId) return;
+              const offer = await this.peerConnection.createOffer({
+                iceRestart: true,
+              });
+              await this.peerConnection.setLocalDescription(offer);
+              this.socket?.emit('call_offer', {
+                sessionId: this.currentSessionId,
+                sdp: offer,
+              });
+            } catch (err) {
+              console.error('[WebRTC] ICE restart failed:', err);
+            }
+          })();
+        } else {
+          // Three strikes — give up and surface failure to peers + UI.
+          this.socket?.emit('call_failed', {
+            sessionId: this.currentSessionId,
+          });
+          this.transition('failed');
+          this.cleanup();
+        }
+      }
+    });
+
     return this.peerConnection;
   }
 
@@ -229,6 +373,18 @@ class WebRTCService {
 
   private async handleRemoteOffer(data: { sessionId: string; sdp: RTCSessionDescription }): Promise<void> {
     if (!this.peerConnection) return;
+
+    // SDP race fix (D9): Initiator side already has its local offer set —
+    // an echoed `call_offer` arriving here would be one we sent ourselves
+    // (server fan-out artifact). Ignoring it prevents glare and stuck
+    // negotiations during ICE restart / multi-device scenarios.
+    if (this.isInitiator) {
+      console.warn(
+        '[WebRTC] Ignoring echoed offer on initiator side for session',
+        data.sessionId,
+      );
+      return;
+    }
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
     const answer = await this.peerConnection.createAnswer();
@@ -255,6 +411,9 @@ class WebRTCService {
   // ─── Cleanup ────────────────────────────────────────────────────────────────
 
   cleanup(): void {
+    // Stop all audio first — ringback, ringtone, vibration, and any active
+    // InCallManager session. Safe to call even if nothing is playing.
+    callAudioService.stop();
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
       this.localStream = null;
@@ -264,6 +423,15 @@ class WebRTCService {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+    // Reset state-machine fields. Transition through 'ended' → 'idle' so any
+    // subscribers see the call closing rather than vanishing silently.
+    this.isInitiator = false;
+    this.iceRestartCount = 0;
+    this.currentSessionId = null;
+    if (this.callState !== 'ended') {
+      this.transition('ended');
+    }
+    this.transition('idle');
   }
 
   // ─── Mute/Camera Toggle ─────────────────────────────────────────────────────

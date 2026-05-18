@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { RootStackParamList } from '../../navigation/types';
 import UserAvatar from '../../components/UserAvatar';
 import { callAudioService } from '../../services/audio/callAudioService';
@@ -106,7 +107,7 @@ const IncomingCallScreen: React.FC = () => {
               onPress={handleDecline}
               accessibilityRole="button"
               accessibilityLabel="Decline call">
-              <Text style={styles.buttonIcon}>X</Text>
+              <MaterialIcons name="call-end" size={32} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.buttonLabel}>Decline</Text>
           </View>
@@ -117,7 +118,11 @@ const IncomingCallScreen: React.FC = () => {
               onPress={handleAccept}
               accessibilityRole="button"
               accessibilityLabel="Accept call">
-              <Text style={styles.buttonIcon}>{callType === 'video' ? 'V' : 'A'}</Text>
+              <MaterialIcons
+                name={callType === 'video' ? 'videocam' : 'call'}
+                size={32}
+                color="#fff"
+              />
             </TouchableOpacity>
             <Text style={styles.buttonLabel}>Accept</Text>
           </View>

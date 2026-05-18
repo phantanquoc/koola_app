@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { Alert } from 'react-native';
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import { navigationRef } from '../navigation/RootNavigator';
 import { getAccessTokenInMemory } from '../services/api/apiService';
@@ -29,40 +28,24 @@ export function useIncomingCall() {
     };
   }, []);
 
+  // Navigate to the full-screen IncomingCallModal. The modal itself owns
+  // accept/decline UI and ringtone — no decisions made here.
   const handleIncomingCall = useCallback((data: unknown) => {
     const call = data as IncomingCallData;
-    const callerName = call.fromUser?.displayName || 'Someone';
-    const typeLabel = call.callType === 'video' ? 'Video' : 'Audio';
+    if (!navigationRef.isReady()) return;
 
-    Alert.alert(
-      `Incoming ${typeLabel} Call`,
-      `${callerName} is calling you`,
-      [
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: () => {
-            webrtcService.declineCall(call.sessionId);
-          },
+    (navigationRef.navigate as (...args: unknown[]) => void)(
+      'IncomingCallModal',
+      {
+        sessionId: call.sessionId,
+        callType: call.callType,
+        remoteUser: {
+          id: call.fromUser?.userId ?? call.fromUserId,
+          displayName: call.fromUser?.displayName ?? 'Unknown',
+          avatar: call.fromUser?.avatar,
         },
-        {
-          text: 'Accept',
-          onPress: () => {
-            webrtcService.acceptCall(call.sessionId);
-            if (navigationRef.isReady()) {
-              (navigationRef.navigate as (...args: unknown[]) => void)(
-                'CallModal',
-                {
-                  sessionId: call.sessionId,
-                  callType: call.callType,
-                  isInitiator: false,
-                },
-              );
-            }
-          },
-        },
-      ],
-      { cancelable: false },
+        iceServers: call.iceServers,
+      },
     );
   }, []);
 

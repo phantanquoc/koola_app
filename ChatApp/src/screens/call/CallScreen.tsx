@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { RootStackParamList } from '../../navigation/types';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import UserAvatar from '../../components/UserAvatar';
@@ -140,7 +141,11 @@ const CallScreen: React.FC = () => {
             <TouchableOpacity
               style={[styles.controlButton, isMuted && styles.controlActive]}
               onPress={toggleMute}>
-              <Text style={styles.controlIcon}>{isMuted ? 'M' : 'M'}</Text>
+              <MaterialIcons
+                name={isMuted ? 'mic-off' : 'mic'}
+                size={28}
+                color="#fff"
+              />
               <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
             </TouchableOpacity>
 
@@ -148,14 +153,18 @@ const CallScreen: React.FC = () => {
             <TouchableOpacity
               style={[styles.controlButton, isSpeakerOn && styles.controlActive]}
               onPress={handleSpeakerToggle}>
-              <Text style={styles.controlIcon}>S</Text>
+              <MaterialIcons
+                name={isSpeakerOn ? 'volume-up' : 'volume-off'}
+                size={28}
+                color="#fff"
+              />
               <Text style={styles.controlLabel}>{isSpeakerOn ? 'Earpiece' : 'Speaker'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.controlButton, styles.endButton]}
               onPress={handleEndOrCancel}>
-              <Text style={styles.controlIcon}>End</Text>
+              <MaterialIcons name="call-end" size={28} color="#fff" />
               <Text style={styles.controlLabel}>
                 {callState === 'initiating' || callState === 'ringing' ? 'Cancel' : 'End'}
               </Text>
@@ -166,7 +175,11 @@ const CallScreen: React.FC = () => {
               <TouchableOpacity
                 style={styles.controlButton}
                 onPress={switchCamera}>
-                <Text style={styles.controlIcon}>Flip</Text>
+                <MaterialIcons
+                  name="flip-camera-android"
+                  size={28}
+                  color="#fff"
+                />
                 <Text style={styles.controlLabel}>Flip</Text>
               </TouchableOpacity>
             )}
@@ -175,7 +188,11 @@ const CallScreen: React.FC = () => {
               <TouchableOpacity
                 style={[styles.controlButton, isCameraOff && styles.controlActive]}
                 onPress={toggleCamera}>
-                <Text style={styles.controlIcon}>{isCameraOff ? 'Cam' : 'Cam'}</Text>
+                <MaterialIcons
+                  name={isCameraOff ? 'videocam-off' : 'videocam'}
+                  size={28}
+                  color="#fff"
+                />
                 <Text style={styles.controlLabel}>{isCameraOff ? 'Show' : 'Hide'}</Text>
               </TouchableOpacity>
             )}

@@ -1,12 +1,18 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from './contexts/AuthContext';
-import RootNavigator from './navigation/RootNavigator';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
 import { pushNotificationService } from './services/push/pushNotificationService';
+import {
+  consumePendingIncomingCall,
+  registerFcmCallForegroundHandler,
+  type IncomingCallNavParams,
+} from './services/push/fcmCallHandler';
 import { useIncomingCall } from './hooks/useIncomingCall';
 
 // Suppress non-critical RN warnings that can cover UI in dev (LogBox renders
@@ -18,9 +24,61 @@ LogBox.ignoreLogs([
   'No Firebase App',
 ]);
 
+/**
+ * Navigate to IncomingCallModal once navigation is ready. Uses a short
+ * polling loop to handle the cold-start case where this is invoked before
+ * NavigationContainer mounts.
+ */
+function navigateToIncomingCall(params: IncomingCallNavParams): void {
+  const tryNav = (attempt = 0): void => {
+    if (navigationRef.isReady()) {
+      (navigationRef.navigate as (...args: unknown[]) => void)(
+        'IncomingCallModal',
+        params,
+      );
+      return;
+    }
+    if (attempt < 20) {
+      setTimeout(() => tryNav(attempt + 1), 100);
+    }
+  };
+  tryNav();
+}
+
 /** Inner component that uses hooks requiring AuthProvider context */
 const AppInner: React.FC = () => {
   useIncomingCall();
+  const { isAuthenticated } = useAuth();
+
+  // Replay any pending incoming-call payload (delivered via FCM while app
+  // was killed/background) and listen for foreground call pushes. Both gated
+  // on auth so we don't navigate to a screen the user can't act on.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    void consumePendingIncomingCall().then((pending) => {
+      if (cancelled || !pending) return;
+      navigateToIncomingCall({
+        sessionId: pending.sessionId,
+        callType: pending.callType,
+        remoteUser: {
+          id: pending.callerId,
+          displayName: pending.callerName,
+          avatar: pending.callerAvatar,
+        },
+      });
+    });
+
+    const unsubscribe = registerFcmCallForegroundHandler(
+      navigateToIncomingCall,
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [isAuthenticated]);
 
   return <RootNavigator />;
 };
@@ -36,10 +94,13 @@ const App: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <AppInner />
-        </AuthProvider>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <KeyboardProvider>
+          <AuthProvider>
+            <AppInner />
+          </AuthProvider>
+        </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
