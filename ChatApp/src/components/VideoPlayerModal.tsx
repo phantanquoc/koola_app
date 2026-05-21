@@ -22,7 +22,7 @@ import Video, {
 } from 'react-native-video';
 import Slider from '@react-native-community/slider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { getOrDownload } from '../services/media/mediaCacheService';
+import { getOrDownload, invalidateKey } from '../services/media/mediaCacheService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -58,6 +58,7 @@ const VideoPlayerModal: React.FC<Props> = ({ visible, uri, onClose }) => {
   const [hasError, setHasError] = useState(false);
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resolveAttempt, setResolveAttempt] = useState(0);
   // Separate "should mount <Video>" flag so we can unmount it BEFORE the
   // overlay itself disappears, giving media3 a frame to release the surface
   // while the black background still covers any leftover pixels.
@@ -99,7 +100,7 @@ const VideoPlayerModal: React.FC<Props> = ({ visible, uri, onClose }) => {
     return () => {
       cancelled = true;
     };
-  }, [visible, uri]);
+  }, [visible, uri, resolveAttempt]);
 
   const handleClose = useCallback(() => {
     // Phase 1: pause the player so media3 commits a paused state.
@@ -163,8 +164,13 @@ const VideoPlayerModal: React.FC<Props> = ({ visible, uri, onClose }) => {
   }, []);
 
   const handleError = useCallback((_err: OnVideoErrorData) => {
+    console.warn('[VideoPlayerModal] Playback error:', _err?.error?.errorString || _err);
+    // Invalidate cached file — it may be corrupt or incomplete
+    if (uri) {
+      invalidateKey(uri);
+    }
     setHasError(true);
-  }, []);
+  }, [uri]);
 
   const handleSeekStart = useCallback(() => {
     setIsSeeking(true);
@@ -180,11 +186,16 @@ const VideoPlayerModal: React.FC<Props> = ({ visible, uri, onClose }) => {
   );
 
   const handleRetry = useCallback(() => {
+    if (uri) {
+      invalidateKey(uri);
+    }
     setHasError(false);
-    setVideoKey((k) => k + 1);
+    setLoading(true);
     setPaused(false);
-    setMountVideo(true);
-  }, []);
+    setMountVideo(false);
+    setResolvedUri(null);
+    setResolveAttempt((attempt) => attempt + 1);
+  }, [uri]);
 
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60);

@@ -14,7 +14,12 @@ import {
   RequestPresignedUrlDto,
   SUPPORTED_MIME_TYPES,
 } from './dto/request-presigned-url.dto';
-import { minioClient, BUCKET, ensureBucketExists } from './minio-client';
+import {
+  minioClient,
+  minioPublicClient,
+  BUCKET,
+  ensureBucketExists,
+} from './minio-client';
 import { MembershipService } from '../conversations/services/membership.service';
 
 const MAGIC_BYTES_MAP: Record<
@@ -150,7 +155,7 @@ export class MediaService implements OnModuleInit {
 
   async generatePresignedPutUrl(mediaKey: string): Promise<string> {
     try {
-      return await minioClient.presignedPutObject(
+      return await minioPublicClient.presignedPutObject(
         BUCKET,
         mediaKey,
         PRESIGNED_PUT_EXPIRY_SECONDS,
@@ -166,7 +171,7 @@ export class MediaService implements OnModuleInit {
 
   async generatePresignedGetUrl(mediaKey: string): Promise<string> {
     try {
-      return await minioClient.presignedGetObject(
+      return await minioPublicClient.presignedGetObject(
         BUCKET,
         mediaKey,
         PRESIGNED_GET_EXPIRY_SECONDS,

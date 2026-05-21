@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { messagesApi } from '../../../services/api/apiService';
-import { socketService } from '../../../services/socket/socketService';
+import { socketService } from '../../../services/socket/SocketService';
+import { warmMemoryCache } from '../../../services/media/mediaCacheService';
 import type { Message, MessageReaction } from '../../../types';
 
 /** Simple unique ID generator — no crypto dependency */
@@ -34,6 +35,9 @@ function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record
     base.mediaDuration = (msg as Message & { mediaDuration?: number }).mediaDuration;
     base.mediaType = msg.type;
     base.blurhash = (msg as Message & { blurhash?: string }).blurhash || null;
+    base.imageWidth = (msg as Message & { imageWidth?: number | null }).imageWidth ?? undefined;
+    base.imageHeight = (msg as Message & { imageHeight?: number | null }).imageHeight ?? undefined;
+    base.mediaThumbnailKey = msg.mediaThumbnailKey ?? null;
     // Set image/video placeholder so GiftedChat calls the correct render slot
     if (msg.type === 'image') {
       base.image = 'media-pending';
@@ -49,29 +53,65 @@ function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record
 export function useMessages(conversationId: string, currentUserId: string) {
   const [messages, setMessages] = useState<IMessage[]>([]);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
   const cursorRef = useRef<string | null>(null);
+  const loadingEarlierRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // ─── Fetch initial messages ────────────────────────────────────────────────
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const retryInitialLoad = useCallback(() => {
+    setReloadVersion((v) => v + 1);
+  }, []);
+
   useEffect(() => {
+    let cancelled = false;
+    setIsInitialLoading(true);
+    setInitialLoadError(null);
+    setMessages([]);
+    cursorRef.current = null;
+
     const fetchInitial = async () => {
       try {
         const data = await messagesApi.list(conversationId, undefined, 20);
+        if (cancelled) return;
         const filtered = data.messages.filter(
           (m: Message) => !m.deletedFor?.includes(currentUserId),
         );
         const gifted = filtered.map((m: Message) => toGiftedMessage(m, currentUserId));
-        // GiftedChat expects newest first (index 0 = newest)
         gifted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
         setMessages(gifted);
         setHasEarlier(data.hasMore);
         cursorRef.current = data.nextCursor;
+        setInitialLoadError(null);
+
+        // Pre-warm media cache in background (non-blocking)
+        const mediaKeys = filtered
+          .filter((m: Message) => (m.type === 'image' || m.type === 'video') && m.mediaUrl)
+          .flatMap((m: Message) => [m.mediaUrl, m.mediaThumbnailKey].filter(Boolean) as string[]);
+        if (mediaKeys.length > 0) {
+          warmMemoryCache(mediaKeys).catch(() => {});
+        }
       } catch (err) {
-        console.warn('[useMessages] fetchInitial:', (err as Error)?.message);
+        const message = (err as Error)?.message || 'Failed to load messages';
+        console.warn('[useMessages] fetchInitial:', message);
+        if (!cancelled) setInitialLoadError(message);
+      } finally {
+        if (!cancelled) setIsInitialLoading(false);
       }
     };
     fetchInitial();
-  }, [conversationId, currentUserId]);
+
+    return () => { cancelled = true; };
+  }, [conversationId, currentUserId, reloadVersion]);
 
   // ─── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -221,7 +261,8 @@ export function useMessages(conversationId: string, currentUserId: string) {
 
   // ─── Load earlier messages ─────────────────────────────────────────────────
   const loadEarlier = useCallback(async () => {
-    if (!hasEarlier || isLoadingEarlier) return;
+    if (!hasEarlier || loadingEarlierRef.current) return;
+    loadingEarlierRef.current = true;
     setIsLoadingEarlier(true);
     try {
       const data = await messagesApi.list(
@@ -229,9 +270,10 @@ export function useMessages(conversationId: string, currentUserId: string) {
         cursorRef.current || undefined,
         20,
       );
+      if (!mountedRef.current) return;
       const gifted = data.messages.map((m: Message) => toGiftedMessage(m, currentUserId));
-      // Sort oldest last (GiftedChat: index 0 = newest)
       gifted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => m._id));
         const newItems = gifted.filter((m) => !existingIds.has(m._id));
@@ -239,12 +281,21 @@ export function useMessages(conversationId: string, currentUserId: string) {
       });
       setHasEarlier(data.hasMore);
       cursorRef.current = data.nextCursor;
+
+      // Pre-warm media cache in background (non-blocking)
+      const mediaKeys = data.messages
+        .filter((m: Message) => (m.type === 'image' || m.type === 'video') && m.mediaUrl)
+        .flatMap((m: Message) => [m.mediaUrl, m.mediaThumbnailKey].filter(Boolean) as string[]);
+      if (mediaKeys.length > 0) {
+        warmMemoryCache(mediaKeys).catch(() => {});
+      }
     } catch (err) {
       console.warn('[useMessages] loadEarlier:', (err as Error)?.message);
     } finally {
-      setIsLoadingEarlier(false);
+      loadingEarlierRef.current = false;
+      if (mountedRef.current) setIsLoadingEarlier(false);
     }
-  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier]);
+  }, [conversationId, currentUserId, hasEarlier]);
 
   // ─── Send media message ──────────────────────────────────────────────────
   const sendMediaMessage = useCallback(
@@ -379,11 +430,24 @@ export function useMessages(conversationId: string, currentUserId: string) {
   // ─── Delete message ────────────────────────────────────────────────────────
   const deleteMessage = useCallback(
     async (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+      let removedMsg: IMessage | undefined;
+      let removedIndex = -1;
+      setMessages((prev) => {
+        removedIndex = prev.findIndex((m) => m._id === messageId);
+        if (removedIndex >= 0) removedMsg = prev[removedIndex];
+        return prev.filter((m) => m._id !== messageId);
+      });
       try {
         await messagesApi.deleteMessage(conversationId, messageId);
       } catch {
-        // Re-fetch to restore if delete failed
+        // Rollback: restore the message at its original position
+        if (removedMsg) {
+          setMessages((prev) => {
+            const restored = [...prev];
+            restored.splice(removedIndex, 0, removedMsg!);
+            return restored;
+          });
+        }
       }
     },
     [conversationId],
@@ -421,11 +485,23 @@ export function useMessages(conversationId: string, currentUserId: string) {
   // ─── Delete for me ────────────────────────────────────────────────────────
   const deleteForMe = useCallback(
     async (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => String(m._id) !== messageId));
+      let removedMsg: IMessage | undefined;
+      let removedIndex = -1;
+      setMessages((prev) => {
+        removedIndex = prev.findIndex((m) => String(m._id) === messageId);
+        if (removedIndex >= 0) removedMsg = prev[removedIndex];
+        return prev.filter((m) => String(m._id) !== messageId);
+      });
       try {
         await messagesApi.deleteForMe(conversationId, messageId);
       } catch {
-        // Re-fetch if needed
+        if (removedMsg) {
+          setMessages((prev) => {
+            const restored = [...prev];
+            restored.splice(removedIndex, 0, removedMsg!);
+            return restored;
+          });
+        }
       }
     },
     [conversationId],
@@ -455,6 +531,9 @@ export function useMessages(conversationId: string, currentUserId: string) {
     deleteForMe,
     updateUploadProgress,
     isLoadingEarlier,
+    isInitialLoading,
+    initialLoadError,
+    retryInitialLoad,
     hasEarlier,
   };
 }

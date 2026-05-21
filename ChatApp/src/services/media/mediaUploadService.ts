@@ -1,5 +1,6 @@
 import { launchImageLibrary, type ImagePickerResponse } from 'react-native-image-picker';
 import { pick, types as docTypes } from 'react-native-document-picker';
+import { Video as VideoCompressor } from 'react-native-compressor';
 import apiClient from '../api/apiService';
 
 export interface UploadResult {
@@ -18,6 +19,8 @@ export interface PresignedUrlResponse {
 
 // Maximum video size: 200MB
 const MAX_VIDEO_SIZE = 209715200;
+// Maximum image size: 20MB
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
 const SUPPORTED_VIDEO_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 const SUPPORTED_VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm']);
@@ -30,6 +33,51 @@ export interface PickVideoResult {
   fileSize: number;
   duration: number;
   filename: string;
+}
+
+// ─── Compress Video ──────────────────────────────────────────────────────────
+
+/**
+ * Compress a video to ~720p / 2 Mbps using react-native-compressor.
+ *
+ * Returns the URI of the compressed file (typically a cache dir path).
+ * Progress is reported 0..1 via onProgress (caller should scale to %).
+ * The returned cancellationId can be passed to cancelVideoCompression().
+ */
+export interface CompressVideoHandle {
+  promise: Promise<string>;
+  cancel: () => void;
+}
+
+export function compressVideo(
+  uri: string,
+  onProgress?: (progressFraction: number) => void,
+): CompressVideoHandle {
+  let cancellationId: string | null = null;
+
+  const promise = VideoCompressor.compress(
+    uri,
+    {
+      // 720p / ~2 Mbps constant bitrate
+      bitrate: 2_000_000,
+      maxSize: 1280, // max dimension; compressor keeps aspect ratio
+      compressionMethod: 'manual',
+      // Skip compression for files already below this size (10 MB)
+      minimumFileSizeForCompress: 10 * 1024 * 1024,
+      getCancellationId: (id) => {
+        cancellationId = id;
+      },
+    },
+    (progress) => {
+      if (onProgress) onProgress(progress);
+    },
+  );
+
+  const cancel = () => {
+    if (cancellationId) VideoCompressor.cancelCompression(cancellationId);
+  };
+
+  return { promise, cancel };
 }
 
 // ─── Pick Video ──────────────────────────────────────────────────────────────
@@ -88,7 +136,7 @@ export async function pickImage(): Promise<{
   const asset = result.assets[0];
   const fileSize = asset.fileSize || 0;
 
-  if (fileSize > MAX_VIDEO_SIZE) {
+  if (fileSize > MAX_IMAGE_SIZE) {
     return 'TOO_LARGE';
   }
 

@@ -73,6 +73,7 @@ export interface Message {
   mediaMimeType: string;
   mediaSize: number;
   mediaDuration?: number | null;
+  mediaThumbnailKey?: string | null;
   imageWidth?: number | null;
   imageHeight?: number | null;
   blurhash?: string | null;
@@ -160,6 +161,8 @@ export interface MessageSearchItem {
 // ─── Business / Connect Tab ────────────────────────────────────────────────────
 
 export type RelationshipType = 'partner' | 'supplier';
+
+export type BusinessSort = 'latest' | 'popular' | 'name';
 
 export interface BusinessCategory {
   slug: string;

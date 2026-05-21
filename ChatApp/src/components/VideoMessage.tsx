@@ -10,7 +10,7 @@ import {
 import Video from 'react-native-video';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Blurhash } from 'react-native-blurhash';
-import { getOrDownload } from '../services/media/mediaCacheService';
+import { getOrDownload, getFromMemory } from '../services/media/mediaCacheService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const VIDEO_WIDTH = SCREEN_WIDTH * 0.6;
@@ -27,14 +27,24 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
   const blurhash = typeof message.blurhash === 'string' ? message.blurhash : null;
   const thumbnailKey = message.mediaThumbnailKey || null;
 
-  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(() =>
+    thumbnailKey ? getFromMemory(thumbnailKey) : null,
+  );
   // Fallback: when no server-side thumbnail or blurhash, resolve the video
   // itself to a local URI and let react-native-video render a paused first
   // frame as a lightweight preview.
-  const [previewVideoUri, setPreviewVideoUri] = useState<string | null>(null);
+  const [previewVideoUri, setPreviewVideoUri] = useState<string | null>(() =>
+    !thumbnailKey && message.mediaKey ? getFromMemory(message.mediaKey) : null,
+  );
 
   useEffect(() => {
     if (!thumbnailKey) return;
+    // Check memory cache synchronously before starting async fetch
+    const cached = getFromMemory(thumbnailKey);
+    if (cached) {
+      setThumbnailUri(cached);
+      return;
+    }
     let cancelled = false;
     getOrDownload(thumbnailKey).then((uri) => {
       if (!cancelled && uri) setThumbnailUri(uri);
@@ -45,6 +55,12 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
   // Resolve the video itself for a paused-frame preview when no thumbnail.
   useEffect(() => {
     if (thumbnailKey || !message.mediaKey) return;
+    // Check memory cache synchronously before starting async fetch
+    const cached = getFromMemory(message.mediaKey);
+    if (cached) {
+      setPreviewVideoUri(cached);
+      return;
+    }
     let cancelled = false;
     getOrDownload(message.mediaKey).then((uri) => {
       if (!cancelled && uri) setPreviewVideoUri(uri);
@@ -67,11 +83,16 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
     >
       {/* Background: server thumbnail > blurhash > paused-frame video preview > dark fallback */}
       {thumbnailUri ? (
-        <Image source={{ uri: thumbnailUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
       ) : blurhash ? (
-        <Blurhash blurhash={blurhash} style={StyleSheet.absoluteFillObject} />
+        <Blurhash pointerEvents="none" blurhash={blurhash} style={StyleSheet.absoluteFillObject} />
       ) : previewVideoUri ? (
         <Video
+          pointerEvents="none"
           source={{ uri: previewVideoUri }}
           style={StyleSheet.absoluteFillObject}
           paused
@@ -83,13 +104,13 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
       ) : null}
 
       {/* Play icon */}
-      <View style={styles.playCircle}>
+      <View pointerEvents="none" style={styles.playCircle}>
         <MaterialIcons name="play-arrow" size={32} color="#fff" />
       </View>
 
       {/* Duration badge */}
       {duration > 0 && (
-        <View style={styles.durationBadge}>
+        <View pointerEvents="none" style={styles.durationBadge}>
           <MaterialIcons name="videocam" size={12} color="#fff" />
           <Text style={styles.durationText}>{formatDuration(duration)}</Text>
         </View>

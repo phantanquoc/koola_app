@@ -5,7 +5,7 @@ export type MediaDocument = Media & Document;
 
 @Schema({ timestamps: true })
 export class Media {
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   mediaKey: string;
 
   @Prop({ required: true })
