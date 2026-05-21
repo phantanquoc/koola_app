@@ -1,13 +1,30 @@
 {
   "repoPath": "D:\\Desktop\\APP_KOOLA",
-  "lastCommit": "aac7307f4f633c3d8bdc0e7d3113390115911cb0",
-  "indexedAt": "2026-04-23T18:13:31.860Z",
+  "lastCommit": "3680e2c7d6d36cb7018ec657a83056af4f745011",
+  "indexedAt": "2026-05-18T04:20:04.668Z",
+  "remoteUrl": "https://github.com/phantanquoc/koola_app",
   "stats": {
-    "files": 325,
-    "nodes": 4357,
-    "edges": 6463,
-    "communities": 66,
-    "processes": 140,
+    "files": 420,
+    "nodes": 5993,
+    "edges": 9922,
+    "communities": 107,
+    "processes": 208,
     "embeddings": 0
+  },
+  "capabilities": {
+    "graph": {
+      "provider": "ladybugdb",
+      "status": "available"
+    },
+    "fts": {
+      "provider": "ladybugdb-fts",
+      "status": "available"
+    },
+    "vectorSearch": {
+      "provider": "exact-scan",
+      "status": "unavailable",
+      "exactScanLimit": 10000,
+      "reason": "LadybugDB VECTOR is disabled on this platform; semantic search uses exact scan when embeddings exist."
+    }
   }
 }

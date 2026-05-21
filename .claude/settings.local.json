@@ -65,7 +65,15 @@
       "Bash(find /d/Desktop/APP_KOOLA/ChatApp -not -path */node_modules/* -type f)",
       "Bash(ls -la \"D:\\\\Desktop\\\\APP_KOOLA\\\\chat-backend\\\\src\"\" 2>/dev/null || echo \"No src dir \")",
       "Bash(ls -la \"D:\\\\Desktop\\\\APP_KOOLA\\\\docs\"\" 2>/dev/null || echo \"No docs dir \")",
-      "Bash(dir /s /b D:/Desktop/APP_KOOLA/ChatApp)"
+      "Bash(dir /s /b D:/Desktop/APP_KOOLA/ChatApp)",
+      "Skill(analyze)",
+      "Skill(analyze:*)",
+      "Bash(gitnexus analyze *)",
+      "Bash(npx gitnexus *)",
+      "Skill(ui)",
+      "Skill(ui:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

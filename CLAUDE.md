@@ -246,7 +246,7 @@ Both are loaded into Claude's context. Read CLAUDE.md to **think correctly**, AG
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **APP_KOOLA** (4357 symbols, 6463 relationships, 140 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **koola_app** (5993 symbols, 9922 relationships, 208 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -269,10 +269,10 @@ This project is indexed by GitNexus as **APP_KOOLA** (4357 symbols, 6463 relatio
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/APP_KOOLA/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/APP_KOOLA/clusters` | All functional areas |
-| `gitnexus://repo/APP_KOOLA/processes` | All execution flows |
-| `gitnexus://repo/APP_KOOLA/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/koola_app/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/koola_app/clusters` | All functional areas |
+| `gitnexus://repo/koola_app/processes` | All execution flows |
+| `gitnexus://repo/koola_app/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 
@@ -286,3 +286,5 @@ This project is indexed by GitNexus as **APP_KOOLA** (4357 symbols, 6463 relatio
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+> UI/UX work must read `openspec/ui-dna.md` before any visual change.
