@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Business } from '../types';
+import type { Business, BusinessSort } from '../types';
 import { businessesApi } from '../services/api/apiService';
 
 interface BusinessFilters {
   relationshipType?: string;
   category?: string;
+  sort?: BusinessSort;
+  province?: string;
 }
 
 export function useBusinessList(filters: BusinessFilters) {
@@ -13,77 +15,58 @@ export function useBusinessList(filters: BusinessFilters) {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const fetchingRef = useRef(false);
 
-  const fetchPage = useCallback(
-    async (reset: boolean) => {
-      if (loading) return;
-      setLoading(true);
-      try {
-        const params: Record<string, string | number> = { limit: 20 };
-        if (filters.relationshipType && filters.relationshipType !== 'all') {
-          params.relationshipType = filters.relationshipType;
-        }
-        if (filters.category && filters.category !== 'all') {
-          params.category = filters.category;
-        }
-        if (!reset && cursor) {
-          params.cursor = cursor;
-        }
-
-        const res = await businessesApi.list(params);
-        if (!mountedRef.current) return;
-
-        if (reset) {
-          setItems(res.items);
-        } else {
-          setItems((prev) => [...prev, ...res.items]);
-        }
-        setCursor(res.nextCursor);
-        setHasMore(res.hasMore);
-      } catch (err) {
-        console.warn('useBusinessList fetch error:', err);
-      } finally {
-        if (mountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [filters.relationshipType, filters.category, cursor, loading],
-  );
+  const buildParams = useCallback(() => {
+    const params: Record<string, string | number> = { limit: 20 };
+    if (filters.relationshipType && filters.relationshipType !== 'all') {
+      params.relationshipType = filters.relationshipType;
+    }
+    if (filters.category && filters.category !== 'all') {
+      params.category = filters.category;
+    }
+    if (filters.sort && filters.sort !== 'latest') {
+      params.sort = filters.sort;
+    }
+    if (filters.province) {
+      params.province = filters.province;
+    }
+    return params;
+  }, [filters.relationshipType, filters.category, filters.sort, filters.province]);
 
   // Reset when filters change
   useEffect(() => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
     setCursor(null);
     setItems([]);
     setHasMore(false);
-    // We need to fetch fresh — use a flag to indicate reset
+    setLoading(true);
+
     const doFetch = async () => {
-      setLoading(true);
       try {
-        const params: Record<string, string | number> = { limit: 20 };
-        if (filters.relationshipType && filters.relationshipType !== 'all') {
-          params.relationshipType = filters.relationshipType;
-        }
-        if (filters.category && filters.category !== 'all') {
-          params.category = filters.category;
-        }
+        const params = buildParams();
         const res = await businessesApi.list(params);
         if (!mountedRef.current) return;
+        setError(null);
         setItems(res.items);
         setCursor(res.nextCursor);
         setHasMore(res.hasMore);
-      } catch (err) {
+      } catch (err: any) {
         console.warn('useBusinessList fetch error:', err);
-      } finally {
         if (mountedRef.current) {
-          setLoading(false);
+          setError(err?.message || 'Không thể tải dữ liệu');
         }
+      } finally {
+        if (mountedRef.current) setLoading(false);
+        fetchingRef.current = false;
       }
     };
     doFetch();
-  }, [filters.relationshipType, filters.category]);
+  }, [buildParams]);
 
   useEffect(() => {
     return () => {
@@ -91,39 +74,53 @@ export function useBusinessList(filters: BusinessFilters) {
     };
   }, []);
 
-  const loadMore = useCallback(() => {
-    if (hasMore && !loading) {
-      fetchPage(false);
+  const loadMore = useCallback(async () => {
+    if (!hasMore || fetchingRef.current || !cursor) return;
+    fetchingRef.current = true;
+    setLoading(true);
+    try {
+      const params = buildParams();
+      params.cursor = cursor;
+      const res = await businessesApi.list(params);
+      if (!mountedRef.current) return;
+      setError(null);
+      setItems((prev) => [...prev, ...res.items]);
+      setCursor(res.nextCursor);
+      setHasMore(res.hasMore);
+    } catch (err: any) {
+      console.warn('useBusinessList loadMore error:', err);
+      if (mountedRef.current) {
+        setError(err?.message || 'Không thể tải dữ liệu');
+      }
+    } finally {
+      if (mountedRef.current) setLoading(false);
+      fetchingRef.current = false;
     }
-  }, [hasMore, loading, fetchPage]);
+  }, [hasMore, cursor, buildParams]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     setRefreshing(true);
     setCursor(null);
-    const doRefresh = async () => {
-      try {
-        const params: Record<string, string | number> = { limit: 20 };
-        if (filters.relationshipType && filters.relationshipType !== 'all') {
-          params.relationshipType = filters.relationshipType;
-        }
-        if (filters.category && filters.category !== 'all') {
-          params.category = filters.category;
-        }
-        const res = await businessesApi.list(params);
-        if (!mountedRef.current) return;
-        setItems(res.items);
-        setCursor(res.nextCursor);
-        setHasMore(res.hasMore);
-      } catch (err) {
-        console.warn('useBusinessList refresh error:', err);
-      } finally {
-        if (mountedRef.current) {
-          setRefreshing(false);
-        }
+    try {
+      const params = buildParams();
+      const res = await businessesApi.list(params);
+      if (!mountedRef.current) return;
+      setError(null);
+      setItems(res.items);
+      setCursor(res.nextCursor);
+      setHasMore(res.hasMore);
+    } catch (err: any) {
+      console.warn('useBusinessList refresh error:', err);
+      if (mountedRef.current) {
+        setError(err?.message || 'Không thể tải dữ liệu');
       }
-    };
-    doRefresh();
-  }, [filters.relationshipType, filters.category]);
+    } finally {
+      if (mountedRef.current) setRefreshing(false);
+      fetchingRef.current = false;
+    }
+  }, [buildParams]);
 
   const updateItem = useCallback((id: string, updates: Partial<Business>) => {
     setItems((prev) =>
@@ -131,5 +128,5 @@ export function useBusinessList(filters: BusinessFilters) {
     );
   }, []);
 
-  return { items, loading, refreshing, hasMore, loadMore, refresh, updateItem };
+  return { items, loading, refreshing, hasMore, error, loadMore, refresh, updateItem };
 }

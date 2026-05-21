@@ -1,15 +1,31 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, StatusBar } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { usersApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
+import {
+  KoolaButton,
+  KoolaDivider,
+  KoolaSurface,
+  KoolaText,
+  koolaColors,
+} from '../../ui';
 
 const SettingsScreen: React.FC = () => {
   const { user, logout } = useAuth();
-  const navigation = useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     user?.settings?.notificationsEnabled ?? true,
   );
@@ -21,7 +37,7 @@ const SettingsScreen: React.FC = () => {
     try {
       await usersApi.updateSettings({ notificationsEnabled: value });
     } catch {
-      setNotificationsEnabled(!value); // Revert
+      setNotificationsEnabled(!value);
       Alert.alert('Lỗi', 'Không thể cập nhật cài đặt thông báo');
     } finally {
       setToggling(false);
@@ -30,57 +46,138 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.profileSection} onPress={() => navigation.navigate('EditProfile')}>
-        <UserAvatar displayName={user?.displayName || '?'} avatar={user?.avatar || undefined} size={80} />
-        <Text style={styles.name}>{user?.displayName || 'Không rõ'}</Text>
-        <Text style={styles.email}>{user?.email || ''}</Text>
-        <Text style={styles.editHint}>Nhấn để chỉnh sửa hồ sơ</Text>
-      </TouchableOpacity>
+      <Pressable
+        style={styles.profileSection}
+        onPress={() => navigation.navigate('EditProfile')}
+        accessibilityRole="button">
+        <UserAvatar
+          displayName={user?.displayName || '?'}
+          avatar={user?.avatar || undefined}
+          size={84}
+        />
+        <KoolaText variant="heading" align="center" numberOfLines={2} style={styles.name}>
+          {user?.displayName || 'Không rõ'}
+        </KoolaText>
+        <KoolaText tone="muted" align="center" numberOfLines={1}>
+          {user?.email || ''}
+        </KoolaText>
+        <KoolaText variant="caption" tone="primary" weight="800" style={styles.editHint}>
+          Nhấn để chỉnh sửa hồ sơ
+        </KoolaText>
+      </Pressable>
 
-      <View style={styles.section}>
+      <KoolaSurface variant="raised" style={styles.section}>
         <View style={styles.menuItemRow}>
-          <Text style={styles.menuText}>Thông báo</Text>
+          <View style={styles.menuLabelRow}>
+            <MaterialIcons
+              name="notifications-none"
+              size={22}
+              color={koolaColors.primary}
+            />
+            <KoolaText variant="label">Thông báo</KoolaText>
+          </View>
           <Switch
             value={notificationsEnabled}
             onValueChange={handleToggleNotifications}
             disabled={toggling}
-            trackColor={{ false: '#ddd', true: '#90CAF9' }}
-            thumbColor={notificationsEnabled ? '#2196F3' : '#f4f3f4'}
+            trackColor={{ false: '#D0D5DD', true: '#93C5FD' }}
+            thumbColor={notificationsEnabled ? koolaColors.primary : '#F2F4F7'}
           />
         </View>
-        <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Quyền riêng tư', 'Dữ liệu của bạn được lưu trữ an toàn trên máy chủ.\n\nTin nhắn được mã hóa khi truyền qua TLS.\n\nMã hóa đầu cuối đang được phát triển.')}>
-          <Text style={styles.menuText}>Quyền riêng tư</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Về Koola Chat', 'Phiên bản 1.0.0\n\nXây dựng bằng React Native + NestJS\n\n© 2026 Koola Chat')}>
-          <Text style={styles.menuText}>Giới thiệu</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-      </View>
+        <KoolaDivider />
+        <SettingsRow
+          icon="lock-outline"
+          label="Quyền riêng tư"
+          onPress={() =>
+            Alert.alert(
+              'Quyền riêng tư',
+              'Dữ liệu của bạn được lưu trữ an toàn trên máy chủ.\n\nTin nhắn được mã hóa khi truyền qua TLS.\n\nMã hóa đầu cuối đang được phát triển.',
+            )
+          }
+        />
+        <KoolaDivider />
+        <SettingsRow
+          icon="info-outline"
+          label="Giới thiệu"
+          onPress={() =>
+            Alert.alert(
+              'Về Koola Chat',
+              'Phiên bản 1.0.0\n\nXây dựng bằng React Native + NestJS\n\n© 2026 Koola Chat',
+            )
+          }
+        />
+      </KoolaSurface>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-        <Text style={styles.logoutText}>Đăng xuất</Text>
-      </TouchableOpacity>
+      <KoolaButton
+        title="Đăng xuất"
+        icon="logout"
+        variant="danger"
+        onPress={logout}
+        style={styles.logoutButton}
+      />
     </View>
   );
 };
 
+interface SettingsRowProps {
+  icon: string;
+  label: string;
+  onPress: () => void;
+}
+
+const SettingsRow: React.FC<SettingsRowProps> = ({ icon, label, onPress }) => (
+  <Pressable style={styles.menuItem} onPress={onPress} accessibilityRole="button">
+    <View style={styles.menuLabelRow}>
+      <MaterialIcons name={icon} size={22} color={koolaColors.primary} />
+      <KoolaText variant="label">{label}</KoolaText>
+    </View>
+    <MaterialIcons name="chevron-right" size={22} color={koolaColors.faint} />
+  </Pressable>
+);
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  profileSection: { alignItems: 'center', paddingTop: (StatusBar.currentHeight || 0) + 16, paddingBottom: 32, backgroundColor: '#fff' },
-  name: { fontSize: 20, fontWeight: '600', color: '#333', marginTop: 12 },
-  email: { fontSize: 14, color: '#999', marginTop: 4 },
-  editHint: { fontSize: 12, color: '#2196F3', marginTop: 4 },
-  section: { marginTop: 16, backgroundColor: '#fff' },
-  menuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  menuItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  menuText: { fontSize: 16, color: '#333' },
-  menuArrow: { fontSize: 22, color: '#ccc' },
-  logoutButton: {
-    marginTop: 32, marginHorizontal: 16, paddingVertical: 14,
-    backgroundColor: '#ff4444', borderRadius: 8, alignItems: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: koolaColors.canvas,
+    paddingHorizontal: 16,
   },
-  logoutText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  profileSection: {
+    alignItems: 'center',
+    paddingTop: (StatusBar.currentHeight || 0) + 22,
+    paddingBottom: 28,
+  },
+  name: {
+    marginTop: 12,
+  },
+  editHint: {
+    marginTop: 6,
+  },
+  section: {
+    overflow: 'hidden',
+  },
+  menuItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  menuLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  logoutButton: {
+    marginTop: 22,
+  },
 });
 
 export default SettingsScreen;

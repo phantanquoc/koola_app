@@ -1,18 +1,17 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   FlatList,
-  TouchableOpacity,
-  Text,
   StyleSheet,
   RefreshControl,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { Conversation } from '../../types';
 import type { ConversationListScreenNavigationProp } from '../../navigation/types';
 import { conversationsApi } from '../../services/api/apiService';
-import { socketService } from '../../services/socket/socketService';
+import { socketService } from '../../services/socket/SocketService';
+import { warmMemoryCache } from '../../services/media/mediaCacheService';
 import { useAuth } from '../../contexts/AuthContext';
 import ConversationListItem from '../../components/ConversationListItem';
 import EmptyConversations from '../../components/EmptyConversations';
@@ -22,6 +21,10 @@ import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
+import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
+import { KoolaState, koolaColors } from '../../ui';
+
+const Separator = () => <View style={styles.separator} />;
 
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation<ConversationListScreenNavigationProp>();
@@ -36,20 +39,33 @@ const ConversationListScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const fetchingRef = useRef(false);
+  const pageRef = useRef(1);
 
   const fetchConversations = useCallback(
     async (reset = false) => {
-      const targetPage = reset ? 1 : page;
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+
+      const targetPage = reset ? 1 : pageRef.current;
       if (reset) setRefreshing(true);
       else setLoading(true);
 
       try {
         const data = await conversationsApi.list(targetPage, 20);
+        // Pre-warm avatar cache from disk BEFORE rendering conversations
+        const avatarKeys = data.conversations
+          .flatMap((c) => c.members.map((m) => m.user?.avatar))
+          .filter((a): a is string => !!a);
+        if (avatarKeys.length > 0) await warmMemoryCache(avatarKeys);
+
         if (reset) {
           setConversations(data.conversations);
+          pageRef.current = 2;
           setPage(2);
         } else {
           setConversations((prev) => [...prev, ...data.conversations]);
+          pageRef.current = pageRef.current + 1;
           setPage((p) => p + 1);
         }
         setHasMore(data.hasMore);
@@ -59,16 +75,20 @@ const ConversationListScreen: React.FC = () => {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        fetchingRef.current = false;
       }
     },
-    [page],
+    [],
   );
 
-  // Fetch on first mount and on focus
+  // Fetch on focus — refresh list when returning from chat.
+  // Always reset (page 1) on focus; never append on focus, which would
+  // duplicate the existing in-memory list. Subsequent updates come from
+  // socket events, not REST polling.
   useFocusEffect(
     useCallback(() => {
       fetchConversations(true);
-    }, []),
+    }, [fetchConversations]),
   );
 
   // Sync missed messages + flush offline queue on reconnect
@@ -80,9 +100,16 @@ const ConversationListScreen: React.FC = () => {
     }
   }, [isConnected, sync]);
 
+  // Keep a fresh user ref so socket handlers always see the current userId
+  // without re-subscribing the listener on every user change.
+  const userIdRef = useRef<string | undefined>(user?._id);
+  useEffect(() => {
+    userIdRef.current = user?._id;
+  }, [user?._id]);
+
   // Socket: new_message → update list
   useEffect(() => {
-    const handleNewMessage = (data: { message: { conversationId: string; content: string; createdAt: string } }) => {
+    const handleNewMessage = (data: { message: { conversationId: string; content: string; createdAt: string; senderId?: string } }) => {
       const msg = data.message;
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c._id === msg.conversationId);
@@ -91,7 +118,10 @@ const ConversationListScreen: React.FC = () => {
         const conv = { ...updated[idx] };
         conv.lastMessagePreview = msg.content;
         conv.lastMessageAt = msg.createdAt;
-        conv.unreadCount = (conv.unreadCount || 0) + 1;
+        // Only increment unread for messages from others
+        if (msg.senderId && msg.senderId !== userIdRef.current) {
+          conv.unreadCount = (conv.unreadCount || 0) + 1;
+        }
         updated.splice(idx, 1);
         return [conv, ...updated];
       });
@@ -123,7 +153,20 @@ const ConversationListScreen: React.FC = () => {
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
 
   const handleConversationPress = (conv: Conversation) => {
-    navigation.navigate('Chat', { conversationId: conv._id });
+    // Extract other member's displayName + avatar for instant header render
+    let displayName: string | undefined;
+    let avatar: string | undefined;
+    if (conv.type !== 'group') {
+      const other = conv.members.find((m) => m.userId !== user?._id);
+      if (other?.user) {
+        displayName = other.user.displayName;
+        avatar = other.user.avatar;
+      }
+    } else {
+      displayName = conv.name;
+      avatar = conv.avatar;
+    }
+    navigation.navigate('Chat', { conversationId: conv._id, displayName, avatar });
   };
 
   const handleGroupCreated = (conv: Conversation) => {
@@ -137,20 +180,22 @@ const ConversationListScreen: React.FC = () => {
 
   if (error && conversations.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchConversations(true)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <KoolaState
+          icon="wifi-off"
+          title="Không thể tải hội thoại"
+          message={error}
+          actionLabel="Thử lại"
+          onActionPress={() => fetchConversations(true)}
+          style={styles.errorContainer}
+        />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <OfflineBanner isVisible={!isConnected} />
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <OfflineBanner isVisible={isConnected === false} />
       <FlatList
         data={conversations}
         keyExtractor={(item) => item._id}
@@ -160,6 +205,8 @@ const ConversationListScreen: React.FC = () => {
             onPress={() => handleConversationPress(item)}
           />
         )}
+        contentContainerStyle={{ paddingBottom: TAB_BAR_FLOATING_INSET + 16 }}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading && !refreshing ? <EmptyConversations onStartChat={handleStartChat} /> : null
         }
@@ -167,18 +214,14 @@ const ConversationListScreen: React.FC = () => {
           hasMore ? <LoadingFooter loading={loading} onLoadMore={handleLoadMore} /> : null
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2196F3" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={koolaColors.primary}
+          />
         }
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={Separator}
       />
-
-      {/* FAB for new group */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setShowGroupModal(true)}
-        activeOpacity={0.8}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
 
       <GroupCreateModal
         visible={showGroupModal}
@@ -190,19 +233,9 @@ const ConversationListScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  separator: { height: 1, backgroundColor: '#f0f0f0' },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { fontSize: 16, color: '#ff4444', marginBottom: 12 },
-  retryButton: { paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#2196F3', borderRadius: 8 },
-  retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  fab: {
-    position: 'absolute', bottom: 24, right: 24, width: 56, height: 56,
-    borderRadius: 28, backgroundColor: '#2196F3', justifyContent: 'center',
-    alignItems: 'center', elevation: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4,
-  },
-  fabText: { fontSize: 28, color: '#fff', fontWeight: 'bold', marginTop: -2 },
+  container: { flex: 1, backgroundColor: koolaColors.surface },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: koolaColors.line },
+  errorContainer: { flex: 1 },
 });
 
 export default ConversationListScreen;

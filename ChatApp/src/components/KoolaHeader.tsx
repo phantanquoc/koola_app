@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { KoolaIconButton, KoolaText, koolaColors } from '../ui';
 
 interface KoolaHeaderProps {
   searchPlaceholder?: string;
@@ -9,7 +10,15 @@ interface KoolaHeaderProps {
   onAddPress?: () => void;
 }
 
-const BRAND_BLUE = '#3B5DC9';
+const Logo: React.FC = () => (
+  <KoolaText variant="heading" weight="800" style={styles.logo}>
+    <KoolaText variant="heading" weight="800" style={styles.logoBlue}>K</KoolaText>
+    <KoolaText variant="heading" weight="800" style={styles.logoGreen}>O</KoolaText>
+    <KoolaText variant="heading" weight="800" style={styles.logoWarm}>O</KoolaText>
+    <KoolaText variant="heading" weight="800" style={styles.logoBlue}>L</KoolaText>
+    <KoolaText variant="heading" weight="800" style={styles.logoGreen}>A</KoolaText>
+  </KoolaText>
+);
 
 const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   searchPlaceholder = 'Tìm kiếm...',
@@ -17,42 +26,48 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   onQrPress,
   onAddPress,
 }) => {
+  const [searchPressed, setSearchPressed] = React.useState(false);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>
-        <Text style={styles.logoBlue}>K</Text>
-        <Text style={styles.logoGreen}>O</Text>
-        <Text style={styles.logoRed}>O</Text>
-        <Text style={styles.logoBlue}>L</Text>
-        <Text style={styles.logoGreen}>A</Text>
-      </Text>
-
-      <View style={styles.searchRow}>
-        <TouchableOpacity
-          style={styles.searchBar}
+      <View style={styles.logoRow}>
+        <Logo />
+      </View>
+      <View style={styles.actionsRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={searchPlaceholder}
+          android_ripple={{ color: koolaColors.line }}
           onPress={onSearchPress}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Mở tìm kiếm">
-          <MaterialIcons name="search" size={20} color="#9CA3AF" />
-          <Text style={styles.searchText}>{searchPlaceholder}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.iconButton}
+          onPressIn={() => setSearchPressed(true)}
+          onPressOut={() => setSearchPressed(false)}
+          style={[
+            styles.searchBar,
+            searchPressed ? styles.searchBarPressed : null,
+          ]}>
+          <MaterialIcons name="search" size={18} color={koolaColors.muted} />
+          <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
+            {searchPlaceholder}
+          </KoolaText>
+        </Pressable>
+        <KoolaIconButton
+          icon="qr-code-scanner"
+          tone="primary"
+          variant="soft"
+          size={36}
+          iconSize={20}
           onPress={onQrPress}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Quét mã QR">
-          <MaterialIcons name="qr-code-scanner" size={22} color={BRAND_BLUE} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.iconButton}
+          accessibilityLabel="Quét mã QR"
+        />
+        <KoolaIconButton
+          icon="add"
+          tone="surface"
+          variant="solid"
+          size={36}
+          iconSize={20}
           onPress={onAddPress}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Thêm mới">
-          <MaterialIcons name="add" size={24} color="#6B7280" />
-        </TouchableOpacity>
+          accessibilityLabel="Thêm mới"
+        />
       </View>
     </View>
   );
@@ -60,57 +75,53 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    paddingTop: (StatusBar.currentHeight || 0) + 8,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    backgroundColor: koolaColors.surface,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
   },
-  logo: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: 2,
-    marginBottom: 10,
+  logoRow: {
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
-  logoBlue: {
-    color: BRAND_BLUE,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  logoGreen: {
-    color: '#2E9E5A',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  logoRed: {
-    color: '#E05A2D',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  searchRow: {
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  logo: {
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  logoBlue: {
+    color: koolaColors.primary,
+  },
+  logoGreen: {
+    color: koolaColors.accent,
+  },
+  logoWarm: {
+    color: koolaColors.warm,
   },
   searchBar: {
     flex: 1,
+    minHeight: 36,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F1F5',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    height: 40,
     gap: 8,
+    borderRadius: 18,
+    backgroundColor: koolaColors.canvas,
+  },
+  searchBarPressed: {
+    opacity: 0.78,
   },
   searchText: {
-    fontSize: 14,
-    color: '#9CA3AF',
     flex: 1,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontSize: 13,
   },
 });
 

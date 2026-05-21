@@ -1,23 +1,34 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { formatDistanceToNow } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
+import { KoolaText, koolaColors, koolaRadii } from '../ui';
 
 interface Props {
   conversation: Conversation;
   onPress: () => void;
 }
 
-/**
- * Resolve the header data (display name, avatar mediaKey/URL, online status)
- * for a conversation from the perspective of `currentUserId`.
- *
- * Exported so navigators can pre-pass this to ChatScreen and avoid the
- * placeholder→avatar flicker on open.
- */
+// Short Vietnamese timestamp: "5p" / "3g" / "5n" / "2tu" / "1th" / "1n2024"
+function formatShortTimestamp(date: Date): string {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}p`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}g`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}n`;
+  const diffWeek = Math.floor(diffDay / 7);
+  if (diffWeek < 4) return `${diffWeek}tu`;
+  const diffMonth = Math.floor(diffDay / 30);
+  if (diffMonth < 12) return `${diffMonth}th`;
+  const diffYr = Math.floor(diffDay / 365);
+  return `${diffYr}n`;
+}
+
 export function resolveConversationHeader(
   conversation: Conversation,
   currentUserId: string | undefined,
@@ -31,7 +42,8 @@ export function resolveConversationHeader(
   }
   const otherMember = (conversation.members || []).find((m) => {
     if (!m || !m.userId) return false;
-    const memberId = typeof m.userId === 'object' ? (m.userId as any)._id : m.userId;
+    const memberId =
+      typeof m.userId === 'object' ? (m.userId as any)._id : m.userId;
     return memberId !== currentUserId;
   });
   if (!otherMember) {
@@ -54,44 +66,61 @@ export function resolveConversationHeader(
 
 const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   const { user } = useAuth();
-  const { displayName, avatar, isOnline } = resolveConversationHeader(conversation, user?._id);
-  const lastMessagePreview = conversation.lastMessagePreview || 'Chưa có tin nhắn';
+  const { displayName, avatar, isOnline } = resolveConversationHeader(
+    conversation,
+    user?._id,
+  );
+  const lastMessagePreview =
+    conversation.lastMessagePreview || 'Chưa có tin nhắn';
   const timestamp = conversation.lastMessageAt
-    ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true, locale: vi })
+    ? formatShortTimestamp(new Date(conversation.lastMessageAt))
     : '';
   const unreadCount = conversation.unreadCount || 0;
 
   return (
-    <TouchableOpacity
+    <Pressable
       style={styles.container}
+      android_ripple={{ color: koolaColors.canvas }}
       onPress={onPress}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Trò chuyện với ${displayName}`}>
       <View style={styles.avatarWrapper}>
-        <UserAvatar displayName={displayName} avatar={avatar} size={50} />
-        {isOnline && <View style={styles.onlineDot} />}
+        <UserAvatar displayName={displayName} avatar={avatar} size={44} />
+        {isOnline ? <View style={styles.onlineDot} /> : null}
       </View>
 
       <View style={styles.content}>
         <View style={styles.topRow}>
-          <Text style={[styles.name, unreadCount > 0 && styles.nameUnread]} numberOfLines={1}>
+          <KoolaText
+            variant="label"
+            weight={unreadCount > 0 ? '800' : '700'}
+            numberOfLines={1}
+            style={styles.name}>
             {displayName}
-          </Text>
-          <Text style={styles.timestamp}>{timestamp}</Text>
+          </KoolaText>
+          <KoolaText variant="caption" tone="faint" numberOfLines={1} style={styles.timestamp}>
+            {timestamp}
+          </KoolaText>
         </View>
         <View style={styles.bottomRow}>
-          <Text style={styles.preview} numberOfLines={1}>{lastMessagePreview}</Text>
-          {unreadCount > 0 && (
+          <KoolaText
+            variant="caption"
+            tone={unreadCount > 0 ? 'ink' : 'muted'}
+            weight={unreadCount > 0 ? '600' : '400'}
+            numberOfLines={1}
+            style={styles.preview}>
+            {lastMessagePreview}
+          </KoolaText>
+          {unreadCount > 0 ? (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>
+              <KoolaText variant="caption" tone="surface" weight="800">
                 {unreadCount > 99 ? '99+' : unreadCount}
-              </Text>
+              </KoolaText>
             </View>
-          )}
+          ) : null}
         </View>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
@@ -99,73 +128,61 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: koolaColors.surface,
+  },
+  pressed: {
+    backgroundColor: koolaColors.canvas,
   },
   avatarWrapper: {
     position: 'relative',
   },
   content: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: 12,
   },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
     flex: 1,
-    marginRight: 10,
-  },
-  nameUnread: {
-    fontWeight: '700',
-    color: '#111827',
   },
   timestamp: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
   },
   bottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
+    gap: 8,
   },
   preview: {
-    fontSize: 14,
-    color: '#6B7280',
     flex: 1,
-    marginRight: 10,
   },
   badge: {
-    backgroundColor: '#1565C0',
-    borderRadius: 11,
-    minWidth: 22,
-    height: 22,
+    backgroundColor: koolaColors.primary,
+    borderRadius: koolaRadii.pill,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
   },
   onlineDot: {
     position: 'absolute',
     right: 0,
     bottom: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#10B981',
-    borderWidth: 2.5,
-    borderColor: '#FFFFFF',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: koolaColors.success,
+    borderWidth: 2,
+    borderColor: koolaColors.surface,
   },
 });
 

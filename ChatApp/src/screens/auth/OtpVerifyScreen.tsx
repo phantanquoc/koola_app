@@ -1,23 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../services/api/apiService';
+import {
+  KoolaBadge,
+  KoolaButton,
+  KoolaSurface,
+  KoolaText,
+  koolaColors,
+  koolaRadii,
+} from '../../ui';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpVerify'>;
 
-const OTP_EXPIRY = 300; // 5 minutes
+const OTP_EXPIRY = 300;
 const MAX_ATTEMPTS = 5;
 
 const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -60,7 +66,9 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
       ]);
     } catch (err: unknown) {
       setAttempts((prev) => prev + 1);
-      const error = err as { response?: { data?: { message?: string | string[] } } };
+      const error = err as {
+        response?: { data?: { message?: string | string[] } };
+      };
       const msg = error.response?.data?.message;
       Alert.alert(
         'Xác thực thất bại',
@@ -79,7 +87,9 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
       setAttempts(0);
       setCountdown(OTP_EXPIRY);
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string | string[] } } };
+      const error = err as {
+        response?: { data?: { message?: string | string[] } };
+      };
       const msg = error.response?.data?.message;
       Alert.alert(
         'Gửi lại thất bại',
@@ -94,100 +104,106 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.form}>
-        <Text style={styles.title}>Xác thực OTP</Text>
-        <Text style={styles.subtitle}>
-          Nhập mã 6 số đã gửi đến {email}
-        </Text>
+      <KoolaSurface variant="raised" style={styles.form}>
+        <View style={styles.header}>
+          <KoolaBadge label="Bảo mật" tone="primary" />
+          <KoolaText variant="title" align="center">
+            Xác thực OTP
+          </KoolaText>
+          <KoolaText variant="body" tone="muted" align="center">
+            Nhập mã 6 số đã gửi đến {email}
+          </KoolaText>
+        </View>
 
         <TextInput
           style={styles.otpInput}
           placeholder="000000"
-          placeholderTextColor="#ccc"
+          placeholderTextColor={koolaColors.faint}
           value={otp}
-          onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, '').slice(0, 6))}
+          onChangeText={(text) =>
+            setOtp(text.replace(/[^0-9]/g, '').slice(0, 6))
+          }
           keyboardType="number-pad"
           maxLength={6}
           textAlign="center"
           autoFocus
         />
 
-        {countdown > 0 ? (
-          <Text style={styles.countdown}>
-            Mã hết hạn sau: {formatTime(countdown)}
-          </Text>
-        ) : (
-          <Text style={styles.expired}>Mã đã hết hạn</Text>
-        )}
+        <KoolaText
+          align="center"
+          tone={countdown > 0 ? 'muted' : 'danger'}
+          weight="700">
+          {countdown > 0
+            ? `Mã hết hạn sau: ${formatTime(countdown)}`
+            : 'Mã đã hết hạn'}
+        </KoolaText>
 
-        {attempts > 0 && attempts < MAX_ATTEMPTS && (
-          <Text style={styles.attempts}>
+        {attempts > 0 && attempts < MAX_ATTEMPTS ? (
+          <KoolaText align="center" style={styles.warningText} weight="700">
             Còn {MAX_ATTEMPTS - attempts} lần thử
-          </Text>
-        )}
+          </KoolaText>
+        ) : null}
 
-        <TouchableOpacity
-          style={[styles.button, (loading || countdown <= 0) && styles.buttonDisabled]}
+        <KoolaButton
+          title="Xác thực"
+          icon="verified-user"
+          loading={loading}
           onPress={handleVerify}
-          disabled={loading || countdown <= 0}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Xác thực</Text>
-          )}
-        </TouchableOpacity>
+          disabled={loading || countdown <= 0}
+        />
 
-        <TouchableOpacity
-          style={[styles.resendButton, (resending || countdown > 0) && styles.resendDisabled]}
+        <Pressable
+          style={styles.resendButton}
           onPress={handleResend}
-          disabled={resending || countdown > 0}>
-          {resending ? (
-            <ActivityIndicator color="#2196F3" size="small" />
-          ) : (
-            <Text style={[styles.resendText, countdown > 0 && styles.resendTextDisabled]}>
-              Gửi lại mã {countdown > 0 ? `(${formatTime(countdown)})` : ''}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+          disabled={resending || countdown > 0}
+          accessibilityRole="button">
+          <KoolaText
+            tone={countdown > 0 ? 'faint' : 'primary'}
+            weight="800"
+            align="center">
+            {resending
+              ? 'Đang gửi lại...'
+              : `Gửi lại mã ${countdown > 0 ? `(${formatTime(countdown)})` : ''}`}
+          </KoolaText>
+        </Pressable>
+      </KoolaSurface>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
-  form: { paddingHorizontal: 32 },
-  title: {
-    fontSize: 28, fontWeight: 'bold', textAlign: 'center',
-    color: '#2196F3', marginBottom: 4,
+  container: {
+    flex: 1,
+    backgroundColor: koolaColors.canvas,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  subtitle: {
-    fontSize: 14, textAlign: 'center', color: '#999', marginBottom: 32,
+  form: {
+    padding: 20,
+    gap: 16,
+  },
+  header: {
+    alignItems: 'center',
+    gap: 8,
   },
   otpInput: {
-    height: 56, borderWidth: 2, borderColor: '#2196F3', borderRadius: 12,
-    paddingHorizontal: 16, fontSize: 28, letterSpacing: 12,
-    marginBottom: 16, color: '#333', fontWeight: '600',
+    height: 58,
+    borderWidth: 2,
+    borderColor: koolaColors.primary,
+    borderRadius: koolaRadii.md,
+    paddingHorizontal: 16,
+    fontSize: 28,
+    letterSpacing: 10,
+    color: koolaColors.ink,
+    fontWeight: '800',
+    backgroundColor: koolaColors.surface,
   },
-  countdown: {
-    textAlign: 'center', color: '#666', fontSize: 14, marginBottom: 8,
+  warningText: {
+    color: koolaColors.warning,
   },
-  expired: {
-    textAlign: 'center', color: '#F44336', fontSize: 14, marginBottom: 8,
+  resendButton: {
+    paddingVertical: 8,
   },
-  attempts: {
-    textAlign: 'center', color: '#FF9800', fontSize: 13, marginBottom: 8,
-  },
-  button: {
-    height: 48, backgroundColor: '#2196F3', borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center', marginTop: 8,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  resendButton: { marginTop: 16, alignItems: 'center', padding: 8 },
-  resendDisabled: { opacity: 0.5 },
-  resendText: { color: '#2196F3', fontSize: 14, fontWeight: '600' },
-  resendTextDisabled: { color: '#999' },
 });
 
 export default OtpVerifyScreen;

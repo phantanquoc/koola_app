@@ -14,10 +14,15 @@ const ChatTabStack: React.FC = () => {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        animation: 'slide_from_right',
+        animation: 'none',
+        contentStyle: { backgroundColor: '#fff' },
       }}>
       <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
-      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ animation: 'fade', animationDuration: 150 }}
+      />
       <Stack.Screen
         name="GroupInfo"
         component={GroupInfoScreen}

@@ -161,7 +161,6 @@ const UniversalSearchScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
       {/* Header */}
       <View style={styles.header}>

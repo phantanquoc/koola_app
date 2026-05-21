@@ -7,9 +7,9 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Platform,
+  Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native';
 import { GiftedChat, Bubble, SystemMessage, Actions, IMessage, BubbleProps, SystemMessageProps, ActionsProps, DayProps, ComposerProps } from 'react-native-gifted-chat';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import dayjs from 'dayjs';
@@ -18,9 +18,9 @@ import Toast from 'react-native-toast-message';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp, ChatTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { socketService } from '../../services/socket/socketService';
+import { socketService } from '../../services/socket/SocketService';
 import { conversationsApi } from '../../services/api/apiService';
-import { getOrDownload } from '../../services/media/mediaCacheService';
+import { getOrDownload, getFromMemory, warmMemoryCache } from '../../services/media/mediaCacheService';
 import type { Conversation, Message, PinnedMessage, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import UserAvatar from '../../components/UserAvatar';
@@ -38,9 +38,10 @@ import ReactionDisplay from '../../components/ReactionDisplay';
 import PinBanner from '../../components/PinBanner';
 import ForwardModal from '../../components/ForwardModal';
 import { webrtcService } from '../../services/webrtc/WebRTCService';
-import { pickImage, pickDocument, pickVideo, uploadMedia, getMessageTypeFromMime } from '../../services/media/mediaUploadService';
+import { pickImage, pickDocument, pickVideo, uploadMedia, compressVideo, getMessageTypeFromMime } from '../../services/media/mediaUploadService';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
+import { initialWindowMetrics } from 'react-native-safe-area-context';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 50,
@@ -57,11 +58,19 @@ const ChatScreen: React.FC = () => {
   const { sendViaQueue } = useOfflineQueue();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [chatReady, setChatReady] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
   const [conversation, setConversation] = useState<Conversation | null>(null);
   // Seed avatar from nav params so the header doesn't flash a placeholder
   // while waiting for /conversations/:id to resolve.
   const [otherAvatarKey, setOtherAvatarKey] = useState<string>(initialAvatar || '');
-  const [otherAvatarUrl, setOtherAvatarUrl] = useState<string>('');
+  const [otherAvatarUrl, setOtherAvatarUrl] = useState<string>(() => {
+    if (!initialAvatar) return '';
+    // Resolved URI (http/file) — use directly
+    if (initialAvatar.startsWith('http') || initialAvatar.startsWith('file://')) return initialAvatar;
+    // mediaKey — check memory cache synchronously to avoid placeholder flash
+    return getFromMemory(initialAvatar) || '';
+  });
 
   // ─── Video player state ────────────────────────────────────────────────────
   const [playerMessage, setPlayerMessage] = useState<(IMessage & Record<string, unknown>) | null>(null);
@@ -117,8 +126,9 @@ const ChatScreen: React.FC = () => {
     if (conversation.type === 'group') return conversation.name || 'Nhóm';
     // Direct: find the other member - members may be populated (userId is object) or not
     const otherMember = conversation.members.find((m) => {
-      const id = typeof m.userId === 'object' ? (m.userId as any)._id : m.userId;
-      return id !== currentUserId;
+      if (!m?.userId) return false;
+      const id = typeof m.userId === 'object' ? (m.userId as any)?._id : m.userId;
+      return Boolean(id) && id !== currentUserId;
     });
     if (!otherMember) return initialDisplayName || 'Trò chuyện';
     // Populated: userId is the user object itself
@@ -126,6 +136,38 @@ const ChatScreen: React.FC = () => {
       return (otherMember.userId as any).displayName || initialDisplayName || 'Trò chuyện';
     }
     return otherMember.user?.displayName || initialDisplayName || 'Trò chuyện';
+  })();
+
+  // Derive online status for direct chats
+  const otherUserStatus = (() => {
+    if (!conversation || conversation.type === 'group') return null;
+    const otherMember = conversation.members.find((m) => {
+      if (!m?.userId) return false;
+      const id = typeof m.userId === 'object' ? (m.userId as any)?._id : m.userId;
+      return Boolean(id) && id !== currentUserId;
+    });
+    if (!otherMember) return null;
+    // userData can be: populated userId object, or separate .user field
+    const userData = typeof otherMember.userId === 'object'
+      ? (otherMember.userId as any)
+      : otherMember.user;
+    if (!userData) return null;
+    if (userData.isOnline === true) return 'Đang hoạt động';
+    const lastSeen = userData.lastSeen || userData.lastSeenAt;
+    if (lastSeen) {
+      const lastSeenDate = new Date(lastSeen);
+      if (isNaN(lastSeenDate.getTime())) return null;
+      const now = new Date();
+      const diffMs = now.getTime() - lastSeenDate.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      if (diffMin < 1) return 'Vừa mới truy cập';
+      if (diffMin < 60) return `Hoạt động ${diffMin} phút trước`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `Hoạt động ${diffHours} giờ trước`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `Hoạt động ${diffDays} ngày trước`;
+    }
+    return 'Không hoạt động';
   })();
 
   const {
@@ -140,6 +182,9 @@ const ChatScreen: React.FC = () => {
     deleteForMe,
     updateUploadProgress,
     isLoadingEarlier,
+    isInitialLoading,
+    initialLoadError,
+    retryInitialLoad,
     hasEarlier,
   } = useMessages(conversationId, currentUserId);
 
@@ -264,7 +309,7 @@ const ChatScreen: React.FC = () => {
         console.log('[ChatScreen] onSend called, text:', text, 'isConnected:', isConnected);
         // Stop typing when sending
         socketService.emit('typing_stop', { conversationId });
-        if (isConnected) {
+        if (isConnected !== false) {
           sendMessage(text);
         } else {
           console.log('[ChatScreen] Offline - sending via queue');
@@ -359,19 +404,38 @@ const ChatScreen: React.FC = () => {
         return;
       }
 
-      const tempId = createOptimisticMedia(pickResult.uri, pickResult.mimeType, pickResult.fileSize, 'video', undefined, pickResult.duration);
-
+      // 1. Compress before upload (720p / ~2 Mbps). Files under 10 MB are
+      //    returned unchanged by the compressor (minimumFileSizeForCompress).
       setIsUploading(true);
       setUploadProgress(0);
+
+      let compressedUri = pickResult.uri;
+      try {
+        const handle = compressVideo(pickResult.uri, (progress) => {
+          // Map compress phase to 0..50% of the overall progress bar
+          setUploadProgress(Math.round(progress * 50));
+        });
+        compressedUri = await handle.promise;
+      } catch (compressErr) {
+        // Compression failure is non-fatal — fall back to original file
+        console.warn('[ChatScreen] Video compression failed, using original:', compressErr);
+        compressedUri = pickResult.uri;
+      }
+
+      // 2. Upload the (possibly compressed) file
+      const tempId = createOptimisticMedia(compressedUri, pickResult.mimeType, pickResult.fileSize, 'video', undefined, pickResult.duration);
+
       const result = await uploadMedia(
-        pickResult.uri,
+        compressedUri,
         pickResult.filename,
         pickResult.mimeType,
         pickResult.fileSize,
         conversationId,
         (percent) => {
-          setUploadProgress(percent);
-          updateUploadProgress(tempId, percent);
+          // Map upload phase to 50..100% of the overall progress bar
+          const overall = 50 + Math.round(percent / 2);
+          setUploadProgress(overall);
+          updateUploadProgress(tempId, overall);
         },
       );
       await confirmMediaMessage(tempId, result.mediaUrl, result.mimeType, result.size, 'video', undefined, pickResult.duration);
@@ -417,6 +481,31 @@ const ChatScreen: React.FC = () => {
     [emitTyping, conversationId],
   );
 
+  // Cleanup typing timer on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, []);
+
+  // Smooth fade-in when messages are ready
+  useEffect(() => {
+    if (!isInitialLoading) {
+      const id = requestAnimationFrame(() => {
+        setChatReady(true);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      });
+      return () => cancelAnimationFrame(id);
+    } else {
+      setChatReady(false);
+      fadeAnim.setValue(0);
+    }
+  }, [isInitialLoading]);
+
   // ─── Custom renders ────────────────────────────────────────────────────────
   const renderBubble = useCallback(
     (props: BubbleProps<IMessage>) => {
@@ -433,14 +522,14 @@ const ChatScreen: React.FC = () => {
             wrapperStyle={{
               right: isMedia
                 ? { backgroundColor: 'transparent', padding: 0 }
-                : { backgroundColor: '#2196F3' },
+                : { backgroundColor: '#2196F3', borderRadius: 18, borderBottomRightRadius: 4 },
               left: isMedia
                 ? { backgroundColor: 'transparent', padding: 0 }
-                : { backgroundColor: '#E8E8E8' },
+                : { backgroundColor: '#F3F4F6', borderRadius: 18, borderBottomLeftRadius: 4 },
             }}
             textStyle={{
-              right: { color: '#fff' },
-              left: { color: '#333' },
+              right: { color: '#FFFFFF', fontSize: 15, lineHeight: 21 },
+              left: { color: '#374151', fontSize: 15, lineHeight: 21 },
             }}
           />
           {reactions.length > 0 && (
@@ -518,7 +607,7 @@ const ChatScreen: React.FC = () => {
     (props: ActionsProps) => (
       <Actions
         {...props}
-        icon={() => <MaterialIcons name="attach-file" size={24} color="#6B7280" />}
+        icon={() => <MaterialIcons name="attach-file" size={24} color="#2196F3" />}
         onPressActionButton={handleAttachment}
       />
     ),
@@ -533,18 +622,46 @@ const ChatScreen: React.FC = () => {
       return (
         <MediaImage
           mediaKey={msg.mediaKey as string | undefined}
+          imageWidth={msg.imageWidth as number | undefined}
+          imageHeight={msg.imageHeight as number | undefined}
           isUploading={!!msg.isUploading}
           uploadProgress={msg.uploadProgress as number | undefined}
           blurhash={msg.blurhash as string | null | undefined}
           onPress={(uri) => {
+            // Collect all resolved image URIs from messages for swipe gallery
+            // messages is newest-first, so reverse to get chronological order (oldest = 1/X)
+            const allImageUris: string[] = [];
+            let tappedIndex = 0;
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const m = messages[i];
+              const mRec = m as IMessage & Record<string, unknown>;
+              if (mRec.image === 'media-pending' && mRec.mediaKey) {
+                const resolved = getFromMemory(mRec.mediaKey as string);
+                if (resolved) {
+                  allImageUris.push(resolved);
+                  if (String(m._id) === String(msg._id)) {
+                    tappedIndex = allImageUris.length - 1;
+                  }
+                }
+              }
+            }
+            // Fallback: if we couldn't build the list, just show the single image
+            if (allImageUris.length === 0) {
+              allImageUris.push(uri);
+              tappedIndex = 0;
+            }
             (navigation as unknown as NativeStackNavigationProp<RootStackParamList>)
               .getParent()
-              ?.navigate('ImageViewer', { imageUrl: uri });
+              ?.navigate('ImageViewer', {
+                imageUrl: uri,
+                imageUrls: allImageUris,
+                initialIndex: tappedIndex,
+              });
           }}
         />
       );
     },
-    [navigation],
+    [navigation, messages],
   );
 
   const renderMessageVideo = useCallback(
@@ -559,7 +676,7 @@ const ChatScreen: React.FC = () => {
             mediaKey: msg.mediaKey as string | undefined,
             mediaDuration: (rawMsg.mediaDuration ?? undefined) as number | undefined,
             blurhash: rawMsg.blurhash,
-            mediaThumbnailKey: (msg as Record<string, unknown>).mediaThumbnailKey as string | null | undefined,
+            mediaThumbnailKey: msg.mediaThumbnailKey as string | null | undefined,
           }}
           isVisible={isVisible}
           onPress={() => setPlayerMessage(msg)}
@@ -622,7 +739,7 @@ const ChatScreen: React.FC = () => {
       textInputRef.current.clear();
     }
     socketService.emit('typing_stop', { conversationId });
-    if (isConnected) {
+    if (isConnected !== false) {
       sendMessage(text);
     } else {
       sendViaQueue(conversationId, text, 'text');
@@ -760,10 +877,12 @@ const ChatScreen: React.FC = () => {
     [conversation, conversationId, currentUserId, navigation],
   );
 
+  const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <View style={styles.container}>
       {/* Offline Banner */}
-      <OfflineBanner isVisible={!isConnected} />
+      <OfflineBanner isVisible={isConnected === false} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -772,7 +891,12 @@ const ChatScreen: React.FC = () => {
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
           <UserAvatar displayName={chatTitle} avatar={otherAvatarKey || undefined} size={36} />
-          <Text style={styles.headerTitle} numberOfLines={1}>{chatTitle}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{chatTitle}</Text>
+            <Text style={[styles.headerStatus, otherUserStatus ? {} : { opacity: 0 }]} numberOfLines={1}>
+              {otherUserStatus || 'placeholder'}
+            </Text>
+          </View>
         </TouchableOpacity>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -800,38 +924,61 @@ const ChatScreen: React.FC = () => {
         onClose={handleUnpin}
       />
 
-      <GiftedChat
-        messages={messagesWithAvatar}
-        onSend={onSend}
-        user={{ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }}
-        renderBubble={renderBubble}
-        renderSend={renderSendButton}
-        renderComposer={renderComposer}
-        renderSystemMessage={renderSystemMessage}
-        renderMessageImage={renderMessageImage}
-        renderMessageVideo={renderMessageVideo}
-        renderCustomView={renderCustomView}
-        renderDay={renderDay}
-        timeFormat="HH:mm"
-        locale="vi"
-        renderActions={renderActions}
-        renderFooter={renderFooter}
-        showUserAvatar={false}
-        showAvatarForEveryMessage={false}
-        loadEarlier={hasEarlier}
-        onLoadEarlier={loadEarlier}
-        isLoadingEarlier={isLoadingEarlier}
-        alwaysShowSend
-        infiniteScroll
-        onLongPress={handleLongPress}
-        bottomOffset={8}
-        minInputToolbarHeight={52}
-        listViewProps={{
-          viewabilityConfig,
-          onViewableItemsChanged,
-          contentContainerStyle: { paddingTop: 20 },
-        } as Record<string, unknown>}
-      />
+      <View style={{ flex: 1 }}>
+        {/* Initial-load error overlay */}
+        {initialLoadError && messages.length === 0 && !isInitialLoading && (
+          <View style={styles.initialErrorOverlay}>
+            <Text style={styles.initialErrorText}>
+              Không thể tải tin nhắn. Vui lòng thử lại.
+            </Text>
+            <TouchableOpacity style={styles.initialErrorRetry} onPress={retryInitialLoad}>
+              <Text style={styles.initialErrorRetryText}>Thử lại</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {/* Loading overlay - absolute positioned, doesn't affect layout */}
+        {!chatReady && messages.length === 0 && !initialLoadError && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
+            <ActivityIndicator size="small" color="#2196F3" />
+          </View>
+        )}
+        {/* GiftedChat - always rendered, smooth fade in when ready */}
+        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+          <GiftedChat
+            messages={messagesWithAvatar}
+            onSend={() => {}}
+            user={{ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }}
+            renderBubble={renderBubble}
+            renderSend={renderSendButton}
+            renderComposer={renderComposer}
+            renderSystemMessage={renderSystemMessage}
+            renderMessageImage={renderMessageImage}
+            renderMessageVideo={renderMessageVideo}
+            renderCustomView={renderCustomView}
+            renderDay={renderDay}
+            timeFormat="HH:mm"
+            locale="vi"
+            renderActions={renderActions}
+            renderFooter={renderFooter}
+            showUserAvatar={false}
+            showAvatarForEveryMessage={false}
+            loadEarlier={hasEarlier}
+            onLoadEarlier={loadEarlier}
+            isLoadingEarlier={isLoadingEarlier}
+            alwaysShowSend
+            infiniteScroll
+            onLongPress={handleLongPress}
+            bottomOffset={(initialWindowMetrics?.insets.bottom ?? 0) > 0 ? initialWindowMetrics!.insets.bottom : 8}
+            minInputToolbarHeight={52}
+            listViewProps={{
+              viewabilityConfig,
+              onViewableItemsChanged,
+              contentContainerStyle: { paddingTop: 20 },
+              showsVerticalScrollIndicator: false,
+            } as Record<string, unknown>}
+          />
+        </Animated.View>
+      </View>
 
       {/* Context Menu */}
       <MessageContextMenu
@@ -857,45 +1004,57 @@ const ChatScreen: React.FC = () => {
 
       {/* Video Player Modal */}
       <VideoPlayerModal
-        visible={!!playerMessage}
-        uri={playerMessage?.mediaKey as string || ''}
+        visible={!!playerMessage && !!playerMediaKey}
+        uri={playerMediaKey}
         onClose={() => setPlayerMessage(null)}
       />
 
       {/* Toast */}
       <Toast />
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+  initialErrorOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center', zIndex: 2,
+    paddingHorizontal: 32, gap: 12,
   },
-  backButton: { padding: 4, marginRight: 8 },
+  initialErrorText: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+  initialErrorRetry: {
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8,
+    backgroundColor: '#2196F3',
+  },
+  initialErrorRetryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12,
+    paddingTop: 6, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  backButton: { padding: 8, marginRight: 4 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#333', flex: 1 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  callButton: { padding: 6 },
-  sendContainer: { justifyContent: 'center', alignItems: 'center', marginRight: 8, marginBottom: 4 },
-  sendText: { color: '#2196F3', fontSize: 16, fontWeight: '600' },
-  systemMessage: { color: '#999', fontSize: 12, fontStyle: 'italic' },
-  dayContainer: { alignItems: 'center', marginVertical: 10 },
-  dayText: { fontSize: 12, color: '#fff', backgroundColor: '#333', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, overflow: 'hidden' },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#333' },
+  headerStatus: { fontSize: 12, color: '#10B981', marginTop: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  callButton: { padding: 10 },
+  sendContainer: { justifyContent: 'center', alignItems: 'center', marginRight: 8, marginBottom: 0 },
+  sendText: { color: '#2196F3', fontSize: 15, fontWeight: '600' },
+  systemMessage: { color: '#6B7280', fontSize: 12 },
+  dayContainer: { alignItems: 'center', marginVertical: 12 },
+  dayText: { fontSize: 12, color: '#6B7280', fontWeight: '500', backgroundColor: 'rgba(107, 114, 128, 0.12)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
   typingContainer: { paddingHorizontal: 16, paddingVertical: 8 },
-  typingText: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  typingText: { fontSize: 13, color: '#6B7280' },
   uploadingRow: { flexDirection: 'row', alignItems: 'center' },
   composerContainer: {
     flex: 1, justifyContent: 'center',
-    backgroundColor: '#F5F5F5', borderRadius: 20,
-    borderWidth: 1, borderColor: '#E0E0E0',
-    marginHorizontal: 4, marginVertical: 6,
+    backgroundColor: '#F3F4F6', borderRadius: 22,
+    borderWidth: 0,
+    marginHorizontal: 4, marginVertical: 8,
   },
   composerInput: {
-    fontSize: 16, lineHeight: 20, paddingHorizontal: 12, paddingVertical: 8,
-    maxHeight: 100, color: '#333',
+    fontSize: 15, lineHeight: 20, paddingHorizontal: 14, paddingVertical: 10,
+    maxHeight: 120, color: '#111827',
   },
 });
 

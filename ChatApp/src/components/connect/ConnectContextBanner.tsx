@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { KoolaText, koolaColors, koolaRadii } from '../../ui';
 
 interface ConnectContextBannerProps {
   onCreatePress: () => void;
@@ -18,31 +19,33 @@ const ConnectContextBanner: React.FC<ConnectContextBannerProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.iconBox}>
-        <MaterialIcons name="handshake" size={28} color="#1565C0" />
+        <MaterialIcons name="handshake" size={28} color={koolaColors.primary} />
       </View>
       <View style={styles.textCol}>
-        <Text style={styles.title}>Khám phá đối tác và nhà cung cấp</Text>
-        <Text style={styles.subtitle}>
+        <KoolaText variant="label" weight="700" style={styles.title}>
+          Khám phá đối tác và nhà cung cấp
+        </KoolaText>
+        <KoolaText variant="caption" tone="muted" style={styles.subtitle}>
           Kết nối với doanh nghiệp phù hợp, nhắn tin trực tiếp để hợp tác.
-        </Text>
-        <TouchableOpacity
+        </KoolaText>
+        <Pressable
           style={styles.primaryBtn}
           onPress={onCreatePress}
-          activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Đăng ký doanh nghiệp của bạn">
-          <MaterialIcons name="add-business" size={16} color="#FFFFFF" />
-          <Text style={styles.primaryBtnText}>Đăng ký doanh nghiệp</Text>
-        </TouchableOpacity>
+          <MaterialIcons name="add-business" size={16} color={koolaColors.surface} />
+          <KoolaText variant="caption" weight="700" tone="surface">
+            Đăng ký doanh nghiệp
+          </KoolaText>
+        </Pressable>
       </View>
-      <TouchableOpacity
+      <Pressable
         style={styles.closeBtn}
         onPress={onDismiss}
-        activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel="Đóng gợi ý">
-        <MaterialIcons name="close" size={18} color="#6B7280" />
-      </TouchableOpacity>
+        <MaterialIcons name="close" size={18} color={koolaColors.muted} />
+      </Pressable>
     </View>
   );
 };
@@ -52,10 +55,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    borderRadius: 12,
+    backgroundColor: koolaColors.primarySoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
+    borderRadius: koolaRadii.md,
     padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
@@ -65,7 +68,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: koolaColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -74,13 +77,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E3A8A',
+    color: koolaColors.primaryDark,
   },
   subtitle: {
-    fontSize: 13,
-    color: '#374151',
     lineHeight: 18,
   },
   primaryBtn: {
@@ -89,17 +88,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     alignSelf: 'flex-start',
-    backgroundColor: '#1565C0',
-    borderRadius: 8,
+    backgroundColor: koolaColors.primary,
+    borderRadius: koolaRadii.xs,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 36,
     marginTop: 8,
-  },
-  primaryBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   closeBtn: {
     width: 28,

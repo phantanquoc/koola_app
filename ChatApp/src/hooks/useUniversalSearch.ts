@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import { Conversation, UserSearchResult, MessageSearchItem } from '../types';
 import { usersApi, messagesApi } from '../services/api/apiService';
 
@@ -17,7 +18,9 @@ export interface UniversalSearchResults {
  *  - Contacts: GET /users/search?q=
  *  - Messages: GET /messages/search?q=
  *
- * All results and loading flags are reset when the query drops below 2 characters.
+ * In-flight HTTP requests are aborted via AbortController when the query
+ * changes or the component unmounts, so rapid typing does not pile up
+ * concurrent requests on the server.
  */
 export function useUniversalSearch(
   query: string,
@@ -29,10 +32,6 @@ export function useUniversalSearch(
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // In-flight request abort flags (simple boolean — each effect run resets stale state)
-  const contactsAbortRef = useRef(false);
-  const messagesAbortRef = useRef(false);
 
   // Debounce: 300 ms
   useEffect(() => {
@@ -50,27 +49,25 @@ export function useUniversalSearch(
       return;
     }
 
-    contactsAbortRef.current = false;
+    const ctrl = new AbortController();
     setLoadingContacts(true);
     setError(null);
 
     usersApi
-      .searchUsers(debouncedQuery)
+      .searchUsers(debouncedQuery, undefined, ctrl.signal)
       .then((res) => {
-        if (!contactsAbortRef.current) {
-          setContacts(res.items);
-        }
+        setContacts(res.items);
       })
-      .catch(() => {
-        if (!contactsAbortRef.current) {
-          setError('Không thể tải danh sách liên hệ');
-        }
+      .catch((err) => {
+        // Ignore cancellations — they are expected when the query changes.
+        if (axios.isCancel(err) || ctrl.signal.aborted) return;
+        setError('Không thể tải danh sách liên hệ');
       })
       .finally(() => {
-        if (!contactsAbortRef.current) {
-          setLoadingContacts(false);
-        }
+        if (!ctrl.signal.aborted) setLoadingContacts(false);
       });
+
+    return () => ctrl.abort();
   }, [debouncedQuery]);
 
   // Search messages
@@ -81,30 +78,28 @@ export function useUniversalSearch(
       return;
     }
 
-    messagesAbortRef.current = false;
+    const ctrl = new AbortController();
     setLoadingMessages(true);
 
     messagesApi
-      .searchMessages(debouncedQuery)
+      .searchMessages(debouncedQuery, undefined, undefined, ctrl.signal)
       .then((res) => {
-        if (!messagesAbortRef.current) {
-          setMessages(res.items);
-        }
+        setMessages(res.items);
       })
-      .catch(() => {
-        if (!messagesAbortRef.current) {
-          setError('Không thể tải tin nhắn');
-        }
+      .catch((err) => {
+        if (axios.isCancel(err) || ctrl.signal.aborted) return;
+        setError('Không thể tải tin nhắn');
       })
       .finally(() => {
-        if (!messagesAbortRef.current) {
-          setLoadingMessages(false);
-        }
+        if (!ctrl.signal.aborted) setLoadingMessages(false);
       });
+
+    return () => ctrl.abort();
   }, [debouncedQuery]);
 
-  // Client-side conversation filter
-  const filteredConversations = useCallback((): Conversation[] => {
+  // Client-side conversation filter — memoized so callers don't re-run filter
+  // on every render even when inputs are unchanged.
+  const filteredConversations = useMemo<Conversation[]>(() => {
     if (debouncedQuery.length < 2) return [];
     const q = debouncedQuery.toLowerCase();
     return conversations.filter((conv) => {
@@ -120,8 +115,6 @@ export function useUniversalSearch(
   // Reset results when query drops below threshold
   useEffect(() => {
     if (query.length < 2) {
-      contactsAbortRef.current = true;
-      messagesAbortRef.current = true;
       setContacts([]);
       setMessages([]);
       setError(null);
@@ -129,7 +122,7 @@ export function useUniversalSearch(
   }, [query]);
 
   return {
-    conversations: filteredConversations(),
+    conversations: filteredConversations,
     contacts,
     messages,
     loadingContacts,

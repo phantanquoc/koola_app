@@ -1,14 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
-  Modal,
   Pressable,
+  Modal,
   StyleSheet,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { BusinessSort } from '../../types';
+import { KoolaText, koolaColors, koolaRadii } from '../../ui';
 
 interface SortMenuProps {
   value: BusinessSort;
@@ -40,16 +39,17 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
 
   return (
     <>
-      <TouchableOpacity
+      <Pressable
         style={styles.trigger}
         onPress={() => setOpen(true)}
-        activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={`Sắp xếp: ${LABELS[value]}`}>
-        <MaterialIcons name="sort" size={16} color="#1565C0" />
-        <Text style={styles.triggerText}>{LABELS[value]}</Text>
-        <MaterialIcons name="expand-more" size={16} color="#1565C0" />
-      </TouchableOpacity>
+        <MaterialIcons name="sort" size={16} color={koolaColors.primary} />
+        <KoolaText variant="caption" weight="600" tone="primary">
+          {LABELS[value]}
+        </KoolaText>
+        <MaterialIcons name="expand-more" size={16} color={koolaColors.primary} />
+      </Pressable>
 
       <Modal
         visible={open}
@@ -59,38 +59,39 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.handle} />
-            <Text style={styles.sheetTitle}>Sắp xếp theo</Text>
+            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sheetTitle}>
+              Sắp xếp theo
+            </KoolaText>
             {SORT_OPTIONS.map((opt) => {
               const isActive = opt.value === value;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={opt.value}
                   style={[styles.option, isActive && styles.optionActive]}
                   onPress={() => handleSelect(opt.value)}
-                  activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isActive }}>
                   <MaterialIcons
                     name={opt.icon}
                     size={20}
-                    color={isActive ? '#1565C0' : '#6B7280'}
+                    color={isActive ? koolaColors.primary : koolaColors.muted}
                   />
-                  <Text
-                    style={[
-                      styles.optionText,
-                      isActive && styles.optionTextActive,
-                    ]}>
+                  <KoolaText
+                    variant="body"
+                    weight={isActive ? '600' : '400'}
+                    tone={isActive ? 'primary' : 'ink'}
+                    style={styles.optionText}>
                     {opt.label}
-                  </Text>
+                  </KoolaText>
                   {isActive && (
                     <MaterialIcons
                       name="check"
                       size={20}
-                      color="#1565C0"
+                      color={koolaColors.primary}
                       style={styles.checkIcon}
                     />
                   )}
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </Pressable>
@@ -107,14 +108,9 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#EFF6FF',
-    minHeight: 32,
-  },
-  triggerText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1565C0',
+    borderRadius: koolaRadii.xs,
+    backgroundColor: koolaColors.primarySoft,
+    minHeight: 34,
   },
   backdrop: {
     flex: 1,
@@ -122,9 +118,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: koolaColors.surface,
+    borderTopLeftRadius: koolaRadii.lg,
+    borderTopRightRadius: koolaRadii.lg,
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 28,
@@ -134,13 +130,10 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: koolaColors.line,
     marginBottom: 12,
   },
   sheetTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#6B7280',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     paddingHorizontal: 8,
@@ -153,19 +146,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 8,
     minHeight: 48,
-    borderRadius: 10,
+    borderRadius: koolaRadii.sm,
   },
   optionActive: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: koolaColors.primarySoft,
   },
   optionText: {
-    fontSize: 15,
-    color: '#1F2937',
     flex: 1,
-  },
-  optionTextActive: {
-    color: '#1565C0',
-    fontWeight: '600',
   },
   checkIcon: {
     marginLeft: 'auto',

@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
+  Pressable,
   Modal,
   TextInput,
   FlatList,
@@ -12,6 +11,12 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { VN_PROVINCES, normalizeVN } from '../../constants/provinces';
+import {
+  KoolaIconButton,
+  KoolaText,
+  koolaColors,
+  koolaRadii,
+} from '../../ui';
 
 interface ProvincePickerProps {
   value: string;
@@ -53,22 +58,21 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
 
   return (
     <>
-      <TouchableOpacity
-        style={[styles.trigger, error && styles.triggerError]}
+      <Pressable
+        style={[styles.trigger, error ? styles.triggerError : null]}
+        android_ripple={{ color: koolaColors.canvas }}
         onPress={() => setOpen(true)}
-        activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={value || placeholder}>
-        <Text
-          style={[
-            styles.triggerText,
-            !value && styles.triggerPlaceholder,
-          ]}
-          numberOfLines={1}>
+        <KoolaText
+          variant="body"
+          tone={value ? 'ink' : 'faint'}
+          numberOfLines={1}
+          style={styles.triggerText}>
           {value || placeholder}
-        </Text>
-        <MaterialIcons name="expand-more" size={20} color="#6B7280" />
-      </TouchableOpacity>
+        </KoolaText>
+        <MaterialIcons name="expand-more" size={20} color={koolaColors.muted} />
+      </Pressable>
 
       <Modal
         visible={open}
@@ -76,43 +80,45 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
         onRequestClose={handleClose}
         presentationStyle="fullScreen">
         <SafeAreaView style={styles.modalContainer}>
-          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <StatusBar barStyle="dark-content" backgroundColor={koolaColors.surface} />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeBtn}
+            <KoolaIconButton
+              icon="arrow-back"
+              tone="muted"
+              size={44}
+              iconSize={24}
               onPress={handleClose}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Đóng">
-              <MaterialIcons name="arrow-back" size={24} color="#1F2937" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Chọn tỉnh/thành phố</Text>
+              accessibilityLabel="Đóng"
+            />
+            <KoolaText variant="heading" weight="700" style={styles.modalTitle}>
+              Chọn tỉnh/thành phố
+            </KoolaText>
           </View>
 
           <View style={styles.searchBox}>
             <MaterialIcons
               name="search"
               size={20}
-              color="#9CA3AF"
+              color={koolaColors.faint}
               style={styles.searchIcon}
             />
             <TextInput
               style={styles.searchInput}
               placeholder="Tìm tỉnh/thành..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={koolaColors.faint}
               value={query}
               onChangeText={setQuery}
               autoFocus
               returnKeyType="search"
             />
             {query.length > 0 && (
-              <TouchableOpacity
+              <Pressable
                 style={styles.clearBtn}
                 onPress={() => setQuery('')}
                 accessibilityRole="button"
                 accessibilityLabel="Xóa tìm kiếm">
-                <MaterialIcons name="close" size={20} color="#9CA3AF" />
-              </TouchableOpacity>
+                <MaterialIcons name="close" size={20} color={koolaColors.faint} />
+              </Pressable>
             )}
           </View>
 
@@ -120,36 +126,54 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
             data={filtered}
             keyExtractor={(item) => item}
             keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              value ? (
+                <Pressable
+                  style={styles.itemRow}
+                  android_ripple={{ color: koolaColors.canvas }}
+                  onPress={() => handleSelect('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Xóa bộ lọc tỉnh/thành">
+                  <KoolaText tone="danger" weight="600">
+                    Xóa bộ lọc
+                  </KoolaText>
+                  <MaterialIcons
+                    name="close"
+                    size={18}
+                    color={koolaColors.danger}
+                  />
+                </Pressable>
+              ) : null
+            }
             renderItem={({ item }) => {
               const isSelected = item === value;
               return (
-                <TouchableOpacity
-                  style={[
-                    styles.itemRow,
-                    isSelected && styles.itemRowSelected,
-                  ]}
+                <Pressable
+                  style={[styles.itemRow, isSelected ? styles.itemRowSelected : null]}
+                  android_ripple={{ color: koolaColors.canvas }}
                   onPress={() => handleSelect(item)}
-                  activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isSelected }}>
-                  <Text
-                    style={[
-                      styles.itemText,
-                      isSelected && styles.itemTextSelected,
-                    ]}>
+                  <KoolaText
+                    tone={isSelected ? 'primary' : 'ink'}
+                    weight={isSelected ? '600' : '400'}>
                     {item}
-                  </Text>
+                  </KoolaText>
                   {isSelected && (
-                    <MaterialIcons name="check" size={20} color="#1565C0" />
+                    <MaterialIcons
+                      name="check"
+                      size={20}
+                      color={koolaColors.primary}
+                    />
                   )}
-                </TouchableOpacity>
+                </Pressable>
               );
             }}
             ListEmptyComponent={
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>
+                <KoolaText tone="faint">
                   Không tìm thấy tỉnh/thành phù hợp
-                </Text>
+                </KoolaText>
               </View>
             }
           />
@@ -161,10 +185,10 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
 
 const styles = StyleSheet.create({
   trigger: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
     paddingHorizontal: 14,
     paddingVertical: 11,
     minHeight: 44,
@@ -173,46 +197,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   triggerError: {
-    borderColor: '#DC2626',
+    borderColor: koolaColors.danger,
   },
   triggerText: {
-    fontSize: 14,
-    color: '#1F2937',
     flex: 1,
-  },
-  triggerPlaceholder: {
-    color: '#9CA3AF',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: koolaColors.surface,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
     gap: 8,
   },
-  closeBtn: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   modalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1F2937',
     flex: 1,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F1F5',
-    borderRadius: 10,
+    backgroundColor: koolaColors.canvas,
+    borderRadius: koolaRadii.sm,
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
@@ -224,7 +234,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#1F2937',
+    color: koolaColors.ink,
     paddingVertical: 0,
   },
   clearBtn: {
@@ -240,27 +250,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     minHeight: 48,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
   },
   itemRowSelected: {
-    backgroundColor: '#EFF6FF',
-  },
-  itemText: {
-    fontSize: 15,
-    color: '#1F2937',
-  },
-  itemTextSelected: {
-    color: '#1565C0',
-    fontWeight: '600',
+    backgroundColor: koolaColors.primarySoft,
   },
   emptyBox: {
     padding: 40,
     alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
   },
 });
 

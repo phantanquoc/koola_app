@@ -16,6 +16,7 @@ import type { ConnectTabStackParamList } from '../../navigation/types';
 import type { RelationshipType, CreateBusinessPayload } from '../../types';
 import { businessesApi } from '../../services/api/apiService';
 import { BUSINESS_CATEGORIES } from './constants';
+import { koolaColors, koolaRadii } from '../../ui';
 
 type CreateBusinessNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -404,7 +405,7 @@ const CreateBusinessScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: koolaColors.canvas,
   },
   content: {
     padding: 16,
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1565C0',
+    color: koolaColors.primary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 12,
@@ -421,7 +422,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderOptional: {
     marginTop: 20,
-    color: '#6B7280',
+    color: koolaColors.muted,
   },
   fieldGroup: {
     marginBottom: 16,
@@ -429,35 +430,35 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: koolaColors.ink,
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 14,
-    color: '#1F2937',
+    color: koolaColors.ink,
   },
   inputError: {
-    borderColor: '#DC2626',
+    borderColor: koolaColors.danger,
   },
   textArea: {
     height: 100,
   },
   errorText: {
     fontSize: 12,
-    color: '#DC2626',
+    color: koolaColors.danger,
     marginTop: 4,
   },
   pickerButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
     paddingHorizontal: 14,
     paddingVertical: 11,
     flexDirection: 'row',
@@ -466,17 +467,17 @@ const styles = StyleSheet.create({
   },
   pickerText: {
     fontSize: 14,
-    color: '#1F2937',
+    color: koolaColors.ink,
     flex: 1,
   },
   pickerPlaceholder: {
-    color: '#9CA3AF',
+    color: koolaColors.faint,
   },
   optionList: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
     marginTop: 4,
     overflow: 'hidden',
   },
@@ -484,36 +485,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: koolaColors.canvas,
   },
   optionItemSelected: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: koolaColors.primarySoft,
   },
   optionText: {
     fontSize: 14,
-    color: '#1F2937',
+    color: koolaColors.ink,
   },
   optionTextSelected: {
-    color: '#1565C0',
+    color: koolaColors.primary,
     fontWeight: '600',
   },
   submitErrorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
+    backgroundColor: koolaColors.dangerSoft,
+    borderRadius: koolaRadii.md,
     padding: 12,
     marginBottom: 16,
   },
   submitErrorText: {
     fontSize: 13,
-    color: '#DC2626',
+    color: koolaColors.danger,
     flex: 1,
   },
   submitBtn: {
-    backgroundColor: '#1565C0',
-    borderRadius: 12,
+    backgroundColor: koolaColors.primary,
+    borderRadius: koolaRadii.md,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,11 +1,31 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
-import { getOrDownload } from '../services/media/mediaCacheService';
+import React, { useEffect, useRef, useState } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
+import { getFromMemory, getOrDownload } from '../services/media/mediaCacheService';
+import { KoolaText, koolaColors } from '../ui';
 
 const AVATAR_COLORS = [
-  '#F44336', '#E91E63', '#9C27B0', '#673AB7',
-  '#3F51B5', '#2196F3', '#009688', '#FF9800',
+  '#2563EB', // blue
+  '#10B981', // emerald
+  '#F97316', // orange
+  '#7C3AED', // violet
+  '#0EA5E9', // sky
+  '#EC4899', // pink
+  '#14B8A6', // teal
+  '#F59E0B', // amber
+  '#EF4444', // red
+  '#84CC16', // lime
+  '#6366F1', // indigo
+  '#06B6D4', // cyan
 ];
+
+// djb2-lite hash for better distribution than charCodeAt(0)
+function hashToIndex(str: string, mod: number): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % mod;
+}
 
 interface Props {
   displayName: string;
@@ -23,9 +43,12 @@ function isResolvedUri(value: string): boolean {
 }
 
 const UserAvatar: React.FC<Props> = ({ displayName, avatar, size = 48 }) => {
-  const [resolvedUri, setResolvedUri] = useState<string | null>(() =>
-    avatar && isResolvedUri(avatar) ? avatar : null,
-  );
+  const [resolvedUri, setResolvedUri] = useState<string | null>(() => {
+    if (!avatar) return null;
+    if (isResolvedUri(avatar)) return avatar;
+    return getFromMemory(avatar);
+  });
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!avatar) {
@@ -36,57 +59,99 @@ const UserAvatar: React.FC<Props> = ({ displayName, avatar, size = 48 }) => {
       setResolvedUri(avatar);
       return;
     }
-    // avatar is a MinIO mediaKey — resolve via cache + presigned URL
+
+    const cached = getFromMemory(avatar);
+    if (cached) {
+      setResolvedUri(cached);
+      return;
+    }
+
     let cancelled = false;
     setResolvedUri(null);
-    getOrDownload(avatar)
-      .then((uri) => {
-        if (!cancelled) setResolvedUri(uri);
-      })
-      .catch(() => {
-        if (!cancelled) setResolvedUri(null);
-      });
+
+    const resolve = (isRetry: boolean) => {
+      getOrDownload(avatar)
+        .then((uri) => {
+          if (cancelled) return;
+          if (uri) {
+            setResolvedUri(uri);
+          } else if (!isRetry) {
+            retryTimerRef.current = setTimeout(() => {
+              if (!cancelled) resolve(true);
+            }, 3000);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (!isRetry) {
+            retryTimerRef.current = setTimeout(() => {
+              if (!cancelled) resolve(true);
+            }, 3000);
+          }
+        });
+    };
+
+    resolve(false);
+
     return () => {
       cancelled = true;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, [avatar]);
 
+  const radius = size / 2;
+  const shellStyle = {
+    width: size,
+    height: size,
+    borderRadius: radius,
+  };
+
   if (resolvedUri) {
     return (
-      <Image
-        source={{ uri: resolvedUri }}
-        style={[
-          styles.avatar,
-          { width: size, height: size, borderRadius: size / 2 },
-        ]}
-      />
+      <View style={[styles.shell, shellStyle]}>
+        <Image source={{ uri: resolvedUri }} style={[styles.avatar, shellStyle]} />
+      </View>
     );
   }
 
   const initial = displayName?.[0]?.toUpperCase() || '?';
-  const colorIndex = displayName ? displayName.charCodeAt(0) % AVATAR_COLORS.length : 0;
-  const backgroundColor = AVATAR_COLORS[colorIndex];
+  const colorIndex = displayName
+    ? hashToIndex(displayName, AVATAR_COLORS.length)
+    : 0;
 
   return (
     <View
       style={[
         styles.placeholder,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor,
-        },
+        shellStyle,
+        { backgroundColor: AVATAR_COLORS[colorIndex] },
       ]}>
-      <Text style={[styles.initial, { fontSize: size * 0.4 }]}>{initial}</Text>
+      <KoolaText
+        tone="surface"
+        weight="800"
+        style={{ fontSize: Math.max(13, size * 0.4), lineHeight: size * 0.48 }}>
+        {initial}
+      </KoolaText>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  avatar: { resizeMode: 'cover' },
-  placeholder: { justifyContent: 'center', alignItems: 'center' },
-  initial: { color: '#fff', fontWeight: 'bold' },
+  shell: {
+    backgroundColor: koolaColors.canvas,
+    borderWidth: 2,
+    borderColor: koolaColors.surface,
+    overflow: 'hidden',
+  },
+  avatar: {
+    resizeMode: 'cover',
+  },
+  placeholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: koolaColors.surface,
+  },
 });
 
 export default UserAvatar;

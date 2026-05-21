@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet } from 'react-native';
 import type { BusinessConnectedUser } from '../../types';
+import { KoolaText, koolaColors } from '../../ui';
 
 interface ConnectedUsersStackProps {
   users: BusinessConnectedUser[];
@@ -35,16 +36,18 @@ const ConnectedUsersStack: React.FC<ConnectedUsersStackProps> = ({
               <Image source={{ uri: user.avatar }} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, { backgroundColor: bgColor }]}>
-                <Text style={styles.initial}>
+                <KoolaText variant="caption" weight="700" tone="surface" style={styles.initial}>
                   {user.displayName?.charAt(0)?.toUpperCase() || '?'}
-                </Text>
+                </KoolaText>
               </View>
             )}
           </View>
         );
       })}
       {remaining > 0 && (
-        <Text style={styles.countText}>+{remaining}</Text>
+        <KoolaText variant="caption" weight="600" tone="muted" style={styles.countText}>
+          +{remaining}
+        </KoolaText>
       )}
     </View>
   );
@@ -57,7 +60,7 @@ const styles = StyleSheet.create({
   },
   avatarWrapper: {
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: koolaColors.surface,
     borderRadius: AVATAR_SIZE / 2,
   },
   avatar: {
@@ -69,13 +72,8 @@ const styles = StyleSheet.create({
   },
   initial: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   countText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '600',
     marginLeft: 6,
   },
 });

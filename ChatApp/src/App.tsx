@@ -1,3 +1,4 @@
+import '../global.css';
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
 import { LogBox, StatusBar } from 'react-native';
@@ -94,7 +95,7 @@ const App: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <StatusBar translucent={false} backgroundColor="#FFFFFF" barStyle="dark-content" />
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <KeyboardProvider>
           <AuthProvider>

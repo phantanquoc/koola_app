@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
-  Text,
   TextInput,
-  TouchableOpacity,
   FlatList,
   ActivityIndicator,
   StyleSheet,
@@ -11,12 +9,12 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ConnectTabStackParamList } from '../../navigation/types';
 import type { Business } from '../../types';
 import { businessesApi, conversationsApi } from '../../services/api/apiService';
 import BusinessCard from '../../components/connect/BusinessCard';
 import EmptyConnect from '../../components/connect/EmptyConnect';
+import { KoolaIconButton, KoolaState, koolaColors } from '../../ui';
 
 type BusinessSearchNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -124,8 +122,11 @@ const BusinessSearchScreen: React.FC = () => {
     if (query.length < 2) {
       return (
         <View style={styles.promptContainer}>
-          <MaterialIcons name="search" size={48} color="#ccc" />
-          <Text style={styles.promptText}>Nhập ít nhất 2 ký tự để tìm kiếm</Text>
+          <KoolaState
+            icon="search"
+            title="Tìm doanh nghiệp"
+            message="Nhập ít nhất 2 ký tự để tìm kiếm doanh nghiệp phù hợp."
+          />
         </View>
       );
     }
@@ -134,21 +135,21 @@ const BusinessSearchScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
       {/* Search bar header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
+        <KoolaIconButton
+          icon="arrow-back"
+          tone="muted"
+          size={38}
           onPress={() => navigation.goBack()}
-          activeOpacity={0.7}>
-          <MaterialIcons name="arrow-back" size={24} color="#1F2937" />
-        </TouchableOpacity>
+          accessibilityLabel="Quay lại"
+        />
         <TextInput
           ref={inputRef}
           style={styles.input}
           placeholder="Tìm doanh nghiệp..."
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={koolaColors.faint}
           value={query}
           onChangeText={setQuery}
           autoFocus
@@ -158,7 +159,7 @@ const BusinessSearchScreen: React.FC = () => {
         {loading && (
           <ActivityIndicator
             size="small"
-            color="#1565C0"
+            color={koolaColors.primary}
             style={styles.inputLoader}
           />
         )}
@@ -179,33 +180,27 @@ const BusinessSearchScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: koolaColors.canvas,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: koolaColors.surface,
     paddingTop: (StatusBar.currentHeight || 0) + 8,
     paddingHorizontal: 12,
     paddingBottom: 12,
     gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
   },
   input: {
     flex: 1,
-    height: 40,
-    backgroundColor: '#F0F1F5',
+    height: 42,
+    backgroundColor: koolaColors.canvas,
     borderRadius: 20,
     paddingHorizontal: 16,
     fontSize: 14,
-    color: '#1F2937',
+    color: koolaColors.ink,
   },
   inputLoader: {
     marginLeft: 4,
@@ -222,11 +217,6 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     paddingHorizontal: 32,
     gap: 12,
-  },
-  promptText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
   },
 });
 

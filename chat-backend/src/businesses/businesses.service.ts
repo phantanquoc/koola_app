@@ -41,6 +41,19 @@ export class BusinessesService implements OnModuleInit {
     }
   }
 
+  /**
+   * Development helper: wipe all businesses + connections and re-run the
+   * mock seed. Used by scripts/reseed-businesses.ts. DO NOT call in prod.
+   */
+  async reseedForDevelopment(): Promise<{ before: number; after: number }> {
+    const before = await this.businessModel.countDocuments();
+    await this.connectionModel.deleteMany({}).exec();
+    await this.businessModel.deleteMany({}).exec();
+    await this.seedMockData();
+    const after = await this.businessModel.countDocuments();
+    return { before, after };
+  }
+
   async listBusinesses(
     userId: string,
     dto: ListBusinessesDto,
@@ -68,9 +81,22 @@ export class BusinessesService implements OnModuleInit {
       filter.$text = { $search: dto.q };
     }
 
+    // Determine sort order
+    let sortObj: Record<string, 1 | -1>;
+    switch (dto.sort) {
+      case 'popular':
+        sortObj = { connectionCount: -1, createdAt: -1 };
+        break;
+      case 'name':
+        sortObj = { name: 1 };
+        break;
+      default:
+        sortObj = { createdAt: -1 };
+    }
+
     const results = await this.businessModel
       .find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sortObj)
       .limit(limit + 1)
       .populate('connectedUserIds', '_id displayName avatar')
       .lean();

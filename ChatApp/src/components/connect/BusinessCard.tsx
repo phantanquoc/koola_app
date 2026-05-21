@@ -1,16 +1,15 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Image,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { Business } from '../../types';
-import ConnectedUsersStack from './ConnectedUsersStack';
 import { CATEGORY_LABELS } from '../../screens/connect/constants';
+import {
+  KoolaButton,
+  KoolaText,
+  koolaColors,
+  koolaRadii,
+  koolaShadows,
+} from '../../ui';
 
 interface BusinessCardProps {
   business: Business;
@@ -20,7 +19,13 @@ interface BusinessCardProps {
   isConnecting?: boolean;
 }
 
-const LOGO_COLORS = ['#3B5DC9', '#2E9E5A', '#E05A2D', '#7E57C2', '#26A69A'];
+const LOGO_COLORS = [
+  koolaColors.primary,
+  koolaColors.accent,
+  koolaColors.warm,
+  '#7C3AED',
+  '#0EA5E9',
+];
 
 const BusinessCard: React.FC<BusinessCardProps> = ({
   business,
@@ -29,234 +34,158 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
   onMessagePress,
   isConnecting,
 }) => {
+  const [pressed, setPressed] = React.useState(false);
   const bgColor = LOGO_COLORS[business.name.charCodeAt(0) % LOGO_COLORS.length];
   const categoryLabel =
     CATEGORY_LABELS[business.category] || business.category;
+  const tagline =
+    business.description?.trim() ||
+    business.tagline?.trim() ||
+    'Chưa có mô tả';
 
   return (
-    <TouchableOpacity
-      style={styles.card}
+    <Pressable
+      style={[styles.card, pressed && styles.pressed]}
+      android_ripple={{ color: koolaColors.canvas }}
       onPress={onPress}
-      activeOpacity={0.7}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       accessibilityRole="button"
       accessibilityLabel={`Xem hồ sơ ${business.name}`}>
-      {/* Top row: logo + name + badges */}
-      <View style={styles.topRow}>
-        {business.logoKey ? (
-          <Image
-            source={{ uri: business.logoKey }}
-            style={styles.logo}
-          />
-        ) : (
-          <View style={[styles.logo, styles.logoPlaceholder, { backgroundColor: bgColor }]}>
-            <MaterialIcons name="business" size={24} color="#FFFFFF" />
-          </View>
-        )}
-
-        <View style={styles.nameCol}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>
-              {business.name}
-            </Text>
-            {business.isVerified && (
-              <MaterialIcons
-                name="verified"
-                size={16}
-                color="#2E9E5A"
-                style={styles.verifiedBadge}
-              />
-            )}
-          </View>
-          <View style={styles.badgeRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{categoryLabel}</Text>
-            </View>
-            <Text style={styles.dot}>  </Text>
-            <View style={styles.locationBadge}>
-              <MaterialIcons name="location-on" size={12} color="#6B7280" />
-              <Text style={styles.locationText}>{business.province}</Text>
-            </View>
-          </View>
+      {business.logoKey ? (
+        <Image source={{ uri: business.logoKey }} style={styles.logo} />
+      ) : (
+        <View style={[styles.logo, styles.logoPlaceholder, { backgroundColor: bgColor }]}>
+          <MaterialIcons name="business" size={20} color={koolaColors.surface} />
         </View>
+      )}
+
+      <View style={styles.contentCol}>
+        <View style={styles.nameRow}>
+          <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.name}>
+            {business.name}
+          </KoolaText>
+          {business.isVerified ? (
+            <MaterialIcons name="verified" size={14} color={koolaColors.success} />
+          ) : null}
+        </View>
+
+        <View style={styles.metaRow}>
+          <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
+            {categoryLabel}
+          </KoolaText>
+          <View style={styles.dot} />
+          <MaterialIcons name="location-on" size={11} color={koolaColors.muted} />
+          <KoolaText variant="caption" tone="muted" weight="500" numberOfLines={1} style={styles.metaText}>
+            {business.province}
+          </KoolaText>
+          {business.connectionCount > 0 ? (
+            <>
+              <View style={styles.dot} />
+              <KoolaText variant="caption" tone="muted" weight="500" numberOfLines={1}>
+                {business.connectionCount} kết nối
+              </KoolaText>
+            </>
+          ) : null}
+        </View>
+
+        {tagline ? (
+          <KoolaText
+            variant="caption"
+            tone={
+              business.description?.trim() || business.tagline?.trim()
+                ? 'muted'
+                : 'faint'
+            }
+            numberOfLines={2}
+            style={styles.tagline}>
+            {tagline}
+          </KoolaText>
+        ) : null}
       </View>
 
-      {/* Tagline */}
-      {business.tagline ? (
-        <Text style={styles.tagline} numberOfLines={2}>
-          {business.tagline}
-        </Text>
-      ) : null}
-
-      {/* Bottom row: connected users + two action buttons */}
-      <View style={styles.bottomRow}>
-        <ConnectedUsersStack
-          users={business.connectedUsers || []}
-          totalCount={business.connectionCount}
-        />
-
-        <View style={styles.buttonsRow}>
-          {/* Left button: always "Xem hồ sơ" */}
-          <TouchableOpacity
-            style={styles.viewProfileBtn}
-            onPress={(e) => {
-              e.stopPropagation();
-              onPress();
-            }}
-            activeOpacity={0.7}>
-            <Text style={styles.viewProfileText}>Xem hồ sơ</Text>
-          </TouchableOpacity>
-
-          {/* Right button: "Kết nối ngay" (unconnected) or "Nhắn tin" (connected) */}
-          <TouchableOpacity
-            style={styles.connectBtn}
-            onPress={(e) => {
-              e.stopPropagation();
-              if (business.isConnected) {
-                onMessagePress();
-              } else {
-                onConnectAndChatPress();
-              }
-            }}
-            activeOpacity={0.7}
-            disabled={isConnecting}>
-            {isConnecting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.connectBtnText}>
-                {business.isConnected ? 'Nhắn tin' : 'Kết nối ngay'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
+      <KoolaButton
+        title={business.isConnected ? 'Nhắn tin' : 'Kết nối'}
+        icon={business.isConnected ? 'chat-bubble-outline' : 'handshake'}
+        size="sm"
+        loading={isConnecting}
+        disabled={isConnecting}
+        style={styles.cta}
+        onPress={(e) => {
+          e.stopPropagation();
+          if (business.isConnected) {
+            onMessagePress();
+          } else {
+            onConnectAndChatPress();
+          }
+        }}
+      />
+    </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  topRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.md,
+    marginHorizontal: 12,
+    marginBottom: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
+    gap: 10,
+    ...koolaShadows.subtle,
+  },
+  pressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
   },
   logo: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: koolaRadii.xs,
   },
   logoPlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  nameCol: {
+  contentCol: {
     flex: 1,
-    marginLeft: 12,
+    minWidth: 0,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    gap: 4,
   },
   name: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
+    flexShrink: 1,
   },
-  verifiedBadge: {
-    marginLeft: 4,
-    marginBottom: 4,
-  },
-  badgeRow: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
   },
-  badge: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1565C0',
-  },
-  dot: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginHorizontal: 2,
-  },
-  locationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  locationText: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
+  metaText: {
+    flexShrink: 1,
   },
   tagline: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-    marginTop: 10,
+    marginTop: 2,
   },
-  bottomRow: {
-    marginTop: 12,
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: koolaColors.faint,
+    marginHorizontal: 2,
   },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  spacer: {
-    flex: 1,
-  },
-  viewProfileBtn: {
-    flex: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: '#1565C0',
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewProfileText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1565C0',
-  },
-  connectBtn: {
-    flex: 1.3,
-    backgroundColor: '#1565C0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  connectBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  cta: {
+    paddingHorizontal: 10,
+    minWidth: 92,
   },
 });
 

@@ -3,6 +3,7 @@ import {
   IsString,
   IsInt,
   IsEnum,
+  IsIn,
   Min,
   Max,
   MinLength,
@@ -32,6 +33,14 @@ export class ListBusinessesDto {
   @IsString()
   @MinLength(2)
   q?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sort order: latest, popular, name',
+    example: 'latest',
+  })
+  @IsOptional()
+  @IsIn(['latest', 'popular', 'name'])
+  sort?: 'latest' | 'popular' | 'name';
 
   @ApiPropertyOptional({ description: 'Cursor — last _id from previous page' })
   @IsOptional()

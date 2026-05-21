@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  StyleSheet,
+  View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  KoolaButton,
+  KoolaSurface,
+  KoolaText,
+  KoolaTextInput,
+  koolaColors,
+  koolaShadows,
+} from '../../ui';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -31,12 +36,24 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string | string[] } } };
-      const msg = error.response?.data?.message;
-      Alert.alert(
-        'Login Failed',
-        Array.isArray(msg) ? msg.join('\n') : msg || 'Invalid credentials',
-      );
+      const error = err as {
+        response?: { data?: { message?: string | string[] } };
+        request?: unknown;
+      };
+      if (error.response) {
+        const msg = error.response.data?.message;
+        Alert.alert(
+          'Login Failed',
+          Array.isArray(msg) ? msg.join('\n') : msg || 'Invalid credentials',
+        );
+      } else if (error.request) {
+        Alert.alert(
+          'Connection Error',
+          'Cannot reach the server. Please check your internet connection and try again.',
+        );
+      } else {
+        Alert.alert('Error', 'Something went wrong. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -46,70 +63,110 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.form}>
-        <Text style={styles.title}>Koola Chat</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
+      <View style={styles.hero}>
+        <View style={styles.logoMark}>
+          <KoolaText variant="title" tone="surface" weight="800">
+            K
+          </KoolaText>
+        </View>
+        <KoolaText variant="title" align="center" style={styles.title}>
+          Koola Chat
+        </KoolaText>
+        <KoolaText variant="body" tone="muted" align="center">
+          Tin nhắn, cuộc gọi và kết nối công việc trong một không gian gọn gàng.
+        </KoolaText>
+      </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#999"
+      <KoolaSurface variant="raised" style={styles.form}>
+        <KoolaText variant="heading" weight="800">
+          Đăng nhập
+        </KoolaText>
+        <KoolaText tone="muted" style={styles.formHint}>
+          Tiếp tục với tài khoản Koola của bạn.
+        </KoolaText>
+
+        <KoolaTextInput
+          label="Email"
+          icon="mail-outline"
+          placeholder="you@example.com"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#999"
+        <KoolaTextInput
+          label="Mật khẩu"
+          icon="lock-outline"
+          placeholder="Nhập mật khẩu"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
         />
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
+        <KoolaButton
+          title="Đăng nhập"
+          icon="arrow-forward"
+          loading={loading}
           onPress={handleLogin}
-          disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
+          style={styles.primaryButton}
+        />
 
-        <TouchableOpacity
+        <Pressable
           style={styles.linkButton}
-          onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.linkText}>
-            Don't have an account? <Text style={styles.linkBold}>Register</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
+          onPress={() => navigation.navigate('Register')}
+          accessibilityRole="button">
+          <KoolaText tone="muted" align="center">
+            Chưa có tài khoản?{' '}
+            <KoolaText tone="primary" weight="800">
+              Tạo tài khoản
+            </KoolaText>
+          </KoolaText>
+        </Pressable>
+      </KoolaSurface>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
-  form: { paddingHorizontal: 32 },
-  title: { fontSize: 32, fontWeight: 'bold', textAlign: 'center', color: '#2196F3', marginBottom: 4 },
-  subtitle: { fontSize: 14, textAlign: 'center', color: '#999', marginBottom: 32 },
-  input: {
-    height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-    paddingHorizontal: 16, fontSize: 16, marginBottom: 12, color: '#333',
+  container: {
+    flex: 1,
+    backgroundColor: koolaColors.canvas,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  button: {
-    height: 48, backgroundColor: '#2196F3', borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center', marginTop: 8,
+  hero: {
+    alignItems: 'center',
+    marginBottom: 22,
+    paddingHorizontal: 8,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  linkButton: { marginTop: 16, alignItems: 'center' },
-  linkText: { color: '#666', fontSize: 14 },
-  linkBold: { color: '#2196F3', fontWeight: '600' },
+  logoMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: koolaColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    ...koolaShadows.subtle,
+  },
+  title: {
+    marginBottom: 8,
+  },
+  form: {
+    padding: 20,
+    gap: 14,
+  },
+  formHint: {
+    marginTop: -8,
+    marginBottom: 2,
+  },
+  primaryButton: {
+    marginTop: 4,
+  },
+  linkButton: {
+    paddingVertical: 8,
+  },
 });
 
 export default LoginScreen;

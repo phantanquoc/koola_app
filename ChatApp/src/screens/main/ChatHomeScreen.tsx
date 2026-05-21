@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StatusBar, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,21 +9,16 @@ import KoolaHeader from '../../components/KoolaHeader';
 import ConversationListScreen from './ConversationListScreen';
 import CallsScreen from './CallsScreen';
 import ContactsScreen from './ContactsScreen';
-import PlaceholderScreen from '../placeholder/PlaceholderScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
+import { KoolaText, koolaColors, koolaRadii } from '../../ui';
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
 
-const VideosPlaceholder = () => <PlaceholderScreen title="Phim" icon="play-circle-outline" />;
-const JournalPlaceholder = () => <PlaceholderScreen title="Nhật ký" icon="calendar-today" />;
-
-const SUB_TAB_ICONS: Record<string, string> = {
-  Messages: 'chat-bubble-outline',
-  Calls: 'phone',
-  Contacts: 'people-outline',
-  Videos: 'play-circle-outline',
-  Journal: 'calendar-today',
+const SUB_TAB_META: Record<string, { icon: string; label: string }> = {
+  Messages: { icon: 'chat-bubble-outline', label: 'Tin nhắn' },
+  Calls: { icon: 'phone', label: 'Cuộc gọi' },
+  Contacts: { icon: 'people-outline', label: 'Danh bạ' },
 };
 
 const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) => {
@@ -32,11 +27,12 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
       <View style={tabBarStyles.tabRow}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
-          const iconName = SUB_TAB_ICONS[route.name] || 'circle';
-          const color = isFocused ? '#1565C0' : '#9CA3AF';
+          const meta = SUB_TAB_META[route.name];
+          if (!meta) return null;
+          const color = isFocused ? koolaColors.primary : koolaColors.muted;
 
           return (
-            <TouchableOpacity
+            <Pressable
               key={route.key}
               style={tabBarStyles.tab}
               onPress={() => {
@@ -44,12 +40,19 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
                   navigation.navigate(route.name);
                 }
               }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={route.name}>
-              <Icon name={iconName} size={24} color={color} />
-              {isFocused && <View style={tabBarStyles.indicator} />}
-            </TouchableOpacity>
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isFocused }}
+              accessibilityLabel={meta.label}>
+              <View style={[tabBarStyles.iconWrap, isFocused && tabBarStyles.iconWrapActive]}>
+                <Icon name={meta.icon} size={20} color={color} />
+              </View>
+              <KoolaText
+                variant="caption"
+                weight={isFocused ? '700' : '600'}
+                tone={isFocused ? 'primary' : 'muted'}>
+                {meta.label}
+              </KoolaText>
+            </Pressable>
           );
         })}
       </View>
@@ -59,32 +62,34 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
 
 const tabBarStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: koolaColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
   },
   tabRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 2,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 6,
+    paddingBottom: 6,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 4,
     minHeight: 48,
+    gap: 2,
   },
-  indicator: {
-    position: 'absolute',
-    bottom: 0,
-    width: 28,
-    height: 3,
-    backgroundColor: '#1565C0',
-    borderRadius: 2,
+  iconWrap: {
+    width: 44,
+    height: 28,
+    borderRadius: koolaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: koolaColors.primarySoft,
   },
 });
 
@@ -108,7 +113,6 @@ const ChatHomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} />
       <TopTab.Navigator
         tabBar={(props) => <CustomTabBar {...props} />}
@@ -119,8 +123,6 @@ const ChatHomeScreen: React.FC = () => {
         <TopTab.Screen name="Messages" component={ConversationListScreen} />
         <TopTab.Screen name="Calls" component={CallsScreen} />
         <TopTab.Screen name="Contacts" component={ContactsScreen} />
-        <TopTab.Screen name="Videos" component={VideosPlaceholder} />
-        <TopTab.Screen name="Journal" component={JournalPlaceholder} />
       </TopTab.Navigator>
       <QrScannerModal
         visible={qrVisible}
@@ -143,7 +145,7 @@ const ChatHomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: koolaColors.surface,
   },
 });
 

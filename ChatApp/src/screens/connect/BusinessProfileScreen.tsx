@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
+  Alert,
   Linking,
+  Pressable,
+  ScrollView,
   StyleSheet,
+  View,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useRoute } from '@react-navigation/native';
@@ -16,10 +15,29 @@ import type { Business } from '../../types';
 import { businessesApi } from '../../services/api/apiService';
 import ConnectedUsersStack from '../../components/connect/ConnectedUsersStack';
 import { CATEGORY_LABELS } from './constants';
+import {
+  KoolaBadge,
+  KoolaButton,
+  KoolaSkeleton,
+  KoolaState,
+  KoolaSurface,
+  KoolaText,
+  koolaColors,
+  koolaRadii,
+} from '../../ui';
 
-type BusinessProfileRouteProp = RouteProp<ConnectTabStackParamList, 'BusinessProfile'>;
+type BusinessProfileRouteProp = RouteProp<
+  ConnectTabStackParamList,
+  'BusinessProfile'
+>;
 
-const LOGO_COLORS = ['#3B5DC9', '#2E9E5A', '#E05A2D', '#7E57C2', '#26A69A'];
+const LOGO_COLORS = [
+  koolaColors.primary,
+  koolaColors.accent,
+  koolaColors.warm,
+  '#7C3AED',
+  '#0EA5E9',
+];
 
 const BusinessProfileScreen: React.FC = () => {
   const route = useRoute<BusinessProfileRouteProp>();
@@ -27,21 +45,28 @@ const BusinessProfileScreen: React.FC = () => {
 
   const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
 
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const data = await businessesApi.getById(businessId);
-        setBusiness(data);
-      } catch (err) {
-        console.warn('Failed to load business:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
+  const fetchBusiness = useCallback(async () => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const data = await businessesApi.getById(businessId);
+      setBusiness(data);
+    } catch (err) {
+      console.warn('Failed to load business:', err);
+      setFetchError(
+        (err as Error)?.message || 'Không thể tải thông tin doanh nghiệp',
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [businessId]);
+
+  useEffect(() => {
+    fetchBusiness();
+  }, [fetchBusiness]);
 
   const handleConnect = useCallback(async () => {
     if (!business) return;
@@ -61,6 +86,7 @@ const BusinessProfileScreen: React.FC = () => {
         );
       } catch (err) {
         console.warn('Disconnect failed:', err);
+        Alert.alert('Lỗi', 'Không thể hủy kết nối. Vui lòng thử lại.');
       }
     } else {
       try {
@@ -76,6 +102,7 @@ const BusinessProfileScreen: React.FC = () => {
         );
       } catch (err) {
         console.warn('Connect failed:', err);
+        Alert.alert('Lỗi', 'Không thể kết nối. Vui lòng thử lại.');
       }
     }
     setConnecting(false);
@@ -83,287 +110,248 @@ const BusinessProfileScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1565C0" />
+      <View style={styles.container}>
+        <KoolaSurface variant="raised" style={styles.loadingCard}>
+          <KoolaSkeleton width={72} height={72} radius={16} />
+          <KoolaSkeleton width="62%" height={22} />
+          <KoolaSkeleton width="44%" height={14} />
+          <KoolaSkeleton width="100%" height={90} />
+        </KoolaSurface>
+      </View>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <View style={styles.container}>
+        <KoolaState
+          icon="cloud-off"
+          title="Không thể tải doanh nghiệp"
+          message={fetchError}
+          actionLabel="Thử lại"
+          onActionPress={fetchBusiness}
+          style={styles.centerState}
+        />
       </View>
     );
   }
 
   if (!business) {
     return (
-      <View style={styles.loadingContainer}>
-        <MaterialIcons name="error-outline" size={48} color="#ccc" />
-        <Text style={styles.errorText}>Không tìm thấy doanh nghiệp</Text>
+      <View style={styles.container}>
+        <KoolaState
+          icon="error-outline"
+          title="Không tìm thấy doanh nghiệp"
+          message="Hồ sơ này không tồn tại hoặc đã bị ẩn."
+          style={styles.centerState}
+        />
       </View>
     );
   }
 
   const bgColor = LOGO_COLORS[business.name.charCodeAt(0) % LOGO_COLORS.length];
-  const categoryLabel = CATEGORY_LABELS[business.category] || business.category;
+  const categoryLabel =
+    CATEGORY_LABELS[business.category] || business.category;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Logo */}
-      <View style={styles.logoSection}>
+      <KoolaSurface variant="raised" style={styles.hero}>
         <View style={[styles.logo, { backgroundColor: bgColor }]}>
           <MaterialIcons name="business" size={36} color="#FFFFFF" />
         </View>
         <View style={styles.nameSection}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{business.name}</Text>
-            {business.isVerified && (
-              <MaterialIcons name="verified" size={20} color="#1565C0" style={styles.verifiedIcon} />
-            )}
+            <KoolaText variant="heading" weight="800" numberOfLines={2} style={styles.name}>
+              {business.name}
+            </KoolaText>
+            {business.isVerified ? (
+              <MaterialIcons name="verified" size={21} color={koolaColors.success} />
+            ) : null}
           </View>
           <View style={styles.badgeRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{categoryLabel}</Text>
-            </View>
-            <View style={styles.locationBadge}>
-              <MaterialIcons name="location-on" size={14} color="#6B7280" />
-              <Text style={styles.locationText}>{business.province}</Text>
-            </View>
+            <KoolaBadge label={categoryLabel} tone="primary" />
+            <KoolaBadge label={business.province} tone="muted" />
           </View>
         </View>
-      </View>
+      </KoolaSurface>
 
-      {/* Type */}
-      <View style={styles.typeRow}>
+      <KoolaSurface variant="soft" style={styles.typeRow}>
         <MaterialIcons
           name={business.relationshipType === 'partner' ? 'handshake' : 'local-shipping'}
-          size={16}
-          color="#6B7280"
+          size={17}
+          color={koolaColors.muted}
         />
-        <Text style={styles.typeText}>
+        <KoolaText variant="caption" tone="muted" weight="800">
           {business.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
-        </Text>
-      </View>
+        </KoolaText>
+      </KoolaSurface>
 
-      {/* Description */}
-      {business.description ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Giới thiệu</Text>
-          <Text style={styles.description}>{business.description}</Text>
-        </View>
-      ) : business.tagline ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Giới thiệu</Text>
-          <Text style={styles.description}>{business.tagline}</Text>
-        </View>
+      {business.description || business.tagline ? (
+        <InfoSection title="Giới thiệu">
+          <KoolaText variant="body" tone="muted">
+            {business.description || business.tagline}
+          </KoolaText>
+        </InfoSection>
       ) : null}
 
-      {/* Contact info */}
-      {(business.website || business.contactEmail || business.contactPhone) && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Liên hệ</Text>
+      {business.website || business.contactEmail || business.contactPhone ? (
+        <InfoSection title="Liên hệ">
           {business.website ? (
-            <TouchableOpacity
-              style={styles.contactRow}
-              onPress={() => Linking.openURL(business.website!)}>
-              <MaterialIcons name="language" size={18} color="#1565C0" />
-              <Text style={styles.contactLink}>{business.website}</Text>
-            </TouchableOpacity>
+            <ContactRow
+              icon="language"
+              label={business.website}
+              onPress={() => Linking.openURL(business.website!)}
+            />
           ) : null}
           {business.contactEmail ? (
-            <TouchableOpacity
-              style={styles.contactRow}
-              onPress={() => Linking.openURL(`mailto:${business.contactEmail}`)}>
-              <MaterialIcons name="email" size={18} color="#1565C0" />
-              <Text style={styles.contactLink}>{business.contactEmail}</Text>
-            </TouchableOpacity>
+            <ContactRow
+              icon="email"
+              label={business.contactEmail}
+              onPress={() => Linking.openURL(`mailto:${business.contactEmail}`)}
+            />
           ) : null}
           {business.contactPhone ? (
-            <TouchableOpacity
-              style={styles.contactRow}
-              onPress={() => Linking.openURL(`tel:${business.contactPhone}`)}>
-              <MaterialIcons name="phone" size={18} color="#1565C0" />
-              <Text style={styles.contactLink}>{business.contactPhone}</Text>
-            </TouchableOpacity>
+            <ContactRow
+              icon="phone"
+              label={business.contactPhone}
+              onPress={() => Linking.openURL(`tel:${business.contactPhone}`)}
+            />
           ) : null}
-        </View>
-      )}
-
-      {/* Address */}
-      {business.address ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Địa chỉ</Text>
-          <View style={styles.contactRow}>
-            <MaterialIcons name="place" size={18} color="#6B7280" />
-            <Text style={styles.addressText}>{business.address}</Text>
-          </View>
-        </View>
+        </InfoSection>
       ) : null}
 
-      {/* Connected users */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Kết nối</Text>
+      {business.address ? (
+        <InfoSection title="Địa chỉ">
+          <ContactRow icon="place" label={business.address} />
+        </InfoSection>
+      ) : null}
+
+      <InfoSection title="Kết nối">
         <View style={styles.connectedRow}>
           <ConnectedUsersStack
             users={business.connectedUsers || []}
             totalCount={business.connectionCount}
           />
-          <Text style={styles.connectedCount}>
+          <KoolaText tone="muted" weight="700">
             {business.connectionCount} người đã kết nối
-          </Text>
+          </KoolaText>
         </View>
-      </View>
+      </InfoSection>
 
-      {/* Connect/Disconnect button */}
-      <TouchableOpacity
-        style={[
-          styles.actionBtn,
-          business.isConnected && styles.actionBtnConnected,
-        ]}
+      <KoolaButton
+        title={business.isConnected ? 'Đã kết nối' : 'Kết nối ngay'}
+        icon={business.isConnected ? 'check-circle' : 'handshake'}
+        variant={business.isConnected ? 'secondary' : 'primary'}
+        loading={connecting}
+        disabled={connecting}
         onPress={handleConnect}
-        activeOpacity={0.7}
-        disabled={connecting}>
-        {connecting ? (
-          <ActivityIndicator
-            size="small"
-            color={business.isConnected ? '#1565C0' : '#FFFFFF'}
-          />
-        ) : (
-          <>
-            <MaterialIcons
-              name={business.isConnected ? 'check-circle' : 'handshake'}
-              size={20}
-              color={business.isConnected ? '#1565C0' : '#FFFFFF'}
-            />
-            <Text
-              style={[
-                styles.actionBtnText,
-                business.isConnected && styles.actionBtnTextConnected,
-              ]}>
-              {business.isConnected ? 'Đã kết nối' : 'Kết nối ngay'}
-            </Text>
-          </>
-        )}
-      </TouchableOpacity>
+        style={styles.actionBtn}
+      />
     </ScrollView>
   );
 };
 
+interface ContactRowProps {
+  icon: string;
+  label: string;
+  onPress?: () => void;
+}
+
+const ContactRow: React.FC<ContactRowProps> = ({ icon, label, onPress }) => (
+  <Pressable
+    style={styles.contactRow}
+    onPress={onPress}
+    disabled={!onPress}
+    accessibilityRole={onPress ? 'button' : undefined}>
+    <MaterialIcons name={icon} size={18} color={koolaColors.primary} />
+    <KoolaText tone={onPress ? 'primary' : 'muted'} style={styles.contactText}>
+      {label}
+    </KoolaText>
+  </Pressable>
+);
+
+const InfoSection: React.FC<{ title: string; children: React.ReactNode }> = ({
+  title,
+  children,
+}) => (
+  <KoolaSurface variant="flat" style={styles.section}>
+    <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
+      {title.toUpperCase()}
+    </KoolaText>
+    {children}
+  </KoolaSurface>
+);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: koolaColors.canvas,
   },
   content: {
     padding: 16,
     paddingBottom: 40,
   },
-  loadingContainer: {
+  centerState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    gap: 12,
   },
-  errorText: {
-    fontSize: 16,
-    color: '#999',
+  loadingCard: {
+    margin: 16,
+    padding: 18,
+    gap: 14,
   },
-  logoSection: {
+  hero: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    padding: 16,
+    marginBottom: 12,
   },
   logo: {
     width: 72,
     height: 72,
-    borderRadius: 12,
+    borderRadius: koolaRadii.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
   nameSection: {
     flex: 1,
     marginLeft: 16,
-    justifyContent: 'center',
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    gap: 6,
   },
   name: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
     flex: 1,
-  },
-  verifiedIcon: {
-    marginLeft: 6,
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
-  },
-  badge: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1565C0',
-  },
-  locationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#6B7280',
+    marginTop: 8,
   },
   typeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 16,
-    paddingVertical: 8,
+    gap: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-  },
-  typeText: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
+    marginBottom: 12,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  description: {
-    fontSize: 15,
-    color: '#4B5563',
-    lineHeight: 22,
+    marginBottom: 9,
   },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: 9,
+    paddingVertical: 5,
   },
-  contactLink: {
-    fontSize: 14,
-    color: '#1565C0',
-    flex: 1,
-  },
-  addressText: {
-    fontSize: 14,
-    color: '#4B5563',
+  contactText: {
     flex: 1,
   },
   connectedRow: {
@@ -371,33 +359,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  connectedCount: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
   actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1565C0',
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: 8,
-    marginTop: 8,
-  },
-  actionBtnConnected: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#1565C0',
-  },
-  actionBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  actionBtnTextConnected: {
-    color: '#1565C0',
+    marginTop: 6,
   },
 });
 

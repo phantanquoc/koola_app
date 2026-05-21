@@ -93,15 +93,34 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Loads from ~/.gradle/gradle.properties or -P flags. When unset,
+            // these stay null and the release build falls back to debug
+            // signing (see buildTypes.release below) — fine for local dev,
+            // not acceptable for store distribution.
+            if (project.hasProperty('KOOLA_RELEASE_STORE_FILE')) {
+                storeFile file(KOOLA_RELEASE_STORE_FILE)
+                storePassword KOOLA_RELEASE_STORE_PASSWORD
+                keyAlias KOOLA_RELEASE_KEY_ALIAS
+                keyPassword KOOLA_RELEASE_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Use a real release keystore when KOOLA_RELEASE_STORE_FILE is
+            // configured; otherwise fall back to debug signing for local
+            // builds. Distributable release APKs MUST set the property.
+            if (project.hasProperty('KOOLA_RELEASE_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            } else {
+                println "WARNING: release build is signed with debug keystore. " +
+                        "Set KOOLA_RELEASE_STORE_FILE in ~/.gradle/gradle.properties for distribution."
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -111,6 +130,8 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    // Required for WindowCompat.setDecorFitsSystemWindows (edge-to-edge)
+    implementation("androidx.core:core-ktx:1.12.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

@@ -1,27 +1,46 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   FlatList,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  StatusBar,
   StyleSheet,
-  TouchableOpacity,
-  Text,
+  Pressable,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
 import KoolaHeader from '../../components/KoolaHeader';
 import BusinessCard from '../../components/connect/BusinessCard';
 import EmptyConnect from '../../components/connect/EmptyConnect';
+import ListErrorState from '../../components/connect/ListErrorState';
+import BusinessCardSkeleton from '../../components/connect/BusinessCardSkeleton';
+import ConnectContextBanner from '../../components/connect/ConnectContextBanner';
+import SortMenu from '../../components/connect/SortMenu';
+import ProvincePicker from '../../components/connect/ProvincePicker';
 import { useBusinessList } from '../../hooks/useBusinessList';
 import { businessesApi, conversationsApi } from '../../services/api/apiService';
+import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
 import { BUSINESS_CATEGORIES, RELATIONSHIP_FILTERS } from './constants';
-import type { Business } from '../../types';
+import type { Business, BusinessSort } from '../../types';
+import {
+  KoolaChip,
+  KoolaText,
+  koolaColors,
+  koolaRadii,
+} from '../../ui';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -97,22 +116,24 @@ const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
   onSelectRelationship,
 }) => {
   return (
-    <View style={tabBarStyles.container}>
+    <View style={tabBarStyles.container} accessibilityRole="tablist">
       {RELATIONSHIP_FILTERS.map((rel) => {
         const isActive = activeRelationship === rel.slug;
         return (
-          <TouchableOpacity
+          <Pressable
             key={rel.slug}
             style={[tabBarStyles.tab, isActive && tabBarStyles.tabActive]}
             onPress={() => onSelectRelationship(rel.slug)}
-            activeOpacity={0.7}
             accessibilityRole="tab"
             accessibilityLabel={rel.label}
             accessibilityState={{ selected: isActive }}>
-            <Text style={[tabBarStyles.tabText, isActive && tabBarStyles.tabTextActive]}>
+            <KoolaText
+              variant="label"
+              weight={isActive ? '700' : '600'}
+              tone={isActive ? 'primary' : 'muted'}>
               {rel.label}
-            </Text>
-          </TouchableOpacity>
+            </KoolaText>
+          </Pressable>
         );
       })}
     </View>
@@ -122,9 +143,9 @@ const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
 const tabBarStyles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: koolaColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
     paddingHorizontal: 16,
   },
   tab: {
@@ -136,22 +157,13 @@ const tabBarStyles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: '#1565C0',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  tabTextActive: {
-    color: '#1565C0',
-    fontWeight: '700',
+    borderBottomColor: koolaColors.primary,
   },
 });
 
-// ─── CategoryChipBar ─────────────────────────────────────────────────────────
-// Horizontal scrollable chip row for category filtering.
-// Only shown when a non-'all' relationship tab is active.
+// ─── FilterBar ──────────────────────────────────────────────────────────────
+// Unified filter row: category chips + province picker + sort menu.
+// Collapses 3 visual layers into 1 scrollable row.
 
 const CATEGORY_ICON_MAP: Record<string, string> = {
   logistics: 'local-shipping',
@@ -168,73 +180,104 @@ const CATEGORY_ICON_MAP: Record<string, string> = {
   education: 'school',
 };
 
-interface CategoryChipBarProps {
+interface FilterBarProps {
   activeCategory: string | null;
   onSelectCategory: (slug: string | null) => void;
+  activeRelationship: string;
+  activeProvince: string;
+  onProvinceChange: (province: string) => void;
+  activeSort: BusinessSort;
+  onSortChange: (sort: BusinessSort) => void;
 }
 
-const CategoryChipBar: React.FC<CategoryChipBarProps> = ({
+const FilterBar: React.FC<FilterBarProps> = ({
   activeCategory,
   onSelectCategory,
+  activeRelationship,
+  activeProvince,
+  onProvinceChange,
+  activeSort,
+  onSortChange,
 }) => {
+  const showCategories = activeRelationship !== 'all';
+  const activeFilterCount =
+    (activeCategory ? 1 : 0) +
+    (activeProvince ? 1 : 0) +
+    (activeSort !== 'latest' ? 1 : 0);
+
   return (
-    <View style={chipBarStyles.wrapper}>
+    <View style={filterBarStyles.wrapper}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={chipBarStyles.scrollContent}>
-        {/* "Tất cả" chip — clears category filter */}
-        <TouchableOpacity
-          style={[chipBarStyles.chip, activeCategory === null && chipBarStyles.chipActive]}
-          onPress={() => onSelectCategory(null)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityState={{ selected: activeCategory === null }}>
-          <Text
-            style={[
-              chipBarStyles.chipText,
-              activeCategory === null && chipBarStyles.chipTextActive,
-            ]}>
-            Tất cả
-          </Text>
-        </TouchableOpacity>
+        contentContainerStyle={filterBarStyles.scrollContent}
+        accessibilityRole="toolbar">
+        {/* Province + Sort controls — always visible */}
+        <ProvincePicker
+          value={activeProvince}
+          onChange={onProvinceChange}
+          placeholder="Tỉnh/Thành"
+        />
+        <SortMenu value={activeSort} onChange={onSortChange} />
 
-        {/* Category chips */}
-        {BUSINESS_CATEGORIES.filter((cat) => cat.slug !== 'all').map((cat) => {
-          const isActive = activeCategory === cat.slug;
-          const iconName = CATEGORY_ICON_MAP[cat.slug] || cat.icon;
-          return (
-            <TouchableOpacity
-              key={cat.slug}
-              style={[chipBarStyles.chip, isActive && chipBarStyles.chipActive]}
-              onPress={() => onSelectCategory(isActive ? null : cat.slug)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={cat.label}
-              accessibilityState={{ selected: isActive }}>
-              <MaterialIcons
-                name={iconName}
-                size={14}
-                color={isActive ? '#FFFFFF' : '#1565C0'}
-                style={chipBarStyles.chipIcon}
-              />
-              <Text
-                style={[chipBarStyles.chipText, isActive && chipBarStyles.chipTextActive]}>
-                {cat.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {/* Active filter count badge */}
+        {activeFilterCount > 0 && (
+          <View style={filterBarStyles.countBadge}>
+            <KoolaText variant="caption" tone="surface" weight="700">
+              {activeFilterCount}
+            </KoolaText>
+          </View>
+        )}
+
+        {/* Category chips — only for specific relationship tabs */}
+        {showCategories && (
+          <>
+            <View style={filterBarStyles.divider} />
+            <KoolaChip
+              label="Tất cả"
+              selected={activeCategory === null}
+              onPress={() => onSelectCategory(null)}
+              accessibilityState={{ selected: activeCategory === null }}
+            />
+            {BUSINESS_CATEGORIES.filter((cat) => cat.slug !== 'all').map((cat) => {
+              const isActive = activeCategory === cat.slug;
+              return (
+                <Pressable
+                  key={cat.slug}
+                  style={[
+                    filterBarStyles.iconChip,
+                    isActive && filterBarStyles.iconChipActive,
+                  ]}
+                  onPress={() => onSelectCategory(isActive ? null : cat.slug)}
+                  accessibilityRole="button"
+                  accessibilityLabel={cat.label}
+                  accessibilityState={{ selected: isActive }}>
+                  <MaterialIcons
+                    name={CATEGORY_ICON_MAP[cat.slug] || cat.icon}
+                    size={14}
+                    color={isActive ? koolaColors.surface : koolaColors.primary}
+                  />
+                  <KoolaText
+                    variant="caption"
+                    weight="700"
+                    tone={isActive ? 'surface' : 'muted'}>
+                    {cat.label}
+                  </KoolaText>
+                </Pressable>
+              );
+            })}
+          </>
+        )}
       </ScrollView>
     </View>
   );
 };
 
-const chipBarStyles = StyleSheet.create({
+const filterBarStyles = StyleSheet.create({
   wrapper: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: koolaColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
   },
   scrollContent: {
     flexDirection: 'row',
@@ -243,30 +286,34 @@ const chipBarStyles = StyleSheet.create({
     paddingVertical: 8,
     gap: 8,
   },
-  chip: {
+  divider: {
+    width: StyleSheet.hairlineWidth,
+    height: 24,
+    backgroundColor: koolaColors.line,
+    marginHorizontal: 4,
+  },
+  iconChip: {
     height: 34,
-    borderRadius: 17,
+    borderRadius: koolaRadii.pill,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    gap: 4,
+    backgroundColor: koolaColors.canvas,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
   },
-  chipActive: {
-    backgroundColor: '#1565C0',
-    borderColor: '#1565C0',
+  iconChipActive: {
+    backgroundColor: koolaColors.primary,
+    borderColor: koolaColors.primary,
   },
-  chipIcon: {
-    marginRight: 4,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  chipTextActive: {
-    color: '#FFFFFF',
+  countBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: koolaColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 
@@ -276,6 +323,8 @@ interface BusinessListTabProps {
   navigation: ConnectNavProp;
   activeCategory: string | null;
   activeRelationship: string;
+  activeSort: BusinessSort;
+  activeProvince: string;
   onClearFilters: () => void;
 }
 
@@ -283,12 +332,16 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
   navigation,
   activeCategory,
   activeRelationship,
+  activeSort,
+  activeProvince,
   onClearFilters,
 }) => {
-  const { items, loading, refreshing, hasMore, loadMore, refresh, updateItem } =
+  const { items, loading, refreshing, hasMore, error, loadMore, refresh, updateItem } =
     useBusinessList({
       category: activeCategory ?? undefined,
       relationshipType: activeRelationship === 'all' ? undefined : activeRelationship,
+      sort: activeSort,
+      province: activeProvince || undefined,
     });
 
   const { connectingId, handleConnectAndChat, handleMessage } =
@@ -311,10 +364,23 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
     [navigation, handleConnectAndChat, handleMessage, connectingId, updateItem],
   );
 
+  // Error state — show when fetch failed and no cached items
+  if (error && items.length === 0 && !loading) {
+    return (
+      <View style={listStyles.container}>
+        <ListErrorState message={error} onRetry={refresh} />
+      </View>
+    );
+  }
+
   return (
     <View style={listStyles.container}>
       {loading && items.length === 0 ? (
-        <ActivityIndicator style={listStyles.loader} size="large" color="#1565C0" />
+        <View>
+          <BusinessCardSkeleton />
+          <BusinessCardSkeleton />
+          <BusinessCardSkeleton />
+        </View>
       ) : (
         <FlatList
           data={items}
@@ -334,7 +400,7 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
               <ActivityIndicator
                 style={listStyles.footer}
                 size="small"
-                color="#1565C0"
+                color={koolaColors.primary}
               />
             ) : null
           }
@@ -344,7 +410,7 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={refresh}
-              tintColor="#1565C0"
+              tintColor={koolaColors.primary}
             />
           }
           contentContainerStyle={listStyles.listContent}
@@ -357,7 +423,7 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
 const listStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: koolaColors.canvas,
   },
   loader: {
     marginTop: 40,
@@ -367,25 +433,48 @@ const listStyles = StyleSheet.create({
   },
   listContent: {
     paddingTop: 8,
-    paddingBottom: 16,
+    paddingBottom: TAB_BAR_FLOATING_INSET + 16,
   },
 });
 
 // ─── ConnectHomeScreen ────────────────────────────────────────────────────────
 
+const BANNER_DISMISSED_KEY = 'connect_banner_dismissed';
+
 const ConnectHomeScreen: React.FC = () => {
   const navigation = useNavigation<ConnectNavProp>();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRelationship, setActiveRelationship] = useState('all');
+  const [activeSort, setActiveSort] = useState<BusinessSort>('latest');
+  const [activeProvince, setActiveProvince] = useState('');
+  const [bannerDismissed, setBannerDismissed] = useState(true); // default hidden until loaded
+
+  useEffect(() => {
+    AsyncStorage.getItem(BANNER_DISMISSED_KEY).then((val) => {
+      if (val !== 'true') setBannerDismissed(false);
+    });
+  }, []);
+
+  const handleDismissBanner = useCallback(() => {
+    setBannerDismissed(true);
+    AsyncStorage.setItem(BANNER_DISMISSED_KEY, 'true');
+  }, []);
 
   const handleClearFilters = useCallback(() => {
     setActiveCategory(null);
     setActiveRelationship('all');
+    setActiveSort('latest');
+    setActiveProvince('');
+  }, []);
+
+  const handleSelectRelationship = useCallback((slug: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveRelationship(slug);
+    setActiveCategory(null);
   }, []);
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <KoolaHeader
         searchPlaceholder="Tìm doanh nghiệp..."
         onSearchPress={() => navigation.navigate('BusinessSearch')}
@@ -395,17 +484,25 @@ const ConnectHomeScreen: React.FC = () => {
 
       <RelationshipTabBar
         activeRelationship={activeRelationship}
-        onSelectRelationship={(slug) => {
-          setActiveRelationship(slug);
-          setActiveCategory(null);
-        }}
+        onSelectRelationship={handleSelectRelationship}
       />
 
-      {/* Category chips — only shown for Đối tác / Nhà cung cấp tabs */}
-      {activeRelationship !== 'all' && (
-        <CategoryChipBar
-          activeCategory={activeCategory}
-          onSelectCategory={setActiveCategory}
+      {/* Unified filter bar — categories + province + sort in one row */}
+      <FilterBar
+        activeCategory={activeCategory}
+        onSelectCategory={setActiveCategory}
+        activeRelationship={activeRelationship}
+        activeProvince={activeProvince}
+        onProvinceChange={setActiveProvince}
+        activeSort={activeSort}
+        onSortChange={setActiveSort}
+      />
+
+      {/* Onboarding banner — shown once for new users, above list */}
+      {!bannerDismissed && (
+        <ConnectContextBanner
+          onCreatePress={() => navigation.navigate('CreateBusiness')}
+          onDismiss={handleDismissBanner}
         />
       )}
 
@@ -413,6 +510,8 @@ const ConnectHomeScreen: React.FC = () => {
         navigation={navigation}
         activeCategory={activeRelationship === 'all' ? null : activeCategory}
         activeRelationship={activeRelationship}
+        activeSort={activeSort}
+        activeProvince={activeProvince}
         onClearFilters={handleClearFilters}
       />
     </View>
@@ -422,7 +521,7 @@ const ConnectHomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: koolaColors.canvas,
   },
 });
 

@@ -1,19 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, SafeAreaView, StyleSheet, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { ProfileScreenNavigationProp, ProfileScreenRouteProp } from '../../navigation/types';
-import { usersApi, conversationsApi } from '../../services/api/apiService';
+import { formatDistanceToNow } from 'date-fns';
+import type {
+  ProfileScreenNavigationProp,
+  ProfileScreenRouteProp,
+} from '../../navigation/types';
+import { conversationsApi, usersApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
 import type { User } from '../../types';
-import { formatDistanceToNow } from 'date-fns';
+import {
+  KoolaBadge,
+  KoolaButton,
+  KoolaState,
+  KoolaSurface,
+  KoolaText,
+  KoolaSkeleton,
+  koolaColors,
+} from '../../ui';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
@@ -25,13 +29,12 @@ const ProfileScreen: React.FC = () => {
   const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchProfile = async () => {
       try {
-        // For now, get presence - full profile fetch if available
-        const presence = await usersApi.searchUsers(userId);
-        // This is a workaround — ideally we'd have GET /users/:id
-        if (presence.items.length > 0) {
-          const u = presence.items[0];
+        const u = await usersApi.getUserById(userId);
+        if (cancelled) return;
+        if (u) {
           setProfileUser({
             _id: u._id,
             email: u.email,
@@ -39,16 +42,19 @@ const ProfileScreen: React.FC = () => {
             avatar: u.avatar || '',
             isOnline: u.isOnline,
             lastSeen: u.lastSeen,
-            settings: { notificationsEnabled: true },
+            settings: u.settings || { notificationsEnabled: true },
           });
         }
       } catch {
-        // Ignore errors
+        // Empty state handles this below.
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchProfile();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   const handleStartChat = useCallback(async () => {
@@ -62,7 +68,10 @@ const ProfileScreen: React.FC = () => {
       } as never);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
-      Alert.alert('Error', error.response?.data?.message || 'Failed to start chat');
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Failed to start chat',
+      );
     } finally {
       setChatLoading(false);
     }
@@ -71,7 +80,12 @@ const ProfileScreen: React.FC = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 60 }} />
+        <KoolaSurface variant="raised" style={styles.loadingCard}>
+          <KoolaSkeleton width={80} height={80} radius={40} />
+          <KoolaSkeleton width="55%" height={20} />
+          <KoolaSkeleton width="72%" height={14} />
+          <KoolaSkeleton width="42%" height={34} radius={17} />
+        </KoolaSurface>
       </SafeAreaView>
     );
   }
@@ -79,7 +93,11 @@ const ProfileScreen: React.FC = () => {
   if (!profileUser) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={styles.errorText}>User not found</Text>
+        <KoolaState
+          icon="person-off"
+          title="Không tìm thấy người dùng"
+          message="Hồ sơ này không tồn tại hoặc bạn không có quyền xem."
+        />
       </SafeAreaView>
     );
   }
@@ -87,19 +105,25 @@ const ProfileScreen: React.FC = () => {
   const lastSeenText = profileUser.isOnline
     ? 'Online'
     : profileUser.lastSeen
-      ? `Last seen ${formatDistanceToNow(new Date(profileUser.lastSeen), { addSuffix: true })}`
+      ? `Last seen ${formatDistanceToNow(new Date(profileUser.lastSeen), {
+          addSuffix: true,
+        })}`
       : 'Offline';
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.profileSection}>
+      <KoolaSurface variant="raised" style={styles.profileCard}>
         <UserAvatar
           displayName={profileUser.displayName}
           avatar={profileUser.avatar || undefined}
-          size={80}
+          size={88}
         />
-        <Text style={styles.name}>{profileUser.displayName}</Text>
-        <Text style={styles.email}>{profileUser.email}</Text>
+        <KoolaText variant="title" align="center" numberOfLines={2} style={styles.name}>
+          {profileUser.displayName}
+        </KoolaText>
+        <KoolaText variant="body" tone="muted" align="center" numberOfLines={1}>
+          {profileUser.email}
+        </KoolaText>
         <View style={styles.statusRow}>
           <View
             style={[
@@ -107,41 +131,66 @@ const ProfileScreen: React.FC = () => {
               profileUser.isOnline ? styles.online : styles.offline,
             ]}
           />
-          <Text style={styles.statusText}>{lastSeenText}</Text>
+          <KoolaBadge
+            label={lastSeenText}
+            tone={profileUser.isOnline ? 'success' : 'muted'}
+          />
         </View>
-      </View>
+      </KoolaSurface>
 
-      <TouchableOpacity
-        style={[styles.chatButton, chatLoading && styles.chatButtonDisabled]}
+      <KoolaButton
+        title="Bắt đầu trò chuyện"
+        icon="chat-bubble-outline"
+        loading={chatLoading}
+        disabled={chatLoading}
         onPress={handleStartChat}
-        disabled={chatLoading}>
-        {chatLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.chatButtonText}>Start Chat</Text>
-        )}
-      </TouchableOpacity>
+        style={styles.chatButton}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  profileSection: { alignItems: 'center', paddingVertical: 32 },
-  name: { fontSize: 24, fontWeight: 'bold', color: '#333', marginTop: 16 },
-  email: { fontSize: 14, color: '#999', marginTop: 4 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  online: { backgroundColor: '#4CAF50' },
-  offline: { backgroundColor: '#ccc' },
-  statusText: { fontSize: 14, color: '#666' },
-  chatButton: {
-    marginHorizontal: 24, height: 48, backgroundColor: '#2196F3', borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center', marginTop: 24,
+  container: {
+    flex: 1,
+    backgroundColor: koolaColors.canvas,
+    padding: 20,
   },
-  chatButtonDisabled: { opacity: 0.6 },
-  chatButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  errorText: { fontSize: 16, color: '#999', textAlign: 'center', marginTop: 60 },
+  loadingCard: {
+    alignItems: 'center',
+    paddingVertical: 34,
+    gap: 14,
+    marginTop: 20,
+  },
+  profileCard: {
+    alignItems: 'center',
+    paddingVertical: 34,
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  name: {
+    marginTop: 16,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  statusDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  online: {
+    backgroundColor: koolaColors.success,
+  },
+  offline: {
+    backgroundColor: koolaColors.faint,
+  },
+  chatButton: {
+    marginTop: 18,
+  },
 });
 
 export default ProfileScreen;
