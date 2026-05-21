@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { getAllowedOrigins } from './common/cors';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
@@ -45,9 +46,10 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api');
 
-  // CORS
+  // CORS — restrict to configured origins. NODE_ENV=production requires
+  // FRONTEND_URL to be set (comma-separated list of allowed origins).
   app.enableCors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: getAllowedOrigins(),
     credentials: true,
   });
 

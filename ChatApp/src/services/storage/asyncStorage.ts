@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { RecentSearchItem } from '../../types';
 
 const KEYS = {
-  ACCESS_TOKEN: 'access_token',
   REFRESH_TOKEN: 'refresh_token',
   USER: 'user',
   OFFLINE_QUEUE: 'offline_queue',
@@ -14,12 +13,8 @@ const RECENT_SEARCHES_MAX = 10;
 
 export const asyncStorage = {
   // ─── Auth tokens ───────────────────────────────────────────────────────────
-  async getAccessToken(): Promise<string | null> {
-    return AsyncStorage.getItem(KEYS.ACCESS_TOKEN);
-  },
-  async setAccessToken(token: string): Promise<void> {
-    await AsyncStorage.setItem(KEYS.ACCESS_TOKEN, token);
-  },
+  // NOTE: Access tokens MUST NOT be persisted. They live in memory only
+  // (see apiService.setAccessTokenInMemory). Only the refresh token is durable.
   async getRefreshToken(): Promise<string | null> {
     return AsyncStorage.getItem(KEYS.REFRESH_TOKEN);
   },
@@ -27,7 +22,7 @@ export const asyncStorage = {
     await AsyncStorage.setItem(KEYS.REFRESH_TOKEN, token);
   },
   async clearTokens(): Promise<void> {
-    await AsyncStorage.multiRemove([KEYS.ACCESS_TOKEN, KEYS.REFRESH_TOKEN]);
+    await AsyncStorage.removeItem(KEYS.REFRESH_TOKEN);
   },
 
   // ─── User ──────────────────────────────────────────────────────────────────

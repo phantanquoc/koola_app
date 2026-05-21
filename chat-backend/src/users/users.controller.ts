@@ -1,15 +1,21 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Delete,
   Body,
   Param,
   Query,
+  NotFoundException,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { SearchUsersDto } from './dto/search-users.dto';
+import { BatchPresenceDto } from './dto/batch-presence.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { RegisterFcmTokenDto, RemoveFcmTokenDto } from './dto/fcm-token.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   ApiTags,
@@ -37,7 +43,7 @@ export class UsersController {
   @ApiResponse({ status: 200 })
   async updateMe(
     @CurrentUser() user: { userId: string },
-    @Body() body: { displayName?: string; avatar?: string },
+    @Body() body: UpdateProfileDto,
   ) {
     return this.usersService.updateProfile(user.userId, body);
   }
@@ -47,7 +53,7 @@ export class UsersController {
   @ApiResponse({ status: 200 })
   async updateSettings(
     @CurrentUser() user: { userId: string },
-    @Body() body: { notificationsEnabled?: boolean },
+    @Body() body: UpdateSettingsDto,
   ) {
     return this.usersService.updateSettings(user.userId, body);
   }
@@ -57,7 +63,7 @@ export class UsersController {
   @ApiResponse({ status: 200 })
   async registerFcmToken(
     @CurrentUser() user: { userId: string },
-    @Body() body: { fcmToken: string; platform: string },
+    @Body() body: RegisterFcmTokenDto,
   ) {
     await this.usersService.registerFcmToken(
       user.userId,
@@ -72,7 +78,7 @@ export class UsersController {
   @ApiResponse({ status: 200 })
   async removeFcmToken(
     @CurrentUser() user: { userId: string },
-    @Body() body: { fcmToken: string },
+    @Body() body: RemoveFcmTokenDto,
   ) {
     await this.usersService.removeFcmToken(user.userId, body.fcmToken);
     return { message: 'FCM token removed' };
@@ -89,10 +95,10 @@ export class UsersController {
     return this.usersService.getPresence(userId);
   }
 
-  @Get('presence')
+  @Post('presence/batch')
   @ApiOperation({ summary: 'Batch get presence for multiple users' })
   @ApiResponse({ status: 200 })
-  async batchGetPresence(@Body() body: { ids: string[] }) {
+  async batchGetPresence(@Body() body: BatchPresenceDto) {
     return this.usersService.batchGetPresence(body.ids);
   }
 
@@ -111,5 +117,16 @@ export class UsersController {
       query.cursor,
       query.limit,
     );
+  }
+
+  @Get(':userId')
+  @ApiOperation({ summary: 'Get a user profile by id' })
+  @ApiResponse({ status: 200 })
+  async getUserById(@Param('userId') userId: string) {
+    const u = await this.usersService.findById(userId);
+    if (!u) {
+      throw new NotFoundException('User not found');
+    }
+    return u;
   }
 }

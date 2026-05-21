@@ -54,20 +54,64 @@ export class NotificationsService {
 
     const preview = this.buildPreview(messageContent, messageType);
 
-    for (const recipientId of recipientIds) {
-      // Skip self-notification
-      if (recipientId === senderId) continue;
+    // Batch-fetch all recipients in one query (eliminates N+1)
+    const eligibleIds = recipientIds.filter((id) => id !== senderId);
+    if (eligibleIds.length === 0) return;
 
+    const users = await this.usersService.findByIds(eligibleIds);
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+    for (const recipientId of eligibleIds) {
+      const user = userMap.get(recipientId);
+      if (!user) continue;
+
+      if (user.settings?.notificationsEnabled === false) {
+        this.logger.debug(
+          `[Notifications] Skipping ${recipientId} — notifications disabled`,
+        );
+        continue;
+      }
+
+      if (user.isOnline) {
+        this.logger.debug(
+          `[Notifications] Skipping ${recipientId} — user is online`,
+        );
+        continue;
+      }
+
+      if (!user.fcmTokens || user.fcmTokens.length === 0) {
+        this.logger.debug(
+          `[Notifications] Skipping ${recipientId} — no FCM tokens`,
+        );
+        continue;
+      }
+
+      // Redis deduplication check (still per-user, but cheap)
+      const dedupKey = `notif:${recipientId}:${conversationId}`;
+      const set = await this.redisService.setNXEX(
+        dedupKey,
+        new Date().toISOString(),
+        DEDUP_TTL_SECONDS,
+      );
+      if (!set) {
+        this.logger.debug(
+          `[Notifications] Skipping ${recipientId} — dedup active (recent notification)`,
+        );
+        continue;
+      }
+
+      const payload = this.buildPayload({
+        senderName,
+        conversationId,
+        conversationType,
+        conversationName,
+        messageId,
+        preview,
+      });
+
+      const tokens = user.fcmTokens.map((t) => t.token);
       try {
-        await this.sendToUser({
-          recipientId,
-          senderName,
-          conversationId,
-          conversationType,
-          conversationName,
-          messageId,
-          preview,
-        });
+        await this.sendMulticast(recipientId, tokens, payload);
       } catch (err) {
         this.logger.error(
           `[Notifications] Failed to send to ${recipientId}:`,
@@ -75,83 +119,6 @@ export class NotificationsService {
         );
       }
     }
-  }
-
-  // ─── Per-User Send Logic ────────────────────────────────────────────────────
-
-  private async sendToUser(params: {
-    recipientId: string;
-    senderName: string;
-    conversationId: string;
-    conversationType: ConversationType;
-    conversationName?: string | null;
-    messageId: string;
-    preview: string;
-  }): Promise<void> {
-    const {
-      recipientId,
-      senderName,
-      conversationId,
-      conversationType,
-      conversationName,
-      messageId,
-      preview,
-    } = params;
-
-    // 1. Check notificationsEnabled
-    const user = await this.usersService.findById(recipientId);
-    if (!user) return; // User not found — skip silently
-
-    if (user.settings?.notificationsEnabled === false) {
-      this.logger.debug(
-        `[Notifications] Skipping ${recipientId} — notifications disabled`,
-      );
-      return;
-    }
-
-    // 2. Check isOnline (skip if online — WebSocket delivers real-time)
-    const { isOnline } = await this.usersService.getPresence(recipientId);
-    if (isOnline) {
-      this.logger.debug(
-        `[Notifications] Skipping ${recipientId} — user is online`,
-      );
-      return;
-    }
-
-    // 3. Redis deduplication check
-    const dedupKey = `notif:${recipientId}:${conversationId}`;
-    const set = await this.redisService.setNXEX(
-      dedupKey,
-      new Date().toISOString(),
-      DEDUP_TTL_SECONDS,
-    );
-    if (!set) {
-      this.logger.debug(
-        `[Notifications] Skipping ${recipientId} — dedup active (recent notification)`,
-      );
-      return;
-    }
-
-    // 4. Check FCM tokens exist
-    if (!user.fcmTokens || user.fcmTokens.length === 0) {
-      this.logger.debug(
-        `[Notifications] Skipping ${recipientId} — no FCM tokens`,
-      );
-      return;
-    }
-
-    // 5. Build and send FCM payload
-    const payload = this.buildPayload({
-      senderName,
-      conversationId,
-      conversationType,
-      conversationName,
-      messageId,
-      preview,
-    });
-
-    const tokens = user.fcmTokens.map((t) => t.token);
-    await this.sendMulticast(recipientId, tokens, payload);
   }
 
   // ─── FCM Send ───────────────────────────────────────────────────────────────

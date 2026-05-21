@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { socketService } from '../../../services/socket/socketService';
+import { socketService } from '../../../services/socket/SocketService';
 import type { IMessage } from 'react-native-gifted-chat';
 
 export function useReadReceipts(
@@ -35,7 +35,7 @@ export function useReadReceipts(
     const firstUnread = messages.find(
       (m) => m.user._id !== currentUserId && !m.system,
     );
-    if (firstUnread) {
+    if (firstUnread && String(firstUnread._id) !== lastReadRef.current) {
       markRead(firstUnread._id as string);
     }
   }, [messages, currentUserId, markRead]);

@@ -11,6 +11,10 @@ export class UsersService {
     return this.userModel.findById(id).select('-passwordHash');
   }
 
+  async findByIds(ids: string[]): Promise<UserDocument[]> {
+    return this.userModel.find({ _id: { $in: ids } }).select('-passwordHash');
+  }
+
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ email: email.toLowerCase() })
@@ -129,12 +133,15 @@ export class UsersService {
     const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const searchRegex = new RegExp(escapedQuery, 'i');
 
-    const idFilter: Record<string, unknown> = cursor
-      ? { $ne: currentUserId, $gt: cursor }
-      : { $ne: currentUserId };
+    const idConditions: Record<string, unknown>[] = [
+      { _id: { $ne: currentUserId } },
+    ];
+    if (cursor) {
+      idConditions.push({ _id: { $gt: cursor } });
+    }
 
     const baseQuery: Record<string, unknown> = {
-      _id: idFilter,
+      $and: idConditions,
       $or: [
         { email: { $regex: searchRegex } },
         { displayName: { $regex: searchRegex } },

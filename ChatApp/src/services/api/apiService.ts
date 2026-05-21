@@ -21,6 +21,17 @@ import type {
 
 let accessToken: string | null = null;
 
+// Force-logout handler — set by AuthContext on mount. When the 401 interceptor
+// can't refresh the session, it invokes this so the UI can clear user state,
+// disconnect sockets, and route back to login. Without this, the app would
+// silently sit on a screen with no token, retrying failing requests forever.
+type ForceLogoutHandler = () => void;
+let forceLogoutHandler: ForceLogoutHandler | null = null;
+
+export function setForceLogoutHandler(fn: ForceLogoutHandler | null): void {
+  forceLogoutHandler = fn;
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: ENV.API_URL,
   timeout: 15000,
@@ -51,7 +62,6 @@ apiClient.interceptors.response.use(
         });
 
         accessToken = data.accessToken;
-        await asyncStorage.setAccessToken(data.accessToken);
         await asyncStorage.setRefreshToken(data.refreshToken);
 
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
@@ -60,6 +70,14 @@ apiClient.interceptors.response.use(
         // Refresh failed — force logout
         accessToken = null;
         await asyncStorage.clearTokens();
+        // Notify the UI so AuthContext can clear user state and disconnect
+        // sockets. Wrapped in try/catch so a buggy handler can't break the
+        // interceptor chain.
+        try {
+          forceLogoutHandler?.();
+        } catch {
+          // ignore — best effort
+        }
         return Promise.reject(error);
       }
     }
@@ -75,6 +93,30 @@ export function setAccessTokenInMemory(token: string | null): void {
 
 export function getAccessTokenInMemory(): string | null {
   return accessToken;
+}
+
+export async function refreshAccessTokenInMemory(): Promise<string | null> {
+  try {
+    const refreshToken = await asyncStorage.getRefreshToken();
+    if (!refreshToken) return null;
+
+    const { data } = await axios.post(`${ENV.API_URL}/auth/refresh`, {
+      refreshToken,
+    });
+
+    accessToken = data.accessToken;
+    await asyncStorage.setRefreshToken(data.refreshToken);
+    return data.accessToken;
+  } catch {
+    accessToken = null;
+    await asyncStorage.clearTokens();
+    try {
+      forceLogoutHandler?.();
+    } catch {
+      // ignore — best effort
+    }
+    return null;
+  }
 }
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
@@ -154,33 +196,20 @@ export const usersApi = {
   async searchUsers(
     q: string,
     cursor?: string,
+    signal?: AbortSignal,
   ): Promise<PaginatedResponse<UserSearchResult>> {
     const params: Record<string, string> = { q };
     if (cursor) params.cursor = cursor;
-    const { data } = await apiClient.get('/users/search', { params });
+    const { data } = await apiClient.get('/users/search', { params, signal });
     return data;
   },
   async getUserById(userId: string): Promise<User | null> {
-    // Workaround: backend doesn't yet expose GET /users/:id.
-    // Use search with exact _id and filter client-side.
     try {
-      const { data } = await apiClient.get('/users/search', {
-        params: { q: userId },
-      });
-      const items = (data as PaginatedResponse<UserSearchResult>).items;
-      const match = items.find((u) => u._id === userId);
-      if (!match) return null;
-      return {
-        _id: match._id,
-        email: match.email,
-        displayName: match.displayName,
-        avatar: match.avatar || '',
-        isOnline: match.isOnline,
-        lastSeen: match.lastSeen,
-        settings: { notificationsEnabled: true },
-      };
-    } catch {
-      return null;
+      const { data } = await apiClient.get(`/users/${userId}`);
+      return data as User;
+    } catch (err: any) {
+      if (err?.response?.status === 404) return null;
+      throw err;
     }
   },
 };
@@ -322,6 +351,7 @@ export const messagesApi = {
     q: string,
     cursor?: string,
     limit = 20,
+    signal?: AbortSignal,
   ): Promise<{
     items: MessageSearchItem[];
     nextCursor: string | null;
@@ -329,7 +359,7 @@ export const messagesApi = {
   }> {
     const params: Record<string, string | number> = { q, limit };
     if (cursor) params.cursor = cursor;
-    const { data } = await apiClient.get('/messages/search', { params });
+    const { data } = await apiClient.get('/messages/search', { params, signal });
     return data;
   },
   async toggleReaction(

@@ -7,9 +7,9 @@ import React, {
   useRef,
 } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { authApi, usersApi, setAccessTokenInMemory } from '../services/api/apiService';
+import { authApi, usersApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
 import { asyncStorage } from '../services/storage/asyncStorage';
-import { socketService } from '../services/socket/socketService';
+import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import type { User } from '../types';
@@ -45,6 +45,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restoreSession();
   }, []);
 
+  // ─── Force-logout wiring ──────────────────────────────────────────────────
+  // apiService's 401 interceptor invokes this when refresh fails. We have to
+  // tear down user state + sockets here, otherwise the UI sits in a broken
+  // logged-in state with no token.
+  useEffect(() => {
+    setForceLogoutHandler(() => {
+      setAccessTokenInMemory(null);
+      try {
+        socketService.disconnect();
+      } catch {
+        // ignore
+      }
+      try {
+        webrtcService.disconnect();
+      } catch {
+        // ignore
+      }
+      setUser(null);
+    });
+    return () => setForceLogoutHandler(null);
+  }, []);
+
   // ─── AppState listener — reconnect socket on foreground ────────────────────
   useEffect(() => {
     const subscription = AppState.addEventListener(
@@ -63,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ) {
         // Reconnect socket when app comes to foreground
         const reconnect = async () => {
-          const token = await asyncStorage.getAccessToken();
+          const token = getAccessTokenInMemory();
           if (token && !socketService.isConnected()) {
             socketService.connect(token);
           }
@@ -85,7 +107,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const tokens = await authApi.refresh(refreshToken);
       setAccessTokenInMemory(tokens.accessToken);
-      await asyncStorage.setAccessToken(tokens.accessToken);
       await asyncStorage.setRefreshToken(tokens.refreshToken);
 
       const me = await usersApi.getMe();
@@ -109,7 +130,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login(email, password);
     setAccessTokenInMemory(data.accessToken);
-    await asyncStorage.setAccessToken(data.accessToken);
     await asyncStorage.setRefreshToken(data.refreshToken);
 
     const me = await usersApi.getMe();
@@ -127,7 +147,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (email: string, password: string, displayName: string) => {
       const data = await authApi.register(email, password, displayName);
       setAccessTokenInMemory(data.accessToken);
-      await asyncStorage.setAccessToken(data.accessToken);
       await asyncStorage.setRefreshToken(data.refreshToken);
 
       const me = await usersApi.getMe();
@@ -158,7 +177,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyOtp = useCallback(async (email: string, otp: string) => {
     const data = await authApi.verifyOtp(email, otp);
     setAccessTokenInMemory(data.accessToken);
-    await asyncStorage.setAccessToken(data.accessToken);
     await asyncStorage.setRefreshToken(data.refreshToken);
 
     const me = await usersApi.getMe();

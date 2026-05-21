@@ -12,6 +12,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { WsAuthGuard } from './guards/ws-auth.guard';
+import { socketCorsOrigin } from '../common/cors';
 import { UsersService } from '../users/users.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MembershipService } from '../conversations/services/membership.service';
@@ -29,7 +30,10 @@ interface AuthSocketData {
 
 type AuthSocket = Socket & { data: AuthSocketData };
 
-@WebSocketGateway({ namespace: '/chat', cors: true })
+@WebSocketGateway({
+  namespace: '/chat',
+  cors: { origin: socketCorsOrigin(), credentials: true },
+})
 export class ChatGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
@@ -158,7 +162,9 @@ export class ChatGateway
       this.logger.warn(
         `[ChatGateway] Heartbeat timeout for client ${client.id} (user: ${(client.data as AuthSocketData).user?.sub})`,
       );
-      this.handleDisconnect(client).catch(() => {});
+      // Forcing the client off the wire fires Socket.IO's normal disconnect
+      // event, which calls handleDisconnect once. Calling handleDisconnect
+      // here too would broadcast presence twice.
       client.disconnect(true);
     }, HEARTBEAT_TIMEOUT_MS);
     (client.data as AuthSocketData).heartbeatTimer = timeout;
@@ -173,7 +179,11 @@ export class ChatGateway
     const userId = (client.data as AuthSocketData).user?.sub;
     if (userId) {
       // Update lastSeen without changing online status
-      this.usersService.updateLastSeen(userId).catch(() => {});
+      this.usersService.updateLastSeen(userId).catch((err) => {
+        this.logger.warn(
+          `[ChatGateway] Failed to update lastSeen for ${userId}: ${err.message}`,
+        );
+      });
     }
     this.resetHeartbeat(client);
     return { event: 'pong', data: {} };
