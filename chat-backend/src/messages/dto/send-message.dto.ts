@@ -90,4 +90,10 @@ export class SendMessageDto {
   @IsOptional()
   @Min(0)
   mediaDuration?: number;
+
+  /** ObjectId of the source message being replied to */
+  @ApiPropertyOptional({ example: '507f1f77bcf86cd799439011' })
+  @IsOptional()
+  @IsString()
+  replyTo?: string;
 }

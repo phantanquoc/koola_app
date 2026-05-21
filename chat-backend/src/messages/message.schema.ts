@@ -87,6 +87,26 @@ export class Message {
 
   @Prop({ type: Number, default: null })
   mediaDuration: number | null;
+
+  // ─── Reply (message-reply spec) ──────────────────────────────────────────
+  /** ObjectId of the source message this reply quotes (string form). */
+  @Prop({ type: String, default: null })
+  replyTo: string | null;
+
+  /** Denormalized preview snapshot captured at send time. Immutable. */
+  @Prop({
+    type: {
+      senderId: { type: String, required: true },
+      text: { type: String, required: false },
+      mediaType: { type: String, required: false },
+    },
+    default: null,
+  })
+  replyToPreview: {
+    senderId: string;
+    text?: string;
+    mediaType?: string;
+  } | null;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

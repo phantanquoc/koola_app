@@ -122,6 +122,59 @@ export class MessagesService {
       throw new BadRequestException('File exceeds 200MB limit');
     }
 
+    // ─── Reply validation (message-reply spec) ──────────────────────────────
+    let replyToPreview: {
+      senderId: string;
+      text?: string;
+      mediaType?: string;
+    } | null = null;
+
+    if (dto.replyTo) {
+      const source = await this.messageModel.findById(dto.replyTo).lean();
+
+      if (!source) {
+        throw new BadRequestException({
+          message: 'Source message not found',
+          code: 'REPLY_SOURCE_NOT_FOUND',
+        });
+      }
+      if (source.conversationId !== conversationId) {
+        throw new BadRequestException({
+          message: 'Cannot reply to a message from another conversation',
+          code: 'REPLY_CROSS_CONVERSATION',
+        });
+      }
+      if (source.deleted) {
+        throw new BadRequestException({
+          message: 'Source message was deleted',
+          code: 'REPLY_SOURCE_DELETED',
+        });
+      }
+      if (
+        Array.isArray(source.deletedFor) &&
+        source.deletedFor.includes(senderId)
+      ) {
+        throw new BadRequestException({
+          message: 'Source message was deleted by user',
+          code: 'REPLY_SOURCE_DELETED_FOR_USER',
+        });
+      }
+
+      // Build immutable preview snapshot: text for text sources, mediaType
+      // for media sources. Text is truncated to 100 chars.
+      if (source.type === MessageType.TEXT) {
+        replyToPreview = {
+          senderId: source.senderId,
+          text: (source.content ?? '').slice(0, 100),
+        };
+      } else {
+        replyToPreview = {
+          senderId: source.senderId,
+          mediaType: source.type,
+        };
+      }
+    }
+
     // Stop typing when message is sent
     this.typingService.stopTyping(conversationId, senderId);
 
@@ -138,6 +191,8 @@ export class MessagesService {
       deleted: false,
       clientMessageId: dto.clientMessageId ?? null,
       mediaDuration: dto.mediaDuration ?? null,
+      replyTo: dto.replyTo ?? null,
+      replyToPreview,
     });
 
     // Update conversation last message
