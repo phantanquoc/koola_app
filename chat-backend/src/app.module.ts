@@ -16,6 +16,8 @@ import { RedisModule } from './common/redis/redis.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { HealthModule } from './health/health.module';
+import { BusinessesModule } from './businesses/businesses.module';
+import { CallLogsModule } from './call-logs/call-logs.module';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { HealthModule } from './health/health.module';
     GatewayModule,
     WebrtcModule,
     HealthModule,
+    BusinessesModule,
+    CallLogsModule,
   ],
   providers: [
     {

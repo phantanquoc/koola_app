@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import ENV from '../../config/env';
+import { getAccessTokenInMemory } from '../api/apiService';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -14,9 +15,18 @@ class SocketService {
   connect(token: string): void {
     if (this.socket?.connected) return;
 
+    // Clean up previous socket instance if it exists (reconnect scenario)
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     this.socket = io(`${ENV.WS_URL}/chat`, {
       query: { token },
-      transports: ['websocket'],
+      // Start with polling — more reliable in RN Bridgeless mode — then
+      // upgrade to websocket automatically once the session is established.
+      transports: ['polling', 'websocket'],
       autoConnect: true,
       reconnection: false, // We handle reconnection manually
     });
@@ -25,7 +35,7 @@ class SocketService {
       console.log('[SocketService] Connected');
       this.reconnectAttempt = 0;
       this.startHeartbeat();
-      // Re-attach all existing listeners
+      // Attach all registered listeners to the new socket instance
       this.listeners.forEach((callbacks, event) => {
         callbacks.forEach((cb) => {
           this.socket?.on(event, cb);
@@ -37,13 +47,13 @@ class SocketService {
       console.log('[SocketService] Disconnected:', reason);
       this.stopHeartbeat();
       if (reason !== 'io client disconnect') {
-        this.scheduleReconnect(token);
+        this.scheduleReconnect();
       }
     });
 
     this.socket.on('connect_error', (error) => {
       console.error('[SocketService] Connection error:', error.message);
-      this.scheduleReconnect(token);
+      this.scheduleReconnect();
     });
   }
 
@@ -102,7 +112,7 @@ class SocketService {
 
   // ─── Reconnect ─────────────────────────────────────────────────────────────
 
-  private scheduleReconnect(token: string): void {
+  private scheduleReconnect(): void {
     if (this.reconnectAttempt >= this.maxReconnectAttempts) {
       console.warn('[SocketService] Max reconnect attempts reached');
       return;
@@ -119,6 +129,13 @@ class SocketService {
     );
 
     this.reconnectTimer = setTimeout(() => {
+      // Read fresh access token at reconnect time — token may have rotated
+      // since the original connect() call.
+      const token = getAccessTokenInMemory();
+      if (!token) {
+        console.warn('[SocketService] No access token available for reconnect');
+        return;
+      }
       this.connect(token);
     }, delay);
   }

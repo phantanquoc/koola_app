@@ -16,7 +16,18 @@ export class CallSessionCronService {
 
   @Cron('*/15 * * * * *') // Every 15 seconds (6-field: seconds minutes hours dom month dow)
   async cleanupStaleSessions(): Promise<void> {
-    const cleaned = await this.callSessionService.cleanupStaleSessions();
+    let cleaned: Awaited<
+      ReturnType<CallSessionService['cleanupStaleSessions']>
+    >;
+    try {
+      cleaned = await this.callSessionService.cleanupStaleSessions();
+    } catch (err) {
+      // Redis may be reconnecting — skip this tick silently
+      this.logger.debug(
+        `[CallCron] Skipped cleanup (Redis unavailable): ${(err as Error).message}`,
+      );
+      return;
+    }
 
     if (cleaned.length === 0) return;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { socketService } from '../../../services/socket/socketService';
+import { socketService } from '../../../services/socket/SocketService';
 
 export function useTypingIndicator(conversationId: string) {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);

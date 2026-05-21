@@ -15,8 +15,6 @@ export type ChatSubTabParamList = {
   Messages: undefined;
   Calls: undefined;
   Contacts: undefined;
-  Videos: undefined;
-  Journal: undefined;
 };
 
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────
@@ -84,6 +82,8 @@ export type RootStackParamList = {
   };
   ImageViewer: {
     imageUrl: string;
+    imageUrls?: string[];
+    initialIndex?: number;
   };
 };
 
