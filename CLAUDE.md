@@ -246,7 +246,7 @@ Both are loaded into Claude's context. Read CLAUDE.md to **think correctly**, AG
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **koola_app** (5993 symbols, 9922 relationships, 208 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **koola_app** (6349 symbols, 10363 relationships, 207 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
