@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Provides a persistent, AsyncStorage-backed media cache index for the mobile app. Ensures that media files downloaded in any prior session are available synchronously on the first render frame after a process restart, eliminating Blurhash placeholder flashes for previously-seen content. The cache lives under `DocumentDir/MediaCache` (OS-durable, not cleared by system "Clear cache"), is bounded by a 1 GB LRU cap, and deduplicates concurrent downloads for the same key.
+Provides a persistent, MMKV-backed media cache index for the mobile app. Ensures that media files downloaded in any prior session are available synchronously on the first render frame after a process restart, eliminating Blurhash placeholder flashes for previously-seen content. The cache lives under `DocumentDir/MediaCache` (OS-durable, not cleared by system "Clear cache"), is bounded by a 1 GB LRU cap, and deduplicates concurrent downloads for the same key.
 
 This capability owns the cache infrastructure that `media-message-display` consumes via `mediaCacheService`.
 
-> **Storage backend note:** the index uses AsyncStorage (not MMKV) because MMKV v2.x's bridge-based JSI install path is incompatible with React Native New Architecture (Fabric + TurboModules), which is enabled in this project. Synchronous-read semantics for `getFromMemory()` are preserved by hydrating the in-memory `indexMap` once at app boot and serving all reads from memory thereafter.
+> **Storage backend:** the index uses `react-native-mmkv@^3.3.3`, which reads synchronously from mmap-backed files. v3 was selected over v2 because v2's bridge install path is incompatible with React Native New Architecture (Fabric + TurboModules), which is enabled in this project. v4 was rejected because it adds a `react-native-nitro-modules` peer dependency without changing the read semantics relevant to this capability. The in-memory `indexMap` mirror is hydrated synchronously at module-import time so `getFromMemory()` returns hits on the very first render frame after a process restart.
 
 ## Requirements
 
@@ -37,7 +37,7 @@ The mobile app SHALL maintain a persistent index of cached media files that surv
 
 #### Scenario: Corrupted index data does not crash the app
 
-- **GIVEN** the AsyncStorage entry that backs the media index contains malformed JSON
+- **GIVEN** the MMKV entry that backs the media index contains malformed JSON
 - **WHEN** `mediaIndexService.load()` is called at boot
 - **THEN** the in-memory map SHALL be initialized empty
 - **AND** the app SHALL NOT throw or crash
@@ -85,7 +85,7 @@ The mobile app SHALL prevent unbounded cache growth by evicting least-recently-u
 - **WHEN** the eviction loop selects a file for removal
 - **THEN** the file SHALL be unlinked from disk
 - **AND** its entry SHALL be removed from the in-memory map
-- **AND** its entry SHALL be removed from the persisted AsyncStorage payload
+- **AND** its entry SHALL be removed from the persisted MMKV payload
 
 #### Scenario: lastAccess updates are debounced per key
 

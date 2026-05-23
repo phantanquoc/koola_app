@@ -34,7 +34,7 @@ Three causes combine: the in-memory URI map (`mediaCacheService.ts:10`) resets o
 - Package manifests: `ChatApp/package.json`, `ChatApp/package-lock.json`
 
 **Dependencies:**
-- New: `react-native-mmkv@^2.12.2` (NOT v3.x — v3 requires Nitro Modules / New Architecture which is not currently verified in this project)
+- New: `react-native-mmkv@^3.3.3` (revised from the originally-proposed v2.x — see design.md §2)
 
 **Out of scope:**
 - Migrating the legacy `CacheDir/media-cache` contents.

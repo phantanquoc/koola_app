@@ -87,9 +87,11 @@ const AppInner: React.FC = () => {
 
 const App: React.FC = () => {
   // Restore offline queue + init push notifications on mount.
-  // loadMediaIndex() hydrates the in-memory media index from AsyncStorage so
-  // getFromMemory() returns synchronous hits in subsequent renders. Failures
-  // are non-fatal: an empty index just means more cache misses on first launch.
+  // loadMediaIndex() ensures the in-memory media index has been hydrated from
+  // MMKV. The eager top-level load() at module-import time normally completes
+  // first, so this call is a belt-and-suspenders no-op; it remains explicit
+  // to guarantee freshness if the import order ever changes. Failures are
+  // non-fatal: an empty index just means more cache misses on first launch.
   useEffect(() => {
     loadMediaIndex().catch((err) => {
       console.warn('[App] Media index load failed:', err);

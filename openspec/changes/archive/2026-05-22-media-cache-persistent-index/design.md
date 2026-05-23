@@ -38,9 +38,16 @@ Cache size in practice is hundreds to a few thousand entries. JS `Array.sort` fo
 
 **Alternatives considered**: `react-native-sqlite-storage` and `op-sqlite`. Both rejected — they double the native-dep footprint without delivering anything we cannot do in JS at this scale.
 
-### 2. MMKV v2, not v3
+### 2. MMKV v3, not v2 or v4 (revised post-implementation)
 
-`react-native-mmkv@^2.12.2` supports both Old Architecture and New Architecture out of the box. v3.x requires Nitro Modules and the New Architecture, which is not currently verified in this project (RN 0.76.9). Pinning to v2 avoids forcing a New Arch migration as a side-effect.
+**Originally specified v2**, then revised to v3 during implementation after a v2 build attempt failed against this project's New Architecture (Fabric + TurboModules) configuration. The revised reasoning:
+
+- `react-native-mmkv@^3.x` requires React Native ≥ 0.74 and the New Architecture (TurboModules) — both already true in this project (RN 0.76.9, `newArchEnabled=true` in `android/gradle.properties`).
+- v2's autolink path is *incompatible* with New Architecture in practice; the v2 install attempt was reverted (commit reset on 2026-05-23).
+- v4 requires `react-native-nitro-modules` as an additional native dependency. v3 uses TurboModules natively without Nitro — fewer native pieces to install for the same outcome.
+- v3 reads remain synchronous (mmap-backed), so the "synchronous-first-frame" goal is preserved.
+
+Pinned to `^3.3.3`. The original v2 reasoning in earlier drafts is preserved here for historical context but should not guide future work.
 
 ### 3. Cache directory: `DocumentDir/MediaCache`
 
@@ -90,7 +97,7 @@ Every `getFromMemory` hit updates `lastAccess`. Without debounce, scrolling a li
 
 | Risk | Mitigation |
 |---|---|
-| MMKV native autolink fails on Android (Hermes vs JSC, manifest merge) | `react-native-mmkv@2.x` is widely deployed on RN 0.76 with Hermes (project default). Tasks include a Gradle clean + rebuild step to surface autolink issues immediately. |
+| MMKV native autolink fails on Android (Hermes vs JSC, manifest merge) | `react-native-mmkv@3.x` autolinks via TurboModules on the project's New Architecture configuration. Tasks include a Gradle clean + assembleDebug step to surface autolink issues immediately; both passed during implementation (BUILD SUCCESSFUL on Pixel_8 emulator). |
 | MMKV instance ID collision with another store added later | Use the explicit ID `media-index` and document it in the service file. |
 | Two components racing to download the same key | Solved by the in-flight Promise dedupe map (§11). |
 | Eviction races with active rendering — file deleted while `<Image>` is using it | `MediaImage` already has an `onError` path that calls `invalidateKey` and retries via `getOrDownload`. Eviction also prefers least-recently-used files, which by definition are not currently rendered. Acceptable rare race. |

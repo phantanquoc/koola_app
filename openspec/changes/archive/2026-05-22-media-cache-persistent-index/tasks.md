@@ -1,7 +1,7 @@
 ## 1. Dependency Setup
 
-- [x] 1.1 Run `npm install react-native-mmkv@^2.12.2` inside `ChatApp/`
-- [x] 1.2 Verify `react-native-mmkv` appears in `ChatApp/package.json` dependencies (not v3.x)
+- [x] 1.1 Run `npm install react-native-mmkv@^3.3.3` inside `ChatApp/` (revised from the originally-specified v2.x — v2 is incompatible with this project's New Architecture configuration; see design.md §2)
+- [x] 1.2 Verify `react-native-mmkv` appears in `ChatApp/package.json` dependencies (v3.x)
 - [x] 1.3 If `ChatApp/ios/` exists, run `pod install` in that directory; if not, skip and note in task notes
   - NOTE: No `ios/` directory exists in this project. Skipped.
 - [x] 1.4 Run `cd ChatApp/android && ./gradlew clean` to confirm autolink registers MMKV without errors ← (verify: gradle clean reaches BUILD SUCCESSFUL or its non-MMKV equivalent; no missing-module errors mentioning mmkv)
