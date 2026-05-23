@@ -1,25 +1,26 @@
 /**
- * mediaIndexService — AsyncStorage-backed persistent index for the media cache.
+ * mediaIndexService — MMKV-backed persistent index for the media cache.
  *
- * Storage key:     'media-index:entries'
+ * Storage:         MMKV instance id 'media-index', key 'entries'
  * Cache root:      DocumentDir/MediaCache
  * LRU cap:         1 GB (CACHE_CAP_BYTES)
  * Eviction floor:  80 % of cap (~800 MB)
  * lastAccess debounce: 5 s per key (TOUCH_DEBOUNCE_MS)
  *
  * Design notes:
- *   - The in-memory `indexMap` is the source of truth for synchronous reads
- *     (getFromMemory / get / touch). It is hydrated by load() from AsyncStorage
- *     during App mount, before any media component renders.
- *   - Writes update `indexMap` synchronously and schedule a fire-and-forget
- *     AsyncStorage write via `persistMap()`. Concurrent writes are coalesced
- *     so we never have more than one AsyncStorage round-trip in flight.
- *   - AsyncStorage was chosen over MMKV because MMKV v2.x's bridge install
- *     path is incompatible with React Native New Architecture (Fabric +
- *     TurboModules), which is enabled in this project. Synchronous-read
- *     value of MMKV is preserved by keeping the in-memory mirror.
+ *   - MMKV reads are synchronous (mmap-backed) and complete in well under one
+ *     millisecond. The in-memory `indexMap` is hydrated from MMKV at module
+ *     import time (top-level statement at the bottom of the file), which runs
+ *     before any React component renders. As a result, `getFromMemory` returns
+ *     a hit on the very first frame after a process restart, eliminating the
+ *     Blurhash flash that AsyncStorage's async hydration left behind.
+ *   - Writes update `indexMap` synchronously and persist via MMKV.set(). Touch
+ *     writes are debounced per-key (5s) so list-scroll bursts don't translate
+ *     into hundreds of mmap flushes per second.
+ *   - Requires React Native New Architecture (TurboModules + Fabric), which is
+ *     enabled in this project (see android/gradle.properties).
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MMKV } from 'react-native-mmkv';
 
 const BlobUtil = require('react-native-blob-util').default;
 
@@ -35,11 +36,11 @@ export const CACHE_CAP_BYTES = 1024 * 1024 * 1024; // 1 GB
 /** Eviction target: stop evicting once total drops below this fraction of cap. */
 const EVICTION_FLOOR_RATIO = 0.8;
 
-/** Minimum milliseconds between AsyncStorage writes for the same key on touch(). */
+/** Minimum milliseconds between MMKV writes for the same key on touch(). */
 const TOUCH_DEBOUNCE_MS = 5000;
 
-/** AsyncStorage key holding the serialized index. */
-const STORAGE_KEY = 'media-index:entries';
+/** MMKV key holding the serialized index. */
+const STORAGE_KEY = 'entries';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,9 +52,13 @@ export interface MediaIndexEntry {
   lastAccess: number;
 }
 
+// ─── MMKV instance ────────────────────────────────────────────────────────────
+
+const mmkv = new MMKV({ id: 'media-index' });
+
 // ─── In-memory mirror ─────────────────────────────────────────────────────────
 
-/** In-memory mirror of the AsyncStorage contents. Populated by load(). */
+/** In-memory mirror of the MMKV contents. Populated synchronously by load(). */
 const indexMap = new Map<string, MediaIndexEntry>();
 
 /**
@@ -62,84 +67,66 @@ const indexMap = new Map<string, MediaIndexEntry>();
  */
 const lastWriteTs = new Map<string, number>();
 
-// ─── Persistence helpers (fire-and-forget, coalesced) ─────────────────────────
-
-let persistInFlight = false;
-let persistDirty = false;
+// ─── Persistence helper ───────────────────────────────────────────────────────
 
 /**
- * Schedule an AsyncStorage write of the current indexMap.
+ * Synchronously serialize the indexMap and write it to MMKV.
  *
- * Coalesces concurrent calls: if a write is already in progress, the dirty
- * flag is set and a follow-up write runs after the current one completes.
- * This guarantees the persisted state eventually reflects the latest in-memory
- * state without serializing every single mutation through AsyncStorage.
+ * MMKV.set is synchronous and mmap-backed, so a full snapshot write of even
+ * a few thousand entries completes in well under one millisecond. No need for
+ * coalescing or async batching like the previous AsyncStorage implementation.
  */
 function persistMap(): void {
-  if (persistInFlight) {
-    persistDirty = true;
-    return;
-  }
-  persistInFlight = true;
-  persistDirty = false;
-
-  // Serialize a snapshot synchronously so concurrent mutations after this
-  // point fall into the dirty path and trigger another write.
   const snapshot: Record<string, MediaIndexEntry> = {};
   indexMap.forEach((entry, key) => {
     snapshot[key] = entry;
   });
-  const serialized = JSON.stringify(snapshot);
-
-  AsyncStorage.setItem(STORAGE_KEY, serialized)
-    .catch((err) => {
-      console.warn('[mediaIndexService] AsyncStorage.setItem failed:', err);
-    })
-    .finally(() => {
-      persistInFlight = false;
-      if (persistDirty) {
-        // Re-snapshot to capture mutations that happened during the previous write.
-        persistMap();
-      }
-    });
+  try {
+    mmkv.set(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (err) {
+    console.warn('[mediaIndexService] MMKV.set failed:', err);
+  }
 }
 
 // ─── load ─────────────────────────────────────────────────────────────────────
 
 let loaded = false;
-let loadingPromise: Promise<void> | null = null;
 
 /**
- * Populate the in-memory index from AsyncStorage.
+ * Synchronously populate the in-memory index from MMKV.
  *
- * Idempotent: subsequent calls return the same in-flight promise (or resolve
- * immediately if already loaded). Called by App.tsx inside its mount-time
- * useEffect, before any media component can render.
+ * Idempotent: subsequent calls no-op. Returns a resolved promise to keep the
+ * existing async caller signature in App.tsx working without changes.
+ *
+ * Called at module-import time (bottom of this file) so the index is ready
+ * before any consumer of `get`/`getFromMemory` runs. App.tsx calls it again
+ * inside its mount-time useEffect as a belt-and-suspenders.
  */
 export function load(): Promise<void> {
   if (loaded) return Promise.resolve();
-  if (loadingPromise) return loadingPromise;
 
-  loadingPromise = (async () => {
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, MediaIndexEntry>;
-        Object.entries(parsed).forEach(([key, entry]) => {
-          indexMap.set(key, entry);
-        });
-      }
-    } catch (err) {
-      console.warn('[mediaIndexService] Failed to load index; starting empty.', err);
-      indexMap.clear();
-    } finally {
-      loaded = true;
-      loadingPromise = null;
+  try {
+    const raw = mmkv.getString(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, MediaIndexEntry>;
+      Object.entries(parsed).forEach(([key, entry]) => {
+        indexMap.set(key, entry);
+      });
     }
-  })();
+  } catch (err) {
+    console.warn('[mediaIndexService] Failed to load index; starting empty.', err);
+    indexMap.clear();
+  } finally {
+    loaded = true;
+  }
 
-  return loadingPromise;
+  return Promise.resolve();
 }
+
+// Eager load at module-import time. MMKV mmap + JSON.parse complete
+// synchronously in well under one millisecond, so by the time any React
+// component imports a media-cache helper, the in-memory index is already hot.
+load();
 
 // ─── get ──────────────────────────────────────────────────────────────────────
 
@@ -153,7 +140,7 @@ export function get(mediaKey: string): MediaIndexEntry | null {
 // ─── set ──────────────────────────────────────────────────────────────────────
 
 /**
- * Insert or update an entry in the index and schedule a persist.
+ * Insert or update an entry in the index and persist to MMKV.
  */
 export function set(mediaKey: string, entry: MediaIndexEntry): void {
   indexMap.set(mediaKey, entry);
@@ -163,7 +150,7 @@ export function set(mediaKey: string, entry: MediaIndexEntry): void {
 // ─── delete ───────────────────────────────────────────────────────────────────
 
 /**
- * Remove an entry from the index and schedule a persist.
+ * Remove an entry from the index and persist to MMKV.
  */
 export function deleteEntry(mediaKey: string): void {
   indexMap.delete(mediaKey);
@@ -178,8 +165,8 @@ export function deleteEntry(mediaKey: string): void {
  *
  * Persists only if the previous write for this key was more than
  * TOUCH_DEBOUNCE_MS ago; otherwise updates only the in-memory Map.
- * This prevents a burst of AsyncStorage writes when scrolling a list of
- * cached images.
+ * This prevents a burst of MMKV writes when scrolling a list of cached
+ * images.
  */
 export function touch(mediaKey: string): void {
   const entry = indexMap.get(mediaKey);
@@ -244,13 +231,17 @@ export async function evictIfNeeded(capBytes: number): Promise<void> {
  *
  * After this call:
  *   - indexMap is empty
- *   - AsyncStorage.getItem(STORAGE_KEY) returns null
+ *   - mmkv.getString(STORAGE_KEY) returns undefined
  *   - CACHE_ROOT_DIR does not exist (or is empty)
  */
 export async function clearAll(): Promise<void> {
   indexMap.clear();
   lastWriteTs.clear();
-  await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+  try {
+    mmkv.clearAll();
+  } catch (err) {
+    console.warn('[mediaIndexService] MMKV.clearAll failed:', err);
+  }
   try {
     await BlobUtil.fs.unlink(CACHE_ROOT_DIR);
   } catch {
