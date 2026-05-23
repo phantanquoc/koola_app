@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
 import { pushNotificationService } from './services/push/pushNotificationService';
+import { load as loadMediaIndex } from './services/media/mediaIndexService';
 import {
   consumePendingIncomingCall,
   registerFcmCallForegroundHandler,
@@ -85,8 +86,14 @@ const AppInner: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  // Restore offline queue + init push notifications on mount
+  // Restore offline queue + init push notifications on mount.
+  // loadMediaIndex() hydrates the in-memory media index from AsyncStorage so
+  // getFromMemory() returns synchronous hits in subsequent renders. Failures
+  // are non-fatal: an empty index just means more cache misses on first launch.
   useEffect(() => {
+    loadMediaIndex().catch((err) => {
+      console.warn('[App] Media index load failed:', err);
+    });
     offlineQueueService.restore();
     pushNotificationService.init().catch((err) => {
       console.error('[App] Push init error:', err);

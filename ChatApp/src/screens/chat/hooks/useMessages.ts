@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { messagesApi } from '../../../services/api/apiService';
 import { socketService } from '../../../services/socket/SocketService';
-import { warmMemoryCache } from '../../../services/media/mediaCacheService';
 import type { Message, MessageReaction } from '../../../types';
 
 /** Simple unique ID generator — no crypto dependency */
@@ -92,14 +91,6 @@ export function useMessages(conversationId: string, currentUserId: string) {
         setHasEarlier(data.hasMore);
         cursorRef.current = data.nextCursor;
         setInitialLoadError(null);
-
-        // Pre-warm media cache in background (non-blocking)
-        const mediaKeys = filtered
-          .filter((m: Message) => (m.type === 'image' || m.type === 'video') && m.mediaUrl)
-          .flatMap((m: Message) => [m.mediaUrl, m.mediaThumbnailKey].filter(Boolean) as string[]);
-        if (mediaKeys.length > 0) {
-          warmMemoryCache(mediaKeys).catch(() => {});
-        }
       } catch (err) {
         const message = (err as Error)?.message || 'Failed to load messages';
         console.warn('[useMessages] fetchInitial:', message);
@@ -281,14 +272,6 @@ export function useMessages(conversationId: string, currentUserId: string) {
       });
       setHasEarlier(data.hasMore);
       cursorRef.current = data.nextCursor;
-
-      // Pre-warm media cache in background (non-blocking)
-      const mediaKeys = data.messages
-        .filter((m: Message) => (m.type === 'image' || m.type === 'video') && m.mediaUrl)
-        .flatMap((m: Message) => [m.mediaUrl, m.mediaThumbnailKey].filter(Boolean) as string[]);
-      if (mediaKeys.length > 0) {
-        warmMemoryCache(mediaKeys).catch(() => {});
-      }
     } catch (err) {
       console.warn('[useMessages] loadEarlier:', (err as Error)?.message);
     } finally {
