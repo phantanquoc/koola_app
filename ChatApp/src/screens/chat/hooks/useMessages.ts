@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { messagesApi } from '../../../services/api/apiService';
 import { socketService } from '../../../services/socket/SocketService';
+import * as messageCache from '../../../services/messageCacheService';
 import type { Message, MessageReaction } from '../../../types';
 
 /** Simple unique ID generator — no crypto dependency */
@@ -50,9 +51,19 @@ function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record
 }
 
 export function useMessages(conversationId: string, currentUserId: string) {
-  const [messages, setMessages] = useState<IMessage[]>([]);
+  // Read MMKV cache synchronously inside the lazy initializer so the very
+  // first render after navigation already has messages painted. This is the
+  // whole point of the message cache — avoid the white flash while REST
+  // fetches the initial page.
+  const [messages, setMessages] = useState<IMessage[]>(() =>
+    messageCache.read(conversationId),
+  );
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // If the cache hit returned anything, skip the loading state — the screen
+  // already shows usable content while the network refresh runs in parallel.
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(
+    () => messageCache.read(conversationId).length === 0,
+  );
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
   const cursorRef = useRef<string | null>(null);
@@ -72,9 +83,11 @@ export function useMessages(conversationId: string, currentUserId: string) {
 
   useEffect(() => {
     let cancelled = false;
-    setIsInitialLoading(true);
+    // Don't reset messages here — if the cache already populated them via the
+    // useState initializer, the user is currently looking at that content.
+    // Wiping it would re-introduce the white flash this whole feature exists
+    // to remove. The fetch below replaces the array on success.
     setInitialLoadError(null);
-    setMessages([]);
     cursorRef.current = null;
 
     const fetchInitial = async () => {
@@ -103,6 +116,17 @@ export function useMessages(conversationId: string, currentUserId: string) {
 
     return () => { cancelled = true; };
   }, [conversationId, currentUserId, reloadVersion]);
+
+  // ─── Persist messages to MMKV cache (debounced) ────────────────────────────
+  // Every state update schedules a write; bursts (e.g. typing acks, reaction
+  // toggles) collapse into a single write per quiet period. The cache only
+  // serves the first frame of the next mount, so eventual consistency is fine.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      messageCache.write(conversationId, messages);
+    }, 500);
+    return () => { clearTimeout(handle); };
+  }, [conversationId, messages]);
 
   // ─── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {

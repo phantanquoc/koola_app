@@ -12,6 +12,7 @@ import { asyncStorage } from '../services/storage/asyncStorage';
 import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
 import { webrtcService } from '../services/webrtc/WebRTCService';
+import * as messageCache from '../services/messageCacheService';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -206,6 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setAccessTokenInMemory(null);
       await asyncStorage.clearAll();
+      messageCache.clearAll();
       setUser(null);
     }
   }, []);
