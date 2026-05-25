@@ -11,7 +11,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SyncMessagesDto {
   @ApiPropertyOptional({
-    description: 'ISO8601 timestamp — return messages created after this time',
+    description:
+      'ISO8601 timestamp — return messages whose updatedAt is after this time. ' +
+      'Includes tombstones (deleted: true) and per-user deletions so clients can converge local state.',
     example: '2026-03-31T10:00:00.000Z',
   })
   @IsOptional()

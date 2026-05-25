@@ -41,12 +41,28 @@ export class MessagesSyncController {
   @Get('sync')
   @ApiOperation({
     summary: 'Sync messages received while offline',
-    description:
-      'Returns all messages across all conversations for the authenticated user, created after the given `since` timestamp. Used for offline recovery.',
+    description: `Returns all messages across all conversations for the authenticated user
+whose \`updatedAt\` is after the given \`since\` timestamp. Used for offline recovery
+and incremental sync.
+
+**Tombstones:** Soft-deleted messages (\`deleted: true\`) are included in the response
+so clients can converge their local copy. The \`deleted\`, \`deletedFor\`, and \`updatedAt\`
+fields are always present on tombstone rows; content fields may be empty.
+
+**Per-user deletions:** Messages where \`deletedFor\` contains the caller's userId are
+also included when their \`updatedAt >= since\`. Clients should filter these from the
+visible message list but store the tombstone locally.
+
+**Membership:** Only messages from conversations the caller is a member of are returned.
+Membership is enforced server-side — no client-supplied conversation filter is accepted.
+
+**Pagination:** Use \`cursor\` (the \`nextCursor\` from the previous response) to page
+through large result sets. Advance the local sync cursor only after all pages are consumed.`,
   })
   @ApiResponse({
     status: 200,
-    description: 'Paginated message list for sync',
+    description:
+      'Paginated message list for sync. Items include tombstones (deleted: true) and per-user deletions.',
   })
   async syncMessages(
     @Query() query: SyncMessagesDto,

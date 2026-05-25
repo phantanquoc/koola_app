@@ -657,6 +657,21 @@ export class MessagesService {
   /**
    * Fetch all messages across all user's conversations since a given timestamp.
    * Used by the offline queue sync endpoint — GET /messages/sync
+   *
+   * Tombstone behaviour (Decision 6 in design.md):
+   *   Soft-deleted messages whose `updatedAt >= since` are included so that
+   *   clients can converge their local copy. Content fields are preserved for
+   *   tombstones (clients may elide them on display). The `deleted` flag and
+   *   `deletedFor` array are always present so clients can apply the deletion.
+   *
+   *   Per-user deletions: messages where `deletedFor` contains `userId` are
+   *   included when their `updatedAt >= since` so the client can mark them
+   *   locally deleted. They are NOT included in steady-state (non-tombstone)
+   *   results — the client filters them on read.
+   *
+   * Query uses `updatedAt` (not `createdAt`) so that edits, reactions, and
+   * soft-deletes are captured by incremental sync. The compound index
+   * `(conversationId, updatedAt)` in message.schema.ts supports this query.
    */
   async syncMessages(
     userId: string,
@@ -677,26 +692,26 @@ export class MessagesService {
     }
 
     const sinceDate = new Date(since);
+
+    // Base query: all messages in user's conversations updated since `since`.
+    // Includes tombstones (deleted: true) and per-user deletions so clients
+    // can converge their local copy. Membership is enforced via conversationIds.
     let query: Record<string, unknown> = {
       conversationId: { $in: conversationIds },
-      deleted: false,
-      deletedFor: { $ne: userId },
-      createdAt: { $gt: sinceDate },
+      updatedAt: { $gt: sinceDate },
     };
 
     if (cursor) {
       const cursorDoc = (await this.messageModel
         .findById(cursor)
-        .select('createdAt')
+        .select('updatedAt')
         .lean()) as any;
       if (cursorDoc) {
         query = {
           conversationId: { $in: conversationIds },
-          deleted: false,
-          deletedFor: { $ne: userId },
           $and: [
-            { createdAt: { $gt: sinceDate } },
-            { createdAt: { $gt: cursorDoc.createdAt } },
+            { updatedAt: { $gt: sinceDate } },
+            { updatedAt: { $gt: cursorDoc.updatedAt } },
           ],
         };
       }
@@ -704,7 +719,7 @@ export class MessagesService {
 
     const messages = await this.messageModel
       .find(query)
-      .sort({ createdAt: 1 })
+      .sort({ updatedAt: 1 })
       .limit(limit + 1)
       .populate('senderId', '_id phone email displayName avatar')
       .lean();

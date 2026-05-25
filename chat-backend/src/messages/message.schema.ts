@@ -113,6 +113,9 @@ export const MessageSchema = SchemaFactory.createForClass(Message);
 
 // Indexes
 MessageSchema.index({ conversationId: 1, createdAt: -1 });
+// Compound index for delta sync queries: filters by conversationId, sorts/paginates by updatedAt.
+// Required by GET /messages/sync which uses updatedAt >= since for tombstone-inclusive sync.
+MessageSchema.index({ conversationId: 1, updatedAt: 1 });
 MessageSchema.index({ senderId: 1 });
 MessageSchema.index({ clientMessageId: 1, conversationId: 1 });
 MessageSchema.index({ readBy: 1 }); // multikey index for per-member read tracking
