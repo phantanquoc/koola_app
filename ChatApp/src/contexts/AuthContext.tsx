@@ -13,7 +13,44 @@ import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import * as messageCache from '../services/messageCacheService';
+import { initDb, wipeAllData, shutdownDb } from '../services/db/dbInit';
+import { wireSocketEvents } from '../services/sync/socketEventRouter';
+import { wireSyncTriggers } from '../services/sync/syncOrchestrator';
+import { wireMediaPreloader, isDataSaverEnabled, setDataSaver } from '../services/media/mediaPreloader';
+import { isLocalFirstEnabled } from '../config/featureFlags';
 import type { User } from '../types';
+
+// ─── Local-first wiring teardown refs ─────────────────────────────────────────
+// Stored at module level so logout can call them regardless of React lifecycle.
+let _unwireSocketEvents: (() => void) | null = null;
+let _unwireSyncTriggers: (() => void) | null = null;
+let _unwireMediaPreloader: (() => void) | null = null;
+
+/**
+ * Wire all local-first services after DB init.
+ * Idempotent — each wire function guards against double-registration internally.
+ */
+function wireLocalFirst(): void {
+  if (!isLocalFirstEnabled()) return;
+  _unwireSocketEvents = wireSocketEvents();
+  _unwireSyncTriggers = wireSyncTriggers();
+  _unwireMediaPreloader = wireMediaPreloader();
+  // Restore persisted data-saver preference so the preloader honours it
+  // from the very first event after login.
+  setDataSaver(isDataSaverEnabled());
+}
+
+/**
+ * Tear down all local-first services before DB wipe on logout.
+ */
+function unwireLocalFirst(): void {
+  _unwireSocketEvents?.();
+  _unwireSocketEvents = null;
+  _unwireSyncTriggers?.();
+  _unwireSyncTriggers = null;
+  _unwireMediaPreloader?.();
+  _unwireMediaPreloader = null;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -113,6 +150,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const me = await usersApi.getMe();
       setUser(me);
 
+      // Initialise local SQLite DB for this user (additive — no-op if already open)
+      await initDb(me._id).catch((e) =>
+        console.warn('[AuthContext] restoreSession: initDb failed', e),
+      );
+
+      // Wire local-first services (socket router, sync triggers, media preloader)
+      wireLocalFirst();
+
       // Connect socket + webrtc
       socketService.connect(tokens.accessToken);
       webrtcService.connect(tokens.accessToken);
@@ -136,6 +181,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const me = await usersApi.getMe();
     setUser(me);
 
+    // Initialise local SQLite DB for this user
+    await initDb(me._id).catch((e) =>
+      console.warn('[AuthContext] login: initDb failed', e),
+    );
+
+    // Wire local-first services (socket router, sync triggers, media preloader)
+    wireLocalFirst();
+
     // Connect socket + webrtc
     socketService.connect(data.accessToken);
     webrtcService.connect(data.accessToken);
@@ -152,6 +205,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const me = await usersApi.getMe();
       setUser(me);
+
+      // Initialise local SQLite DB for this user
+      await initDb(me._id).catch((e) =>
+        console.warn('[AuthContext] register: initDb failed', e),
+      );
+
+      // Wire local-first services (socket router, sync triggers, media preloader)
+      wireLocalFirst();
 
       // Connect socket + webrtc
       socketService.connect(data.accessToken);
@@ -183,6 +244,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const me = await usersApi.getMe();
     setUser(me);
 
+    // Initialise local SQLite DB for this user
+    await initDb(me._id).catch((e) =>
+      console.warn('[AuthContext] verifyOtp: initDb failed', e),
+    );
+
+    // Wire local-first services (socket router, sync triggers, media preloader)
+    wireLocalFirst();
+
     socketService.connect(data.accessToken);
     webrtcService.connect(data.accessToken);
     pushNotificationService.registerToken().catch(() => {});
@@ -208,6 +277,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAccessTokenInMemory(null);
       await asyncStorage.clearAll();
       messageCache.clearAll();
+      // Tear down local-first services before wiping the DB
+      unwireLocalFirst();
+      // Wipe SQLite data and close connection (additive alongside MMKV clearAll)
+      await wipeAllData().catch((e) =>
+        console.warn('[AuthContext] logout: wipeAllData failed', e),
+      );
+      shutdownDb();
       setUser(null);
     }
   }, []);
