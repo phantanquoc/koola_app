@@ -21,16 +21,23 @@ import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
-import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { KoolaState, koolaColors } from '../../ui';
+import { useLocalFirstFlag } from '../../config/featureFlags';
+import * as conversationRepository from '../../services/db/conversationRepository';
+import type { ConversationInput } from '../../services/db/conversationRepository';
+import { syncOnForeground } from '../../services/sync/syncOrchestrator';
+import * as syncStateRepository from '../../services/db/syncStateRepository';
 
 const Separator = () => <View style={styles.separator} />;
 
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation<ConversationListScreenNavigationProp>();
+  const tabBarInset = useTabBarBottomInset();
   const { user } = useAuth();
   const { sync } = useMessageSync();
   const { isConnected } = useNetworkStatus();
+  const localFirstEnabled = useLocalFirstFlag();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [page, setPage] = useState(1);
@@ -41,6 +48,49 @@ const ConversationListScreen: React.FC = () => {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const fetchingRef = useRef(false);
   const pageRef = useRef(1);
+
+  // ─── SQLite read path (task 5.4) ──────────────────────────────────────────
+  // When LOCAL_FIRST_SQLITE is on: read from conversationRepository + subscribe.
+  // Replace the useFocusEffect REST reset with: read SQLite first, fire
+  // background sync if cursor is stale.
+  useEffect(() => {
+    if (!localFirstEnabled) return;
+
+    // Initial read from SQLite
+    const loadFromDb = () => {
+      const rows = conversationRepository.list({ limit: 50 });
+      // Map ConversationInput to Conversation shape for the existing UI
+      const mapped = rows.map((r: ConversationInput) => ({
+        _id: r.id,
+        type: r.type ?? 'direct',
+        name: r.name ?? '',
+        avatar: r.avatarKey ?? null,
+        members: Array.isArray(r.members) ? r.members : [],
+        lastMessagePreview: r.lastMessagePreview ?? '',
+        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt as number).toISOString() : null,
+        unreadCount: r.unreadCount ?? 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
+      })) as unknown as Conversation[];
+      setConversations(mapped);
+    };
+
+    loadFromDb();
+
+    // Subscribe to invalidations
+    const unsub = conversationRepository.subscribe(loadFromDb);
+
+    // Fire background sync if cursor is stale (> 60 s)
+    const cursor = syncStateRepository.getCursor('global');
+    const isStale = !cursor || Date.now() - new Date(cursor).getTime() > 60_000;
+    if (isStale) {
+      syncOnForeground().catch((err) =>
+        console.warn('[ConversationListScreen] background sync error:', err),
+      );
+    }
+
+    return unsub;
+  }, [localFirstEnabled]);
 
   const fetchConversations = useCallback(
     async (reset = false) => {
@@ -85,10 +135,12 @@ const ConversationListScreen: React.FC = () => {
   // Always reset (page 1) on focus; never append on focus, which would
   // duplicate the existing in-memory list. Subsequent updates come from
   // socket events, not REST polling.
+  // Skipped when LOCAL_FIRST_SQLITE is on — SQLite subscription handles updates.
   useFocusEffect(
     useCallback(() => {
+      if (localFirstEnabled) return;
       fetchConversations(true);
-    }, [fetchConversations]),
+    }, [fetchConversations, localFirstEnabled]),
   );
 
   // Sync missed messages + flush offline queue on reconnect
@@ -205,7 +257,7 @@ const ConversationListScreen: React.FC = () => {
             onPress={() => handleConversationPress(item)}
           />
         )}
-        contentContainerStyle={{ paddingBottom: TAB_BAR_FLOATING_INSET + 16 }}
+        contentContainerStyle={{ paddingBottom: tabBarInset }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading && !refreshing ? <EmptyConversations onStartChat={handleStartChat} /> : null

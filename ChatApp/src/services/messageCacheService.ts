@@ -45,6 +45,18 @@ const MAX_MESSAGES_PER_CONV = 50;
 /** Key prefix for per-conversation entries inside the MMKV instance. */
 const KEY_PREFIX = 'conv:';
 
+/** Key prefix for per-conversation last-fetched timestamps (ms since epoch). */
+const TS_PREFIX = 'ts:';
+
+/**
+ * How long a cached entry is considered "fresh enough" to skip the REST
+ * refetch on mount. Socket events keep the cache live while ChatScreen is
+ * mounted, so the only purpose of the REST fetch is to fill gaps from
+ * offline periods. 15 seconds is short enough that any meaningful gap
+ * still triggers a refetch, long enough to cover bouncing in-and-out.
+ */
+export const FRESH_TTL_MS = 15_000;
+
 // ─── MMKV instance ────────────────────────────────────────────────────────────
 
 const mmkv = new MMKV({ id: 'message-cache' });
@@ -53,6 +65,10 @@ const mmkv = new MMKV({ id: 'message-cache' });
 
 function keyFor(conversationId: string): string {
   return `${KEY_PREFIX}${conversationId}`;
+}
+
+function tsKeyFor(conversationId: string): string {
+  return `${TS_PREFIX}${conversationId}`;
 }
 
 /**
@@ -130,6 +146,7 @@ export function write(conversationId: string, messages: IMessage[]): void {
 export function clear(conversationId: string): void {
   try {
     mmkv.delete(keyFor(conversationId));
+    mmkv.delete(tsKeyFor(conversationId));
   } catch (err) {
     console.warn('[messageCacheService] clear failed for', conversationId, err);
   }
@@ -145,4 +162,39 @@ export function clearAll(): void {
   } catch (err) {
     console.warn('[messageCacheService] clearAll failed', err);
   }
+}
+
+/**
+ * Return the timestamp (ms since epoch) of the last successful REST refresh
+ * for this conversation, or 0 if none recorded.
+ */
+export function getLastFetchedAt(conversationId: string): number {
+  try {
+    return mmkv.getNumber(tsKeyFor(conversationId)) ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Record that a REST refresh just completed for this conversation. Used by
+ * useMessages to skip the next mount's refetch when the cache is still fresh.
+ */
+export function markFetched(conversationId: string, timestamp: number = Date.now()): void {
+  try {
+    mmkv.set(tsKeyFor(conversationId), timestamp);
+  } catch (err) {
+    console.warn('[messageCacheService] markFetched failed for', conversationId, err);
+  }
+}
+
+/**
+ * True when the cache entry for this conversation is recent enough that the
+ * REST refetch can be skipped. Combined with a non-empty `read()` result,
+ * this lets useMessages short-circuit the network call entirely.
+ */
+export function isFresh(conversationId: string, ttlMs: number = FRESH_TTL_MS): boolean {
+  const ts = getLastFetchedAt(conversationId);
+  if (ts === 0) return false;
+  return Date.now() - ts < ttlMs;
 }

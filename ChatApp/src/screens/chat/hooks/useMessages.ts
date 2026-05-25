@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { messagesApi } from '../../../services/api/apiService';
 import { socketService } from '../../../services/socket/SocketService';
 import * as messageCache from '../../../services/messageCacheService';
+import { useLocalFirstFlag } from '../../../config/featureFlags';
+import { useMessagesFromDb } from './useMessagesFromDb';
 import type { Message, MessageReaction } from '../../../types';
 
 /** Simple unique ID generator — no crypto dependency */
@@ -51,13 +53,27 @@ function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record
 }
 
 export function useMessages(conversationId: string, currentUserId: string) {
+  const localFirstEnabled = useLocalFirstFlag();
+
+  // ─── SQLite read path (flag-gated, task 5.2) ──────────────────────────────
+  // When LOCAL_FIRST_SQLITE is on, delegate entirely to the DB-backed hook.
+  // The hook call must be unconditional (Rules of Hooks) — the flag is stable
+  // at bundle time so this is safe.
+  const dbResult = useMessagesFromDb(conversationId, currentUserId);
+
+  // ─── Legacy MMKV + REST path ──────────────────────────────────────────────
   // Read MMKV cache synchronously inside the lazy initializer so the very
   // first render after navigation already has messages painted. This is the
   // whole point of the message cache — avoid the white flash while REST
   // fetches the initial page.
-  const [messages, setMessages] = useState<IMessage[]>(() =>
-    messageCache.read(conversationId),
-  );
+  const [messages, setMessages] = useState<IMessage[]>(() => {
+    if (localFirstEnabled) return []; // unused when flag is on
+    const t0 = Date.now();
+    const cached = messageCache.read(conversationId);
+    // [PERF DIAG] Cache hit/miss + read duration. Remove after debugging.
+    console.log(`[PERF useMessages] MOUNT conv=${conversationId.slice(-6)} cacheHit=${cached.length} readMs=${Date.now() - t0}`);
+    return cached;
+  });
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   // If the cache hit returned anything, skip the loading state — the screen
   // already shows usable content while the network refresh runs in parallel.
@@ -90,9 +106,22 @@ export function useMessages(conversationId: string, currentUserId: string) {
     setInitialLoadError(null);
     cursorRef.current = null;
 
+    // Skip REST entirely when the MMKV cache is still fresh — socket events
+    // keep the in-memory state live while ChatScreen is mounted, so an extra
+    // refetch on every mount only causes a re-render flicker without adding
+    // information. The freshness window (FRESH_TTL_MS) is short enough that
+    // any meaningful offline gap still falls through to the network path.
+    const cached = messageCache.read(conversationId);
+    if (cached.length > 0 && messageCache.isFresh(conversationId)) {
+      console.log(`[PERF useMessages] SKIP-REST conv=${conversationId.slice(-6)} cached=${cached.length} ageMs=${Date.now() - messageCache.getLastFetchedAt(conversationId)}`);
+      return () => { cancelled = true; };
+    }
+
     const fetchInitial = async () => {
+      const tFetch = Date.now();
       try {
         const data = await messagesApi.list(conversationId, undefined, 20);
+        const tFetchDone = Date.now();
         if (cancelled) return;
         const filtered = data.messages.filter(
           (m: Message) => !m.deletedFor?.includes(currentUserId),
@@ -104,6 +133,11 @@ export function useMessages(conversationId: string, currentUserId: string) {
         setHasEarlier(data.hasMore);
         cursorRef.current = data.nextCursor;
         setInitialLoadError(null);
+        // Stamp the cache so the next mount within FRESH_TTL_MS can skip
+        // the REST round-trip entirely.
+        messageCache.markFetched(conversationId);
+        // [PERF DIAG] REST fetch + state update timing. Remove after debugging.
+        console.log(`[PERF useMessages] REST conv=${conversationId.slice(-6)} netMs=${tFetchDone - tFetch} totalMs=${Date.now() - tFetch} got=${gifted.length}`);
       } catch (err) {
         const message = (err as Error)?.message || 'Failed to load messages';
         console.warn('[useMessages] fetchInitial:', message);
@@ -117,19 +151,40 @@ export function useMessages(conversationId: string, currentUserId: string) {
     return () => { cancelled = true; };
   }, [conversationId, currentUserId, reloadVersion]);
 
-  // ─── Persist messages to MMKV cache (debounced) ────────────────────────────
+  // ─── Persist messages to MMKV cache (debounced + flush on unmount) ─────────
   // Every state update schedules a write; bursts (e.g. typing acks, reaction
-  // toggles) collapse into a single write per quiet period. The cache only
-  // serves the first frame of the next mount, so eventual consistency is fine.
+  // toggles) collapse into a single write per quiet period. If the user
+  // navigates away before the 500 ms timer fires, the cleanup *flushes* the
+  // pending write synchronously so the next mount sees fresh data instead of
+  // the previous session's snapshot.
   useEffect(() => {
+    let fired = false;
     const handle = setTimeout(() => {
+      fired = true;
+      const t0 = Date.now();
       messageCache.write(conversationId, messages);
+      // [PERF DIAG] Write timing + size. Remove after debugging.
+      console.log(`[PERF useMessages] WRITE conv=${conversationId.slice(-6)} count=${messages.length} ms=${Date.now() - t0}`);
     }, 500);
-    return () => { clearTimeout(handle); };
+    return () => {
+      clearTimeout(handle);
+      if (fired) return;
+      // Timer was cancelled before firing — flush immediately so the cache
+      // reflects the most recent state. MMKV writes are sub-millisecond.
+      const t0 = Date.now();
+      messageCache.write(conversationId, messages);
+      console.log(`[PERF useMessages] WRITE-FLUSH conv=${conversationId.slice(-6)} count=${messages.length} ms=${Date.now() - t0}`);
+    };
   }, [conversationId, messages]);
 
   // ─── Socket listeners ──────────────────────────────────────────────────────
+  // When the local-first flag is on, socket events are routed into SQLite by
+  // wireSocketEvents() (called from AuthContext). Registering these legacy
+  // in-memory handlers in parallel would double-apply events and write to the
+  // unused `messages` state. Skip registration entirely when the flag is on.
   useEffect(() => {
+    if (localFirstEnabled) return;
+
     const handleNewMessage = (data: { message: Record<string, unknown> }) => {
       const msg = data.message as unknown as Message;
       if (msg.conversationId !== conversationId) return;
@@ -525,6 +580,13 @@ export function useMessages(conversationId: string, currentUserId: string) {
     },
     [],
   );
+
+  // ─── Flag-gated return (task 5.2) ────────────────────────────────────────
+  // All hooks above have been called unconditionally. Now we can safely
+  // return the DB result when the flag is on.
+  if (localFirstEnabled) {
+    return dbResult;
+  }
 
   return {
     messages,
