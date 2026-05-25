@@ -3,8 +3,8 @@
  *
  * Storage:         MMKV instance id 'media-index', key 'entries'
  * Cache root:      DocumentDir/MediaCache
- * LRU cap:         1 GB (CACHE_CAP_BYTES)
- * Eviction floor:  80 % of cap (~800 MB)
+ * Default cap:     5 GB (configurable 1–20 GB)
+ * Eviction floor:  80 % of cap (~4 GB at default)
  * lastAccess debounce: 5 s per key (TOUCH_DEBOUNCE_MS)
  *
  * Design notes:
@@ -30,8 +30,17 @@ const BlobUtil = require('react-native-blob-util').default;
 export const CACHE_ROOT_DIR: string =
   `${BlobUtil.fs.dirs.DocumentDir}/MediaCache`;
 
-/** Maximum total cache size before LRU eviction triggers (1 GB). */
-export const CACHE_CAP_BYTES = 1024 * 1024 * 1024; // 1 GB
+/** Maximum total cache size before LRU eviction triggers (default 5 GB, configurable 1–20 GB). */
+export const CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB default
+
+/** Minimum allowed cap (1 GB). */
+const CAP_MIN_BYTES = 1024 * 1024 * 1024; // 1 GB
+
+/** Maximum allowed cap (20 GB). */
+const CAP_MAX_BYTES = 20 * 1024 * 1024 * 1024; // 20 GB
+
+/** MMKV key for the user-configured cap. */
+const CAP_SETTINGS_KEY = 'cache_cap_bytes';
 
 /** Eviction target: stop evicting once total drops below this fraction of cap. */
 const EVICTION_FLOOR_RATIO = 0.8;
@@ -248,3 +257,45 @@ export async function clearAll(): Promise<void> {
     // Directory may not exist yet — ignore
   }
 }
+
+// ─── Configurable cap (task 6.1) ──────────────────────────────────────────────
+
+/**
+ * Return the effective cache cap in bytes.
+ * Reads from MMKV settings; falls back to CACHE_CAP_BYTES (5 GB default).
+ * Clamped to [CAP_MIN_BYTES, CAP_MAX_BYTES] (1 GB – 20 GB).
+ */
+export function getCapBytes(): number {
+  try {
+    const stored = mmkv.getNumber(CAP_SETTINGS_KEY);
+    if (stored == null) return CACHE_CAP_BYTES;
+    return Math.max(CAP_MIN_BYTES, Math.min(CAP_MAX_BYTES, stored));
+  } catch {
+    return CACHE_CAP_BYTES;
+  }
+}
+
+/**
+ * Persist a new cap value to MMKV settings.
+ * Clamps to [CAP_MIN_BYTES, CAP_MAX_BYTES].
+ * Returns the clamped value that was stored.
+ */
+export function setCapBytes(bytes: number): number {
+  const clamped = Math.max(CAP_MIN_BYTES, Math.min(CAP_MAX_BYTES, bytes));
+  try {
+    mmkv.set(CAP_SETTINGS_KEY, clamped);
+  } catch (err) {
+    console.warn('[mediaIndexService] setCapBytes failed:', err);
+  }
+  return clamped;
+}
+
+/**
+ * Return the current total size of all cached entries in bytes.
+ */
+export function getTotalCachedBytes(): number {
+  let total = 0;
+  indexMap.forEach((entry) => { total += entry.size; });
+  return total;
+}
+

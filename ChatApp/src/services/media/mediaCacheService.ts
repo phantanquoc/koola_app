@@ -1,7 +1,7 @@
 import { getAccessTokenInMemory, refreshAccessTokenInMemory } from '../api/apiService';
 import ENV from '../../config/env';
 import * as mediaIndexService from './mediaIndexService';
-import { CACHE_ROOT_DIR, CACHE_CAP_BYTES } from './mediaIndexService';
+import { CACHE_ROOT_DIR } from './mediaIndexService';
 
 const BlobUtil = require('react-native-blob-util').default;
 
@@ -181,8 +181,8 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
               addedAt: Date.now(),
               lastAccess: Date.now(),
             });
-            // Fire-and-forget LRU eviction check
-            mediaIndexService.evictIfNeeded(CACHE_CAP_BYTES).catch(() => {});
+            // Fire-and-forget LRU eviction check using configurable cap
+            mediaIndexService.evictIfNeeded(mediaIndexService.getCapBytes()).catch(() => {});
             return `file://${diskPath}`;
           }
           // Empty response body — treat as failure
