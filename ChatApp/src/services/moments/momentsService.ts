@@ -137,21 +137,26 @@ class MomentsService {
 
   async reactToStory(storyId: string, authorId: string, emoji: string): Promise<void> {
     // Optimistic update
-    const stories = this.state.storiesByAuthor.get(authorId);
-    const myId = this.currentUserId ?? 'me';
-    if (stories) {
-      const updated = stories.map((s) => {
-        if (s._id !== storyId) return s;
-        const filteredReactions = s.reactions.filter((r) => r.userId !== myId);
-        return {
-          ...s,
-          myReaction: emoji,
-          reactions: [...filteredReactions, { userId: myId, emoji, createdAt: new Date().toISOString() }],
-        };
-      });
-      const storiesByAuthor = new Map(this.state.storiesByAuthor);
-      storiesByAuthor.set(authorId, updated);
-      this.setState({ storiesByAuthor });
+    const myId = this.currentUserId;
+    if (!myId) {
+      // Skip optimistic update — userId not yet available (race during auth bootstrap)
+      // Real reaction state will sync on next refreshFeed.
+    } else {
+      const stories = this.state.storiesByAuthor.get(authorId);
+      if (stories) {
+        const updated = stories.map((s) => {
+          if (s._id !== storyId) return s;
+          const filteredReactions = s.reactions.filter((r) => r.userId !== myId);
+          return {
+            ...s,
+            myReaction: emoji,
+            reactions: [...filteredReactions, { userId: myId, emoji, createdAt: new Date().toISOString() }],
+          };
+        });
+        const storiesByAuthor = new Map(this.state.storiesByAuthor);
+        storiesByAuthor.set(authorId, updated);
+        this.setState({ storiesByAuthor });
+      }
     }
 
     try {
@@ -164,20 +169,25 @@ class MomentsService {
 
   async removeReaction(storyId: string, authorId: string): Promise<void> {
     // Optimistic update
-    const stories = this.state.storiesByAuthor.get(authorId);
-    const myId = this.currentUserId ?? 'me';
-    if (stories) {
-      const updated = stories.map((s) => {
-        if (s._id !== storyId) return s;
-        return {
-          ...s,
-          myReaction: null,
-          reactions: s.reactions.filter((r) => r.userId !== myId),
-        };
-      });
-      const storiesByAuthor = new Map(this.state.storiesByAuthor);
-      storiesByAuthor.set(authorId, updated);
-      this.setState({ storiesByAuthor });
+    const myId = this.currentUserId;
+    if (!myId) {
+      // Skip optimistic update — userId not yet available (race during auth bootstrap)
+      // Real reaction state will sync on next refreshFeed.
+    } else {
+      const stories = this.state.storiesByAuthor.get(authorId);
+      if (stories) {
+        const updated = stories.map((s) => {
+          if (s._id !== storyId) return s;
+          return {
+            ...s,
+            myReaction: null,
+            reactions: s.reactions.filter((r) => r.userId !== myId),
+          };
+        });
+        const storiesByAuthor = new Map(this.state.storiesByAuthor);
+        storiesByAuthor.set(authorId, updated);
+        this.setState({ storiesByAuthor });
+      }
     }
 
     try {
@@ -384,13 +394,11 @@ class MomentsService {
           const reactionCounts = { ...(s.reactionCounts ?? {}) };
 
           if (action === 'remove') {
-            // Decrement or remove the emoji count
-            for (const key of Object.keys(reactionCounts)) {
-              if (reactionCounts[key] > 0) {
-                reactionCounts[key]--;
-                if (reactionCounts[key] <= 0) delete reactionCounts[key];
-                break; // only decrement once
-              }
+            // Option B: Look up the viewer's existing reaction to find the exact emoji
+            const existingReaction = s.reactions.find((r) => r.userId === viewerId);
+            if (existingReaction && existingReaction.emoji && reactionCounts[existingReaction.emoji]) {
+              reactionCounts[existingReaction.emoji]--;
+              if (reactionCounts[existingReaction.emoji] <= 0) delete reactionCounts[existingReaction.emoji];
             }
             // Clear myReaction if the remove is for the current user
             const myReaction =

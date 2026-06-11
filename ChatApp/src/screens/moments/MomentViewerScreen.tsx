@@ -521,7 +521,7 @@ const MomentViewerScreen: React.FC = () => {
       {currentStory?.musicRef && trackInfo && (
         <View style={styles.musicPill} accessibilityLabel={`Nhạc: ${trackInfo.title} bởi ${trackInfo.artist}`}>
           <KoolaText variant="caption" tone="surface" numberOfLines={1}>
-            {trackInfo.title} · {trackInfo.artist}
+            🎵 {trackInfo.title} · {trackInfo.artist}
           </KoolaText>
         </View>
       )}
