@@ -14,10 +14,13 @@ import { pushNotificationService } from '../services/push/pushNotificationServic
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import * as messageCache from '../services/messageCacheService';
 import { initDb, wipeAllData, shutdownDb } from '../services/db/dbInit';
-import { wireSocketEvents } from '../services/sync/socketEventRouter';
+import { wireSocketEvents, setCurrentUserId } from '../services/sync/socketEventRouter';
 import { wireSyncTriggers } from '../services/sync/syncOrchestrator';
 import { wireMediaPreloader, isDataSaverEnabled, setDataSaver } from '../services/media/mediaPreloader';
 import { isLocalFirstEnabled } from '../config/featureFlags';
+import { pause as pauseOutboxProcessor, start as startOutboxProcessor, stop as stopOutboxProcessor } from '../services/sync/outboxProcessor';
+import { navigationRef } from '../navigation/RootNavigator';
+import { momentsService } from '../services/moments/momentsService';
 import type { User } from '../types';
 
 // ─── Local-first wiring teardown refs ─────────────────────────────────────────
@@ -38,12 +41,20 @@ function wireLocalFirst(): void {
   // Restore persisted data-saver preference so the preloader honours it
   // from the very first event after login.
   setDataSaver(isDataSaverEnabled());
+  // Phase 4: start outbox processor (registers NetInfo + AppState triggers)
+  startOutboxProcessor();
 }
 
 /**
  * Tear down all local-first services before DB wipe on logout.
+ * Phase 4.6: pause outbox processor BEFORE wipeAllData (Decision 13).
  */
 function unwireLocalFirst(): void {
+  // Pause outbox processor first — prevents in-flight tick from writing
+  // to the DB after wipeAllData clears it (Decision 13: instant wipe, no flush).
+  if (isLocalFirstEnabled()) {
+    pauseOutboxProcessor();
+  }
   _unwireSocketEvents?.();
   _unwireSocketEvents = null;
   _unwireSyncTriggers?.();
@@ -100,6 +111,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // ignore
       }
+      // Mirror logout() teardown ordering to prevent listener leaks on re-login.
+      // setCurrentUserId(null) resets socketEventRouter's _currentUserId so the
+      // next login's wireSyncTriggers idempotent guard sees a clean state.
+      // unwireLocalFirst() releases AppState + socket subscriptions from this session.
+      // wipeAllData is fire-and-forget — force-logout is already a side-effect path;
+      // the cross-account guard in dbInit catches the worst case if the wipe races.
+      setCurrentUserId(null);
+      momentsService.setCurrentUserId(null);
+      unwireLocalFirst();
+      wipeAllData().catch((e) =>
+        console.warn('[AuthContext] force-logout: wipeAllData failed', e),
+      );
+      shutdownDb();
       setUser(null);
     });
     return () => setForceLogoutHandler(null);
@@ -129,6 +153,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         };
         reconnect();
+        // Refresh Moments feed so new stories appear without manual pull-to-refresh
+        momentsService.refreshFeed().catch(() => {});
       }
       appStateRef.current = nextState;
     },
@@ -149,6 +175,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const me = await usersApi.getMe();
       setUser(me);
+      setCurrentUserId(me._id);
+      momentsService.setCurrentUserId(me._id);
 
       // Initialise local SQLite DB for this user (additive — no-op if already open)
       await initDb(me._id).catch((e) =>
@@ -180,6 +208,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const me = await usersApi.getMe();
     setUser(me);
+    setCurrentUserId(me._id);
+    momentsService.setCurrentUserId(me._id);
 
     // Initialise local SQLite DB for this user
     await initDb(me._id).catch((e) =>
@@ -205,6 +235,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const me = await usersApi.getMe();
       setUser(me);
+      setCurrentUserId(me._id);
+      momentsService.setCurrentUserId(me._id);
 
       // Initialise local SQLite DB for this user
       await initDb(me._id).catch((e) =>
@@ -243,6 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const me = await usersApi.getMe();
     setUser(me);
+    setCurrentUserId(me._id);
 
     // Initialise local SQLite DB for this user
     await initDb(me._id).catch((e) =>
@@ -263,6 +296,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(async () => {
+    // ─── Phase 1: Navigate to LogoutTransition (keep container mounted) ────────
+    // Directly flipping `user` to null unmounts the ENTIRE authenticated tree
+    // (Main + 3 modals + ChatTabStack with 6 screens) in ONE Fabric commit while
+    // react-native-screens' native RNSScreenStack is still tearing down the same
+    // ViewGroup — resulting in "Cannot remove child at index N … childCount may
+    // be incorrect" on RN 0.76 + Fabric. Five prior approaches (isLoading splash,
+    // 2-rAF delay, freezeOnBlur, DIAG_STATIC_TABDOCK, Toast-at-root) reduced
+    // scope but did not eliminate the root race.
+    //
+    // This fix keeps NavigationContainer mounted for the entire logout sequence.
+    // navigationRef.reset() navigates INSIDE the authenticated group to the
+    // LogoutTransition screen (= SplashScreen). react-native-screens handles the
+    // reset natively (pops any open modals, replaces Main on the RNSScreenStack)
+    // so Fabric only processes a small diff, never a full subtree remove. After
+    // 3 rAF frames the native settle is complete; we run teardown and THEN flip
+    // setUser(null) — at that point only LogoutTransition needs to unmount (1
+    // screen, tiny Fabric batch) → no index drift, no crash.
+    // See [[logout_removeviewat_crash]].
+    if (navigationRef.isReady()) {
+      navigationRef.reset({ index: 0, routes: [{ name: 'LogoutTransition' }] });
+    }
+
+    // ─── Phase 2: Await 3 rAF ticks for Fabric + RNS to settle ───────────────
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => resolve()),
+        ),
+      ),
+    );
+
+    // ─── Phase 3: Teardown + auth group flip ──────────────────────────────────
     try {
       await pushNotificationService.unregisterToken();
       webrtcService.disconnect();
@@ -277,13 +342,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAccessTokenInMemory(null);
       await asyncStorage.clearAll();
       messageCache.clearAll();
+      // Clear current user id before tearing down local-first services
+      setCurrentUserId(null);
+      momentsService.setCurrentUserId(null);
       // Tear down local-first services before wiping the DB
       unwireLocalFirst();
+      // Reset moments service state on logout
+      momentsService.reset();
       // Wipe SQLite data and close connection (additive alongside MMKV clearAll)
       await wipeAllData().catch((e) =>
         console.warn('[AuthContext] logout: wipeAllData failed', e),
       );
       shutdownDb();
+      // setUser(null) flips the auth group — only LogoutTransition is on the
+      // stack at this point (1 screen), so Fabric's unmount batch is tiny and
+      // the RNSScreenStack is already idle → no removeViewAt race.
       setUser(null);
     }
   }, []);
