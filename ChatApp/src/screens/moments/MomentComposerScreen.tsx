@@ -18,7 +18,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Modal,
   FlatList,
@@ -81,8 +80,7 @@ const MomentComposerScreen: React.FC = () => {
   const handlePickMedia = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
-        mediaType: 'mixed',
-        videoQuality: 'high',
+        mediaType: 'photo',
         quality: 0.8,
         selectionLimit: 1,
         includeExtra: true,
@@ -91,20 +89,13 @@ const MomentComposerScreen: React.FC = () => {
       if (result.didCancel || !result.assets?.length) return;
 
       const asset = result.assets[0];
-      const isVideo = (asset.type ?? '').startsWith('video/');
-
-      // Client-side video duration check (60s cap)
-      if (isVideo && (asset.duration ?? 0) > 60) {
-        Alert.alert('Quá giới hạn', 'Video không được quá 60 giây.');
-        return;
-      }
 
       setMedia({
         uri: asset.uri ?? '',
-        type: isVideo ? 'video' : 'image',
+        type: 'image',
         mimeType: asset.type ?? 'image/jpeg',
         fileSize: asset.fileSize ?? 0,
-        duration: asset.duration ?? undefined,
+        duration: undefined,
         filename: asset.fileName ?? 'moment',
       });
       setStep('preview');
@@ -215,7 +206,7 @@ const MomentComposerScreen: React.FC = () => {
             accessibilityLabel="Chọn ảnh hoặc video từ thư viện"
           />
           <KoolaText variant="caption" tone="muted" align="center" style={styles.hint}>
-            Ảnh hoặc video tối đa 60 giây
+            Chỉ ảnh, tối đa 5MB
           </KoolaText>
         </View>
       </View>
