@@ -41,7 +41,7 @@ import { KoolaText, koolaColors } from '../../ui';
 import { storiesApi } from '../../services/moments/momentsApi';
 import { momentsService } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Story, ViewerEntry } from '../../services/moments/momentsApi';
+import type { Story, ViewerEntry, MusicTrack } from '../../services/moments/momentsApi';
 import { viewsApi } from '../../services/moments/momentsApi';
 
 type NavProp = NativeStackNavigationProp<ChatTabStackParamList>;
@@ -68,6 +68,7 @@ const MomentViewerScreen: React.FC = () => {
   const [showViewers, setShowViewers] = useState(false);
   const [viewers, setViewers] = useState<ViewerEntry[]>([]);
   const [toastMsg, setToastMsg] = useState('');
+  const [trackInfo, setTrackInfo] = useState<MusicTrack | null>(null);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,6 +77,21 @@ const MomentViewerScreen: React.FC = () => {
   const isOwnStory = user?._id === authorId;
 
   const currentStory = stories[currentIndex];
+
+  // ─── Fetch music track info for current story ─────────────────────────────
+
+  useEffect(() => {
+    if (!currentStory?.musicRef?.trackId) {
+      setTrackInfo(null);
+      return;
+    }
+    let cancelled = false;
+    momentsService
+      .getMusicTrackById(currentStory.musicRef.trackId)
+      .then((t) => { if (!cancelled) setTrackInfo(t); })
+      .catch(() => { if (!cancelled) setTrackInfo(null); });
+    return () => { cancelled = true; };
+  }, [currentStory?.musicRef?.trackId]);
 
   // ─── Load stories for author ──────────────────────────────────────────────
 
@@ -501,6 +517,15 @@ const MomentViewerScreen: React.FC = () => {
         </View>
       ) : null}
 
+      {/* Music attribution pill */}
+      {currentStory?.musicRef && trackInfo && (
+        <View style={styles.musicPill} accessibilityLabel={`Nhạc: ${trackInfo.title} bởi ${trackInfo.artist}`}>
+          <KoolaText variant="caption" tone="surface" numberOfLines={1}>
+            {trackInfo.title} · {trackInfo.artist}
+          </KoolaText>
+        </View>
+      )}
+
       {/* Reaction bar */}
       {!isOwnStory && (
         <View style={styles.reactionBar} accessibilityLabel="Phản ứng với khoảnh khắc">
@@ -702,6 +727,17 @@ const styles = StyleSheet.create({
   mentionText: {
     color: koolaColors.primarySoft,
     fontWeight: '700',
+  },
+  musicPill: {
+    position: 'absolute',
+    bottom: 170,
+    left: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    maxWidth: '70%',
   },
   reactionBar: {
     position: 'absolute',
