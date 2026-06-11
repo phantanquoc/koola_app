@@ -491,6 +491,9 @@ export class MomentsService {
     const story = await this.storyModel.findById(storyId);
     if (!story) throw new NotFoundException('Story not found');
     if (!story.isActive) throw new NotFoundException('Story not found');
+    if (story.expiresAt && new Date(story.expiresAt) < new Date()) {
+      throw new GoneException('Story has expired');
+    }
     await this.assertViewAccess(story, viewerId);
 
     // $pull existing then $push new (single op with arrayFilters)
@@ -597,6 +600,10 @@ export class MomentsService {
     if (!story) throw new NotFoundException('Story not found');
 
     const s = story as any;
+
+    if (s.expiresAt && new Date(s.expiresAt) < new Date()) {
+      throw new GoneException('Story has expired');
+    }
 
     if (s.authorId === viewerId) {
       throw new BadRequestException('Cannot comment on own story');
