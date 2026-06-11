@@ -85,6 +85,13 @@ export class ChatGateway
         });
       },
     );
+
+    // Wire new-message emit callback → broadcast new_message for story-reply DMs
+    this.messagesService.setNewMessageEmitCallback((conversationId, payload) => {
+      this.io
+        .to(`conversation:${conversationId}`)
+        .emit('new_message', { message: payload.message });
+    });
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────────
@@ -356,12 +363,16 @@ export class ChatGateway
   @SubscribeMessage('react_message')
   async handleReactMessage(
     @MessageBody()
-    payload: { conversationId: string; messageId: string; emoji: string },
+    payload: {
+      conversationId: string;
+      messageId: string;
+      emoji: string | null;
+    },
     @ConnectedSocket() client: AuthSocket,
   ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
     try {
-      const result = await this.messagesService.toggleReaction(
+      const result = await this.messagesService.setReaction(
         payload.conversationId,
         payload.messageId,
         userId,
