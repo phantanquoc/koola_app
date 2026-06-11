@@ -78,10 +78,10 @@ export class MomentsGateway {
   async emitStoryDeleted(storyId: string, authorId: string): Promise<void> {
     if (!this.io) return;
 
-    // Broadcast to the author's room; clients prune from their feed state
-    this.io.to(`user:${authorId}`).emit('story.deleted', { storyId, authorId });
+    // Broadcast to namespace — all connected clients prune from feed state
+    this.io.emit('story.deleted', { storyId, authorId });
 
-    this.logger.debug(`[MomentsGateway] story.deleted emitted for ${storyId}`);
+    this.logger.debug(`[MomentsGateway] story.deleted broadcast for ${storyId}`);
   }
 
   // ─── story.mention ────────────────────────────────────────────────────────
@@ -108,6 +108,7 @@ export class MomentsGateway {
     authorId: string,
     viewerId: string,
     emoji: string,
+    action: 'add' | 'remove' = 'add',
   ): Promise<void> {
     if (!this.io) return;
 
@@ -115,6 +116,7 @@ export class MomentsGateway {
       storyId,
       viewerId,
       emoji,
+      action,
     });
   }
 

@@ -528,11 +528,22 @@ export class MomentsService {
       throw new NotFoundException('Story not found');
     }
 
-    // Idempotent — no error if no reaction
-    await this.storyModel.updateOne(
+    // Atomic pull — returns the document BEFORE the update
+    const story = await this.storyModel.findOneAndUpdate(
       { _id: storyId },
       { $pull: { reactions: { userId: viewerId } } as any },
+      { new: false },
     );
+
+    if (!story) return; // silent no-op — story TTL'd or deleted
+
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitStoryReaction(storyId, story.authorId, viewerId, '', 'remove')
+        .catch((err) =>
+          this.logger.error('[MomentsService] emit remove failed', err),
+        );
+    }
   }
 
   // ─── Redis View Count Flush Cron ────────────────────────────────────────────

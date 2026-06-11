@@ -53,7 +53,7 @@ export type MomentsEvent =
   | { type: 'story.new'; storyId: string; authorId: string; mediaType: string; audienceScope?: string; createdAt: string }
   | { type: 'story.deleted'; storyId: string; authorId: string }
   | { type: 'story.mention'; storyId: string; authorId: string; captionSnippet: string }
-  | { type: 'story.reaction'; storyId: string; viewerId: string; emoji: string };
+  | { type: 'story.reaction'; storyId: string; viewerId: string; emoji: string; action?: 'add' | 'remove' };
 
 type Listener = (state: MomentsState) => void;
 
@@ -138,14 +138,15 @@ class MomentsService {
   async reactToStory(storyId: string, authorId: string, emoji: string): Promise<void> {
     // Optimistic update
     const stories = this.state.storiesByAuthor.get(authorId);
+    const myId = this.currentUserId ?? 'me';
     if (stories) {
       const updated = stories.map((s) => {
         if (s._id !== storyId) return s;
-        const filteredReactions = s.reactions.filter((r) => r.userId !== 'me');
+        const filteredReactions = s.reactions.filter((r) => r.userId !== myId);
         return {
           ...s,
           myReaction: emoji,
-          reactions: [...filteredReactions, { userId: 'me', emoji, createdAt: new Date().toISOString() }],
+          reactions: [...filteredReactions, { userId: myId, emoji, createdAt: new Date().toISOString() }],
         };
       });
       const storiesByAuthor = new Map(this.state.storiesByAuthor);
@@ -164,13 +165,14 @@ class MomentsService {
   async removeReaction(storyId: string, authorId: string): Promise<void> {
     // Optimistic update
     const stories = this.state.storiesByAuthor.get(authorId);
+    const myId = this.currentUserId ?? 'me';
     if (stories) {
       const updated = stories.map((s) => {
         if (s._id !== storyId) return s;
         return {
           ...s,
           myReaction: null,
-          reactions: s.reactions.filter((r) => r.userId !== 'me'),
+          reactions: s.reactions.filter((r) => r.userId !== myId),
         };
       });
       const storiesByAuthor = new Map(this.state.storiesByAuthor);
@@ -371,8 +373,8 @@ class MomentsService {
   }
 
   private handleStoryReaction(event: Extract<MomentsEvent, { type: 'story.reaction' }>): void {
-    // This arrives on the author's device; refresh count on the story if it's in state
-    const { storyId } = event;
+    // This arrives on the author's device; update reaction state for the story
+    const { storyId, action, emoji, viewerId } = event;
     for (const [authorId, stories] of this.state.storiesByAuthor.entries()) {
       const story = stories.find((s) => s._id === storyId);
       if (story) {
@@ -380,8 +382,27 @@ class MomentsService {
         const updated = stories.map((s) => {
           if (s._id !== storyId) return s;
           const reactionCounts = { ...(s.reactionCounts ?? {}) };
-          if (event.emoji) {
-            reactionCounts[event.emoji] = (reactionCounts[event.emoji] ?? 0) + 1;
+
+          if (action === 'remove') {
+            // Decrement or remove the emoji count
+            for (const key of Object.keys(reactionCounts)) {
+              if (reactionCounts[key] > 0) {
+                reactionCounts[key]--;
+                if (reactionCounts[key] <= 0) delete reactionCounts[key];
+                break; // only decrement once
+              }
+            }
+            // Clear myReaction if the remove is for the current user
+            const myReaction =
+              this.currentUserId && viewerId === this.currentUserId
+                ? null
+                : s.myReaction;
+            return { ...s, reactionCounts, myReaction };
+          }
+
+          // action === 'add' (default)
+          if (emoji) {
+            reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
           }
           return { ...s, reactionCounts };
         });
