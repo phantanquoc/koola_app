@@ -8,7 +8,6 @@ import {
   Param,
   Query,
   NotFoundException,
-  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { SearchUsersDto } from './dto/search-users.dto';
@@ -16,6 +15,10 @@ import { BatchPresenceDto } from './dto/batch-presence.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { RegisterFcmTokenDto, RemoveFcmTokenDto } from './dto/fcm-token.dto';
+import {
+  RequestProfilePhoneOtpDto,
+  VerifyProfilePhoneOtpDto,
+} from './dto/verify-profile-phone.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   ApiTags,
@@ -29,6 +32,21 @@ import {
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  // ─── Static routes BEFORE :userId param ─────────────────────────────────────
+
+  @Get('check-username')
+  @ApiOperation({ summary: 'Check username availability' })
+  @ApiResponse({ status: 200 })
+  async checkUsername(
+    @Query('u') username: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    if (!username) {
+      return { available: false, reason: 'invalid' };
+    }
+    return this.usersService.checkUsernameAvailability(user.userId, username);
+  }
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
@@ -46,6 +64,37 @@ export class UsersController {
     @Body() body: UpdateProfileDto,
   ) {
     return this.usersService.updateProfile(user.userId, body);
+  }
+
+  @Post('me/phone/request-otp')
+  @ApiOperation({ summary: 'Request OTP for phone change' })
+  @ApiResponse({ status: 200 })
+  async requestPhoneOtp(
+    @CurrentUser() user: { userId: string },
+    @Body() body: RequestProfilePhoneOtpDto,
+  ) {
+    return this.usersService.requestPhoneChangeOtp(user.userId, body.phone);
+  }
+
+  @Post('me/phone/verify-otp')
+  @ApiOperation({ summary: 'Verify OTP for phone change' })
+  @ApiResponse({ status: 200 })
+  async verifyPhoneOtp(
+    @CurrentUser() user: { userId: string },
+    @Body() body: VerifyProfilePhoneOtpDto,
+  ) {
+    return this.usersService.verifyPhoneChangeOtp(
+      user.userId,
+      body.phone,
+      body.code,
+    );
+  }
+
+  @Delete('me/phone')
+  @ApiOperation({ summary: 'Remove phone from profile' })
+  @ApiResponse({ status: 200 })
+  async removePhone(@CurrentUser() user: { userId: string }) {
+    return this.usersService.removePhone(user.userId);
   }
 
   @Put('me/settings')
@@ -120,10 +169,10 @@ export class UsersController {
   }
 
   @Get(':userId')
-  @ApiOperation({ summary: 'Get a user profile by id' })
+  @ApiOperation({ summary: 'Get a user public profile by id' })
   @ApiResponse({ status: 200 })
   async getUserById(@Param('userId') userId: string) {
-    const u = await this.usersService.findById(userId);
+    const u = await this.usersService.findByIdPublic(userId);
     if (!u) {
       throw new NotFoundException('User not found');
     }

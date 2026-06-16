@@ -20,6 +20,21 @@ export class User {
   @Prop({ default: '' })
   avatar: string;
 
+  @Prop({ maxlength: 160 })
+  bio?: string;
+
+  @Prop({ unique: true, sparse: true, lowercase: true, maxlength: 30 })
+  username?: string;
+
+  @Prop({ maxlength: 2048 })
+  coverPhoto?: string;
+
+  @Prop({ type: Date })
+  dateOfBirth?: Date;
+
+  @Prop({ enum: ['male', 'female', 'other', 'prefer_not'] })
+  gender?: string;
+
   @Prop({ default: false })
   isOnline: boolean;
 
