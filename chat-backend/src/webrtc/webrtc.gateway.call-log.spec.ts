@@ -99,6 +99,7 @@ describe('WebrtcGateway — call log lifecycle', () => {
       markPushSent: jest.fn().mockResolvedValue(undefined),
       updateSessionState: jest.fn().mockResolvedValue(undefined),
       getParticipants: jest.fn().mockResolvedValue([CALLER_ID, CALLEE_ID]),
+      addParticipant: jest.fn().mockResolvedValue(true),
     };
 
     mockCallLogsService = {
@@ -335,6 +336,17 @@ describe('WebrtcGateway — call log lifecycle', () => {
         status: 'answered',
         answeredAt: expect.any(Date),
       }),
+    );
+
+    // Regression (FIX 2): the callee MUST be registered as a session
+    // participant on accept. createSession only adds the initiator; without
+    // this the callee fails validateParticipant in handleCallAnswer /
+    // handleIceCandidate and its answer + ICE are silently dropped → the call
+    // never reaches 'active'. Earlier tests masked this by hard-mocking
+    // getParticipants to include both users.
+    expect(mockCallSessionService.addParticipant).toHaveBeenCalledWith(
+      SESSION_ID,
+      CALLEE_ID,
     );
   });
 

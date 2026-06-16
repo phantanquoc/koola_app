@@ -233,10 +233,22 @@ export function confirmSend(opts: {
   const { tempId, realId, clientMessageId, serverFields = {} } = opts;
 
   db.transaction(() => {
-    // Remove any duplicate row with the real id (from racing socket event)
-    db.execute('DELETE FROM messages WHERE id = ? AND id != ?', [realId, tempId]);
+    // Only remove a duplicate real-id row when the temp row still exists.
+    // If upsertMany already promoted the temp row to the real id (socket-before-REST
+    // race handled in upsertMany), the temp row is gone and the real-id row IS the
+    // promoted row — deleting it here would destroy the correct state.
+    const tempExists = db.execute(
+      'SELECT id FROM messages WHERE id = ? LIMIT 1',
+      [tempId],
+    ).rows.length > 0;
+    if (tempExists) {
+      db.execute('DELETE FROM messages WHERE id = ? AND id != ?', [realId, tempId]);
+    }
 
-    // Update the temp row to the real id
+    // Update the temp row (or the already-promoted real row) to the real id and
+    // merge server fields. The WHERE covers both the old-world case (temp row still
+    // present) and the new-world case (row already has realId after upsertMany
+    // promotion, matched by client_message_id).
     db.execute(
       `UPDATE messages SET
         id = ?,
@@ -281,8 +293,28 @@ export function markFailed(tempId: string): void {
 }
 
 /**
+ * Flip a failed message row back to 'pending' so the UI reflects the retry.
+ * Called by the retry handler after markPendingForRetry on the outbox row.
+ */
+export function markPendingFromRetry(tempId: string): void {
+  const db = getDb();
+  const row = getById(tempId);
+  db.execute("UPDATE messages SET status = 'pending', updated_at = ? WHERE id = ?", [
+    Date.now(),
+    tempId,
+  ]);
+  if (row) notify(row.conversationId);
+}
+
+/**
  * Upsert an array of messages from sync or socket events.
  * Runs inside a single transaction. Safe to retry.
+ *
+ * Optimistic reconciliation: when an incoming row carries a non-null
+ * clientMessageId that already exists on a temp row with a different id
+ * (the common socket-before-REST-response race), the temp row is updated
+ * in place to the real id rather than attempting a fresh INSERT that would
+ * violate the UNIQUE index on client_message_id.
  */
 export function upsertMany(messages: MessageInput[]): void {
   if (messages.length === 0) return;
@@ -292,6 +324,77 @@ export function upsertMany(messages: MessageInput[]): void {
   db.transaction(() => {
     for (const msg of messages) {
       const now = Date.now();
+
+      // ── Optimistic reconciliation ──────────────────────────────────────────
+      // If this message carries a clientMessageId, check whether a row with
+      // the same clientMessageId but a different id already exists (i.e. the
+      // optimistic temp row inserted by insertOptimistic before the server ack).
+      // If found, UPDATE that row to the real id and merge server fields, then
+      // skip the INSERT to avoid a UNIQUE constraint violation on
+      // idx_messages_client_id.
+      if (msg.clientMessageId != null) {
+        const existing = db.execute(
+          'SELECT id FROM messages WHERE client_message_id = ? AND id != ? LIMIT 1',
+          [msg.clientMessageId, msg.id],
+        );
+        if (existing.rows.length > 0) {
+          const existingId = (existing.rows._array[0] as { id: string }).id;
+
+          // Remove any stale row that already carries the real id (double-delivery
+          // guard — e.g. a previous upsertMany call already promoted the temp row).
+          db.execute(
+            'DELETE FROM messages WHERE id = ? AND id != ?',
+            [msg.id, existingId],
+          );
+
+          // Promote the temp row: update its id to the real id and merge all
+          // server-authoritative fields (mirrors confirmSend field list).
+          db.execute(
+            `UPDATE messages SET
+              id = ?,
+              status = ?,
+              content = ?,
+              media_key = COALESCE(?, media_key),
+              media_mime_type = COALESCE(?, media_mime_type),
+              media_size = COALESCE(?, media_size),
+              media_duration = COALESCE(?, media_duration),
+              media_thumbnail_key = COALESCE(?, media_thumbnail_key),
+              image_width = COALESCE(?, image_width),
+              image_height = COALESCE(?, image_height),
+              blurhash = COALESCE(?, blurhash),
+              deleted = ?,
+              deleted_for = ?,
+              read_by = ?,
+              reactions = ?,
+              updated_at = ?
+            WHERE id = ?`,
+            [
+              msg.id,
+              msg.status ?? 'sent',
+              msg.content ?? '',
+              msg.mediaKey ?? null,
+              msg.mediaMimeType ?? null,
+              msg.mediaSize ?? null,
+              msg.mediaDuration ?? null,
+              msg.mediaThumbnailKey ?? null,
+              msg.imageWidth ?? null,
+              msg.imageHeight ?? null,
+              msg.blurhash ?? null,
+              msg.deleted ? 1 : 0,
+              JSON.stringify(msg.deletedFor ?? []),
+              JSON.stringify(msg.readBy ?? []),
+              JSON.stringify(msg.reactions ?? []),
+              toMs(msg.updatedAt) || now,
+              existingId,
+            ],
+          );
+
+          affectedConvIds.add(msg.conversationId);
+          continue; // skip the INSERT below — reconciliation is complete
+        }
+      }
+      // ── End optimistic reconciliation ─────────────────────────────────────
+
       db.execute(
         `INSERT INTO messages (
           id, conversation_id, sender_id, client_message_id, type, content,
@@ -576,6 +679,17 @@ export function subscribe(
   callback: () => void,
 ): () => void {
   return broadcastSubscribe(conversationId, callback);
+}
+
+/**
+ * Hard-delete a single message row by id.
+ * Used by the Discard handler to permanently remove a temp/failed message.
+ */
+export function deleteById(id: string): void {
+  const db = getDb();
+  const row = getById(id);
+  db.execute('DELETE FROM messages WHERE id = ?', [id]);
+  if (row) notify(row.conversationId);
 }
 
 /**

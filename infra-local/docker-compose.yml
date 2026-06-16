@@ -109,12 +109,19 @@ services:
       MINIO_ENDPOINT: chat-minio
       MINIO_PORT: "9000"
       MINIO_USE_SSL: "false"
+      # Public endpoint baked into presigned URLs sent to mobile devices.
+      # Android emulator reaches the host via 10.0.2.2. Change per target:
+      # iOS sim → localhost (with host-published 9000), device → host LAN IP.
+      MINIO_PUBLIC_HOST: 192.168.2.108
+      MINIO_PUBLIC_PORT: "9000"
+      MINIO_PUBLIC_USE_SSL: "false"
+      MINIO_REGION: us-east-1
       MINIO_ROOT_USER: chatadmin
       MINIO_ROOT_PASSWORD: changeme123
       MINIO_BUCKET: chat-media
-      COTURN_IP: localhost
+      COTURN_IP: 192.168.2.108
       COTURN_PORT: "3478"
-      TURN_STATIC_SECRET: your-turn-secret-here
+      TURN_STATIC_SECRET: koola-turn-secret-dev-2024
     depends_on:
       mongodb:
         condition: service_healthy
@@ -142,6 +149,10 @@ services:
       MINIO_ENDPOINT: chat-minio
       MINIO_PORT: "9000"
       MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_HOST: 10.0.2.2
+      MINIO_PUBLIC_PORT: "9000"
+      MINIO_PUBLIC_USE_SSL: "false"
+      MINIO_REGION: us-east-1
       MINIO_ROOT_USER: chatadmin
       MINIO_ROOT_PASSWORD: changeme123
       MINIO_BUCKET: chat-media

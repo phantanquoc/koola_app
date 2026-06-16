@@ -85,6 +85,29 @@ export class ChatGateway
         });
       },
     );
+
+    // Wire new-message emit callback → broadcast new_message for story-reply DMs
+    this.messagesService.setNewMessageEmitCallback(
+      (conversationId, payload) => {
+        this.io
+          .to(`conversation:${conversationId}`)
+          .emit('new_message', { message: payload.message });
+      },
+    );
+
+    // Wire pin/unpin emit callbacks → broadcast to conversation room
+    this.conversationsService.setPinEmitCallback((conversationId, payload) => {
+      this.io
+        .to(`conversation:${conversationId}`)
+        .emit('message_pinned', { conversationId, ...payload });
+    });
+    this.conversationsService.setUnpinEmitCallback(
+      (conversationId, payload) => {
+        this.io
+          .to(`conversation:${conversationId}`)
+          .emit('message_unpinned', { conversationId, ...payload });
+      },
+    );
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────────
@@ -356,12 +379,16 @@ export class ChatGateway
   @SubscribeMessage('react_message')
   async handleReactMessage(
     @MessageBody()
-    payload: { conversationId: string; messageId: string; emoji: string },
+    payload: {
+      conversationId: string;
+      messageId: string;
+      emoji: string | null;
+    },
     @ConnectedSocket() client: AuthSocket,
   ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
     try {
-      const result = await this.messagesService.toggleReaction(
+      const result = await this.messagesService.setReaction(
         payload.conversationId,
         payload.messageId,
         userId,
@@ -396,13 +423,6 @@ export class ChatGateway
         payload.messageId,
         userId,
       );
-      this.io
-        .to(`conversation:${payload.conversationId}`)
-        .emit('message_pinned', {
-          conversationId: payload.conversationId,
-          messageId: payload.messageId,
-          pinnedBy: userId,
-        });
     } catch (err) {
       client.emit('error', { code: 400, message: (err as Error).message });
     }
@@ -421,12 +441,6 @@ export class ChatGateway
         payload.messageId,
         userId,
       );
-      this.io
-        .to(`conversation:${payload.conversationId}`)
-        .emit('message_unpinned', {
-          conversationId: payload.conversationId,
-          messageId: payload.messageId,
-        });
     } catch (err) {
       client.emit('error', { code: 400, message: (err as Error).message });
     }

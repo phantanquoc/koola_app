@@ -33,12 +33,24 @@ interface Props {
   onPress?: (uri: string) => void;
 }
 
-const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, blurhash, imageWidth, imageHeight, onPress }) => {
-  // Resolve initial URI synchronously from memory cache
-  const initialUri = mediaKey && mediaKey !== 'media-pending' ? getFromMemory(mediaKey) : null;
+type ResolvedMedia = { key: string; uri: string } | null;
 
-  const [uri, setUri] = useState<string | null>(initialUri);
-  const [imageReady, setImageReady] = useState(!!initialUri);
+function resolveMediaSync(mediaKey?: string): ResolvedMedia {
+  if (!mediaKey || mediaKey === 'media-pending') return null;
+  const cached = getFromMemory(mediaKey);
+  return cached ? { key: mediaKey, uri: cached } : null;
+}
+
+const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, blurhash, imageWidth, imageHeight, onPress }) => {
+  const activeMediaKey = mediaKey && mediaKey !== 'media-pending' ? mediaKey : '';
+  const [resolvedMedia, setResolvedMedia] = useState<ResolvedMedia>(() =>
+    resolveMediaSync(mediaKey),
+  );
+  const [imageReadyKey, setImageReadyKey] = useState<string | null>(() =>
+    resolvedMedia?.key ?? null,
+  );
+  const uri = resolvedMedia?.key === activeMediaKey ? resolvedMedia.uri : null;
+  const imageReady = imageReadyKey === activeMediaKey && !!uri;
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const mountedRef = useRef(true);
@@ -66,13 +78,27 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
   }, []);
 
   useEffect(() => {
-    if (!mediaKey || mediaKey === 'media-pending') return;
-    if (initialUri && retryCount === 0) return;
+    if (!activeMediaKey) {
+      setResolvedMedia(null);
+      setImageReadyKey(null);
+      setError(false);
+      return;
+    }
+
+    const cached = getFromMemory(activeMediaKey);
+    if (cached && retryCount === 0) {
+      setResolvedMedia({ key: activeMediaKey, uri: cached });
+      setImageReadyKey(activeMediaKey);
+      setError(false);
+      return;
+    }
 
     let cancelled = false;
     setError(false);
+    setResolvedMedia(cached ? { key: activeMediaKey, uri: cached } : null);
+    setImageReadyKey(cached ? activeMediaKey : null);
 
-    getOrDownload(mediaKey).then((localUri) => {
+    getOrDownload(activeMediaKey).then((localUri) => {
       if (cancelled || !mountedRef.current) return;
       if (localUri) {
         // Pre-resolve dimensions for images without backend dims
@@ -82,17 +108,22 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
             localUri,
             (w, h) => {
               if (!cancelled && mountedRef.current && w > 0 && h > 0) {
-                dimensionCache.set(mediaKey, { w, h });
-                setUri(localUri);
+                dimensionCache.set(activeMediaKey, { w, h });
+                setResolvedMedia({ key: activeMediaKey, uri: localUri });
+                setImageReadyKey(null);
               }
             },
             () => {
               // getSize failed — show image anyway with default dims
-              if (!cancelled && mountedRef.current) setUri(localUri);
+              if (!cancelled && mountedRef.current) {
+                setResolvedMedia({ key: activeMediaKey, uri: localUri });
+                setImageReadyKey(null);
+              }
             },
           );
         } else {
-          setUri(localUri);
+          setResolvedMedia({ key: activeMediaKey, uri: localUri });
+          setImageReadyKey(null);
         }
       } else {
         setError(true);
@@ -102,22 +133,22 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
     });
 
     return () => { cancelled = true; };
-  }, [mediaKey, retryCount]);
+  }, [activeMediaKey, retryCount, knownDims]);
 
   const handleRetry = useCallback(() => {
     setRetryCount((c) => c + 1);
   }, []);
 
   const handleImageLoad = useCallback((e: any) => {
-    setImageReady(true);
+    setImageReadyKey(activeMediaKey || null);
     // Cache dimensions for future mounts
-    if (mediaKey && !knownDims) {
+    if (activeMediaKey && !knownDims) {
       const { width: w, height: h } = e.nativeEvent.source;
       if (w > 0 && h > 0) {
-        dimensionCache.set(mediaKey, { w, h });
+        dimensionCache.set(activeMediaKey, { w, h });
       }
     }
-  }, [mediaKey, knownDims]);
+  }, [activeMediaKey, knownDims]);
 
   // Upload in progress — show progress bar
   if (isUploading) {
@@ -137,7 +168,7 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
     );
   }
 
-  if (!mediaKey) return null;
+  if (!activeMediaKey) return null;
 
   if (error && !uri) {
     return (

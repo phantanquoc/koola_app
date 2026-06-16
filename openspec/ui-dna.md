@@ -67,6 +67,8 @@ Always use `KoolaText` with variant/tone/weight props — never raw `<Text>` wit
 
 Frosted/glass surfaces are layered, never a single flat alpha fill. Compose from: vertical light-to-tint gradient, top sheen overlay (~50% height, fades to transparent), 1px top highlight line, faint side-edge shines, and a soft cool-tone bottom shadow line. Active tiles within glass use higher white alpha + inner top highlight + colored ambient shadow to read as raised refractive elements.
 
+A sheen overlay must decay to ~0 alpha at its lower edge — a sheen ending on a non-zero alpha step reads as a visible seam across the surface. With no gradient lib available, fake the fade with a few stacked low-alpha bands (1px overlap), not one solid block.
+
 ---
 
 ## Component Patterns
@@ -161,4 +163,6 @@ Frosted/glass surfaces are layered, never a single flat alpha fill. Compose from
 - Never exceed 2 rows of filter controls above content — collapse into sheet if needed
 - Never leave interactive elements without press feedback
 - Never use `elevation` without matching `shadow*` properties (cross-platform)
+- Never use `gap` in row-direction containers with `flex:1` children — use `marginRight`/`marginLeft` + `flexShrink:0` instead. Hermes on RN 0.76 silently breaks the row, dropping children to new lines.
+- Always set `underlineColorAndroid="transparent"` on `TextInput` — Android's default underline shows as a stray line, especially on translucent/glass surfaces.
 - Filter bars must not consume more than ~120px of vertical space above content

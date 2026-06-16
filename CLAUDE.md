@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+When asked about the codebase, project structure, or to find code, always use the context-engine MCP tool (codebase-retrieval) in the root workspace first before reading individual files. Use `codebase-retrieval` instead of the Explore subagent for codebase exploration and search tasks.
+
+When you need to read a specific file but don't know the exact line range, use the file-retrieval MCP tool instead of reading the entire file. Describe what information you need and it returns only the relevant snippets with line numbers. Use the Read tool with the returned line ranges (expanded as needed) to get current content before making edits.
+
 System understanding and reasoning guide for AI agents working on APP_KOOLA.
 
 > **Companion file:** [AGENTS.md](./AGENTS.md) — operational rules, commands, gotchas.
@@ -246,7 +253,7 @@ Both are loaded into Claude's context. Read CLAUDE.md to **think correctly**, AG
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **koola_app** (6349 symbols, 10363 relationships, 207 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **koola_app** (10144 symbols, 17102 relationships, 291 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

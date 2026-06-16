@@ -98,6 +98,11 @@ const ForwardModal: React.FC<Props> = ({ visible, messageId, onClose }) => {
     );
   };
 
+  // Fabric-safe: do not mount native <Modal> (Dialog Window) until visible.
+  // Eager mount with visible=false caused "addViewAt: child already has a parent"
+  // during ChatScreen initial mount under New Architecture.
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
@@ -125,6 +130,8 @@ const ForwardModal: React.FC<Props> = ({ visible, messageId, onClose }) => {
           <ActivityIndicator style={styles.loader} />
         ) : (
           <FlatList
+            // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+            removeClippedSubviews={false}
             data={filtered}
             keyExtractor={(item) => item._id}
             renderItem={renderItem}

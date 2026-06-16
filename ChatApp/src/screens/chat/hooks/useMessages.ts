@@ -61,13 +61,20 @@ export function useMessages(conversationId: string, currentUserId: string) {
   // at bundle time so this is safe.
   const dbResult = useMessagesFromDb(conversationId, currentUserId);
 
+  // When the flag is on, return the DB result immediately. All legacy
+  // useState/useEffect/useCallback below this point will NOT execute.
+  // The flag is bundle-time stable so the hook call order never changes
+  // between renders — Rules of Hooks holds for both paths independently.
+  if (localFirstEnabled) {
+    return dbResult;
+  }
+
   // ─── Legacy MMKV + REST path ──────────────────────────────────────────────
   // Read MMKV cache synchronously inside the lazy initializer so the very
   // first render after navigation already has messages painted. This is the
   // whole point of the message cache — avoid the white flash while REST
   // fetches the initial page.
   const [messages, setMessages] = useState<IMessage[]>(() => {
-    if (localFirstEnabled) return []; // unused when flag is on
     const t0 = Date.now();
     const cached = messageCache.read(conversationId);
     // [PERF DIAG] Cache hit/miss + read duration. Remove after debugging.
@@ -85,11 +92,29 @@ export function useMessages(conversationId: string, currentUserId: string) {
   const cursorRef = useRef<string | null>(null);
   const loadingEarlierRef = useRef(false);
   const mountedRef = useRef(true);
+  const loadedKeyRef = useRef(`${conversationId}:${currentUserId}`);
+  const currentLoadKey = `${conversationId}:${currentUserId}`;
+  const stateMatchesConversation = loadedKeyRef.current === currentLoadKey;
+  const visibleMessages = stateMatchesConversation
+    ? messages
+    : messageCache.read(conversationId);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    const key = `${conversationId}:${currentUserId}`;
+    if (loadedKeyRef.current === key) return;
+    loadedKeyRef.current = key;
+    const cached = messageCache.read(conversationId);
+    setMessages(cached);
+    setIsInitialLoading(cached.length === 0);
+    setInitialLoadError(null);
+    setHasEarlier(true);
+    cursorRef.current = null;
+  }, [conversationId, currentUserId]);
 
   // ─── Fetch initial messages ────────────────────────────────────────────────
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -158,6 +183,7 @@ export function useMessages(conversationId: string, currentUserId: string) {
   // pending write synchronously so the next mount sees fresh data instead of
   // the previous session's snapshot.
   useEffect(() => {
+    if (!stateMatchesConversation) return;
     let fired = false;
     const handle = setTimeout(() => {
       fired = true;
@@ -175,7 +201,7 @@ export function useMessages(conversationId: string, currentUserId: string) {
       messageCache.write(conversationId, messages);
       console.log(`[PERF useMessages] WRITE-FLUSH conv=${conversationId.slice(-6)} count=${messages.length} ms=${Date.now() - t0}`);
     };
-  }, [conversationId, messages]);
+  }, [conversationId, messages, stateMatchesConversation]);
 
   // ─── Socket listeners ──────────────────────────────────────────────────────
   // When the local-first flag is on, socket events are routed into SQLite by
@@ -183,8 +209,6 @@ export function useMessages(conversationId: string, currentUserId: string) {
   // in-memory handlers in parallel would double-apply events and write to the
   // unused `messages` state. Skip registration entirely when the flag is on.
   useEffect(() => {
-    if (localFirstEnabled) return;
-
     const handleNewMessage = (data: { message: Record<string, unknown> }) => {
       const msg = data.message as unknown as Message;
       if (msg.conversationId !== conversationId) return;
@@ -536,7 +560,7 @@ export function useMessages(conversationId: string, currentUserId: string) {
         }),
       );
       try {
-        await messagesApi.toggleReaction(conversationId, messageId, emoji);
+        await messagesApi.setReaction(conversationId, messageId, emoji);
       } catch {
         // Could revert optimistic update but API react is idempotent
       }
@@ -581,15 +605,9 @@ export function useMessages(conversationId: string, currentUserId: string) {
     [],
   );
 
-  // ─── Flag-gated return (task 5.2) ────────────────────────────────────────
-  // All hooks above have been called unconditionally. Now we can safely
-  // return the DB result when the flag is on.
-  if (localFirstEnabled) {
-    return dbResult;
-  }
-
+  // ─── Legacy return ────────────────────────────────────────────────────────
   return {
-    messages,
+    messages: visibleMessages,
     sendMessage,
     sendMediaMessage,
     createOptimisticMedia,

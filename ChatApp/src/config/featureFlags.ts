@@ -13,27 +13,41 @@
  *   When false (default):
  *     - Legacy MMKV + REST path is used (unchanged behaviour)
  *
- * To enable during development, set the env variable before bundling:
- *   LOCAL_FIRST_SQLITE=true npx react-native start
+ * To enable during development, set in ChatApp/.env before bundling:
+ *   LOCAL_FIRST_SQLITE=true
  *
  * The flag is read once at module load time and is immutable at runtime.
  * This avoids conditional hook calls that would violate the Rules of Hooks.
  */
 
+import Config from 'react-native-config';
+
 // React Native's Metro bundler replaces process.env.* at bundle time.
 // In Jest, the mock setup can set process.env.LOCAL_FIRST_SQLITE = 'true'.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const process: any;
-const _flagValue: boolean =
-  typeof process !== 'undefined' &&
-  process.env.LOCAL_FIRST_SQLITE === 'true';
+
+// In dev mode, read from dev-config.json (Metro-resolved, no native rebuild needed).
+// In prod, read from react-native-config (.env baked into native build).
+let _devConfigFlag = false;
+if (__DEV__) {
+  try {
+    const dev = require('@dev-config') as { LOCAL_FIRST_SQLITE?: boolean };
+    _devConfigFlag = dev.LOCAL_FIRST_SQLITE === true;
+  } catch {}
+}
+
+export const LOCAL_FIRST_SQLITE =
+  _devConfigFlag ||
+  Config.LOCAL_FIRST_SQLITE === 'true' ||
+  (typeof process !== 'undefined' && process.env.LOCAL_FIRST_SQLITE === 'true');
 
 /**
  * Returns true when the local-first SQLite read path is enabled.
  * Stable across the lifetime of the JS bundle — safe to use in hooks.
  */
 export function isLocalFirstEnabled(): boolean {
-  return _flagValue;
+  return LOCAL_FIRST_SQLITE;
 }
 
 /**
@@ -42,5 +56,5 @@ export function isLocalFirstEnabled(): boolean {
  * and the flag can be overridden in tests via module mocking.
  */
 export function useLocalFirstFlag(): boolean {
-  return _flagValue;
+  return LOCAL_FIRST_SQLITE;
 }

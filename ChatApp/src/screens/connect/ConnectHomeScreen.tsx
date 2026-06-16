@@ -7,9 +7,6 @@ import {
   ActivityIndicator,
   StyleSheet,
   Pressable,
-  LayoutAnimation,
-  UIManager,
-  Platform,
 } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
@@ -27,7 +24,7 @@ import SortMenu from '../../components/connect/SortMenu';
 import ProvincePicker from '../../components/connect/ProvincePicker';
 import { useBusinessList } from '../../hooks/useBusinessList';
 import { businessesApi, conversationsApi } from '../../services/api/apiService';
-import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { BUSINESS_CATEGORIES, RELATIONSHIP_FILTERS } from './constants';
 import type { Business, BusinessSort } from '../../types';
 import {
@@ -36,11 +33,6 @@ import {
   koolaColors,
   koolaRadii,
 } from '../../ui';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -336,6 +328,7 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
   activeProvince,
   onClearFilters,
 }) => {
+  const tabBarInset = useTabBarBottomInset();
   const { items, loading, refreshing, hasMore, error, loadMore, refresh, updateItem } =
     useBusinessList({
       category: activeCategory ?? undefined,
@@ -383,6 +376,8 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
         </View>
       ) : (
         <FlatList
+          // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+          removeClippedSubviews={false}
           data={items}
           keyExtractor={(item) => item._id}
           renderItem={renderItem}
@@ -413,7 +408,7 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
               tintColor={koolaColors.primary}
             />
           }
-          contentContainerStyle={listStyles.listContent}
+          contentContainerStyle={[listStyles.listContent, { paddingBottom: tabBarInset }]}
         />
       )}
     </View>
@@ -433,7 +428,6 @@ const listStyles = StyleSheet.create({
   },
   listContent: {
     paddingTop: 8,
-    paddingBottom: TAB_BAR_FLOATING_INSET + 16,
   },
 });
 
@@ -468,7 +462,6 @@ const ConnectHomeScreen: React.FC = () => {
   }, []);
 
   const handleSelectRelationship = useCallback((slug: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveRelationship(slug);
     setActiveCategory(null);
   }, []);

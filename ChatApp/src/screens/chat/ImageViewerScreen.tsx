@@ -340,3 +340,5 @@ const s = StyleSheet.create({
 });
 
 export default ImageViewerScreen;
+
+export { ZoomableImage };

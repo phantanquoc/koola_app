@@ -18,6 +18,7 @@ import { WebrtcModule } from './webrtc/webrtc.module';
 import { HealthModule } from './health/health.module';
 import { BusinessesModule } from './businesses/businesses.module';
 import { CallLogsModule } from './call-logs/call-logs.module';
+import { MomentsModule } from './moments/moments.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { CallLogsModule } from './call-logs/call-logs.module';
     HealthModule,
     BusinessesModule,
     CallLogsModule,
+    MomentsModule, // ← Moments feature (story system)
   ],
   providers: [
     {

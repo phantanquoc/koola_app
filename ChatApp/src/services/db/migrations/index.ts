@@ -86,6 +86,45 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE INDEX IF NOT EXISTS idx_conversations_list
   ON conversations (archived ASC, pinned DESC, last_message_at DESC);
   `,
+
+  // Migration 002 — outbox + outbox_metrics tables and indexes
+  `
+CREATE TABLE IF NOT EXISTS outbox (
+  id              TEXT    PRIMARY KEY NOT NULL,
+  op_type         TEXT    NOT NULL,
+  payload_version INTEGER NOT NULL DEFAULT 1,
+  payload_json    TEXT    NOT NULL,
+  conversation_id TEXT    NOT NULL,
+  message_id      TEXT,
+  dedup_key       TEXT,
+  state           TEXT    NOT NULL DEFAULT 'pending'
+                  CHECK (state IN ('pending','in_flight','done','dead_letter')),
+  retry_count     INTEGER NOT NULL DEFAULT 0,
+  next_retry_at   INTEGER NOT NULL DEFAULT 0,
+  in_flight_at    INTEGER,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  last_error      TEXT,
+  last_error_at   INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS outbox_metrics (
+  key        TEXT    PRIMARY KEY NOT NULL,
+  value      INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_due
+  ON outbox (state, next_retry_at, conversation_id, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedup
+  ON outbox (op_type, dedup_key)
+  WHERE dedup_key IS NOT NULL AND state IN ('pending','in_flight');
+
+CREATE INDEX IF NOT EXISTS idx_outbox_in_flight
+  ON outbox (state, in_flight_at)
+  WHERE state = 'in_flight';
+  `,
 ];
 
 const CURRENT_VERSION = MIGRATIONS.length;

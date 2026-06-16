@@ -25,6 +25,8 @@ interface Props {
   onForward: (message: IMessage & Record<string, unknown>) => void;
   onPin: (messageId: string) => void;
   onUnpin: (messageId: string) => void;
+  /** Called when user taps "Discard" on a failed send_message bubble */
+  onDiscard?: (messageId: string) => void;
 }
 
 const MessageContextMenu: React.FC<Props> = ({
@@ -39,6 +41,7 @@ const MessageContextMenu: React.FC<Props> = ({
   onForward,
   onPin,
   onUnpin,
+  onDiscard,
 }) => {
   if (!visible || !message) return null;
 
@@ -46,6 +49,8 @@ const MessageContextMenu: React.FC<Props> = ({
   const isPinned = pinnedMessageIds.includes(String(message._id));
   const messageAge = Date.now() - new Date(message.createdAt).getTime();
   const canDeleteForEveryone = isSender && messageAge < 24 * 60 * 60 * 1000;
+  // Show Discard only for failed send_message rows owned by current user
+  const isFailed = message.failed === true && isSender;
 
   const handleCopy = () => {
     if (message.text) {
@@ -143,6 +148,19 @@ const MessageContextMenu: React.FC<Props> = ({
           <Text style={styles.actionIcon}>🗑️</Text>
           <Text style={[styles.actionText, styles.deleteText]}>Xóa</Text>
         </TouchableOpacity>
+
+        {isFailed && onDiscard && (
+          <TouchableOpacity
+            style={[styles.actionRow, styles.deleteRow]}
+            activeOpacity={0.6}
+            onPress={() => {
+              onClose();
+              onDiscard(String(message._id));
+            }}>
+            <Text style={styles.actionIcon}>✕</Text>
+            <Text style={[styles.actionText, styles.deleteText]}>Huỷ gửi (Discard)</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Bottom safe area padding */}
         <View style={styles.bottomPad} />

@@ -5,6 +5,7 @@ import { LogBox, StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import Toast from 'react-native-toast-message';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
@@ -20,8 +21,10 @@ import { useIncomingCall } from './hooks/useIncomingCall';
 // Suppress non-critical RN warnings that can cover UI in dev (LogBox renders
 // as an overlay). The underlying issues are still visible in the Metro
 // console; we just prevent them from blocking taps on the chat input.
+// NOTE: 'Encountered two children with the same key' is intentionally NOT
+// suppressed — duplicate keys cause a Fabric double-removeViewAt crash on
+// large unmounts (logout). Keep it visible until the source is fixed.
 LogBox.ignoreLogs([
-  'Encountered two children with the same key',
   'This method is deprecated',
   'No Firebase App',
 ]);
@@ -112,6 +115,11 @@ const App: React.FC = () => {
           </AuthProvider>
         </KeyboardProvider>
       </SafeAreaProvider>
+      {/* Toast must be a root-level singleton, rendered last so its overlay sits
+          above everything. Rendering it inside a screen (ChatScreen) put the
+          overlay deep in a conditionally-unmounted tree → Fabric double-remove
+          crash on logout. See [[logout_removeviewat_crash]]. */}
+      <Toast />
     </GestureHandlerRootView>
   );
 };

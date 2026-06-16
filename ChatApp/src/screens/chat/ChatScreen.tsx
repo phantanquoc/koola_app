@@ -1,31 +1,31 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Animated,
+  FlatList,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native';
-import { GiftedChat, Bubble, SystemMessage, Actions, IMessage, BubbleProps, SystemMessageProps, ActionsProps, DayProps, ComposerProps } from 'react-native-gifted-chat';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { GiftedChat, Bubble, SystemMessage, IMessage, BubbleProps, SystemMessageProps, DayProps, InputToolbarProps } from 'react-native-gifted-chat';
+import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
-import Toast from 'react-native-toast-message';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp, ChatTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
 import { conversationsApi } from '../../services/api/apiService';
 import { getOrDownload, getFromMemory, warmMemoryCache } from '../../services/media/mediaCacheService';
-import type { Conversation, Message, PinnedMessage, MessageReaction } from '../../types';
+import type { Conversation, Message, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
+import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
 import UserAvatar from '../../components/UserAvatar';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReadReceipts } from './hooks/useReadReceipts';
+import { usePinManagement } from './hooks/usePinManagement';
+import { useCallInitiation } from './hooks/useCallInitiation';
+import { useMediaUpload } from './hooks/useMediaUpload';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import OfflineBanner from '../../components/OfflineBanner';
@@ -36,12 +36,24 @@ import VideoPlayerModal from '../../components/VideoPlayerModal';
 import MessageContextMenu from '../../components/MessageContextMenu';
 import ReactionDisplay from '../../components/ReactionDisplay';
 import PinBanner from '../../components/PinBanner';
+import PinListBottomSheet from '../../components/PinListBottomSheet';
+import type { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import ForwardModal from '../../components/ForwardModal';
-import { webrtcService } from '../../services/webrtc/WebRTCService';
-import { pickImage, pickDocument, pickVideo, uploadMedia, compressVideo, getMessageTypeFromMime } from '../../services/media/mediaUploadService';
+import AttachmentSheet from '../../components/AttachmentSheet';
+import ChatComposer, {
+  CHAT_COMPOSER_DOCK_HEIGHT,
+  CHAT_COMPOSER_SCROLL_GAP,
+  CHAT_COMPOSER_TOP_GAP,
+  ChatComposerHandle,
+} from './components/ChatComposer';
+import { KoolaText, KoolaIconButton, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
+import * as outboxRepository from '../../services/db/outboxRepository';
+import * as messageRepository from '../../services/db/messageRepository';
+import * as conversationRepository from '../../services/db/conversationRepository';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
-import { initialWindowMetrics } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 50,
@@ -53,13 +65,28 @@ const ChatScreen: React.FC = () => {
   const { conversationId, displayName: initialDisplayName, avatar: initialAvatar } = route.params;
   const { user } = useAuth();
   const currentUserId = user?._id || '';
+  const insets = useSafeAreaInsets();
+  const composerBottomInset = Math.max(insets.bottom, 8);
+  const composerScrollClearance =
+    CHAT_COMPOSER_DOCK_HEIGHT + CHAT_COMPOSER_TOP_GAP + CHAT_COMPOSER_SCROLL_GAP + composerBottomInset;
 
   const { isConnected } = useNetworkStatus();
   const { sendViaQueue } = useOfflineQueue();
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [chatReady, setChatReady] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [chatReady, setChatReady] = useState(true);
+  const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false);
+  const composerRef = useRef<ChatComposerHandle>(null);
+
+  // ─── Focus + mount guard for async setState ────────────────────────────────
+  // Prevents async callbacks from calling setState on a screen that is already
+  // being popped off the native stack (Fabric snapshot flicker on back-press).
+  const isFocused = useIsFocused();
+  // Seed true: the incoming screen is focused on first render; avoids dropping
+  // the first getDetails update if the navigator hasn't flagged focus yet.
+  const isFocusedRef = useRef(true);
+  useEffect(() => { isFocusedRef.current = isFocused; }, [isFocused]);
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+
   const [conversation, setConversation] = useState<Conversation | null>(null);
   // Seed avatar from nav params so the header doesn't flash a placeholder
   // while waiting for /conversations/:id to resolve.
@@ -84,9 +111,38 @@ const ChatScreen: React.FC = () => {
     },
   ).current;
 
-  // Fetch conversation details for header name
+  // Fetch conversation details for header name.
+  // SQLite-first: populate conversation state synchronously from local DB so
+  // chatTitle is stable on first render, then refresh from network in background.
   useEffect(() => {
+    // 1. Synchronous SQLite read — non-fatal, falls through to network on error
+    try {
+      const local = conversationRepository.getById(conversationId);
+      if (local) {
+        const localConv: Conversation = {
+          _id: local.id,
+          type: (local.type ?? 'direct') as Conversation['type'],
+          name: local.name ?? undefined,
+          avatar: local.avatarKey ?? undefined,
+          members: Array.isArray(local.members) ? (local.members as Conversation['members']) : [],
+          createdBy: '',
+          unreadCount: local.unreadCount ?? 0,
+          lastMessagePreview: local.lastMessagePreview ?? undefined,
+          lastMessageAt: local.lastMessageAt ? new Date(local.lastMessageAt as number).toISOString() : undefined,
+          createdAt: new Date().toISOString(),
+          updatedAt: local.updatedAt ? new Date(local.updatedAt as number).toISOString() : new Date().toISOString(),
+          // pinnedMessages not stored in SQLite — will be populated by network refresh
+        };
+        setConversation(localConv);
+      }
+    } catch {
+      // non-fatal — network refresh below will populate state
+    }
+
+    // 2. Background network refresh for authoritative data (online status, pinnedMessages, populated members)
     conversationsApi.getDetails(conversationId).then((data: { conversation: Conversation }) => {
+      // Guard: do not setState on a screen that is being/already popped off the stack
+      if (!isFocusedRef.current || !isMountedRef.current) return;
       const conv = data.conversation || data;
       setConversation(conv);
       // Resolve other member's avatar
@@ -100,7 +156,10 @@ const ChatScreen: React.FC = () => {
           : other?.user?.avatar;
         if (rawAvatar) {
           setOtherAvatarKey(rawAvatar);
-          getOrDownload(rawAvatar).then((url) => { if (url) setOtherAvatarUrl(url); });
+          getOrDownload(rawAvatar).then((url) => {
+            if (!isFocusedRef.current || !isMountedRef.current) return;
+            if (url) setOtherAvatarUrl(url);
+          });
         }
       }
     }).catch(() => {});
@@ -115,7 +174,7 @@ const ChatScreen: React.FC = () => {
     }
     let cancelled = false;
     getOrDownload(initialAvatar).then((url) => {
-      if (!cancelled && url) setOtherAvatarUrl(url);
+      if (!cancelled && url && isFocusedRef.current && isMountedRef.current) setOtherAvatarUrl(url);
     });
     return () => { cancelled = true; };
   }, [initialAvatar]);
@@ -194,50 +253,19 @@ const ChatScreen: React.FC = () => {
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
-  // ─── Pin state ─────────────────────────────────────────────────────────────
-  const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
-  const pinnedContents = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const pin of pinnedMessages) {
-      const msg = messages.find((m) => String(m._id) === pin.messageId);
-      if (msg) map[pin.messageId] = msg.text || '📷 Media';
-    }
-    return map;
-  }, [pinnedMessages, messages]);
-
-  // Load pinned messages from conversation
-  useEffect(() => {
-    if (conversation?.pinnedMessages) {
-      setPinnedMessages(conversation.pinnedMessages);
-    }
-  }, [conversation]);
-
-  // Socket: pin/unpin events
-  useEffect(() => {
-    const handlePinned = (data: { messageId: string; conversationId: string; pinnedBy: string }) => {
-      if (data.conversationId !== conversationId) return;
-      setPinnedMessages((prev) => {
-        if (prev.some((p) => p.messageId === data.messageId)) return prev;
-        return [...prev, { messageId: data.messageId, pinnedBy: data.pinnedBy, pinnedAt: new Date().toISOString() }];
-      });
-    };
-    const handleUnpinned = (data: { messageId: string; conversationId: string }) => {
-      if (data.conversationId !== conversationId) return;
-      setPinnedMessages((prev) => prev.filter((p) => p.messageId !== data.messageId));
-    };
-
-    socketService.on('message_pinned', handlePinned as (...args: unknown[]) => void);
-    socketService.on('message_unpinned', handleUnpinned as (...args: unknown[]) => void);
-    return () => {
-      socketService.off('message_pinned', handlePinned as (...args: unknown[]) => void);
-      socketService.off('message_unpinned', handleUnpinned as (...args: unknown[]) => void);
-    };
-  }, [conversationId]);
-
-  const pinnedMessageIds = React.useMemo(
-    () => pinnedMessages.map((p) => p.messageId),
-    [pinnedMessages],
-  );
+  // ─── Pin management (state, socket sync, handlers, derived data) ──────────
+  const {
+    pinnedMessages,
+    pinnedMessageIds,
+    pinnedContents,
+    handlePin,
+    handleUnpin,
+  } = usePinManagement({
+    conversationId,
+    conversation,
+    currentUserId,
+    messages,
+  });
 
   // ─── Context menu handlers ─────────────────────────────────────────────────
   const handleLongPress = useCallback((_context: unknown, message: IMessage) => {
@@ -263,32 +291,73 @@ const ChatScreen: React.FC = () => {
     setForwardModalVisible(true);
   }, []);
 
-  const handlePin = useCallback((messageId: string) => {
-    conversationsApi.pinMessage(conversationId, messageId);
+  // ─── Dead-letter retry / discard ──────────────────────────────────────────
+  const handleRetryFailedMessage = useCallback((messageId: string) => {
+    // messageId here is the temp_xxx id stored in messages table
+    // Find the outbox row by clientMessageId (strip temp_ prefix)
+    try {
+      const rows = outboxRepository.getDeadLetterRows();
+      const row = rows.find((r) => {
+        try {
+          // We don't have payload_json in getDeadLetterRows, so use message_id field
+          return r.message_id === messageId || r.id === messageId;
+        } catch {
+          return false;
+        }
+      });
+      if (row) {
+        outboxRepository.markPendingForRetry(row.id);
+        // Flip the messages row back to pending so UI updates immediately
+        messageRepository.markPendingFromRetry(messageId);
+      }
+    } catch (err) {
+      console.warn('[ChatScreen] handleRetryFailedMessage error:', err);
+    }
+  }, []);
+
+  const handleDiscardFailedMessage = useCallback((messageId: string) => {
+    try {
+      const rows = outboxRepository.getDeadLetterRows();
+      const row = rows.find((r) => r.message_id === messageId || r.id === messageId);
+      if (row) {
+        // Hard-delete the outbox row so it no longer appears in dead-letter list
+        outboxRepository.deleteRow(row.id);
+      }
+      // Hard-delete the temp messages row
+      messageRepository.deleteById(messageId);
+    } catch (err) {
+      console.warn('[ChatScreen] handleDiscardFailedMessage error:', err);
+    }
   }, [conversationId]);
 
-  const handleUnpin = useCallback((messageId: string) => {
-    conversationsApi.unpinMessage(conversationId, messageId);
-  }, [conversationId]);
-
-  const giftedChatRef = useRef<any>(null);
+  // gifted-chat ^2.8.1 exposes messageContainerRef as a public prop.
+  // Earlier code reached into giftedChatRef.current._messageContainerRef which
+  // only existed in v2.6.x class-component impl and silently became falsy after
+  // upgrade, breaking pin-banner scroll.
+  const messageContainerRef = useRef<FlatList<IMessage> | null>(null);
+  const pinListSheetRef = useRef<React.ElementRef<typeof BottomSheetModal>>(null);
   const handlePinBannerPress = useCallback((messageId: string) => {
-    // Scroll to message — find index in messages array
     const idx = messages.findIndex((m) => String(m._id) === messageId);
-    if (idx >= 0 && giftedChatRef.current?._messageContainerRef?.current) {
-      giftedChatRef.current._messageContainerRef.current.scrollToIndex({ index: idx, animated: true });
+    if (idx < 0 || !messageContainerRef.current) return;
+    try {
+      messageContainerRef.current.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+    } catch {
+      // onScrollToIndexFailed handler in listViewProps will retry; swallow sync throw.
     }
   }, [messages]);
 
-  // Inject other user's avatar into messages for GiftedChat rendering
+  // Inject other user's avatar into messages for GiftedChat rendering.
+  // chatTitle is intentionally excluded from deps — it resolves async via
+  // getDetails and would cause a full FlatList re-render on every title change.
+  // name is not displayed in bubbles (showUserAvatar=false, showAvatarForEveryMessage=false).
   const messagesWithAvatar = React.useMemo(() => {
     if (!otherAvatarUrl) return messages;
     return messages.map((m) =>
       m.user._id !== currentUserId
-        ? { ...m, user: { ...m.user, avatar: otherAvatarUrl, name: m.user.name || chatTitle } }
+        ? { ...m, user: { ...m.user, avatar: otherAvatarUrl } }
         : m,
     );
-  }, [messages, otherAvatarUrl, currentUserId, chatTitle]);
+  }, [messages, otherAvatarUrl, currentUserId]);
 
   const { typingUsers, emitTyping } = useTypingIndicator(conversationId);
   useReadReceipts(conversationId, messages, currentUserId);
@@ -320,147 +389,31 @@ const ChatScreen: React.FC = () => {
     [sendMessage, isConnected, sendViaQueue, conversationId],
   );
 
-  const handlePickImage = useCallback(async () => {
-    try {
-      const picked = await pickImage();
-      if (picked === null) return;
-      if (picked === 'TOO_LARGE') {
-        Alert.alert('Ảnh quá lớn', 'Vui lòng chọn ảnh dưới 200MB');
-        return;
-      }
-
-      const messageType = getMessageTypeFromMime(picked.mimeType);
-      const tempId = createOptimisticMedia(picked.uri, picked.mimeType, picked.size, messageType);
-
-      setIsUploading(true);
-      setUploadProgress(0);
-      const result = await uploadMedia(
-        picked.uri,
-        picked.filename,
-        picked.mimeType,
-        picked.size,
-        conversationId,
-        (percent) => {
-          setUploadProgress(percent);
-          updateUploadProgress(tempId, percent);
-        },
-      );
-      await confirmMediaMessage(tempId, result.mediaUrl, result.mimeType, result.size, messageType);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string | string[] } } };
-      const msg = error.response?.data?.message;
-      Alert.alert('Tải lên thất bại', Array.isArray(msg) ? msg.join('\n') : msg || 'Không thể tải ảnh lên');
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
-  }, [conversationId, createOptimisticMedia, confirmMediaMessage, updateUploadProgress]);
-
-  const handlePickDocument = useCallback(async () => {
-    try {
-      const picked = await pickDocument();
-      if (!picked) return;
-
-      const messageType = getMessageTypeFromMime(picked.mimeType);
-      const tempId = createOptimisticMedia(picked.uri, picked.mimeType, picked.size, messageType, picked.filename);
-
-      setIsUploading(true);
-      setUploadProgress(0);
-      const result = await uploadMedia(
-        picked.uri,
-        picked.filename,
-        picked.mimeType,
-        picked.size,
-        conversationId,
-        (percent) => {
-          setUploadProgress(percent);
-          updateUploadProgress(tempId, percent);
-        },
-      );
-      await confirmMediaMessage(tempId, result.mediaUrl, result.mimeType, result.size, messageType, picked.filename);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string | string[] } } };
-      const msg = error.response?.data?.message;
-      Alert.alert('Tải lên thất bại', Array.isArray(msg) ? msg.join('\n') : msg || 'Không thể tải tệp lên');
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
-  }, [conversationId, createOptimisticMedia, confirmMediaMessage, updateUploadProgress]);
-
-  const handlePickVideo = useCallback(async () => {
-    try {
-      const pickResult = await pickVideo();
-
-      if (pickResult === null) return;
-
-      if (pickResult === 'TOO_LARGE') {
-        Alert.alert('Video quá lớn', 'Vui lòng chọn video dưới 200MB');
-        return;
-      }
-
-      if (pickResult === 'UNSUPPORTED_FORMAT') {
-        Alert.alert('Định dạng không hỗ trợ', 'Vui lòng chọn video MP4, MOV hoặc WebM');
-        return;
-      }
-
-      // 1. Compress before upload (720p / ~2 Mbps). Files under 10 MB are
-      //    returned unchanged by the compressor (minimumFileSizeForCompress).
-      setIsUploading(true);
-      setUploadProgress(0);
-
-      let compressedUri = pickResult.uri;
-      try {
-        const handle = compressVideo(pickResult.uri, (progress) => {
-          // Map compress phase to 0..50% of the overall progress bar
-          setUploadProgress(Math.round(progress * 50));
-        });
-        compressedUri = await handle.promise;
-      } catch (compressErr) {
-        // Compression failure is non-fatal — fall back to original file
-        console.warn('[ChatScreen] Video compression failed, using original:', compressErr);
-        compressedUri = pickResult.uri;
-      }
-
-      // 2. Upload the (possibly compressed) file
-      const tempId = createOptimisticMedia(compressedUri, pickResult.mimeType, pickResult.fileSize, 'video', undefined, pickResult.duration);
-
-      const result = await uploadMedia(
-        compressedUri,
-        pickResult.filename,
-        pickResult.mimeType,
-        pickResult.fileSize,
-        conversationId,
-        (percent) => {
-          // Map upload phase to 50..100% of the overall progress bar
-          const overall = 50 + Math.round(percent / 2);
-          setUploadProgress(overall);
-          updateUploadProgress(tempId, overall);
-        },
-      );
-      await confirmMediaMessage(tempId, result.mediaUrl, result.mimeType, result.size, 'video', undefined, pickResult.duration);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string | string[] } } };
-      const msg = error.response?.data?.message;
-      Alert.alert('Tải lên thất bại', Array.isArray(msg) ? msg.join('\n') : msg || 'Không thể tải video lên');
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
-  }, [conversationId, createOptimisticMedia, confirmMediaMessage, updateUploadProgress]);
+  // ─── Media upload (image / document / video) ──────────────────────────────
+  const {
+    isUploading,
+    uploadProgress,
+    handlePickImage,
+    handlePickDocument,
+    handlePickVideo,
+  } = useMediaUpload({
+    conversationId,
+    createOptimisticMedia,
+    confirmMediaMessage,
+    updateUploadProgress,
+  });
 
   const handleAttachment = useCallback(() => {
-    Alert.alert(
-      'Gửi tệp đính kèm',
-      'Chọn loại tệp',
-      [
-        { text: 'Ảnh', onPress: handlePickImage },
-        { text: 'Video', onPress: handlePickVideo },
-        { text: 'Tài liệu', onPress: handlePickDocument },
-      ],
-      { cancelable: true },
-    );
-  }, [handlePickImage, handlePickVideo, handlePickDocument]);
+    setAttachmentSheetVisible(true);
+  }, []);
+
+  const handleEmojiPress = useCallback(() => {
+    Alert.alert('Tính năng đang phát triển', 'Bảng biểu tượng cảm xúc sẽ sớm có mặt.');
+  }, []);
+
+  const handleVoicePress = useCallback(() => {
+    Alert.alert('Tính năng đang phát triển', 'Tin nhắn thoại sẽ sớm có mặt.');
+  }, []);
 
   // Emit typing indicator without interfering with IME composition
   const typingTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -488,21 +441,12 @@ const ChatScreen: React.FC = () => {
     };
   }, []);
 
-  // Smooth fade-in when messages are ready
+  // Ensure chatReady flips true when isInitialLoading clears (safety for legacy/non-SQLite path)
   useEffect(() => {
     if (!isInitialLoading) {
-      const id = requestAnimationFrame(() => {
-        setChatReady(true);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      });
-      return () => cancelAnimationFrame(id);
+      setChatReady(true);
     } else {
       setChatReady(false);
-      fadeAnim.setValue(0);
     }
   }, [isInitialLoading]);
 
@@ -515,23 +459,48 @@ const ChatScreen: React.FC = () => {
       const isMedia = isImage || isVideo;
       const reactions = (msg?.reactions as MessageReaction[]) || [];
       const isRight = msg?.user?._id === currentUserId;
+      const isFailed = msg?.failed === true;
+
+      // Detect story reply metadata
+      const storyReply = (msg?.metadata as Record<string, unknown> | undefined)?.storyReply as
+        | { storyId: string; mediaKeyPreview?: string; captionSnippet?: string; authorId?: string }
+        | undefined;
+
       return (
         <View>
-          <Bubble
-            {...props}
-            wrapperStyle={{
-              right: isMedia
-                ? { backgroundColor: 'transparent', padding: 0 }
-                : { backgroundColor: '#2196F3', borderRadius: 18, borderBottomRightRadius: 4 },
-              left: isMedia
-                ? { backgroundColor: 'transparent', padding: 0 }
-                : { backgroundColor: '#F3F4F6', borderRadius: 18, borderBottomLeftRadius: 4 },
-            }}
-            textStyle={{
-              right: { color: '#FFFFFF', fontSize: 15, lineHeight: 21 },
-              left: { color: '#374151', fontSize: 15, lineHeight: 21 },
-            }}
-          />
+          <TouchableOpacity
+            activeOpacity={isFailed ? 0.7 : 1}
+            onPress={isFailed ? () => handleRetryFailedMessage(String(msg._id)) : undefined}
+            accessible={isFailed}
+            accessibilityLabel={isFailed ? 'Gửi thất bại — nhấn để thử lại' : undefined}
+            accessibilityRole={isFailed ? 'button' : undefined}>
+            <View style={isFailed ? styles.failedBubbleWrapper : undefined}>
+              {/* Story reference card prepended above the bubble */}
+              {storyReply && (
+                <View style={styles.storyRefCardWrapper}>
+                  <StoryReferenceCard storyReply={storyReply} />
+                </View>
+              )}
+              <Bubble
+                {...props}
+                wrapperStyle={{
+                  right: isMedia
+                    ? { backgroundColor: 'transparent', padding: 0 }
+                    : { backgroundColor: koolaColors.primary, borderRadius: koolaRadii.lg, borderBottomRightRadius: koolaRadii.xs },
+                  left: isMedia
+                    ? { backgroundColor: 'transparent', padding: 0 }
+                    : { backgroundColor: koolaColors.canvas, borderRadius: koolaRadii.lg, borderBottomLeftRadius: koolaRadii.xs },
+                }}
+                textStyle={{
+                  right: { color: koolaColors.surface, fontSize: 15, lineHeight: 22 },
+                  left: { color: koolaColors.ink, fontSize: 15, lineHeight: 22 },
+                }}
+              />
+            </View>
+            {isFailed && (
+              <KoolaText variant="caption" tone="danger" style={styles.failedLabel}>Gửi thất bại — nhấn để thử lại</KoolaText>
+            )}
+          </TouchableOpacity>
           {reactions.length > 0 && (
             <ReactionDisplay
               reactions={reactions}
@@ -543,7 +512,7 @@ const ChatScreen: React.FC = () => {
         </View>
       );
     },
-    [currentUserId, reactToMessage],
+    [currentUserId, reactToMessage, handleRetryFailedMessage],
   );
 
   const renderSystemMessage = useCallback(
@@ -575,7 +544,7 @@ const ChatScreen: React.FC = () => {
       }
       return (
         <View style={styles.dayContainer}>
-          <Text style={styles.dayText}>{label}</Text>
+          <KoolaText variant="caption" tone="muted" weight="500" style={styles.dayText}>{label}</KoolaText>
         </View>
       );
     },
@@ -587,32 +556,28 @@ const ChatScreen: React.FC = () => {
     return (
       <View style={styles.typingContainer}>
         {isUploading && (
-          <View style={styles.uploadingRow}>
-            <ActivityIndicator size="small" color="#2196F3" />
-            <Text style={styles.typingText}> Đang tải lên... {uploadProgress > 0 ? `${uploadProgress}%` : ''}</Text>
+          <View style={styles.uploadingBlock}>
+            <View style={styles.uploadingRow}>
+              <ActivityIndicator size="small" color={koolaColors.primary} />
+              <KoolaText variant="caption" tone="muted" style={styles.uploadingText}>
+                Đang tải lên... {uploadProgress > 0 ? `${uploadProgress}%` : ''}
+              </KoolaText>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.max(4, uploadProgress)}%` }]} />
+            </View>
           </View>
         )}
         {typingUsers.length > 0 && (
-          <Text style={styles.typingText}>
+          <KoolaText variant="caption" tone="muted">
             {typingUsers.length === 1
               ? 'Đang soạn tin...'
               : `${typingUsers.length} người đang soạn tin...`}
-          </Text>
+          </KoolaText>
         )}
       </View>
     );
   }, [typingUsers, isUploading, uploadProgress]);
-
-  const renderActions = useCallback(
-    (props: ActionsProps) => (
-      <Actions
-        {...props}
-        icon={() => <MaterialIcons name="attach-file" size={24} color="#2196F3" />}
-        onPressActionButton={handleAttachment}
-      />
-    ),
-    [handleAttachment],
-  );
 
   // ─── Media renderers ──────────────────────────────────────────────────────
   const renderMessageImage = useCallback(
@@ -705,54 +670,46 @@ const ChatScreen: React.FC = () => {
     [currentUserId],
   );
 
-  // Custom composer to fix Vietnamese IME on Fabric (New Architecture)
-  // GiftedChat's default Composer uses controlled TextInput (value prop)
-  // which resets IME composition on every re-render under Fabric.
-  const composerTextRef = useRef('');
-  const textInputRef = useRef<TextInput>(null);
-
-  const renderComposer = useCallback(
-    (_props: ComposerProps) => (
-      <View style={styles.composerContainer}>
-        <TextInput
-          ref={textInputRef}
-          style={styles.composerInput}
-          placeholder="Nhập tin nhắn..."
-          placeholderTextColor="#999"
-          multiline
-          onChangeText={(text: string) => {
-            composerTextRef.current = text;
-            onInputTextChanged(text);
-          }}
-        />
-      </View>
-    ),
-    [onInputTextChanged],
+  // Send handler — ChatComposer owns the (uncontrolled) text ref and passes
+  // the trimmed text up. Keeping the input uncontrolled is required to avoid
+  // Vietnamese IME composition resets on Fabric (New Architecture).
+  const handleSend = useCallback(
+    (text: string) => {
+      if (!text) return;
+      socketService.emit('typing_stop', { conversationId });
+      if (isConnected !== false) {
+        sendMessage(text);
+      } else {
+        sendViaQueue(conversationId, text, 'text');
+      }
+    },
+    [sendMessage, isConnected, sendViaQueue, conversationId],
   );
 
-  // Override onSend to use our uncontrolled text ref
-  const handleSend = useCallback(() => {
-    const text = composerTextRef.current.trim();
-    if (!text) return;
-    composerTextRef.current = '';
-    if (textInputRef.current) {
-      textInputRef.current.clear();
-    }
-    socketService.emit('typing_stop', { conversationId });
-    if (isConnected !== false) {
-      sendMessage(text);
-    } else {
-      sendViaQueue(conversationId, text, 'text');
-    }
-  }, [sendMessage, isConnected, sendViaQueue, conversationId]);
-
-  const renderSendButton = useCallback(
-    () => (
-      <TouchableOpacity onPress={handleSend} style={styles.sendContainer}>
-        <Text style={styles.sendText}>Gửi</Text>
-      </TouchableOpacity>
+  const renderInputToolbar = useCallback(
+    (_props: InputToolbarProps<IMessage>) => (
+      <ChatComposer
+        ref={composerRef}
+        onSend={handleSend}
+        onChangeText={onInputTextChanged}
+        onPressEmoji={handleEmojiPress}
+        onPressVoice={handleVoicePress}
+        onPressImage={handlePickImage}
+        onPressAttach={handleAttachment}
+        disabled={isUploading}
+        offline={isConnected === false}
+      />
     ),
-    [handleSend],
+    [
+      handleSend,
+      onInputTextChanged,
+      handleEmojiPress,
+      handleVoicePress,
+      handlePickImage,
+      handleAttachment,
+      isUploading,
+      isConnected,
+    ],
   );
 
   const handleHeaderPress = useCallback(async () => {
@@ -762,7 +719,8 @@ const ChatScreen: React.FC = () => {
       try {
         const data = await conversationsApi.getDetails(conversationId);
         conv = (data.conversation || data) as Conversation;
-        setConversation(conv);
+        // Guard setState only; navigation below is a direct user action and must proceed
+        if (isFocusedRef.current && isMountedRef.current) setConversation(conv);
       } catch {
         return;
       }
@@ -784,135 +742,71 @@ const ChatScreen: React.FC = () => {
 
   // Start a 1-1 call. Waits for the backend 'call_initiated' event to get a
   // real sessionId before navigating to the CallModal.
-  const handleStartCall = useCallback(
-    async (callType: 'audio' | 'video') => {
-      // Load conversation if not ready yet
-      let conv = conversation;
-      if (!conv) {
-        try {
-          const data = await conversationsApi.getDetails(conversationId);
-          conv = (data.conversation || data) as Conversation;
-          setConversation(conv);
-        } catch {
-          Alert.alert('Lỗi', 'Không thể tải thông tin cuộc trò chuyện');
-          return;
-        }
-      }
-
-      if (conv.type === 'group') {
-        Alert.alert('Thông báo', 'Gọi nhóm đang được phát triển');
-        return;
-      }
-
-      // Resolve the other member's userId
-      const other = conv.members?.find((m: any) => {
-        const id = typeof m.userId === 'object' ? m.userId._id : m.userId;
-        return id !== currentUserId;
-      });
-      const otherUserId =
-        other && (typeof other.userId === 'object'
-          ? (other.userId as any)._id
-          : other.userId);
-      if (!otherUserId) {
-        Alert.alert('Lỗi', 'Không xác định được người nhận cuộc gọi');
-        return;
-      }
-
-      const rootNav = (navigation as unknown as NativeStackNavigationProp<RootStackParamList>)
-        .getParent();
-
-      // One-shot listeners: wait for either 'call_initiated' or an error
-      let settled = false;
-      const cleanup = () => {
-        webrtcService.off('call_initiated', onInitiated);
-        webrtcService.off('call_missed', onMissed);
-        webrtcService.off('call_busy', onError);
-        webrtcService.off('error', onError);
-        clearTimeout(timer);
-      };
-      const onInitiated = (data: unknown) => {
-        if (settled) return;
-        settled = true;
-        const { sessionId, iceServers: servers } =
-          (data as { sessionId?: string; iceServers?: { urls: string; username?: string; credential?: string }[] }) || {};
-        cleanup();
-        if (!sessionId) {
-          Alert.alert('Lỗi', 'Không thể khởi tạo cuộc gọi');
-          return;
-        }
-        rootNav?.navigate('CallModal', {
-          sessionId,
-          callType,
-          isInitiator: true,
-          iceServers: servers,
-        });
-      };
-      const onMissed = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        Alert.alert('Không thể gọi', 'Người dùng hiện không trực tuyến');
-      };
-      const onError = (data: unknown) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        const msg = (data as { message?: string })?.message || 'Cuộc gọi thất bại';
-        Alert.alert('Lỗi', msg);
-      };
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        Alert.alert('Hết thời gian', 'Máy chủ không phản hồi. Vui lòng thử lại.');
-      }, 15000);
-
-      webrtcService.on('call_initiated', onInitiated);
-      webrtcService.on('call_missed', onMissed);
-      webrtcService.on('call_busy', onError);
-      webrtcService.on('error', onError);
-
-      webrtcService.initiateCall(otherUserId, conversationId, callType);
-    },
-    [conversation, conversationId, currentUserId, navigation],
-  );
+  const { handleStartCall } = useCallInitiation({
+    conversationId,
+    conversation,
+    currentUserId,
+    setConversation,
+    isFocusedRef,
+    isMountedRef,
+  });
 
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
   return (
+    <BottomSheetModalProvider>
     <View style={styles.container}>
       {/* Offline Banner */}
       <OfflineBanner isVisible={isConnected === false} />
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#2196F3" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
-          <UserAvatar displayName={chatTitle} avatar={otherAvatarKey || undefined} size={36} />
+        <KoolaIconButton
+          icon="arrow-back"
+          tone="primary"
+          variant="ghost"
+          size={40}
+          iconSize={24}
+          onPress={() => navigation.goBack()}
+          accessibilityLabel="Quay lại"
+        />
+        <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress} activeOpacity={0.8}>
+          <View>
+            <UserAvatar displayName={chatTitle} avatar={otherAvatarKey || undefined} size={38} />
+            {otherUserStatus === 'Đang hoạt động' && (
+              <View style={styles.onlineDot} accessibilityElementsHidden importantForAccessibility="no" />
+            )}
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{chatTitle}</Text>
-            <Text style={[styles.headerStatus, otherUserStatus ? {} : { opacity: 0 }]} numberOfLines={1}>
+            <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>{chatTitle}</KoolaText>
+            <KoolaText
+              variant="caption"
+              tone={otherUserStatus === 'Đang hoạt động' ? 'success' : 'muted'}
+              numberOfLines={1}
+              style={otherUserStatus ? undefined : { opacity: 0 }}>
               {otherUserStatus || 'placeholder'}
-            </Text>
+            </KoolaText>
           </View>
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity
+          <KoolaIconButton
+            icon="call"
+            tone="primary"
+            variant="soft"
+            size={40}
+            iconSize={22}
             onPress={() => handleStartCall('audio')}
-            style={styles.callButton}
-            accessibilityRole="button"
-            accessibilityLabel="Gọi thoại">
-            <MaterialIcons name="call" size={24} color="#2196F3" />
-          </TouchableOpacity>
-          <TouchableOpacity
+            accessibilityLabel="Gọi thoại"
+          />
+          <KoolaIconButton
+            icon="videocam"
+            tone="primary"
+            variant="soft"
+            size={40}
+            iconSize={22}
             onPress={() => handleStartCall('video')}
-            style={styles.callButton}
-            accessibilityRole="button"
-            accessibilityLabel="Gọi video">
-            <MaterialIcons name="videocam" size={26} color="#2196F3" />
-          </TouchableOpacity>
+            accessibilityLabel="Gọi video"
+          />
         </View>
       </View>
 
@@ -922,35 +816,64 @@ const ChatScreen: React.FC = () => {
         messageContents={pinnedContents}
         onPress={handlePinBannerPress}
         onClose={handleUnpin}
+        onShowList={() => pinListSheetRef.current?.present()}
+      />
+
+      <PinListBottomSheet
+        ref={pinListSheetRef}
+        pinnedMessages={pinnedMessages}
+        messageContents={pinnedContents}
+        onSelect={handlePinBannerPress}
+        onUnpin={handleUnpin}
       />
 
       <View style={{ flex: 1 }}>
         {/* Initial-load error overlay */}
         {initialLoadError && messages.length === 0 && !isInitialLoading && (
           <View style={styles.initialErrorOverlay}>
-            <Text style={styles.initialErrorText}>
-              Không thể tải tin nhắn. Vui lòng thử lại.
-            </Text>
-            <TouchableOpacity style={styles.initialErrorRetry} onPress={retryInitialLoad}>
-              <Text style={styles.initialErrorRetryText}>Thử lại</Text>
+            <View style={styles.errorIconShell}>
+              <MaterialIcons name="cloud-off" size={28} color={koolaColors.danger} />
+            </View>
+            <KoolaText variant="label" tone="danger" weight="600" align="center">
+              Không thể tải tin nhắn
+            </KoolaText>
+            <KoolaText variant="body" tone="muted" align="center">
+              Kiểm tra kết nối và thử lại
+            </KoolaText>
+            <TouchableOpacity style={styles.initialErrorRetry} onPress={retryInitialLoad} activeOpacity={0.82}>
+              <KoolaText variant="label" tone="surface" weight="600">Thử lại</KoolaText>
             </TouchableOpacity>
+          </View>
+        )}
+        {/* Empty state — conversation has no messages yet */}
+        {chatReady && !isInitialLoading && !initialLoadError && messages.length === 0 && (
+          <View style={styles.emptyOverlay}>
+            <View style={styles.emptyIconShell}>
+              <MaterialIcons name="chat-bubble-outline" size={28} color={koolaColors.primary} />
+            </View>
+            <KoolaText variant="label" tone="ink" weight="600" align="center">
+              Bắt đầu cuộc trò chuyện
+            </KoolaText>
+            <KoolaText variant="body" tone="muted" align="center" style={styles.emptyBody}>
+              Gửi tin nhắn đầu tiên đến {chatTitle}
+            </KoolaText>
           </View>
         )}
         {/* Loading overlay - absolute positioned, doesn't affect layout */}
         {!chatReady && messages.length === 0 && !initialLoadError && (
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
-            <ActivityIndicator size="small" color="#2196F3" />
+            <ActivityIndicator size="small" color={koolaColors.primary} />
           </View>
         )}
-        {/* GiftedChat - always rendered, smooth fade in when ready */}
-        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        {/* GiftedChat - always rendered (Fabric-safe: no Animated.View wrapper) */}
+        <View style={{ flex: 1, opacity: chatReady ? 1 : 0 }}>
           <GiftedChat
+            messageContainerRef={messageContainerRef as unknown as React.ComponentProps<typeof GiftedChat>['messageContainerRef']}
             messages={messagesWithAvatar}
             onSend={() => {}}
             user={{ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }}
             renderBubble={renderBubble}
-            renderSend={renderSendButton}
-            renderComposer={renderComposer}
+            renderInputToolbar={renderInputToolbar}
             renderSystemMessage={renderSystemMessage}
             renderMessageImage={renderMessageImage}
             renderMessageVideo={renderMessageVideo}
@@ -958,7 +881,6 @@ const ChatScreen: React.FC = () => {
             renderDay={renderDay}
             timeFormat="HH:mm"
             locale="vi"
-            renderActions={renderActions}
             renderFooter={renderFooter}
             showUserAvatar={false}
             showAvatarForEveryMessage={false}
@@ -968,16 +890,39 @@ const ChatScreen: React.FC = () => {
             alwaysShowSend
             infiniteScroll
             onLongPress={handleLongPress}
-            bottomOffset={(initialWindowMetrics?.insets.bottom ?? 0) > 0 ? initialWindowMetrics!.insets.bottom : 8}
-            minInputToolbarHeight={52}
+            bottomOffset={composerBottomInset}
+            minInputToolbarHeight={0}
             listViewProps={{
               viewabilityConfig,
               onViewableItemsChanged,
-              contentContainerStyle: { paddingTop: 20 },
+              contentContainerStyle: {
+                paddingTop: composerScrollClearance,
+                paddingBottom: 20,
+              },
               showsVerticalScrollIndicator: false,
+              // Fabric (RN 0.76 New Arch) workaround: facebook/react-native#53258
+              // FlatList + state-driven data updates can throw
+              // "addViewAt: child already has a parent" when view recycling
+              // collides with mount items. Disabling clipped-subview recycling
+              // forces stable view tree at the cost of slightly more memory.
+              removeClippedSubviews: false,
+              initialNumToRender: 12,
+              maxToRenderPerBatch: 8,
+              windowSize: 7,
+              updateCellsBatchingPeriod: 50,
+              // Required by FlatList when scrollToIndex targets an offscreen row
+              // without getItemLayout. Average bubble height ~80px is a reasonable
+              // estimate; retry after a tick lets layout pass measure the target.
+              onScrollToIndexFailed: (info: { index: number; averageItemLength: number }) => {
+                const offset = info.averageItemLength * info.index;
+                messageContainerRef.current?.scrollToOffset({ offset, animated: true });
+                setTimeout(() => {
+                  messageContainerRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+                }, 100);
+              },
             } as Record<string, unknown>}
           />
-        </Animated.View>
+        </View>
       </View>
 
       {/* Context Menu */}
@@ -993,6 +938,7 @@ const ChatScreen: React.FC = () => {
         onForward={handleForward}
         onPin={handlePin}
         onUnpin={handleUnpin}
+        onDiscard={handleDiscardFailedMessage}
       />
 
       {/* Forward Modal */}
@@ -1002,59 +948,100 @@ const ChatScreen: React.FC = () => {
         onClose={() => setForwardModalVisible(false)}
       />
 
+      {/* Attachment picker bottom sheet */}
+      <AttachmentSheet
+        visible={attachmentSheetVisible}
+        onClose={() => setAttachmentSheetVisible(false)}
+        onPickImage={handlePickImage}
+        onPickVideo={handlePickVideo}
+        onPickDocument={handlePickDocument}
+      />
+
       {/* Video Player Modal */}
       <VideoPlayerModal
         visible={!!playerMessage && !!playerMediaKey}
         uri={playerMediaKey}
         onClose={() => setPlayerMessage(null)}
       />
-
-      {/* Toast */}
-      <Toast />
     </View>
+    </BottomSheetModalProvider>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: koolaColors.surface },
   initialErrorOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center', zIndex: 2,
-    paddingHorizontal: 32, gap: 12,
+    paddingHorizontal: 32, gap: koolaSpacing.md,
   },
-  initialErrorText: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+  errorIconShell: {
+    width: 64, height: 64, borderRadius: koolaRadii.lg,
+    backgroundColor: koolaColors.dangerSoft,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: koolaSpacing.xs,
+  },
   initialErrorRetry: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8,
-    backgroundColor: '#2196F3',
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: koolaRadii.sm,
+    backgroundColor: koolaColors.primary, marginTop: koolaSpacing.xs,
   },
-  initialErrorRetryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  emptyOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center', zIndex: 1,
+    paddingHorizontal: 32, gap: koolaSpacing.sm,
+  },
+  emptyIconShell: {
+    width: 64, height: 64, borderRadius: koolaRadii.lg,
+    backgroundColor: koolaColors.primarySoft,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: koolaSpacing.xs,
+  },
+  emptyBody: { paddingHorizontal: 16 },
   header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12,
-    paddingTop: 6, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg,
+    paddingTop: koolaSpacing.sm, paddingBottom: koolaSpacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: koolaColors.line,
+    backgroundColor: koolaColors.surface,
   },
-  backButton: { padding: 8, marginRight: 4 },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerTitle: { fontSize: 17, fontWeight: '600', color: '#333' },
-  headerStatus: { fontSize: 12, color: '#10B981', marginTop: 1 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 0 },
-  callButton: { padding: 10 },
-  sendContainer: { justifyContent: 'center', alignItems: 'center', marginRight: 8, marginBottom: 0 },
-  sendText: { color: '#2196F3', fontSize: 15, fontWeight: '600' },
-  systemMessage: { color: '#6B7280', fontSize: 12 },
-  dayContainer: { alignItems: 'center', marginVertical: 12 },
-  dayText: { fontSize: 12, color: '#6B7280', fontWeight: '500', backgroundColor: 'rgba(107, 114, 128, 0.12)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
-  typingContainer: { paddingHorizontal: 16, paddingVertical: 8 },
-  typingText: { fontSize: 13, color: '#6B7280' },
-  uploadingRow: { flexDirection: 'row', alignItems: 'center' },
-  composerContainer: {
-    flex: 1, justifyContent: 'center',
-    backgroundColor: '#F3F4F6', borderRadius: 22,
-    borderWidth: 0,
-    marginHorizontal: 4, marginVertical: 8,
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.sm, marginLeft: koolaSpacing.xs },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.xs },
+  onlineDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 11, height: 11, borderRadius: koolaRadii.pill,
+    backgroundColor: koolaColors.accent,
+    borderWidth: 2, borderColor: koolaColors.surface,
   },
-  composerInput: {
-    fontSize: 15, lineHeight: 20, paddingHorizontal: 14, paddingVertical: 10,
-    maxHeight: 120, color: '#111827',
+  systemMessage: { color: koolaColors.muted, fontSize: 12 },
+  dayContainer: { alignItems: 'center', marginVertical: koolaSpacing.lg },
+  dayText: {
+    backgroundColor: koolaColors.canvas, borderRadius: koolaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: koolaColors.line,
+    paddingHorizontal: koolaSpacing.md, paddingVertical: 4, overflow: 'hidden',
+  },
+  typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm, gap: koolaSpacing.sm },
+  uploadingBlock: { gap: 6 },
+  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  uploadingText: { marginLeft: 0 },
+  progressTrack: {
+    height: 3, borderRadius: koolaRadii.pill, backgroundColor: koolaColors.line, overflow: 'hidden',
+  },
+  progressFill: {
+    height: 3, borderRadius: koolaRadii.pill, backgroundColor: koolaColors.primary,
+  },
+  // Dead-letter bubble visual
+  failedBubbleWrapper: {
+    borderLeftWidth: 1,
+    borderLeftColor: koolaColors.danger,
+  },
+  failedLabel: {
+    marginTop: 2,
+    marginLeft: 4,
+    marginBottom: 2,
+  },
+  storyRefCardWrapper: {
+    marginHorizontal: 8,
+    marginBottom: 4,
+    maxWidth: 240,
   },
 });
 

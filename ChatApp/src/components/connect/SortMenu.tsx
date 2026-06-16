@@ -51,6 +51,9 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
         <MaterialIcons name="expand-more" size={16} color={koolaColors.primary} />
       </Pressable>
 
+      {/* Fabric-safe: do not mount native <Modal> (Dialog Window) until open.
+          Eager mount with visible=false races RN's removeViewAt on Android Fabric. */}
+      {open && (
       <Modal
         visible={open}
         transparent
@@ -97,6 +100,7 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
           </Pressable>
         </Pressable>
       </Modal>
+      )}
     </>
   );
 };

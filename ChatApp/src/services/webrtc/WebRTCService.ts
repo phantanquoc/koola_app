@@ -40,7 +40,7 @@ export interface IceServerConfig {
 
 type WebRTCEventCallback = (...args: unknown[]) => void;
 
-class WebRTCService {
+export class WebRTCService {
   private socket: Socket | null = null;
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
@@ -56,6 +56,26 @@ class WebRTCService {
   private isInitiator: boolean = false;
   private iceRestartCount: number = 0;
   private currentSessionId: string | null = null;
+
+  // ICE candidates can arrive before the remote SDP is applied. addIceCandidate
+  // throws if called before setRemoteDescription, so we buffer early candidates
+  // and flush them once the remote description is set. Without this the first
+  // few candidates are lost → flaky / one-way connect at call start.
+  private remoteDescriptionSet: boolean = false;
+  private pendingIceCandidates: RTCIceCandidate[] = [];
+
+  // Caller-side: set when `call_accepted` arrives before the peer connection has
+  // finished building (callee accepted faster than our getUserMedia resolved).
+  // createPeerConnection() checks this and sends the deferred offer.
+  private offerPending: boolean = false;
+
+  // Callee-side twin of offerPending: the caller sends its offer immediately on
+  // `call_accepted`, which can arrive (along with ICE candidates) BEFORE the
+  // callee has finished getUserMedia + createPeerConnection. Without buffering,
+  // handleRemoteOffer drops the offer (peerConnection still null) and the callee
+  // never answers → dead air despite perfect signaling. We park the offer here
+  // and replay it once createPeerConnection() finishes building.
+  private pendingRemoteOffer: { sessionId: string; sdp: RTCSessionDescription } | null = null;
 
   private static readonly VALID_TRANSITIONS: Record<CallState, CallState[]> = {
     idle: ['initiating'],
@@ -146,6 +166,13 @@ class WebRTCService {
       // called inside setVoiceMode.
       callAudioService.stopRingback();
       callAudioService.setVoiceMode();
+      // The offer is created HERE, not at CallScreen mount. Creating it earlier
+      // (while the callee is still ringing) means the callee has no peer
+      // connection yet, so the offer is dropped and both sides deadlock. By the
+      // time `call_accepted` fires, the callee's peer connection exists. (D7)
+      if (this.isInitiator) {
+        void this.sendOfferWhenReady();
+      }
       this.emit('call_accepted', data);
     });
     this.socket.on('call_declined', (data) => this.emit('call_declined', data));
@@ -202,6 +229,10 @@ class WebRTCService {
   acceptCall(sessionId: string): void {
     this.isInitiator = false;
     this.currentSessionId = sessionId;
+    // The callee never receives `call_accepted` (the server emits that only to
+    // the initiator), so route audio to the in-call session here. Without this
+    // the callee's audio mode is never set → wrong routing / one-way audio.
+    callAudioService.setVoiceMode();
     this.socket?.emit('call_accept', { sessionId });
   }
 
@@ -263,6 +294,14 @@ class WebRTCService {
 
   async createPeerConnection(sessionId: string, iceServers: IceServerConfig[]): Promise<RTCPeerConnection> {
     this.iceServers = iceServers;
+    // Fresh negotiation — reset the remote-description gate. Do NOT clear
+    // pendingIceCandidates here: on the callee, ICE candidates routinely arrive
+    // (and are buffered) BEFORE this PC finishes building, and wiping them would
+    // drop the very host candidates that connect a same-LAN call. cleanup()
+    // already empties the buffer between calls, so anything present now belongs
+    // to the current negotiation and must be preserved for flush after the
+    // remote description is applied.
+    this.remoteDescriptionSet = false;
 
     const config = {
       iceServers: iceServers.map((s) => ({
@@ -345,14 +384,36 @@ class WebRTCService {
           })();
         } else {
           // Three strikes — give up and surface failure to peers + UI.
+          // The socket emit notifies the server (→ peer gets call_ended); the
+          // internal emit drives THIS device's hook into the 'failed' state
+          // (the server does not echo call_failed back to us). Emit before
+          // cleanup() since cleanup() nulls currentSessionId.
           this.socket?.emit('call_failed', {
             sessionId: this.currentSessionId,
           });
+          this.emit('call_failed', { sessionId: this.currentSessionId });
           this.transition('failed');
           this.cleanup();
         }
       }
     });
+
+    // If `call_accepted` already arrived while we were still acquiring media /
+    // building this connection, the deferred offer was parked — send it now.
+    if (this.offerPending && this.isInitiator) {
+      this.offerPending = false;
+      void this.createAndSendOffer(sessionId);
+    }
+
+    // Callee-side: an offer (and its ICE) may have raced ahead of this PC being
+    // built. Replay the parked offer now that peerConnection exists so the
+    // answer + ICE flush can proceed. handleRemoteOffer re-checks isInitiator
+    // and the (now non-null) peerConnection, so this is safe.
+    if (this.pendingRemoteOffer && !this.isInitiator) {
+      const parked = this.pendingRemoteOffer;
+      this.pendingRemoteOffer = null;
+      void this.handleRemoteOffer(parked);
+    }
 
     return this.peerConnection;
   }
@@ -371,8 +432,33 @@ class WebRTCService {
     this.socket?.emit('call_offer', { sessionId, sdp: offer });
   }
 
+  /**
+   * Caller-side offer trigger, invoked on `call_accepted`. If the peer
+   * connection is ready, sends the offer immediately; otherwise parks the
+   * intent so createPeerConnection() can send it once setup finishes. Uses
+   * currentSessionId since the accept event carries no iceServers.
+   */
+  private async sendOfferWhenReady(): Promise<void> {
+    if (!this.currentSessionId) return;
+    if (this.peerConnection) {
+      await this.createAndSendOffer(this.currentSessionId);
+    } else {
+      this.offerPending = true;
+    }
+  }
+
   private async handleRemoteOffer(data: { sessionId: string; sdp: RTCSessionDescription }): Promise<void> {
-    if (!this.peerConnection) return;
+    // The offer can arrive before the callee finished building its peer
+    // connection (getUserMedia + createPeerConnection are async and the caller
+    // fires its offer the instant call_accepted reaches it). Park it so
+    // createPeerConnection() can replay it once the PC exists — dropping it
+    // here is what caused dead-air calls despite clean signaling.
+    if (!this.peerConnection) {
+      if (!this.isInitiator) {
+        this.pendingRemoteOffer = data;
+      }
+      return;
+    }
 
     // SDP race fix (D9): Initiator side already has its local offer set —
     // an echoed `call_offer` arriving here would be one we sent ourselves
@@ -387,6 +473,7 @@ class WebRTCService {
     }
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    await this.flushPendingIceCandidates();
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
 
@@ -397,14 +484,44 @@ class WebRTCService {
   private async handleRemoteAnswer(data: { sessionId: string; sdp: RTCSessionDescription }): Promise<void> {
     if (!this.peerConnection) return;
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    await this.flushPendingIceCandidates();
   }
 
   private async handleRemoteIceCandidate(data: { candidate: RTCIceCandidate }): Promise<void> {
-    if (!this.peerConnection) return;
+    const candidate = new RTCIceCandidate(data.candidate);
+    // Buffer until BOTH the peer connection exists AND the remote description
+    // is set. Candidates routinely arrive before either is ready on the callee
+    // (the caller trickles ICE the instant it sends its offer). addIceCandidate
+    // throws without a remote description, and there's nothing to add it to
+    // without a PC — so a dropped candidate can leave the connection half-open.
+    // flushPendingIceCandidates() replays these once handleRemoteOffer applies
+    // the remote description.
+    if (!this.peerConnection || !this.remoteDescriptionSet) {
+      this.pendingIceCandidates.push(candidate);
+      return;
+    }
     try {
-      await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      await this.peerConnection.addIceCandidate(candidate);
     } catch (err) {
       console.error('[WebRTC] Failed to add ICE candidate:', err);
+    }
+  }
+
+  /**
+   * Apply any ICE candidates that arrived before the remote description was
+   * set. Marks the gate open so subsequent candidates apply immediately.
+   */
+  private async flushPendingIceCandidates(): Promise<void> {
+    this.remoteDescriptionSet = true;
+    if (!this.peerConnection || this.pendingIceCandidates.length === 0) return;
+    const queued = this.pendingIceCandidates;
+    this.pendingIceCandidates = [];
+    for (const candidate of queued) {
+      try {
+        await this.peerConnection.addIceCandidate(candidate);
+      } catch (err) {
+        console.error('[WebRTC] Failed to add queued ICE candidate:', err);
+      }
     }
   }
 
@@ -428,10 +545,20 @@ class WebRTCService {
     this.isInitiator = false;
     this.iceRestartCount = 0;
     this.currentSessionId = null;
-    if (this.callState !== 'ended') {
-      this.transition('ended');
+    this.remoteDescriptionSet = false;
+    this.pendingIceCandidates = [];
+    this.offerPending = false;
+    this.pendingRemoteOffer = null;
+    // Walk the state machine down to 'idle' only if a call was actually in
+    // progress. Calling cleanup() while already 'idle' (defensive cleanup on
+    // unmount / disconnect / logout with no active call) is a no-op — avoids
+    // the spurious "Invalid transition: idle → ended" warnings.
+    if (this.callState !== 'idle') {
+      if (this.callState !== 'ended') {
+        this.transition('ended');
+      }
+      this.transition('idle');
     }
-    this.transition('idle');
   }
 
   // ─── Mute/Camera Toggle ─────────────────────────────────────────────────────

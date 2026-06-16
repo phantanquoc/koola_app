@@ -33,6 +33,8 @@ interface Props {
   size?: number;
 }
 
+type ResolvedAvatar = { key: string; uri: string } | null;
+
 function isResolvedUri(value: string): boolean {
   return (
     value.startsWith('http://') ||
@@ -42,39 +44,52 @@ function isResolvedUri(value: string): boolean {
   );
 }
 
+function resolveAvatarSync(avatar?: string): ResolvedAvatar {
+  if (!avatar) return null;
+  if (isResolvedUri(avatar)) return { key: avatar, uri: avatar };
+  const cached = getFromMemory(avatar);
+  return cached ? { key: avatar, uri: cached } : null;
+}
+
 const UserAvatar: React.FC<Props> = ({ displayName, avatar, size = 48 }) => {
-  const [resolvedUri, setResolvedUri] = useState<string | null>(() => {
-    if (!avatar) return null;
-    if (isResolvedUri(avatar)) return avatar;
-    return getFromMemory(avatar);
-  });
+  const avatarKey = avatar ?? '';
+  const [resolvedAvatar, setResolvedAvatar] = useState<ResolvedAvatar>(() =>
+    resolveAvatarSync(avatar),
+  );
+  const resolvedUri =
+    resolvedAvatar?.key === avatarKey ? resolvedAvatar.uri : null;
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
     if (!avatar) {
-      setResolvedUri(null);
+      setResolvedAvatar(null);
       return;
     }
     if (isResolvedUri(avatar)) {
-      setResolvedUri(avatar);
+      setResolvedAvatar({ key: avatar, uri: avatar });
       return;
     }
 
     const cached = getFromMemory(avatar);
     if (cached) {
-      setResolvedUri(cached);
+      setResolvedAvatar({ key: avatar, uri: cached });
       return;
     }
 
     let cancelled = false;
-    setResolvedUri(null);
+    setResolvedAvatar(null);
 
     const resolve = (isRetry: boolean) => {
       getOrDownload(avatar)
         .then((uri) => {
           if (cancelled) return;
           if (uri) {
-            setResolvedUri(uri);
+            setResolvedAvatar({ key: avatar, uri });
           } else if (!isRetry) {
             retryTimerRef.current = setTimeout(() => {
               if (!cancelled) resolve(true);

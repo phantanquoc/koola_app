@@ -8,6 +8,8 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { getAllowedOrigins } from './common/cors';
+import { startDevEnvWatcher } from './dev-env-watcher';
+import { minioClient, BUCKET, ensureBucketExists } from './media/minio-client';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
@@ -87,6 +89,42 @@ async function bootstrap() {
   console.log(`Chat App running on http://localhost:${port}`);
   console.log(`Swagger docs at http://localhost:${port}/api/docs`);
   console.log(`WebSocket at ws://localhost:${port}/chat`);
+  const minioProto =
+    process.env.MINIO_PUBLIC_USE_SSL === 'true' ? 'https' : 'http';
+  const minioHost =
+    process.env.MINIO_PUBLIC_HOST || process.env.MINIO_ENDPOINT || 'localhost';
+  const minioPort =
+    process.env.MINIO_PUBLIC_PORT || process.env.MINIO_PORT || '9000';
+  console.log(`MinIO public URL: ${minioProto}://${minioHost}:${minioPort}`);
+
+  // ─── MinIO: Install 25h lifecycle policy on stories/ prefix ───────────────
+  // This runs on every startup and is idempotent — duplicate lifecycle rules
+  // are silently ignored by MinIO.
+  try {
+    await ensureBucketExists();
+    const lifecycleConfig = {
+      Rule: [
+        {
+          ID: 'stories-prefix-25h-expiry',
+          Status: 'Enabled',
+          Filter: { Prefix: 'stories/' },
+          Expiration: { Days: 2 }, // 25h rounds up to 2 days minimum for MinIO
+        },
+      ],
+    };
+    await minioClient.setBucketLifecycle(BUCKET, lifecycleConfig);
+    console.log(
+      '[MinIO] stories/ prefix lifecycle policy installed (2-day expiry).',
+    );
+  } catch (err) {
+    // Non-fatal — MinIO may not be running in test environments
+    console.warn(
+      '[MinIO] Failed to set lifecycle policy:',
+      (err as Error).message,
+    );
+  }
+
+  startDevEnvWatcher();
 }
 
 bootstrap();

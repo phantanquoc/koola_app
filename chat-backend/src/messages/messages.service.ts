@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -56,6 +58,7 @@ export class MessagesService {
   constructor(
     @InjectModel(Message.name)
     private messageModel: Model<MessageDocument>,
+    @Inject(forwardRef(() => ConversationsService))
     private conversationsService: ConversationsService,
     private membershipService: MembershipService,
     private unreadService: UnreadService,
@@ -193,6 +196,8 @@ export class MessagesService {
       mediaDuration: dto.mediaDuration ?? null,
       replyTo: dto.replyTo ?? null,
       replyToPreview,
+      // storyReply metadata is NOT settable via regular POST — strip it
+      metadata: null,
     });
 
     // Update conversation last message
@@ -235,6 +240,19 @@ export class MessagesService {
     ) => void,
   ): void {
     this.blurhashCallback = cb;
+  }
+
+  // ─── New Message Emit Callback (story-reply DMs) ────────────────────────────
+
+  private newMessageEmitCallback?: (
+    conversationId: string,
+    payload: NewMessagePayload,
+  ) => void;
+
+  setNewMessageEmitCallback(
+    cb: (conversationId: string, payload: NewMessagePayload) => void,
+  ): void {
+    this.newMessageEmitCallback = cb;
   }
 
   private async generateBlurhash(
@@ -517,12 +535,23 @@ export class MessagesService {
 
   // ─── Reactions ──────────────────────────────────────────────────────────────
 
-  async toggleReaction(
+  /**
+   * Set or clear a reaction on a message.
+   *
+   * Semantics (idempotent, explicit-set):
+   *   - emoji === null  → remove any existing reaction by this user ($pull)
+   *   - emoji is string → replace existing reaction or add new one ($set / $push)
+   *
+   * Returns { action: 'add' | 'remove', emoji } for socket broadcast.
+   * Idempotent: setting the same emoji twice is a no-op (returns 'add').
+   * Clearing when no reaction exists is a no-op (returns 'remove').
+   */
+  async setReaction(
     conversationId: string,
     messageId: string,
     userId: string,
-    emoji: string,
-  ): Promise<{ action: 'add' | 'remove'; emoji: string }> {
+    emoji: string | null,
+  ): Promise<{ action: 'add' | 'remove'; emoji: string | null }> {
     await this.verifyMember(conversationId, userId);
 
     const message = await this.messageModel.findById(messageId);
@@ -532,28 +561,35 @@ export class MessagesService {
 
     const existing = message.reactions.find((r) => r.userId === userId);
 
-    if (existing && existing.emoji === emoji) {
-      // Toggle off — remove reaction
-      await this.messageModel.updateOne(
-        { _id: messageId },
-        { $pull: { reactions: { userId } } },
-      );
-      return { action: 'remove', emoji };
-    } else if (existing) {
-      // Change emoji — replace
+    if (emoji === null) {
+      // Explicit clear — remove any existing reaction
+      if (existing) {
+        await this.messageModel.updateOne(
+          { _id: messageId },
+          { $pull: { reactions: { userId } } },
+        );
+      }
+      return { action: 'remove', emoji: null };
+    }
+
+    if (existing) {
+      if (existing.emoji === emoji) {
+        // Idempotent — same emoji already set, no-op
+        return { action: 'add', emoji };
+      }
+      // Replace with new emoji
       await this.messageModel.updateOne(
         { _id: messageId, 'reactions.userId': userId },
         { $set: { 'reactions.$.emoji': emoji } },
       );
-      return { action: 'add', emoji };
     } else {
       // Add new reaction
       await this.messageModel.updateOne(
         { _id: messageId },
         { $push: { reactions: { userId, emoji } } },
       );
-      return { action: 'add', emoji };
     }
+    return { action: 'add', emoji };
   }
 
   // ─── Delete for me ────────────────────────────────────────────────────────
@@ -739,6 +775,47 @@ export class MessagesService {
     });
 
     return { items: normalized as MessageDocument[], hasMore, nextCursor };
+  }
+
+  // ─── Story Reply Bridge (moments capability) ────────────────────────────────
+
+  /**
+   * Creates a message in a direct conversation with storyReply metadata.
+   * Only callable from the MomentsService — regular REST clients cannot set this metadata.
+   */
+  async sendMessageWithStoryReply(
+    conversationId: string,
+    senderId: string,
+    content: string,
+    storyReply: {
+      storyId: string;
+      mediaKeyPreview: string;
+      captionSnippet: string;
+    },
+  ): Promise<NewMessagePayload> {
+    await this.verifyMember(conversationId, senderId);
+
+    const message = await this.messageModel.create({
+      conversationId,
+      senderId,
+      type: MessageType.TEXT,
+      content,
+      status: MessageStatus.SENT,
+      mediaUrl: '',
+      mediaMimeType: '',
+      mediaSize: 0,
+      deleted: false,
+      clientMessageId: null,
+      metadata: { storyReply },
+    });
+
+    const preview = content.length > 50 ? content.slice(0, 50) + '…' : content;
+    await this.conversationsService.updateLastMessage(conversationId, preview);
+    await this.unreadService.incrementUnreadCount(conversationId, [senderId]);
+
+    const payload = this.emitNewMessage(message, conversationId, senderId);
+    this.newMessageEmitCallback?.(conversationId, payload);
+    return payload;
   }
 
   // ─── Emit Payloads (for gateway module) ────────────────────────────────────

@@ -69,6 +69,11 @@ jest.mock('../../storage/asyncStorage', () => ({
 import { wireSyncTriggers, syncOnForeground } from '../syncOrchestrator';
 import { messagesApi } from '../../api/apiService';
 
+// Track the unwire function so each test can clean up after itself.
+// Without this, the idempotent guard would make the second test's
+// wireSyncTriggers() call a no-op.
+let _unwire: (() => void) | null = null;
+
 beforeEach(() => {
   _appStateHandler = null;
   Object.keys(_socketListeners).forEach((k) => { _socketListeners[k] = []; });
@@ -76,18 +81,24 @@ beforeEach(() => {
   (messagesApi.sync as jest.Mock).mockClear();
 });
 
+afterEach(() => {
+  // Always unwire so the idempotent guard resets between tests
+  if (_unwire) {
+    _unwire();
+    _unwire = null;
+  }
+});
+
 describe('wireSyncTriggers', () => {
   it('registers an AppState listener', () => {
     const { AppState } = require('react-native');
-    const unwire = wireSyncTriggers();
+    _unwire = wireSyncTriggers();
 
     expect(AppState.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
-
-    unwire();
   });
 
   it('AppState foreground transition fires syncOnForeground (calls messagesApi.sync)', async () => {
-    wireSyncTriggers();
+    _unwire = wireSyncTriggers();
 
     // Simulate app going to foreground
     expect(_appStateHandler).not.toBeNull();
@@ -100,26 +111,60 @@ describe('wireSyncTriggers', () => {
   });
 
   it('unwire removes the AppState listener', () => {
-    const unwire = wireSyncTriggers();
-    unwire();
+    _unwire = wireSyncTriggers();
+    _unwire();
+    _unwire = null;
 
     expect(mockRemove).toHaveBeenCalled();
   });
 
   it('unwire removes the socket connect listener', () => {
     const { socketService } = require('../../socket/SocketService');
-    wireSyncTriggers();
+    _unwire = wireSyncTriggers();
 
     // Verify connect listener was registered
     expect(socketService.on).toHaveBeenCalledWith('connect', expect.any(Function));
 
     // After unwire, off should have been called for connect
-    // (we call unwire which calls _socketConnectUnsub)
-    // We can verify by checking socketService.off was called
-    // Reset and re-wire to get a clean count
     socketService.off.mockClear();
-    const unwire2 = wireSyncTriggers();
-    unwire2();
+    _unwire();
+    _unwire = null;
     expect(socketService.off).toHaveBeenCalledWith('connect', expect.any(Function));
+  });
+
+  it('calling wireSyncTriggers twice registers AppState.addEventListener only once', () => {
+    const { AppState } = require('react-native');
+    (AppState.addEventListener as jest.Mock).mockClear();
+
+    _unwire = wireSyncTriggers();
+    const noopUnwire = wireSyncTriggers(); // second call — should be no-op
+
+    expect(AppState.addEventListener).toHaveBeenCalledTimes(1);
+
+    // The no-op unwire should not remove the real listener
+    noopUnwire();
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('calling wireSyncTriggers twice registers socketService.on("connect") only once', () => {
+    const { socketService } = require('../../socket/SocketService');
+    (socketService.on as jest.Mock).mockClear();
+
+    _unwire = wireSyncTriggers();
+    wireSyncTriggers(); // second call — no-op
+
+    const connectCalls = (socketService.on as jest.Mock).mock.calls.filter(
+      ([event]: [string]) => event === 'connect',
+    );
+    expect(connectCalls).toHaveLength(1);
+  });
+
+  it('no-op unwire from second wireSyncTriggers call does nothing', () => {
+    _unwire = wireSyncTriggers();
+    const noopUnwire = wireSyncTriggers();
+
+    // Calling the no-op should not throw and should not remove the real listener
+    expect(() => noopUnwire()).not.toThrow();
+    expect(mockRemove).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,12 @@
+{
+  "name": "koola-monorepo-scripts",
+  "private": true,
+  "scripts": {
+    "dev:sync-host": "node scripts/sync-dev-host.mjs",
+    "gen:limits": "node scripts/gen-mobile-limits.mjs",
+    "ci:guard-flags": "node scripts/ci-guard-flags.mjs"
+  },
+  "devDependencies": {
+    "internal-ip": "^9.0.0"
+  }
+}

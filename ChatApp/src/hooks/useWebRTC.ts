@@ -31,10 +31,10 @@ export function useWebRTC(params: UseWebRTCParams) {
         // Create peer connection
         await webrtcService.createPeerConnection(sessionId, iceServers);
 
-        // If initiator, create and send offer
-        if (isInitiator) {
-          await webrtcService.createAndSendOffer(sessionId);
-        }
+        // NOTE: the initiator does NOT create the offer here. Doing so while
+        // the callee is still ringing means the callee has no peer connection
+        // yet and the offer is dropped (deadlock). The offer is created when
+        // `call_accepted` arrives — see WebRTCService.call_accepted listener.
 
         setCallState('ringing');
       } catch (err) {
@@ -63,7 +63,10 @@ export function useWebRTC(params: UseWebRTCParams) {
     };
 
     const handleCallAccepted = () => {
-      setCallState('active');
+      // Caller-side: callee picked up. Media is not flowing yet (offer/answer
+      // + ICE still in progress), so move to 'connecting'. 'active' is set when
+      // the remote stream actually arrives (handleRemoteStream).
+      setCallState('connecting');
     };
 
     const handleCallEnded = () => {
@@ -83,11 +86,33 @@ export function useWebRTC(params: UseWebRTCParams) {
       onCallEnded?.();
     };
 
+    // Caller is on CallScreen ringing; callee never answered and the server
+    // 30s timeout fired (`call_missed` → initiator). Without this listener the
+    // caller's screen stays stuck on "Ringing..." forever. `call_timeout` is
+    // the callee-side twin (handled on IncomingCallScreen before accept, but
+    // listened here too for safety on the accepting device).
+    const handleMissedOrTimeout = () => {
+      setCallState('ended');
+      if (timerRef.current) clearInterval(timerRef.current);
+      onCallEnded?.();
+    };
+
+    // ICE gave up after max restarts, or the peer reported `call_failed`.
+    // Surface 'failed' so the "Close and Redial" affordance actually renders
+    // (previously nothing in the hook ever set this state).
+    const handleCallFailed = () => {
+      setCallState('failed');
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+
     webrtcService.on('remote_stream', handleRemoteStream);
     webrtcService.on('call_accepted', handleCallAccepted);
     webrtcService.on('call_ended', handleCallEnded);
     webrtcService.on('call_declined', handleCallDeclined);
     webrtcService.on('peer_disconnected', handlePeerDisconnected);
+    webrtcService.on('call_missed', handleMissedOrTimeout);
+    webrtcService.on('call_timeout', handleMissedOrTimeout);
+    webrtcService.on('call_failed', handleCallFailed);
 
     return () => {
       webrtcService.off('remote_stream', handleRemoteStream);
@@ -95,6 +120,9 @@ export function useWebRTC(params: UseWebRTCParams) {
       webrtcService.off('call_ended', handleCallEnded);
       webrtcService.off('call_declined', handleCallDeclined);
       webrtcService.off('peer_disconnected', handlePeerDisconnected);
+      webrtcService.off('call_missed', handleMissedOrTimeout);
+      webrtcService.off('call_timeout', handleMissedOrTimeout);
+      webrtcService.off('call_failed', handleCallFailed);
     };
   }, [onCallEnded]);
 

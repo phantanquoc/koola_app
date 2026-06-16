@@ -14,6 +14,14 @@ module.exports = {
     '@op-engineering/op-sqlite': '<rootDir>/jest/mocks/op-sqlite.js',
     // react-native-fast-image: simple mock
     'react-native-fast-image': '<rootDir>/jest/mocks/react-native-fast-image.js',
+    // react-native-config: native module mock
+    'react-native-config': '<rootDir>/jest/mocks/react-native-config.js',
+    // @dev-config: Metro virtual module — provide safe defaults in Jest
+    '@dev-config': '<rootDir>/jest/mocks/dev-config.js',
+    // react-native-webrtc: loopback mock for WebRTC unit tests (no native bridge in Node)
+    'react-native-webrtc': '<rootDir>/jest/mocks/react-native-webrtc.js',
+    // react-native-incall-manager: no-op mock for audio routing (requires device session)
+    'react-native-incall-manager': '<rootDir>/jest/mocks/react-native-incall-manager.js',
   },
   testMatch: [
     '**/__tests__/**/*.[jt]s?(x)',

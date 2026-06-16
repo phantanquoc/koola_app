@@ -472,43 +472,72 @@ export class ConversationsService {
 
   // ─── Pin/Unpin ────────────────────────────────────────────────────────────
 
+  private pinEmitCallback?: (
+    conversationId: string,
+    payload: { messageId: string; pinnedBy: string },
+  ) => void;
+  private unpinEmitCallback?: (
+    conversationId: string,
+    payload: { messageId: string },
+  ) => void;
+
+  setPinEmitCallback(
+    cb: (
+      conversationId: string,
+      payload: { messageId: string; pinnedBy: string },
+    ) => void,
+  ): void {
+    this.pinEmitCallback = cb;
+  }
+
+  setUnpinEmitCallback(
+    cb: (conversationId: string, payload: { messageId: string }) => void,
+  ): void {
+    this.unpinEmitCallback = cb;
+  }
+
   async pinMessage(
     conversationId: string,
     messageId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const conv = await this.findByIdOrFail(conversationId);
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException();
 
-    // Check if already pinned
-    const alreadyPinned = conv.pinnedMessages?.some(
-      (p) => p.messageId === messageId,
-    );
-    if (alreadyPinned) return;
-
-    await this.conversationModel.updateOne(
-      { _id: conversationId },
+    const res = await this.conversationModel.updateOne(
+      {
+        _id: conversationId,
+        'pinnedMessages.messageId': { $ne: messageId },
+      },
       {
         $push: {
           pinnedMessages: { messageId, pinnedBy: userId, pinnedAt: new Date() },
         },
       },
     );
+    if (res.modifiedCount === 0) return false;
+
+    this.pinEmitCallback?.(conversationId, { messageId, pinnedBy: userId });
+    return true;
   }
 
   async unpinMessage(
     conversationId: string,
     messageId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const conv = await this.findByIdOrFail(conversationId);
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException();
 
-    await this.conversationModel.updateOne(
+    const res = await this.conversationModel.updateOne(
       { _id: conversationId },
       { $pull: { pinnedMessages: { messageId } } },
     );
+    if (res.modifiedCount === 0) return false;
+
+    this.unpinEmitCallback?.(conversationId, { messageId });
+    return true;
   }
 }

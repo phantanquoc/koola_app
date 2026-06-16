@@ -11,9 +11,11 @@ import * as repo from '../conversationRepository';
 import { clearAll as clearBroadcaster } from '../invalidationBroadcaster';
 
 let db: ReturnType<typeof open>;
+let _dbCounter = 0;
 
 beforeEach(() => {
-  db = open({ name: `test_conv_${Date.now()}` });
+  _dbCounter++;
+  db = open({ name: `test_conv_${_dbCounter}` });
   _setDbForTesting(db as any);
   runMigrations();
   clearBroadcaster();
@@ -111,6 +113,82 @@ describe('conversationRepository.wipeAll', () => {
     repo.upsertMany([makeConv(), makeConv()]);
     repo.wipeAll();
     expect(repo.list().length).toBe(0);
+  });
+});
+
+describe('conversationRepository.bumpFromMessage', () => {
+  it('updates last_message_preview and last_message_at', () => {
+    const t = Date.now();
+    repo.upsertMany([makeConv({ id: 'bump_c1', lastMessagePreview: 'old', lastMessageAt: t - 1000, unreadCount: 0 })]);
+
+    repo.bumpFromMessage({
+      conversationId: 'bump_c1',
+      preview: 'new preview',
+      messageAt: t,
+      fromOtherUser: false,
+    });
+
+    const row = repo.getById('bump_c1');
+    expect(row?.lastMessagePreview).toBe('new preview');
+    expect(row?.lastMessageAt).toBe(t);
+  });
+
+  it('increments unread_count when fromOtherUser is true', () => {
+    repo.upsertMany([makeConv({ id: 'bump_c2', unreadCount: 2 })]);
+
+    repo.bumpFromMessage({
+      conversationId: 'bump_c2',
+      preview: 'hi',
+      messageAt: Date.now(),
+      fromOtherUser: true,
+    });
+
+    const row = repo.getById('bump_c2');
+    expect(row?.unreadCount).toBe(3);
+  });
+
+  it('does not increment unread_count when fromOtherUser is false', () => {
+    repo.upsertMany([makeConv({ id: 'bump_c3', unreadCount: 5 })]);
+
+    repo.bumpFromMessage({
+      conversationId: 'bump_c3',
+      preview: 'my message',
+      messageAt: Date.now(),
+      fromOtherUser: false,
+    });
+
+    const row = repo.getById('bump_c3');
+    expect(row?.unreadCount).toBe(5);
+  });
+
+  it('is a no-op when conversation does not exist in DB', () => {
+    // Should not throw and should not insert a new row
+    expect(() => {
+      repo.bumpFromMessage({
+        conversationId: 'nonexistent_conv',
+        preview: 'hello',
+        messageAt: Date.now(),
+        fromOtherUser: true,
+      });
+    }).not.toThrow();
+
+    expect(repo.getById('nonexistent_conv')).toBeNull();
+  });
+
+  it('truncates preview longer than 120 characters', () => {
+    repo.upsertMany([makeConv({ id: 'bump_c4' })]);
+    const longPreview = 'a'.repeat(200);
+
+    repo.bumpFromMessage({
+      conversationId: 'bump_c4',
+      preview: longPreview,
+      messageAt: Date.now(),
+      fromOtherUser: false,
+    });
+
+    const row = repo.getById('bump_c4');
+    expect(row?.lastMessagePreview?.length).toBeLessThanOrEqual(122); // 120 + ellipsis char
+    expect(row?.lastMessagePreview).toMatch(/…$/);
   });
 });
 

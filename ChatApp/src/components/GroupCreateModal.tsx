@@ -64,6 +64,10 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     }
   };
 
+  // Fabric-safe: do not mount native <Modal> (Dialog Window) until visible.
+  // Eager mount with visible=false races RN's removeViewAt on Android Fabric.
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>

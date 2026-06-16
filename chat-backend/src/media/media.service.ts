@@ -16,10 +16,11 @@ import {
 } from './dto/request-presigned-url.dto';
 import {
   minioClient,
-  minioPublicClient,
+  getMinioPublicClient,
   BUCKET,
   ensureBucketExists,
 } from './minio-client';
+import { MAX_VIDEO_BYTES } from './media-limits.constants';
 import { MembershipService } from '../conversations/services/membership.service';
 
 const MAGIC_BYTES_MAP: Record<
@@ -155,7 +156,7 @@ export class MediaService implements OnModuleInit {
 
   async generatePresignedPutUrl(mediaKey: string): Promise<string> {
     try {
-      return await minioPublicClient.presignedPutObject(
+      return await getMinioPublicClient().presignedPutObject(
         BUCKET,
         mediaKey,
         PRESIGNED_PUT_EXPIRY_SECONDS,
@@ -171,7 +172,7 @@ export class MediaService implements OnModuleInit {
 
   async generatePresignedGetUrl(mediaKey: string): Promise<string> {
     try {
-      return await minioPublicClient.presignedGetObject(
+      return await getMinioPublicClient().presignedGetObject(
         BUCKET,
         mediaKey,
         PRESIGNED_GET_EXPIRY_SECONDS,
@@ -197,7 +198,7 @@ export class MediaService implements OnModuleInit {
     }
 
     // Validate size (already done by class-validator @Max but double-check)
-    if (dto.size > 104857600) {
+    if (dto.size > MAX_VIDEO_BYTES) {
       throw new BadRequestException('File size exceeds 100MB limit');
     }
 

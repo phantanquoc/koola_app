@@ -2,6 +2,7 @@ import { launchImageLibrary, type ImagePickerResponse } from 'react-native-image
 import { pick, types as docTypes } from 'react-native-document-picker';
 import { Video as VideoCompressor } from 'react-native-compressor';
 import apiClient from '../api/apiService';
+import { MAX_VIDEO_SIZE, MAX_IMAGE_SIZE } from './__generated__/media-limits';
 
 export interface UploadResult {
   mediaKey: string;
@@ -16,11 +17,6 @@ export interface PresignedUrlResponse {
   mediaKey: string;
   expiresAt: string;
 }
-
-// Maximum video size: 200MB
-const MAX_VIDEO_SIZE = 209715200;
-// Maximum image size: 20MB
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
 const SUPPORTED_VIDEO_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 const SUPPORTED_VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm']);

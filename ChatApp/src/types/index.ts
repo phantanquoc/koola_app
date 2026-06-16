@@ -1,10 +1,18 @@
 // ─── User ──────────────────────────────────────────────────────────────────────
 
+export type UserGender = 'male' | 'female' | 'other' | 'prefer_not';
+
 export interface User {
   _id: string;
   email: string;
+  phone?: string;
   displayName: string;
   avatar: string;
+  bio?: string;
+  username?: string;
+  coverPhoto?: string;
+  dateOfBirth?: string; // ISO 8601
+  gender?: UserGender;
   isOnline: boolean;
   lastSeen: string;
   settings: { notificationsEnabled: boolean };

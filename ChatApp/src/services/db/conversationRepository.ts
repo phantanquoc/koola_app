@@ -161,3 +161,44 @@ export function wipeAll(): void {
   const db = getDb();
   db.execute('DELETE FROM conversations');
 }
+
+// ─── Real-time bump ───────────────────────────────────────────────────────────
+
+export interface BumpFromMessageInput {
+  conversationId: string;
+  preview: string;
+  messageAt: number | string | Date;
+  fromOtherUser: boolean;
+}
+
+/**
+ * Update last_message_preview, last_message_at, and optionally increment
+ * unread_count when a new socket message arrives.
+ *
+ * No-op if the conversation does not yet exist in the DB — REST seed will
+ * populate it on the next fetch.
+ *
+ * Fires notify('__conversations__') so the subscription-driven UI re-renders.
+ */
+export function bumpFromMessage(input: BumpFromMessageInput): void {
+  const db = getDb();
+  const atMs = toMs(input.messageAt) || Date.now();
+  const preview = input.preview.length > 120
+    ? input.preview.slice(0, 120) + '…'
+    : input.preview;
+
+  const result = db.execute(
+    `UPDATE conversations
+     SET last_message_preview = ?,
+         last_message_at = MAX(last_message_at, ?),
+         unread_count = unread_count + ?,
+         updated_at = MAX(updated_at, ?)
+     WHERE id = ?`,
+    [preview, atMs, input.fromOtherUser ? 1 : 0, atMs, input.conversationId],
+  );
+
+  // If no row was updated the conversation isn't in DB yet — no-op is correct.
+  if (result.rowsAffected > 0) {
+    notify('__conversations__');
+  }
+}

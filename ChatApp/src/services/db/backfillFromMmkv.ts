@@ -30,8 +30,11 @@ const CONV_KEY_PREFIX = 'conv:';
 export async function runBackfillFromMmkv(): Promise<void> {
   // Check if already done
   if (syncStateRepository.getValue(BACKFILL_DONE_KEY) === '1') {
+    console.log('[backfillFromMmkv] SKIP — already done');
     return;
   }
+
+  console.log('[backfillFromMmkv] Starting backfill...');
 
   try {
     const mmkv = new MMKV({ id: MMKV_INSTANCE_ID });

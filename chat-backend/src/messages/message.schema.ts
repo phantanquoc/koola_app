@@ -88,6 +88,29 @@ export class Message {
   @Prop({ type: Number, default: null })
   mediaDuration: number | null;
 
+  // ─── Story Reply Metadata (moments capability) ───────────────────────────
+  /**
+   * Optional metadata set ONLY by the MomentsService comment-as-DM bridge.
+   * Regular REST endpoints strip this field via service-level guard.
+   */
+  @Prop({
+    type: {
+      storyReply: {
+        storyId: { type: String },
+        mediaKeyPreview: { type: String },
+        captionSnippet: { type: String },
+      },
+    },
+    default: null,
+  })
+  metadata: {
+    storyReply?: {
+      storyId: string;
+      mediaKeyPreview: string;
+      captionSnippet: string;
+    };
+  } | null;
+
   // ─── Reply (message-reply spec) ──────────────────────────────────────────
   /** ObjectId of the source message this reply quotes (string form). */
   @Prop({ type: String, default: null })
