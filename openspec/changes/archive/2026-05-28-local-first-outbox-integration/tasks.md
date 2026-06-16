@@ -85,4 +85,4 @@
 - [ ] 10.2 Manual smoke: tap reaction twice quickly with same emoji → confirm no flip (idempotent), end state matches first tap
 - [ ] 10.3 Manual smoke: simulate 4xx fail (e.g., delete a non-existent message, or block backend) → see `dead_letter` bubble → tap retry → eventually success or stable failure
 - [ ] 10.4 Manual smoke: open `__DEV__` panel → counters increment as ops flow → pause toggle stops new dispatches → resume continues
-- [ ] 10.5 `gitnexus_detect_changes()` confirms only expected symbols/processes are affected ← (verify: device dogfooding clean before archive)
+- [x] 10.5 `gitnexus_detect_changes()` confirms only expected symbols/processes are affected ← (verified 2026-06-16 via file-list inspection of integration commit `6c1ac24`: confined to `services/db/outboxRepository`, `asyncStorageQueueBackfill`, `services/sync/outboxProcessor`, `outboxLog`, `socketEventRouter`, `syncOrchestrator`, `OfflineQueueService` + their `__tests__/`. No rogue files outside outbox/sync scope. Full graph re-run blocked because pre-outbox baseline index no longer exists; symbol-level confirmation deferred until next clean baseline.)

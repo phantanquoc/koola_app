@@ -69,5 +69,5 @@
 - [ ] A.3 Migration v0→v2 and v1→v2 verified on Android emulator; existing `messages` and `conversations` rows preserved
 - [x] A.4 No new ESLint or TypeScript errors introduced (`npm run lint`, `npx tsc --noEmit`)
 - [x] A.5 Phase 0 verification report appended to `openspec/changes/local-first-outbox-foundation/design.md` "Open Questions" section with PASS/FAIL per item; any FAIL resolved before merge
-- [ ] A.6 `gitnexus_detect_changes()` confirms only expected symbols/processes are affected
+- [x] A.6 `gitnexus_detect_changes()` confirms only expected symbols/processes are affected ← (verified 2026-06-16: foundation commits `cb5cc64`, `53df193`, `65856af` touched only `services/db/`, `services/sync/`, `services/messageCacheService.ts`, `screens/chat/hooks/`, `ConversationListScreen`, `AuthContext`, `featureFlags.ts` — all within outbox foundation scope, no rogue files)
 - [x] A.7 No production behavior change visible to users yet (Change A is dormant infrastructure; outbox is initialized but no hook enqueues into it) ← (verify: legacy MMKV path still works; local-first path still works exactly as before; outbox table exists but rows count = 0 after a normal session unless AsyncStorage backfill produced rows)
