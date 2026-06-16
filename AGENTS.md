@@ -47,11 +47,38 @@ docker compose down -v               # Stop + wipe volumes (reset data)
 docker ps                            # Verify containers healthy
 ```
 
-### Emulator setup (first run each session)
+### Dev environment setup (first time after clone)
+```bash
+# 1. Install dependencies
+cd ChatApp && npm install             # postinstall creates dev-config.json from example
+cd ../chat-backend && npm install
+cd .. && npm install                  # root scripts (sync-dev-host, gen:limits)
+
+# 2. Sync LAN IP (physical device on same Wi-Fi)
+npm run dev:sync-host                 # Writes IP to ChatApp/dev-config.json + chat-backend/.env
+
+# 3. Generate mobile media limits from backend source
+npm run gen:limits                    # Creates ChatApp/src/services/media/__generated__/media-limits.ts
+
+# 4. Native build (first time only — needed for react-native-config)
+cd ChatApp && npx react-native run-android
+
+# 5. Start backend
+cd chat-backend && npm run start:dev  # Logs: "MinIO public URL: http://<ip>:9000"
+```
+
+### After changing Wi-Fi / network
+```bash
+npm run dev:sync-host                 # Re-syncs IP. Backend picks up via .env watcher (no restart).
+                                      # Mobile: restart Metro (Ctrl+C → npm start) to reload dev-config.json.
+```
+
+### Emulator setup (if using emulator instead of physical device)
 ```bash
 emulator -avd Pixel_8 &              # Launch AVD
 adb reverse tcp:3000 tcp:3000        # Map backend to emulator
 adb reverse tcp:8081 tcp:8081        # Map Metro to emulator
+# Note: with adb reverse, dev-config.json defaults (10.0.2.2) work without sync-dev-host.
 ```
 
 ---
@@ -77,7 +104,7 @@ adb reverse tcp:8081 tcp:8081        # Map Metro to emulator
   - `webrtc/webrtcService.ts` — WebRTC signaling singleton
   - `OfflineQueueService.ts` — Queues sends when offline, flushes on reconnect
   - `push/pushNotificationService.ts` — FCM token registration
-- **`config/env.ts`** — `API_URL` points to `localhost:3000` in dev (requires `adb reverse`)
+- **`config/env.ts`** — reads `DEV_HOST`/`DEV_PORT` from `dev-config.json` (runtime, no rebuild). Prod reads from `react-native-config`.
 
 ### Data flow — sending a message
 ```
@@ -130,7 +157,7 @@ Available skills (invoke with `/<name>`):
 | Issue | Fix |
 |-------|-----|
 | Android build fails with `allowBackup` manifest merger error | `tools:replace="android:allowBackup"` already set in `AndroidManifest.xml` — don't remove |
-| Emulator can't reach backend | Run `adb reverse tcp:3000 tcp:3000` (env.ts uses `localhost`, not `10.0.2.2`) |
+| Emulator can't reach backend | Run `adb reverse tcp:3000 tcp:3000` (emulator uses default 10.0.2.2 from dev-config.example.json) |
 | Login returns "Thông tin không hợp lệ" with no server response | Backend not running — start `npm run start:dev` in `chat-backend/` |
 | MongoDB "Duplicate schema index" warning | Harmless, comes from `Media` schema using both `index: true` and `schema.index()` |
 | Gradle build says `gradlew.bat` not recognized | Run from `ChatApp/android/` using `./gradlew.bat app:installDebug` (forward slash) |
@@ -161,7 +188,7 @@ Before declaring a task done:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **koola_app** (6349 symbols, 10363 relationships, 207 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **koola_app** (10064 symbols, 16961 relationships, 289 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

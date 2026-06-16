@@ -160,8 +160,8 @@
 
 ## 18. Final Checks
 
-- [ ] 18.1 Run `npm run lint` in `chat-backend/` — zero new errors
+- [x] 18.1 Run `npm run lint` in `chat-backend/` — zero new errors
 - [x] 18.2 Run `npm run test` in `chat-backend/` — all tests pass including new `webrtc.gateway.call-log.spec.ts` and updated `turn.service.spec.ts`
 - [x] 18.3 Run `npx tsc --noEmit` in `ChatApp/` — zero type errors
-- [ ] 18.4 Build Android debug APK: `cd ChatApp/android && ./gradlew assembleDebug` — build succeeds
-- [ ] 18.5 Verify `gitnexus_detect_changes()` shows only expected symbols (webrtc.gateway handlers, TurnService, WebRTCService methods, useIncomingCall, fcmCallHandler exports, CallSessionCronService) were touched
+- [x] 18.4 Build Android debug APK: `cd ChatApp/android && ./gradlew assembleDebug` — build succeeds
+- [x] 18.5 Verify `gitnexus_detect_changes()` shows only expected symbols (webrtc.gateway handlers, TurnService, WebRTCService methods, useIncomingCall, fcmCallHandler exports, CallSessionCronService) were touched

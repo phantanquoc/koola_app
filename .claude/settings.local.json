@@ -73,7 +73,13 @@
       "Skill(ui)",
       "Skill(ui:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(ipconfig)",
+      "Bash(node scripts/sync-dev-host.mjs)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npx eslint *)"
     ]
   }
 }
