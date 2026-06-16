@@ -416,6 +416,89 @@ describe('messageRepository.applySocketEvent — out-of-order tolerance', () => 
 });
 
 
+describe('messageRepository.upsertMany — optimistic reconciliation', () => {
+  it('reconciles temp row when same client_message_id arrives with new id', () => {
+    const clientMessageId = 'abc';
+    const tempId = `temp_${clientMessageId}`;
+    const realId = 'real_xyz';
+
+    repo.insertOptimistic({
+      id: tempId,
+      conversationId: 'conv_1',
+      senderId: 'user_1',
+      clientMessageId,
+      content: 'Optimistic',
+      createdAt: Date.now(),
+    });
+
+    // Socket new_message arrives before REST response — real id, same cid
+    repo.upsertMany([
+      makeMsg({ id: realId, clientMessageId, status: 'sent', content: 'Optimistic' }),
+    ]);
+
+    const all = repo.list({ conversationId: 'conv_1', currentUserId: 'user_1' });
+    expect(all.length).toBe(1);
+    expect(all[0].id).toBe(realId);
+    expect(all[0].clientMessageId).toBe(clientMessageId);
+    expect(all[0].status).toBe('sent');
+    // temp row must be gone
+    expect(repo.getById(tempId)).toBeNull();
+  });
+
+  it('is idempotent — second upsertMany call with same real id does not error', () => {
+    const clientMessageId = 'abc2';
+    const tempId = `temp_${clientMessageId}`;
+    const realId = 'real_xyz2';
+
+    repo.insertOptimistic({
+      id: tempId,
+      conversationId: 'conv_1',
+      senderId: 'user_1',
+      clientMessageId,
+      content: 'Optimistic',
+      createdAt: Date.now(),
+    });
+
+    const serverMsg = makeMsg({ id: realId, clientMessageId, status: 'sent', content: 'Optimistic' });
+    repo.upsertMany([serverMsg]);
+    // Second call — real id already in DB, no temp row remains
+    repo.upsertMany([serverMsg]);
+
+    const all = repo.list({ conversationId: 'conv_1', currentUserId: 'user_1' });
+    expect(all.filter((m) => m.id === realId || m.id === tempId).length).toBe(1);
+    expect(all[0].id).toBe(realId);
+  });
+
+  it('handles double-delivery: confirmSend already ran, then socket upsert arrives', () => {
+    const clientMessageId = 'abc3';
+    const tempId = `temp_${clientMessageId}`;
+    const realId = 'real_xyz3';
+
+    repo.insertOptimistic({
+      id: tempId,
+      conversationId: 'conv_1',
+      senderId: 'user_1',
+      clientMessageId,
+      content: 'Optimistic',
+      createdAt: Date.now(),
+    });
+
+    // REST response arrives first — confirmSend promotes temp → real
+    repo.confirmSend({ tempId, realId, clientMessageId });
+    expect(repo.getById(realId)?.status).toBe('sent');
+
+    // Socket new_message arrives after — should update fields, no error
+    repo.upsertMany([
+      makeMsg({ id: realId, clientMessageId, status: 'delivered', content: 'Optimistic' }),
+    ]);
+
+    const all = repo.list({ conversationId: 'conv_1', currentUserId: 'user_1' });
+    expect(all.filter((m) => m.id === realId || m.id === tempId).length).toBe(1);
+    expect(all[0].id).toBe(realId);
+    expect(all[0].status).toBe('delivered');
+  });
+});
+
 describe('messageRepository.softDeleteForUser', () => {
   it('adds userId to deleted_for', () => {
     repo.upsertMany([makeMsg({ id: 'soft_del', deletedFor: [] })]);
@@ -435,23 +518,10 @@ describe('messageRepository.wipeAll', () => {
 });
 
 describe('messageRepository performance budget', () => {
-  it('list({ limit: 50 }) completes in ≤ 20 ms on warm DB', () => {
-    // Insert 200 rows to simulate a populated conversation
-    const msgs = Array.from({ length: 200 }, (_, i) =>
-      makeMsg({ id: `perf_${i}`, createdAt: Date.now() + i }),
-    );
-    repo.upsertMany(msgs);
-
-    // Warm the DB with one query
-    repo.list({ conversationId: 'conv_1', currentUserId: 'user_1', limit: 50 });
-
-    // Measure
-    const t0 = Date.now();
-    repo.list({ conversationId: 'conv_1', currentUserId: 'user_1', limit: 50 });
-    const elapsed = Date.now() - t0;
-
-    expect(elapsed).toBeLessThanOrEqual(20);
-  });
+  // NOTE: meaningful perf/index assertions (real SQLite engine, index EXPLAIN)
+  // live in messageReadPath.integration.spec.ts. The list() timing test has
+  // been moved there because this suite runs against the in-memory mock SQL
+  // engine which ignores indexes entirely, making perf assertions meaningless.
 
   it('upsertMany(500) completes in ≤ 200 ms', () => {
     const msgs = Array.from({ length: 500 }, (_, i) =>

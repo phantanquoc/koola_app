@@ -21,9 +21,11 @@ import { runMigrations } from './migrations';
 import * as messageRepository from './messageRepository';
 import * as conversationRepository from './conversationRepository';
 import * as syncStateRepository from './syncStateRepository';
+import { wipeAll as wipeOutbox } from './outboxRepository';
 import { clearAll as clearBroadcaster } from './invalidationBroadcaster';
 import { isLocalFirstEnabled } from '../../config/featureFlags';
 import { runBackfillFromMmkv } from './backfillFromMmkv';
+import { runAsyncStorageQueueBackfill } from './asyncStorageQueueBackfill';
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -65,16 +67,33 @@ export async function initDb(userId: string): Promise<void> {
     );
 
     // Task 5.7: Run MMKV → SQLite backfill once when flag is on.
+    // Awaited so cold-start after upgrade doesn't flash empty list (Bug #8).
     // Non-fatal: on failure, logs and continues boot.
-    if (isLocalFirstEnabled()) {
-      runBackfillFromMmkv()
-        .then(() => {
-          console.log(`[PERF dbInit] backfill success totalMs=${Date.now() - t0}`);
-        })
-        .catch((err) => {
-          console.warn('[dbInit] backfill error (non-fatal):', err);
-          console.log(`[PERF dbInit] backfill FAIL totalMs=${Date.now() - t0}`);
-        });
+    const flagOn = isLocalFirstEnabled();
+    console.log(`[dbInit] LOCAL_FIRST_SQLITE=${flagOn}`);
+    if (flagOn) {
+      try {
+        await runBackfillFromMmkv();
+        console.log(`[PERF dbInit] backfill success totalMs=${Date.now() - t0}`);
+      } catch (err) {
+        console.warn('[dbInit] backfill error (non-fatal):', err);
+      }
+
+      // AsyncStorage → outbox migration (v→1).
+      // Runs once per install; idempotent via outbox_migration_version counter.
+      try {
+        const migV = parseInt(
+          syncStateRepository.getValue('outbox_migration_version') ?? '0',
+          10,
+        );
+        if (migV < 1) {
+          await runAsyncStorageQueueBackfill();
+          syncStateRepository.setValue('outbox_migration_version', '1');
+        }
+        // v < 2 step reserved for Change B: AsyncStorage.removeItem('offline_queue')
+      } catch (err) {
+        console.warn('[outbox] migration_v1_failed', err);
+      }
     }
 
     console.log(`[PERF dbInit] init done userId=${userId.slice(-6)} ms=${Date.now() - t0}`);
@@ -94,6 +113,9 @@ export async function wipeAllData(): Promise<void> {
     conversationRepository.wipeAll();
     syncStateRepository.clearAll();
     clearBroadcaster();
+
+    // Wipe outbox tables via repository (spec: access SHALL be through outboxRepository)
+    wipeOutbox();
 
     // Also clear account_state
     const db = getDb();

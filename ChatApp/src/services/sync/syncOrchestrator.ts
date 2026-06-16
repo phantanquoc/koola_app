@@ -26,6 +26,7 @@ import * as messageRepository from '../db/messageRepository';
 import * as syncStateRepository from '../db/syncStateRepository';
 import { asyncStorage } from '../storage/asyncStorage';
 import { socketService } from '../socket/SocketService';
+import { scheduleTick as outboxScheduleTick } from './outboxProcessor';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -250,8 +251,16 @@ export async function syncOnOpen(_conversationId: string): Promise<void> {
  * Wire AppState changes and socket reconnect events.
  * Call once from AuthContext after login/session restore.
  * Returns an unwire function for logout cleanup.
+ *
+ * Idempotent: if already wired, returns a no-op unwire without registering
+ * duplicate listeners. This prevents double-sync on re-login (Bug #7).
  */
 export function wireSyncTriggers(): () => void {
+  // Guard: already wired — return no-op so callers can safely call twice
+  if (_appStateSubscription || _socketConnectUnsub) {
+    return () => {};
+  }
+
   // AppState: foreground trigger
   _appStateSubscription = AppState.addEventListener(
     'change',
@@ -260,6 +269,8 @@ export function wireSyncTriggers(): () => void {
         syncOnForeground().catch((err) =>
           console.warn('[syncOrchestrator] foreground sync error:', err),
         );
+        // Phase 4.3: also trigger outbox processor on foreground
+        outboxScheduleTick();
       }
     },
   );
@@ -269,6 +280,8 @@ export function wireSyncTriggers(): () => void {
     syncOnReconnect().catch((err) =>
       console.warn('[syncOrchestrator] reconnect sync error:', err),
     );
+    // Phase 4.2: also trigger outbox processor on socket reconnect
+    outboxScheduleTick();
   };
   socketService.on('connect', onConnect);
   _socketConnectUnsub = () => socketService.off('connect', onConnect);

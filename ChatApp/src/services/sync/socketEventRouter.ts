@@ -16,9 +16,27 @@
 
 import { socketService } from '../socket/SocketService';
 import * as messageRepository from '../db/messageRepository';
+import * as conversationRepository from '../db/conversationRepository';
 import type { SocketEvent } from '../db/messageRepository';
+import { momentsService, type MomentsEvent } from '../moments/momentsService';
 
 type EventCallback = (...args: unknown[]) => void;
+
+// ─── Current user tracking ────────────────────────────────────────────────────
+// Set by AuthContext after login/restore/verifyOtp; cleared on logout.
+// Used to determine fromOtherUser when bumping conversation unread count.
+
+let _currentUserId: string | null = null;
+
+/**
+ * Set the current authenticated user id.
+ * Called by AuthContext after setUser() and cleared on logout.
+ */
+export function setCurrentUserId(userId: string | null): void {
+  _currentUserId = userId;
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 
 function makeHandler(type: SocketEvent['type']): EventCallback {
   return (data: unknown) => {
@@ -33,7 +51,53 @@ function makeHandler(type: SocketEvent['type']): EventCallback {
   };
 }
 
+/**
+ * Handler for new_message that also bumps the conversation row in SQLite.
+ * Runs after the message is persisted so the conversation list stays in sync.
+ */
+function makeNewMessageHandler(): EventCallback {
+  const msgHandler = makeHandler('new_message');
+  return (data: unknown) => {
+    // Persist the message first
+    msgHandler(data);
+
+    // Bump the conversation row for the list UI
+    try {
+      const payload = (data as Record<string, unknown>) ?? {};
+      const msg = (payload.message ?? payload) as Record<string, unknown>;
+      const conversationId = String(msg.conversationId ?? '');
+      if (!conversationId) return;
+
+      const content = String(msg.content ?? '');
+      const createdAt = msg.createdAt as string | number | undefined;
+      const senderId = String(msg.senderId ?? '');
+      const fromOtherUser = !!senderId && senderId !== _currentUserId;
+
+      conversationRepository.bumpFromMessage({
+        conversationId,
+        preview: content,
+        messageAt: createdAt ?? Date.now(),
+        fromOtherUser,
+      });
+    } catch (err) {
+      console.warn('[socketEventRouter] bumpFromMessage error:', err);
+    }
+  };
+}
+
 let _handlers: Array<{ event: string; handler: EventCallback }> | null = null;
+
+// ─── Moments Event Handler ────────────────────────────────────────────────────
+
+function makeMomentsHandler(type: MomentsEvent['type']): EventCallback {
+  return (data: unknown) => {
+    try {
+      momentsService.handleEvent({ type, ...(data as object) } as MomentsEvent);
+    } catch (err) {
+      console.warn(`[socketEventRouter] momentsService.handleEvent(${type}) error:`, err);
+    }
+  };
+}
 
 /**
  * Wire all message-related socket events into the repository.
@@ -47,11 +111,16 @@ export function wireSocketEvents(): () => void {
   }
 
   _handlers = [
-    { event: 'new_message', handler: makeHandler('new_message') },
+    { event: 'new_message', handler: makeNewMessageHandler() },
     { event: 'message_ack', handler: makeHandler('message_ack') },
     { event: 'message_deleted', handler: makeHandler('message_deleted') },
     { event: 'message_reaction', handler: makeHandler('message_reaction') },
     { event: 'message_updated', handler: makeHandler('message_updated') },
+    // Moments story events — routed to momentsService
+    { event: 'story.new', handler: makeMomentsHandler('story.new') },
+    { event: 'story.deleted', handler: makeMomentsHandler('story.deleted') },
+    { event: 'story.mention', handler: makeMomentsHandler('story.mention') },
+    { event: 'story.reaction', handler: makeMomentsHandler('story.reaction') },
   ];
 
   for (const { event, handler } of _handlers) {
