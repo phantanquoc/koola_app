@@ -425,7 +425,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       };
 
       await gateway.handleIceCandidate(
-        { sessionId: SESSION_ID, candidate: fakeCandidate as unknown },
+        { sessionId: SESSION_ID, candidate: fakeCandidate as never },
         callerSocket as unknown as Parameters<
           typeof gateway.handleIceCandidate
         >[1],
@@ -463,7 +463,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       };
 
       await gateway.handleIceCandidate(
-        { sessionId: SESSION_ID, candidate: fakeCandidate as unknown },
+        { sessionId: SESSION_ID, candidate: fakeCandidate as never },
         calleeSocket as unknown as Parameters<
           typeof gateway.handleIceCandidate
         >[1],

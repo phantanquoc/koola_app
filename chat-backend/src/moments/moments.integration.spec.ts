@@ -750,7 +750,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
     });
 
     const result = await service.commentOnStory('story-1', 'viewer-1', {
-      text: 'Khoảnh khắc đẹp quá!',
+      content: 'Khoảnh khắc đẹp quá!',
     });
 
     expect(result).toBeDefined();
@@ -784,7 +784,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
 
     await expect(
       service.commentOnStory('story-1', 'author-1', {
-        text: 'Comment on my own story',
+        content: 'Comment on my own story',
       }),
     ).rejects.toThrow(BadRequestException);
   });
