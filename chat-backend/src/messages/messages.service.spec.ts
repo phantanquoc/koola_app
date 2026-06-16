@@ -316,3 +316,171 @@ describe('MessagesService — reply validation', () => {
     expect(createCall5c.replyToPreview.text).toHaveLength(100);
   });
 });
+
+// ─── setReaction tests ────────────────────────────────────────────────────────
+
+describe('MessagesService — setReaction', () => {
+  let service: MessagesService;
+
+  const mockConversationId = 'conv123';
+  const mockMessageId = 'msg456';
+  const mockUserId = 'user1';
+
+  const mockMessageModel = {
+    findById: jest.fn(),
+    create: jest.fn(),
+    find: jest.fn(),
+    findOne: jest.fn(),
+    updateOne: jest.fn(),
+    updateMany: jest.fn(),
+    countDocuments: jest.fn(),
+  };
+
+  const mockMediaModel = {
+    findOne: jest.fn().mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve(null) }),
+    }),
+  };
+
+  const mockConversationsService = {
+    findByIdOrFail: jest.fn(),
+    updateLastMessage: jest.fn(),
+    getSharedConversationIds: jest.fn(),
+  };
+
+  const mockMembershipService = {
+    verifyMember: jest.fn(),
+    getUserConversationIds: jest.fn(),
+  };
+
+  const mockUnreadService = {
+    incrementUnreadCount: jest.fn(),
+    resetUnreadCount: jest.fn(),
+  };
+
+  const mockTypingService = {
+    startTyping: jest.fn(),
+    stopTyping: jest.fn(),
+    setTypingStopCallback: jest.fn(),
+  };
+
+  const mockNotificationsService = {
+    sendPushNotification: jest.fn(),
+  };
+
+  function makeMessage(reactions: { userId: string; emoji: string }[]) {
+    return {
+      _id: mockMessageId,
+      conversationId: mockConversationId,
+      reactions,
+    };
+  }
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MessagesService,
+        { provide: getModelToken(Message.name), useValue: mockMessageModel },
+        { provide: getModelToken(Media.name), useValue: mockMediaModel },
+        { provide: ConversationsService, useValue: mockConversationsService },
+        { provide: MembershipService, useValue: mockMembershipService },
+        { provide: UnreadService, useValue: mockUnreadService },
+        { provide: TypingService, useValue: mockTypingService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
+      ],
+    }).compile();
+
+    service = module.get<MessagesService>(MessagesService);
+    mockMembershipService.verifyMember.mockResolvedValue(undefined);
+    mockMessageModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('set new reaction — adds emoji when user has no existing reaction', async () => {
+    mockMessageModel.findById.mockResolvedValue(makeMessage([]));
+
+    const result = await service.setReaction(
+      mockConversationId,
+      mockMessageId,
+      mockUserId,
+      '👍',
+    );
+
+    expect(result).toEqual({ action: 'add', emoji: '👍' });
+    expect(mockMessageModel.updateOne).toHaveBeenCalledWith(
+      { _id: mockMessageId },
+      { $push: { reactions: { userId: mockUserId, emoji: '👍' } } },
+    );
+  });
+
+  it('replace existing reaction — changes emoji when user already reacted', async () => {
+    mockMessageModel.findById.mockResolvedValue(
+      makeMessage([{ userId: mockUserId, emoji: '❤️' }]),
+    );
+
+    const result = await service.setReaction(
+      mockConversationId,
+      mockMessageId,
+      mockUserId,
+      '😂',
+    );
+
+    expect(result).toEqual({ action: 'add', emoji: '😂' });
+    expect(mockMessageModel.updateOne).toHaveBeenCalledWith(
+      { _id: mockMessageId, 'reactions.userId': mockUserId },
+      { $set: { 'reactions.$.emoji': '😂' } },
+    );
+  });
+
+  it('clear with null — removes existing reaction', async () => {
+    mockMessageModel.findById.mockResolvedValue(
+      makeMessage([{ userId: mockUserId, emoji: '👍' }]),
+    );
+
+    const result = await service.setReaction(
+      mockConversationId,
+      mockMessageId,
+      mockUserId,
+      null,
+    );
+
+    expect(result).toEqual({ action: 'remove', emoji: null });
+    expect(mockMessageModel.updateOne).toHaveBeenCalledWith(
+      { _id: mockMessageId },
+      { $pull: { reactions: { userId: mockUserId } } },
+    );
+  });
+
+  it('idempotent set — same emoji twice is a no-op (no updateOne call)', async () => {
+    mockMessageModel.findById.mockResolvedValue(
+      makeMessage([{ userId: mockUserId, emoji: '👍' }]),
+    );
+
+    const result = await service.setReaction(
+      mockConversationId,
+      mockMessageId,
+      mockUserId,
+      '👍',
+    );
+
+    expect(result).toEqual({ action: 'add', emoji: '👍' });
+    expect(mockMessageModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('idempotent clear — null when no reaction is a no-op (no updateOne call)', async () => {
+    mockMessageModel.findById.mockResolvedValue(makeMessage([]));
+
+    const result = await service.setReaction(
+      mockConversationId,
+      mockMessageId,
+      mockUserId,
+      null,
+    );
+
+    expect(result).toEqual({ action: 'remove', emoji: null });
+    expect(mockMessageModel.updateOne).not.toHaveBeenCalled();
+  });
+});

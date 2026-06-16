@@ -179,8 +179,32 @@ export const usersApi = {
     const { data } = await apiClient.get('/users/me');
     return data;
   },
-  async updateMe(body: { displayName?: string; avatar?: string }) {
+  async updateMe(body: {
+    displayName?: string;
+    avatar?: string;
+    bio?: string;
+    username?: string;
+    coverPhoto?: string;
+    dateOfBirth?: string | null;
+    gender?: string | null;
+  }): Promise<User> {
     const { data } = await apiClient.put('/users/me', body);
+    return data;
+  },
+  async checkUsername(u: string): Promise<{ available: boolean; reason?: string }> {
+    const { data } = await apiClient.get('/users/check-username', { params: { u } });
+    return data;
+  },
+  async requestPhoneOtp(phone: string): Promise<{ message: string; expiresIn: number }> {
+    const { data } = await apiClient.post('/users/me/phone/request-otp', { phone });
+    return data;
+  },
+  async verifyPhoneOtp(phone: string, code: string): Promise<User> {
+    const { data } = await apiClient.post('/users/me/phone/verify-otp', { phone, code });
+    return data;
+  },
+  async removePhone(): Promise<User> {
+    const { data } = await apiClient.delete('/users/me/phone');
     return data;
   },
   async updateSettings(body: { notificationsEnabled?: boolean }) {
@@ -316,6 +340,7 @@ export const messagesApi = {
       mediaMimeType?: string;
       mediaSize?: number;
       mediaDuration?: number;
+      replyTo?: string;
     },
   ) {
     const { data } = await apiClient.post(
@@ -362,10 +387,10 @@ export const messagesApi = {
     const { data } = await apiClient.get('/messages/search', { params, signal });
     return data;
   },
-  async toggleReaction(
+  async setReaction(
     conversationId: string,
     messageId: string,
-    emoji: string,
+    emoji: string | null,
   ) {
     const { data } = await apiClient.put(
       `/conversations/${conversationId}/messages/${messageId}/react`,

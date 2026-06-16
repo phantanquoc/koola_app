@@ -13,8 +13,9 @@ export type AuthStackParamList = {
 // ─── Chat Sub-Tabs (top tabs inside ChatHomeScreen) ──────────────────────────
 export type ChatSubTabParamList = {
   Messages: undefined;
-  Calls: undefined;
   Contacts: undefined;
+  Moments: undefined;
+  Shorts: undefined;
 };
 
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────
@@ -24,6 +25,12 @@ export type ChatTabStackParamList = {
   GroupInfo: { conversationId: string };
   Profile: { userId: string };
   UniversalSearch: undefined;
+  OutboxDevPanel: undefined;
+  // Moments screens
+  MomentComposer: undefined;
+  MomentViewer: { authorId: string; startStoryId: string };
+  Highlights: { userId: string; isOwn: boolean };
+  AudienceListEditor: { listId?: string };
 };
 
 // ─── Connect Tab Stack ────────────────────────────────────────────────────────
@@ -38,6 +45,7 @@ export type ConnectTabStackParamList = {
 export type PersonalTabStackParamList = {
   PersonalHome: undefined;
   EditProfile: undefined;
+  StorageSettings: undefined;
 };
 
 // ─── Shopping Tab Stack ───────────────────────────────────────────────────────
@@ -72,6 +80,14 @@ export type CallStackParamList = {
 
 // ─── Root Stack ───────────────────────────────────────────────────────────────
 export type RootStackParamList = {
+  // Unauthenticated group (conditionally present — see RootNavigator).
+  // Kept in the SAME navigator as the authenticated screens so logout swaps
+  // only the screen set, never the whole navigator (a full navigator swap
+  // unmounts the entire Main tree in one Fabric commit while the animated tab
+  // dock is still mutating views → removeViewAt crash).
+  Login: undefined;
+  Register: undefined;
+  // Authenticated group
   Main: undefined;
   CallModal: CallStackParamList['Call'];
   IncomingCallModal: {
@@ -85,7 +101,14 @@ export type RootStackParamList = {
     imageUrls?: string[];
     initialIndex?: number;
   };
-};
+  CoverPhotoViewer: {
+    mediaKey: string;
+  };
+  // Logout transition screen — keeps NavigationContainer mounted while RNS
+  // natively pops modals and replaces Main before the auth group swap.
+  // See [[logout_removeviewat_crash]] and AuthContext.logout().
+  LogoutTransition: undefined;
+};;
 
 // ─── Composite Navigation Types ───────────────────────────────────────────────
 

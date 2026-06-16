@@ -13,7 +13,7 @@ import { GatewayModule } from '../gateway/gateway.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
-    ConversationsModule,
+    forwardRef(() => ConversationsModule),
     forwardRef(() => UsersModule),
     NotificationsModule,
     forwardRef(() => GatewayModule),

@@ -726,6 +726,14 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Clear timeout (online or offline-push grace timer)
     this.clearCallTimeout(sessionId);
 
+    // Register the callee as a session participant. createSession only adds the
+    // initiator; without this the callee fails validateParticipant in
+    // handleCallAnswer / handleIceCandidate, so its SDP answer and ICE
+    // candidates are silently dropped and the call never reaches 'active'.
+    // Must run BEFORE 'call_accepted' is emitted so the caller's offer (sent on
+    // accept) has a valid relay target by the time the answer comes back.
+    await this.callSessionService.addParticipant(sessionId, userId);
+
     await this.callSessionService.updateSessionState(sessionId, 'active');
 
     // Update call log: answered

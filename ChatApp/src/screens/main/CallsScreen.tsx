@@ -331,6 +331,8 @@ const CallsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <FlatList
+        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+        removeClippedSubviews={false}
         data={logs}
         keyExtractor={(item) => item._id}
         renderItem={renderItem}

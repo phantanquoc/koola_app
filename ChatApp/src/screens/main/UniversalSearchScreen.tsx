@@ -7,11 +7,11 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
-  StatusBar,
   Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import type { Conversation, RecentSearchItem } from '../../types';
@@ -67,6 +67,7 @@ const SeeMoreButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
 const UniversalSearchScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
 
   const [query, setQuery] = useState('');
@@ -163,7 +164,7 @@ const UniversalSearchScreen: React.FC = () => {
     <View style={styles.container}>
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 4 }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={handleBack}
@@ -246,8 +247,22 @@ const UniversalSearchScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.emptyState}>
-              <MaterialIcons name="search" size={48} color="#D1D5DB" />
-              <Text style={styles.emptyStateText}>Nhập từ khóa để tìm kiếm</Text>
+              <MaterialIcons name="search" size={36} color="#D1D5DB" />
+              <Text style={styles.emptyStateText}>Tìm cuộc trò chuyện, liên hệ, tin nhắn</Text>
+              <View style={styles.suggestRow}>
+                <View style={styles.suggestChip}>
+                  <MaterialIcons name="chat-bubble-outline" size={14} color="#6B7280" />
+                  <Text style={styles.suggestChipText}>Cuộc trò chuyện</Text>
+                </View>
+                <View style={styles.suggestChip}>
+                  <MaterialIcons name="person-outline" size={14} color="#6B7280" />
+                  <Text style={styles.suggestChipText}>Liên hệ</Text>
+                </View>
+                <View style={styles.suggestChip}>
+                  <MaterialIcons name="message" size={14} color="#6B7280" />
+                  <Text style={styles.suggestChipText}>Tin nhắn</Text>
+                </View>
+              </View>
             </View>
           )
         )}
@@ -332,11 +347,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: (StatusBar.currentHeight || 0) + 8,
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingBottom: 10,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
   },
   backButton: {
@@ -348,9 +362,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
-    borderRadius: 22,
+    borderRadius: 20,
     paddingHorizontal: 12,
-    height: 44,
+    height: 40,
     gap: 8,
   },
   searchIcon: {
@@ -368,13 +382,35 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 80,
-    paddingBottom: 40,
+    paddingTop: 40,
+    paddingBottom: 24,
   },
   emptyStateText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#9CA3AF',
-    marginTop: 12,
+    marginTop: 10,
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 24,
+  },
+  suggestChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  suggestChipText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   sectionLabel: {
     fontSize: 13,

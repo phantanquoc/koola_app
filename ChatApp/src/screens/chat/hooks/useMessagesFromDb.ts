@@ -5,15 +5,15 @@
  * Used when LOCAL_FIRST_SQLITE flag is on.
  *
  * Reads from messageRepository + subscription (reactive).
- * Writes still call the same REST endpoints; repository handles
- * optimistic inserts and reconciliation via confirmSend.
+ * Writes route through outboxRepository.enqueue() — the outboxProcessor
+ * dispatches them to the REST API with retry/backoff.
  *
- * Task 5.2 + 5.3
+ * Change B: all 6 write methods now enqueue instead of calling messagesApi directly.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { messagesApi } from '../../../services/api/apiService';
 import * as messageRepository from '../../../services/db/messageRepository';
+import * as outboxRepository from '../../../services/db/outboxRepository';
 import type { MessageInput } from '../../../services/db/messageRepository';
 import { syncOnOpen } from '../../../services/sync/syncOrchestrator';
 import type { IMessage } from 'react-native-gifted-chat';
@@ -45,6 +45,7 @@ function dbMsgToGifted(
     clientMessageId: msg.clientMessageId ?? undefined,
     pending: msg.status === 'pending',
     sent: msg.status !== 'failed',
+    failed: msg.status === 'failed',
   };
 
   if (
@@ -72,22 +73,35 @@ function loadFromDb(
   currentUserId: string,
   limit = 50,
 ): IMessage[] {
+  const t0 = Date.now();
   const rows = messageRepository.list({ conversationId, currentUserId, limit });
-  return rows.map((r) => dbMsgToGifted(r, currentUserId));
+  const tQuery = Date.now();
+  const result = rows.map((r) => dbMsgToGifted(r, currentUserId));
+  console.log(`[PERF useMessagesFromDb] LOAD conv=${conversationId.slice(-6)} queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+  return result;
 }
 
 export function useMessagesFromDb(
   conversationId: string,
   currentUserId: string,
 ) {
-  const [messages, setMessages] = useState<IMessage[]>(() =>
-    loadFromDb(conversationId, currentUserId),
-  );
+  const [messages, setMessages] = useState<IMessage[]>(() => {
+    const t0 = Date.now();
+    const result = loadFromDb(conversationId, currentUserId);
+    console.log(`[PERF useMessagesFromDb] MOUNT conv=${conversationId.slice(-6)} totalMs=${Date.now() - t0} count=${result.length}`);
+    return result;
+  });
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
   const mountedRef = useRef(true);
+  const loadedKeyRef = useRef(`${conversationId}:${currentUserId}`);
+  const currentLoadKey = `${conversationId}:${currentUserId}`;
+  const stateMatchesConversation = loadedKeyRef.current === currentLoadKey;
+  const visibleMessages = stateMatchesConversation
+    ? messages
+    : loadFromDb(conversationId, currentUserId);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -98,17 +112,32 @@ export function useMessagesFromDb(
 
   // ─── Subscribe to repository invalidations ─────────────────────────────────
   useEffect(() => {
+    const key = `${conversationId}:${currentUserId}`;
+    if (loadedKeyRef.current !== key) {
+      loadedKeyRef.current = key;
+      setInitialLoadError(null);
+      setHasEarlier(true);
+      setMessages(loadFromDb(conversationId, currentUserId));
+    }
+
     const reload = () => {
       if (!mountedRef.current) return;
-      setMessages(loadFromDb(conversationId, currentUserId));
+      const t0 = Date.now();
+      const fresh = loadFromDb(conversationId, currentUserId);
+      loadedKeyRef.current = key;
+      setMessages(fresh);
+      console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
     };
 
     const unsub = messageRepository.subscribe(conversationId, reload);
 
     // Trigger background sync on mount (respects freshness window)
-    syncOnOpen(conversationId).catch((err) =>
-      console.warn('[useMessagesFromDb] syncOnOpen error:', err),
-    );
+    const tSync = Date.now();
+    syncOnOpen(conversationId)
+      .then(() => console.log(`[PERF useMessagesFromDb] syncOnOpen conv=${conversationId.slice(-6)} ms=${Date.now() - tSync}`))
+      .catch((err) =>
+        console.warn('[useMessagesFromDb] syncOnOpen error:', err),
+      );
 
     return unsub;
   }, [conversationId, currentUserId]);
@@ -123,7 +152,7 @@ export function useMessagesFromDb(
     if (!hasEarlier || isLoadingEarlier) return;
     setIsLoadingEarlier(true);
     try {
-      const oldest = messages[messages.length - 1];
+      const oldest = visibleMessages[visibleMessages.length - 1];
       if (!oldest) {
         setHasEarlier(false);
         return;
@@ -151,11 +180,11 @@ export function useMessagesFromDb(
     } finally {
       if (mountedRef.current) setIsLoadingEarlier(false);
     }
-  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier, messages]);
+  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier, visibleMessages]);
 
-  // ─── Send message (task 5.3) ───────────────────────────────────────────────
+  // ─── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, replyTo?: string) => {
       const clientMessageId = generateId();
       const tempId = `temp_${clientMessageId}`;
       const now = Date.now();
@@ -173,25 +202,23 @@ export function useMessagesFromDb(
       });
 
       try {
-        const result = await messagesApi.send(conversationId, {
+        outboxRepository.enqueue('send_message', {
+          conversationId,
+          clientMessageId,
           content: text,
           type: 'text',
-          clientMessageId,
+          replyTo: replyTo ?? null,
         });
-        messageRepository.confirmSend({
-          tempId,
-          realId: result.message._id,
-          clientMessageId,
-          serverFields: { content: result.message.content },
-        });
-      } catch {
+      } catch (err) {
         messageRepository.markFailed(tempId);
+        console.warn('[outbox.enqueue:error] sendMessage failed to enqueue:', err);
       }
     },
     [conversationId, currentUserId],
   );
 
-  // ─── Send media message (task 5.3) ────────────────────────────────────────
+  // ─── Send media message ────────────────────────────────────────────────────
+  // Media upload still bypasses outbox; only the POST /messages part is queued.
   const sendMediaMessage = useCallback(
     async (
       mediaUrl: string,
@@ -230,29 +257,21 @@ export function useMessagesFromDb(
         status: 'pending',
       });
 
+      // Enqueue only the POST /messages part (upload already done)
       try {
-        const result = await messagesApi.send(conversationId, {
+        outboxRepository.enqueue('send_message', {
+          conversationId,
+          clientMessageId,
           content,
           type,
-          clientMessageId,
           mediaUrl,
           mediaMimeType,
           mediaSize,
-          mediaDuration,
+          mediaDuration: mediaDuration ?? null,
         });
-        messageRepository.confirmSend({
-          tempId,
-          realId: result.message._id,
-          clientMessageId,
-          serverFields: {
-            mediaKey: result.message.mediaUrl,
-            blurhash: result.message.blurhash,
-            imageWidth: result.message.imageWidth,
-            imageHeight: result.message.imageHeight,
-          },
-        });
-      } catch {
+      } catch (err) {
         messageRepository.markFailed(tempId);
+        console.warn('[outbox.enqueue:error] sendMediaMessage failed to enqueue:', err);
       }
     },
     [conversationId, currentUserId],
@@ -303,6 +322,7 @@ export function useMessagesFromDb(
   );
 
   // ─── Confirm media message after upload ───────────────────────────────────
+  // After upload completes, enqueue the POST /messages part.
   const confirmMediaMessage = useCallback(
     async (
       tempId: string,
@@ -325,34 +345,25 @@ export function useMessagesFromDb(
           : 'File');
 
       try {
-        const result = await messagesApi.send(conversationId, {
+        outboxRepository.enqueue('send_message', {
+          conversationId,
+          clientMessageId,
           content,
           type,
-          clientMessageId,
           mediaUrl,
           mediaMimeType,
           mediaSize,
-          mediaDuration,
+          mediaDuration: mediaDuration ?? null,
         });
-        messageRepository.confirmSend({
-          tempId,
-          realId: result.message._id,
-          clientMessageId,
-          serverFields: {
-            mediaKey: result.message.mediaUrl,
-            blurhash: result.message.blurhash,
-            imageWidth: result.message.imageWidth,
-            imageHeight: result.message.imageHeight,
-          },
-        });
-      } catch {
+      } catch (err) {
         messageRepository.markFailed(tempId);
+        console.warn('[outbox.enqueue:error] confirmMediaMessage failed to enqueue:', err);
       }
     },
     [conversationId],
   );
 
-  // ─── Delete message (task 5.3) ────────────────────────────────────────────
+  // ─── Delete message ────────────────────────────────────────────────────────
   const deleteMessage = useCallback(
     async (messageId: string) => {
       // Optimistic: mark deleted in DB immediately
@@ -361,9 +372,9 @@ export function useMessagesFromDb(
         payload: { messageId, conversationId },
       });
       try {
-        await messagesApi.deleteMessage(conversationId, messageId);
+        outboxRepository.enqueue('delete', { conversationId, messageId });
       } catch (err) {
-        console.warn('[useMessagesFromDb] deleteMessage failed:', err);
+        console.warn('[outbox.enqueue:error] deleteMessage failed to enqueue:', err);
         // Rollback: re-upsert the original row (best-effort)
         const row = messageRepository.getById(messageId);
         if (row) {
@@ -374,40 +385,61 @@ export function useMessagesFromDb(
     [conversationId],
   );
 
-  // ─── React to message (task 5.3) ──────────────────────────────────────────
+  // ─── React to message ──────────────────────────────────────────────────────
+  // emoji: string to set, null to clear
   const reactToMessage = useCallback(
-    async (messageId: string, emoji: string) => {
+    async (messageId: string, emoji: string | null) => {
       // Optimistic update via repository
-      messageRepository.applySocketEvent({
-        type: 'message_reaction',
-        payload: {
-          messageId,
+      if (emoji !== null) {
+        messageRepository.applySocketEvent({
+          type: 'message_reaction',
+          payload: {
+            messageId,
+            conversationId,
+            userId: currentUserId,
+            emoji,
+            action: 'add',
+          },
+        });
+      }
+      try {
+        outboxRepository.enqueue('react', {
           conversationId,
+          messageId,
           userId: currentUserId,
           emoji,
-          action: 'add',
-        },
-      });
-      try {
-        await messagesApi.toggleReaction(conversationId, messageId, emoji);
+        });
       } catch (err) {
-        console.warn('[useMessagesFromDb] reactToMessage failed:', err);
+        console.warn('[outbox.enqueue:error] reactToMessage failed to enqueue:', err);
       }
     },
     [conversationId, currentUserId],
   );
 
-  // ─── Delete for me (task 5.3) ─────────────────────────────────────────────
+  // ─── Delete for me ─────────────────────────────────────────────────────────
   const deleteForMe = useCallback(
     async (messageId: string) => {
       messageRepository.softDeleteForUser(messageId, currentUserId);
       try {
-        await messagesApi.deleteForMe(conversationId, messageId);
+        outboxRepository.enqueue('delete_for_me', { conversationId, messageId });
       } catch (err) {
-        console.warn('[useMessagesFromDb] deleteForMe failed:', err);
+        console.warn('[outbox.enqueue:error] deleteForMe failed to enqueue:', err);
       }
     },
     [conversationId, currentUserId],
+  );
+
+  // ─── Mark as read ──────────────────────────────────────────────────────────
+  // dedup_key = conversationId (coalesces to MAX upToTimestamp per conversation)
+  const markAsRead = useCallback(
+    async (upToTimestamp: number) => {
+      try {
+        outboxRepository.enqueue('mark_read', { conversationId, upToTimestamp });
+      } catch (err) {
+        console.warn('[outbox.enqueue:error] markAsRead failed to enqueue:', err);
+      }
+    },
+    [conversationId],
   );
 
   // ─── Update upload progress ───────────────────────────────────────────────
@@ -431,7 +463,7 @@ export function useMessagesFromDb(
   );
 
   return {
-    messages,
+    messages: visibleMessages,
     sendMessage,
     sendMediaMessage,
     createOptimisticMedia,
@@ -440,6 +472,7 @@ export function useMessagesFromDb(
     deleteMessage,
     reactToMessage,
     deleteForMe,
+    markAsRead,
     updateUploadProgress,
     isLoadingEarlier,
     isInitialLoading,

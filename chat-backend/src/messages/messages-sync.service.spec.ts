@@ -126,7 +126,9 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
 
   it('1. returns messages updated after `since` for member conversations', async () => {
     const msg = makeMsg({ _id: 'msg-1', deleted: false });
-    mockConversationsService.getSharedConversationIds.mockResolvedValue([convId]);
+    mockConversationsService.getSharedConversationIds.mockResolvedValue([
+      convId,
+    ]);
     mockMessageModel.find.mockReturnValue(makeQueryChain([msg]));
 
     const result = await service.syncMessages(userId, since);
@@ -151,7 +153,9 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
       content: '',
       updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
-    mockConversationsService.getSharedConversationIds.mockResolvedValue([convId]);
+    mockConversationsService.getSharedConversationIds.mockResolvedValue([
+      convId,
+    ]);
     mockMessageModel.find.mockReturnValue(makeQueryChain([tombstone]));
 
     const result = await service.syncMessages(userId, since);
@@ -169,7 +173,9 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
       deleted: false,
       deletedFor: [userId],
     });
-    mockConversationsService.getSharedConversationIds.mockResolvedValue([convId]);
+    mockConversationsService.getSharedConversationIds.mockResolvedValue([
+      convId,
+    ]);
     mockMessageModel.find.mockReturnValue(makeQueryChain([deletedForMe]));
 
     const result = await service.syncMessages(userId, since);
@@ -203,7 +209,9 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
       makeMsg({ _id: 'msg-2' }),
       makeMsg({ _id: 'msg-3' }), // the extra one
     ];
-    mockConversationsService.getSharedConversationIds.mockResolvedValue([convId]);
+    mockConversationsService.getSharedConversationIds.mockResolvedValue([
+      convId,
+    ]);
     mockMessageModel.find.mockReturnValue(makeQueryChain(docs));
 
     const result = await service.syncMessages(userId, since, undefined, limit);
@@ -218,7 +226,9 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
   it('6. normalizes missing readBy field to empty array', async () => {
     const msgWithoutReadBy = makeMsg({ _id: 'msg-no-readby' });
     delete (msgWithoutReadBy as any).readBy;
-    mockConversationsService.getSharedConversationIds.mockResolvedValue([convId]);
+    mockConversationsService.getSharedConversationIds.mockResolvedValue([
+      convId,
+    ]);
     mockMessageModel.find.mockReturnValue(makeQueryChain([msgWithoutReadBy]));
 
     const result = await service.syncMessages(userId, since);

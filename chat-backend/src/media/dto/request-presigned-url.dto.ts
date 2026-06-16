@@ -8,6 +8,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_VIDEO_BYTES } from '../media-limits.constants';
 
 const SUPPORTED_MIME_TYPES = [
   'image/jpeg',
@@ -49,7 +50,7 @@ export class RequestPresignedUrlDto {
 
   @ApiProperty({ description: 'File size in bytes', example: 2048000 })
   @IsNumber()
-  @Max(104857600, { message: 'File size exceeds 100MB limit' })
+  @Max(MAX_VIDEO_BYTES, { message: 'File size exceeds 100MB limit' })
   size: number;
 
   @ApiPropertyOptional({ description: 'Conversation ID for access control' })

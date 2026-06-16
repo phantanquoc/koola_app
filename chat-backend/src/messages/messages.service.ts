@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -56,6 +58,7 @@ export class MessagesService {
   constructor(
     @InjectModel(Message.name)
     private messageModel: Model<MessageDocument>,
+    @Inject(forwardRef(() => ConversationsService))
     private conversationsService: ConversationsService,
     private membershipService: MembershipService,
     private unreadService: UnreadService,

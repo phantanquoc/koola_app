@@ -90,10 +90,14 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
         />
       ) : blurhash ? (
         <Blurhash pointerEvents="none" blurhash={blurhash} style={StyleSheet.absoluteFillObject} />
-      ) : previewVideoUri ? (
+      ) : null}
+      {/* DEBUG: paused-frame <Video> preview disabled — caused Fabric
+          "child already has a parent" crash when previewVideoUri resolved
+          async after ChatScreen mount. Falls back to dark container. */}
+      {false && previewVideoUri ? (
         <Video
           pointerEvents="none"
-          source={{ uri: previewVideoUri }}
+          source={{ uri: previewVideoUri ?? '' }}
           style={StyleSheet.absoluteFillObject}
           paused
           muted

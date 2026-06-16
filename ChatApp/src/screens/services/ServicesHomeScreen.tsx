@@ -14,7 +14,7 @@ import {
   koolaColors,
   koolaShadows,
 } from '../../ui';
-import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import {
   serviceCategories,
   serviceProviders,
@@ -206,6 +206,7 @@ const ProviderRow: React.FC<{ provider: ServiceProvider }> = ({ provider }) => (
 );
 
 const ServicesHomeScreen: React.FC = () => {
+  const tabBarInset = useTabBarBottomInset();
   const [activeCategory, setActiveCategory] = useState('all');
 
   const filteredServices = useMemo(
@@ -259,6 +260,8 @@ const ServicesHomeScreen: React.FC = () => {
 
   return (
     <FlatList
+      // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+      removeClippedSubviews={false}
       data={filteredServices}
       numColumns={2}
       keyExtractor={(item) => item.id}
@@ -266,7 +269,7 @@ const ServicesHomeScreen: React.FC = () => {
       ListHeaderComponent={renderHeader}
       ListFooterComponent={renderFooter}
       columnWrapperStyle={styles.cardRow}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
       showsVerticalScrollIndicator={false}
       style={styles.screen}
     />
@@ -278,9 +281,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: koolaColors.canvas,
   },
-  listContent: {
-    paddingBottom: TAB_BAR_FLOATING_INSET + 16,
-  },
+  listContent: {},
   header: {
     backgroundColor: koolaColors.surface,
     paddingHorizontal: 12,

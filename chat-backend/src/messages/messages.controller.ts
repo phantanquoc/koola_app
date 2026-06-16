@@ -17,6 +17,7 @@ import { ChatGateway } from '../gateway/chat.gateway';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ListMessagesDto } from './dto/list-messages.dto';
 import { MarkReadDto } from './dto/mark-read.dto';
+import { ReactToMessageDto } from './dto/react-to-message.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   ApiTags,
@@ -170,18 +171,18 @@ export class MessagesController {
 
   @Put(':messageId/react')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Toggle emoji reaction on a message' })
-  async toggleReaction(
+  @ApiOperation({ summary: 'Set or clear emoji reaction on a message' })
+  async setReaction(
     @Param('conversationId') convId: string,
     @Param('messageId') messageId: string,
-    @Body('emoji') emoji: string,
+    @Body() dto: ReactToMessageDto,
     @CurrentUser('id') userId: string,
   ) {
-    const result = await this.messagesService.toggleReaction(
+    const result = await this.messagesService.setReaction(
       convId,
       messageId,
       userId,
-      emoji,
+      dto.emoji ?? null,
     );
 
     // Broadcast reaction to conversation room via socket

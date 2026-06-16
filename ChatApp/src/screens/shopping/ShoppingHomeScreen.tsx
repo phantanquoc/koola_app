@@ -14,7 +14,7 @@ import {
   koolaColors,
   koolaShadows,
 } from '../../ui';
-import { TAB_BAR_FLOATING_INSET } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import {
   shoppingCategories,
   shoppingProducts,
@@ -219,6 +219,7 @@ const StoreRow: React.FC<{ store: ShoppingStore }> = ({ store }) => (
 );
 
 const ShoppingHomeScreen: React.FC = () => {
+  const tabBarInset = useTabBarBottomInset();
   const [activeCategory, setActiveCategory] = useState('all');
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(0);
@@ -313,6 +314,8 @@ const ShoppingHomeScreen: React.FC = () => {
 
   return (
     <FlatList
+      // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+      removeClippedSubviews={false}
       data={products}
       numColumns={2}
       keyExtractor={(item) => item.id}
@@ -327,7 +330,7 @@ const ShoppingHomeScreen: React.FC = () => {
       ListHeaderComponent={renderHeader}
       ListFooterComponent={renderFooter}
       columnWrapperStyle={styles.productRow}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
       showsVerticalScrollIndicator={false}
       style={styles.screen}
     />
@@ -339,9 +342,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: koolaColors.canvas,
   },
-  listContent: {
-    paddingBottom: TAB_BAR_FLOATING_INSET + 16,
-  },
+  listContent: {},
   header: {
     backgroundColor: koolaColors.surface,
     paddingHorizontal: 12,

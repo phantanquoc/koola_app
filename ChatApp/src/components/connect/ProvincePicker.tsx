@@ -74,6 +74,9 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
         <MaterialIcons name="expand-more" size={20} color={koolaColors.muted} />
       </Pressable>
 
+      {/* Fabric-safe: do not mount native <Modal> (Dialog Window) until open.
+          Eager mount with visible=false races RN's removeViewAt on Android Fabric. */}
+      {open && (
       <Modal
         visible={open}
         animationType="slide"
@@ -123,6 +126,8 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
           </View>
 
           <FlatList
+            // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+            removeClippedSubviews={false}
             data={filtered}
             keyExtractor={(item) => item}
             keyboardShouldPersistTaps="handled"
@@ -179,6 +184,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
           />
         </SafeAreaView>
       </Modal>
+      )}
     </>
   );
 };

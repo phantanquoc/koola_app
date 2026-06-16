@@ -166,6 +166,8 @@ const BusinessSearchScreen: React.FC = () => {
       </View>
 
       <FlatList
+        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+        removeClippedSubviews={false}
         data={results}
         keyExtractor={(item) => item._id}
         renderItem={renderItem}

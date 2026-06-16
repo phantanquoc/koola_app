@@ -234,6 +234,10 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'myqr'>('scan');
 
+  // Fabric-safe: do not mount native <Modal> (Dialog Window) until visible.
+  // Eager mount with visible=false races RN's removeViewAt on Android Fabric.
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>

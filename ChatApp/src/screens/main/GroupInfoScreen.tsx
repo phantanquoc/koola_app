@@ -116,7 +116,8 @@ const GroupInfoScreen: React.FC = () => {
           <TouchableOpacity onPress={() => { setAddingMember(false); setNewMemberId(''); }}><Text style={s.cancel}>✕</Text></TouchableOpacity>
         </View>
       )}
-      <FlatList data={conversation.members} keyExtractor={(i) => memberUserId(i)}
+      {/* Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount */}
+      <FlatList data={conversation.members} keyExtractor={(i) => memberUserId(i)} removeClippedSubviews={false}
         renderItem={({ item }) => {
           const uid = memberUserId(item);
           const u = (typeof item.userId === 'object' ? item.userId : item.user) as User | undefined;

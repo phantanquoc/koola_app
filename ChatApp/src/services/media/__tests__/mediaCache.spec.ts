@@ -174,7 +174,7 @@ describe('mediaPreloader — data-saver skip (task 6.4)', () => {
     );
 
     // Wait for async download
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise<void>((r) => setTimeout(() => r(), 10));
 
     expect(mockGetOrDownload).toHaveBeenCalledWith('uploads/test.jpg');
     unwire();

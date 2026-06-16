@@ -58,7 +58,9 @@ const ConversationListScreen: React.FC = () => {
 
     // Initial read from SQLite
     const loadFromDb = () => {
+      const t0 = Date.now();
       const rows = conversationRepository.list({ limit: 50 });
+      const tQuery = Date.now();
       // Map ConversationInput to Conversation shape for the existing UI
       const mapped = rows.map((r: ConversationInput) => ({
         _id: r.id,
@@ -73,6 +75,7 @@ const ConversationListScreen: React.FC = () => {
         updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
       })) as unknown as Conversation[];
       setConversations(mapped);
+      console.log(`[PERF ConvList] SQLite queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
     };
 
     loadFromDb();
@@ -109,14 +112,44 @@ const ConversationListScreen: React.FC = () => {
           .filter((a): a is string => !!a);
         if (avatarKeys.length > 0) await warmMemoryCache(avatarKeys);
 
-        if (reset) {
-          setConversations(data.conversations);
-          pageRef.current = 2;
-          setPage(2);
-        } else {
-          setConversations((prev) => [...prev, ...data.conversations]);
-          pageRef.current = pageRef.current + 1;
-          setPage((p) => p + 1);
+        // Local-first additive seed: when flag is on, mirror REST result into
+        // SQLite so the subscription-driven render path has data to show.
+        // Legacy in-memory state is still maintained below for the flag-off path.
+        if (localFirstEnabled) {
+          try {
+            const inputs = data.conversations.map((c) => ({
+              id: c._id,
+              type: c.type,
+              name: c.name ?? null,
+              avatarKey: c.avatar ?? null,
+              members: c.members,
+              lastMessageId: null,
+              lastMessagePreview: c.lastMessagePreview ?? null,
+              lastMessageAt: c.lastMessageAt ?? 0,
+              unreadCount: c.unreadCount ?? 0,
+              pinned: false,
+              archived: false,
+              updatedAt: c.updatedAt,
+            }));
+            conversationRepository.upsertMany(inputs);
+          } catch (e) {
+            console.warn('[ConversationListScreen] SQLite seed failed:', e);
+          }
+        }
+
+        // When flag is ON, SQLite is the single source of truth for the list.
+        // REST data was already upserted into SQLite above; the subscription
+        // will fire loadFromDb() automatically — do NOT call setConversations here.
+        if (!localFirstEnabled) {
+          if (reset) {
+            setConversations(data.conversations);
+            pageRef.current = 2;
+            setPage(2);
+          } else {
+            setConversations((prev) => [...prev, ...data.conversations]);
+            pageRef.current = pageRef.current + 1;
+            setPage((p) => p + 1);
+          }
         }
         setHasMore(data.hasMore);
         setError(null);
@@ -128,19 +161,20 @@ const ConversationListScreen: React.FC = () => {
         fetchingRef.current = false;
       }
     },
-    [],
+    [localFirstEnabled],
   );
 
   // Fetch on focus — refresh list when returning from chat.
   // Always reset (page 1) on focus; never append on focus, which would
   // duplicate the existing in-memory list. Subsequent updates come from
   // socket events, not REST polling.
-  // Skipped when LOCAL_FIRST_SQLITE is on — SQLite subscription handles updates.
+  // When LOCAL_FIRST_SQLITE is on we still hit REST here so SQLite stays
+  // seeded; the flag-on read path above also subscribes to invalidations
+  // for live updates from socket events.
   useFocusEffect(
     useCallback(() => {
-      if (localFirstEnabled) return;
       fetchConversations(true);
-    }, [fetchConversations, localFirstEnabled]),
+    }, [fetchConversations]),
   );
 
   // Sync missed messages + flush offline queue on reconnect
@@ -160,8 +194,13 @@ const ConversationListScreen: React.FC = () => {
   }, [user?._id]);
 
   // Socket: new_message → update list
+  // When LOCAL_FIRST_SQLITE is ON: socketEventRouter already calls
+  // conversationRepository.bumpFromMessage which fires the subscription
+  // and triggers loadFromDb(). Do NOT also call setConversations here —
+  // that would be the third conflicting write path (Bug #1').
   useEffect(() => {
     const handleNewMessage = (data: { message: { conversationId: string; content: string; createdAt: string; senderId?: string } }) => {
+      if (localFirstEnabled) return; // SQLite subscription handles this path
       const msg = data.message;
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c._id === msg.conversationId);
@@ -199,7 +238,7 @@ const ConversationListScreen: React.FC = () => {
       socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
       socketService.off('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
     };
-  }, []);
+  }, [localFirstEnabled]);
 
   const handleRefresh = () => fetchConversations(true);
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
@@ -222,7 +261,32 @@ const ConversationListScreen: React.FC = () => {
   };
 
   const handleGroupCreated = (conv: Conversation) => {
-    setConversations((prev) => [conv, ...prev]);
+    if (localFirstEnabled) {
+      // When flag ON: SQLite is the single source of truth.
+      // Upsert the new conversation so the subscription fires loadFromDb()
+      // and updates the UI — do NOT write to in-memory state directly.
+      try {
+        const input: ConversationInput = {
+          id: conv._id,
+          type: conv.type,
+          name: conv.name ?? null,
+          avatarKey: conv.avatar ?? null,
+          members: conv.members,
+          lastMessageId: null,
+          lastMessagePreview: conv.lastMessagePreview ?? null,
+          lastMessageAt: conv.lastMessageAt ?? 0,
+          unreadCount: conv.unreadCount ?? 0,
+          pinned: false,
+          archived: false,
+          updatedAt: conv.updatedAt,
+        };
+        conversationRepository.upsertMany([input]);
+      } catch (e) {
+        console.warn('[ConversationListScreen] handleGroupCreated: SQLite upsert failed', e);
+      }
+    } else {
+      setConversations((prev) => [conv, ...prev]);
+    }
   };
 
   const handleStartChat = () => {
@@ -249,6 +313,8 @@ const ConversationListScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <OfflineBanner isVisible={isConnected === false} />
       <FlatList
+        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+        removeClippedSubviews={false}
         data={conversations}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (

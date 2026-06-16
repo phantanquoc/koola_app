@@ -45,7 +45,7 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
             styles.searchBar,
             searchPressed ? styles.searchBarPressed : null,
           ]}>
-          <MaterialIcons name="search" size={18} color={koolaColors.muted} />
+          <MaterialIcons name="search" size={16} color={koolaColors.muted} />
           <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
             {searchPlaceholder}
           </KoolaText>
@@ -54,8 +54,8 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
           icon="qr-code-scanner"
           tone="primary"
           variant="soft"
-          size={36}
-          iconSize={20}
+          size={32}
+          iconSize={18}
           onPress={onQrPress}
           accessibilityLabel="Quét mã QR"
         />
@@ -63,8 +63,8 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
           icon="add"
           tone="surface"
           variant="solid"
-          size={36}
-          iconSize={20}
+          size={32}
+          iconSize={18}
           onPress={onAddPress}
           accessibilityLabel="Thêm mới"
         />
@@ -77,21 +77,21 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: koolaColors.surface,
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
   },
   logoRow: {
-    minHeight: 30,
+    minHeight: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   logo: {
     letterSpacing: 1.5,
@@ -108,12 +108,12 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     flex: 1,
-    minHeight: 36,
-    paddingHorizontal: 12,
+    minHeight: 32,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 18,
+    gap: 6,
+    borderRadius: 16,
     backgroundColor: koolaColors.canvas,
   },
   searchBarPressed: {
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   },
   searchText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
   },
 });
 
