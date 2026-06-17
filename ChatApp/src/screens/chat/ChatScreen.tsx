@@ -12,22 +12,24 @@ import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native'
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import type { ChatScreenNavigationProp, ChatScreenRouteProp, ChatTabStackParamList } from '../../navigation/types';
+import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
-import { conversationsApi } from '../../services/api/apiService';
-import { getOrDownload, getFromMemory, warmMemoryCache } from '../../services/media/mediaCacheService';
+import { getFromMemory } from '../../services/media/mediaCacheService';
 import type { Conversation, Message, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
-import UserAvatar from '../../components/UserAvatar';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReadReceipts } from './hooks/useReadReceipts';
 import { usePinManagement } from './hooks/usePinManagement';
 import { useCallInitiation } from './hooks/useCallInitiation';
 import { useMediaUpload } from './hooks/useMediaUpload';
+import { useDeadLetterActions } from './hooks/useDeadLetterActions';
+import { useChatHeaderState } from './hooks/useChatHeaderState';
+import ChatHeader from './components/ChatHeader';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import OfflineBanner from '../../components/OfflineBanner';
 import MediaImage from '../../components/MediaImage';
 import FileAttachment from '../../components/FileAttachment';
@@ -47,10 +49,7 @@ import ChatComposer, {
   CHAT_COMPOSER_TOP_GAP,
   ChatComposerHandle,
 } from './components/ChatComposer';
-import { KoolaText, KoolaIconButton, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
-import * as outboxRepository from '../../services/db/outboxRepository';
-import * as messageRepository from '../../services/db/messageRepository';
-import * as conversationRepository from '../../services/db/conversationRepository';
+import { KoolaText, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -84,20 +83,9 @@ const ChatScreen: React.FC = () => {
   // the first getDetails update if the navigator hasn't flagged focus yet.
   const isFocusedRef = useRef(true);
   useEffect(() => { isFocusedRef.current = isFocused; }, [isFocused]);
-  const isMountedRef = useRef(true);
-  useEffect(() => () => { isMountedRef.current = false; }, []);
+  const isMountedRef = useIsMounted();
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  // Seed avatar from nav params so the header doesn't flash a placeholder
-  // while waiting for /conversations/:id to resolve.
-  const [otherAvatarKey, setOtherAvatarKey] = useState<string>(initialAvatar || '');
-  const [otherAvatarUrl, setOtherAvatarUrl] = useState<string>(() => {
-    if (!initialAvatar) return '';
-    // Resolved URI (http/file) — use directly
-    if (initialAvatar.startsWith('http') || initialAvatar.startsWith('file://')) return initialAvatar;
-    // mediaKey — check memory cache synchronously to avoid placeholder flash
-    return getFromMemory(initialAvatar) || '';
-  });
 
   // ─── Video player state ────────────────────────────────────────────────────
   const [playerMessage, setPlayerMessage] = useState<(IMessage & Record<string, unknown>) | null>(null);
@@ -111,123 +99,24 @@ const ChatScreen: React.FC = () => {
     },
   ).current;
 
-  // Fetch conversation details for header name.
-  // SQLite-first: populate conversation state synchronously from local DB so
-  // chatTitle is stable on first render, then refresh from network in background.
-  useEffect(() => {
-    // 1. Synchronous SQLite read — non-fatal, falls through to network on error
-    try {
-      const local = conversationRepository.getById(conversationId);
-      if (local) {
-        const localConv: Conversation = {
-          _id: local.id,
-          type: (local.type ?? 'direct') as Conversation['type'],
-          name: local.name ?? undefined,
-          avatar: local.avatarKey ?? undefined,
-          members: Array.isArray(local.members) ? (local.members as Conversation['members']) : [],
-          createdBy: '',
-          unreadCount: local.unreadCount ?? 0,
-          lastMessagePreview: local.lastMessagePreview ?? undefined,
-          lastMessageAt: local.lastMessageAt ? new Date(local.lastMessageAt as number).toISOString() : undefined,
-          createdAt: new Date().toISOString(),
-          updatedAt: local.updatedAt ? new Date(local.updatedAt as number).toISOString() : new Date().toISOString(),
-          // pinnedMessages not stored in SQLite — will be populated by network refresh
-        };
-        setConversation(localConv);
-      }
-    } catch {
-      // non-fatal — network refresh below will populate state
-    }
+  // ─── Header state: conversation load, avatar, title, status, header tap ────
+  const {
+    chatTitle,
+    otherUserStatus,
+    otherAvatarKey,
+    otherAvatarUrl,
+    handleHeaderPress,
+  } = useChatHeaderState({
+    conversationId,
+    conversation,
+    setConversation,
+    currentUserId,
+    initialDisplayName,
+    initialAvatar,
+    isFocusedRef,
+    isMountedRef,
+  });
 
-    // 2. Background network refresh for authoritative data (online status, pinnedMessages, populated members)
-    conversationsApi.getDetails(conversationId).then((data: { conversation: Conversation }) => {
-      // Guard: do not setState on a screen that is being/already popped off the stack
-      if (!isFocusedRef.current || !isMountedRef.current) return;
-      const conv = data.conversation || data;
-      setConversation(conv);
-      // Resolve other member's avatar
-      if (conv.type !== 'group') {
-        const other = conv.members.find((m: any) => {
-          const id = typeof m.userId === 'object' ? m.userId._id : m.userId;
-          return id !== currentUserId;
-        });
-        const rawAvatar = other && typeof other.userId === 'object'
-          ? (other.userId as any).avatar
-          : other?.user?.avatar;
-        if (rawAvatar) {
-          setOtherAvatarKey(rawAvatar);
-          getOrDownload(rawAvatar).then((url) => {
-            if (!isFocusedRef.current || !isMountedRef.current) return;
-            if (url) setOtherAvatarUrl(url);
-          });
-        }
-      }
-    }).catch(() => {});
-  }, [conversationId, currentUserId]);
-
-  // Warm avatar URL from the mediaKey passed via nav params (cache hit is instant).
-  useEffect(() => {
-    if (!initialAvatar) return;
-    if (initialAvatar.startsWith('http') || initialAvatar.startsWith('file://')) {
-      setOtherAvatarUrl(initialAvatar);
-      return;
-    }
-    let cancelled = false;
-    getOrDownload(initialAvatar).then((url) => {
-      if (!cancelled && url && isFocusedRef.current && isMountedRef.current) setOtherAvatarUrl(url);
-    });
-    return () => { cancelled = true; };
-  }, [initialAvatar]);
-
-  // Derive chat title from conversation
-  const chatTitle = (() => {
-    if (!conversation) return initialDisplayName || 'Trò chuyện';
-    if (conversation.type === 'group') return conversation.name || 'Nhóm';
-    // Direct: find the other member - members may be populated (userId is object) or not
-    const otherMember = conversation.members.find((m) => {
-      if (!m?.userId) return false;
-      const id = typeof m.userId === 'object' ? (m.userId as any)?._id : m.userId;
-      return Boolean(id) && id !== currentUserId;
-    });
-    if (!otherMember) return initialDisplayName || 'Trò chuyện';
-    // Populated: userId is the user object itself
-    if (typeof otherMember.userId === 'object') {
-      return (otherMember.userId as any).displayName || initialDisplayName || 'Trò chuyện';
-    }
-    return otherMember.user?.displayName || initialDisplayName || 'Trò chuyện';
-  })();
-
-  // Derive online status for direct chats
-  const otherUserStatus = (() => {
-    if (!conversation || conversation.type === 'group') return null;
-    const otherMember = conversation.members.find((m) => {
-      if (!m?.userId) return false;
-      const id = typeof m.userId === 'object' ? (m.userId as any)?._id : m.userId;
-      return Boolean(id) && id !== currentUserId;
-    });
-    if (!otherMember) return null;
-    // userData can be: populated userId object, or separate .user field
-    const userData = typeof otherMember.userId === 'object'
-      ? (otherMember.userId as any)
-      : otherMember.user;
-    if (!userData) return null;
-    if (userData.isOnline === true) return 'Đang hoạt động';
-    const lastSeen = userData.lastSeen || userData.lastSeenAt;
-    if (lastSeen) {
-      const lastSeenDate = new Date(lastSeen);
-      if (isNaN(lastSeenDate.getTime())) return null;
-      const now = new Date();
-      const diffMs = now.getTime() - lastSeenDate.getTime();
-      const diffMin = Math.floor(diffMs / 60000);
-      if (diffMin < 1) return 'Vừa mới truy cập';
-      if (diffMin < 60) return `Hoạt động ${diffMin} phút trước`;
-      const diffHours = Math.floor(diffMin / 60);
-      if (diffHours < 24) return `Hoạt động ${diffHours} giờ trước`;
-      const diffDays = Math.floor(diffHours / 24);
-      return `Hoạt động ${diffDays} ngày trước`;
-    }
-    return 'Không hoạt động';
-  })();
 
   const {
     messages,
@@ -292,43 +181,8 @@ const ChatScreen: React.FC = () => {
   }, []);
 
   // ─── Dead-letter retry / discard ──────────────────────────────────────────
-  const handleRetryFailedMessage = useCallback((messageId: string) => {
-    // messageId here is the temp_xxx id stored in messages table
-    // Find the outbox row by clientMessageId (strip temp_ prefix)
-    try {
-      const rows = outboxRepository.getDeadLetterRows();
-      const row = rows.find((r) => {
-        try {
-          // We don't have payload_json in getDeadLetterRows, so use message_id field
-          return r.message_id === messageId || r.id === messageId;
-        } catch {
-          return false;
-        }
-      });
-      if (row) {
-        outboxRepository.markPendingForRetry(row.id);
-        // Flip the messages row back to pending so UI updates immediately
-        messageRepository.markPendingFromRetry(messageId);
-      }
-    } catch (err) {
-      console.warn('[ChatScreen] handleRetryFailedMessage error:', err);
-    }
-  }, []);
-
-  const handleDiscardFailedMessage = useCallback((messageId: string) => {
-    try {
-      const rows = outboxRepository.getDeadLetterRows();
-      const row = rows.find((r) => r.message_id === messageId || r.id === messageId);
-      if (row) {
-        // Hard-delete the outbox row so it no longer appears in dead-letter list
-        outboxRepository.deleteRow(row.id);
-      }
-      // Hard-delete the temp messages row
-      messageRepository.deleteById(messageId);
-    } catch (err) {
-      console.warn('[ChatScreen] handleDiscardFailedMessage error:', err);
-    }
-  }, [conversationId]);
+  const { handleRetryFailedMessage, handleDiscardFailedMessage } =
+    useDeadLetterActions();
 
   // gifted-chat ^2.8.1 exposes messageContainerRef as a public prop.
   // Earlier code reached into giftedChatRef.current._messageContainerRef which
@@ -712,34 +566,6 @@ const ChatScreen: React.FC = () => {
     ],
   );
 
-  const handleHeaderPress = useCallback(async () => {
-    const nav = navigation as NativeStackNavigationProp<ChatTabStackParamList>;
-    let conv = conversation;
-    if (!conv) {
-      try {
-        const data = await conversationsApi.getDetails(conversationId);
-        conv = (data.conversation || data) as Conversation;
-        // Guard setState only; navigation below is a direct user action and must proceed
-        if (isFocusedRef.current && isMountedRef.current) setConversation(conv);
-      } catch {
-        return;
-      }
-    }
-    if (conv.type === 'group') {
-      nav.navigate('GroupInfo', { conversationId });
-      return;
-    }
-    const other = conv.members?.find((m: any) => {
-      const id = typeof m.userId === 'object' ? m.userId._id : m.userId;
-      return id !== currentUserId;
-    });
-    if (!other) return;
-    const otherUserId =
-      typeof other.userId === 'object' ? (other.userId as any)._id : other.userId;
-    if (!otherUserId) return;
-    nav.navigate('Profile', { userId: otherUserId });
-  }, [conversation, conversationId, currentUserId, navigation]);
-
   // Start a 1-1 call. Waits for the backend 'call_initiated' event to get a
   // real sessionId before navigating to the CallModal.
   const { handleStartCall } = useCallInitiation({
@@ -760,55 +586,14 @@ const ChatScreen: React.FC = () => {
       <OfflineBanner isVisible={isConnected === false} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <KoolaIconButton
-          icon="arrow-back"
-          tone="primary"
-          variant="ghost"
-          size={40}
-          iconSize={24}
-          onPress={() => navigation.goBack()}
-          accessibilityLabel="Quay lại"
-        />
-        <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress} activeOpacity={0.8}>
-          <View>
-            <UserAvatar displayName={chatTitle} avatar={otherAvatarKey || undefined} size={38} />
-            {otherUserStatus === 'Đang hoạt động' && (
-              <View style={styles.onlineDot} accessibilityElementsHidden importantForAccessibility="no" />
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>{chatTitle}</KoolaText>
-            <KoolaText
-              variant="caption"
-              tone={otherUserStatus === 'Đang hoạt động' ? 'success' : 'muted'}
-              numberOfLines={1}
-              style={otherUserStatus ? undefined : { opacity: 0 }}>
-              {otherUserStatus || 'placeholder'}
-            </KoolaText>
-          </View>
-        </TouchableOpacity>
-        <View style={styles.headerRight}>
-          <KoolaIconButton
-            icon="call"
-            tone="primary"
-            variant="soft"
-            size={40}
-            iconSize={22}
-            onPress={() => handleStartCall('audio')}
-            accessibilityLabel="Gọi thoại"
-          />
-          <KoolaIconButton
-            icon="videocam"
-            tone="primary"
-            variant="soft"
-            size={40}
-            iconSize={22}
-            onPress={() => handleStartCall('video')}
-            accessibilityLabel="Gọi video"
-          />
-        </View>
-      </View>
+      <ChatHeader
+        chatTitle={chatTitle}
+        otherUserStatus={otherUserStatus}
+        otherAvatarKey={otherAvatarKey}
+        onBack={() => navigation.goBack()}
+        onHeaderPress={handleHeaderPress}
+        onStartCall={handleStartCall}
+      />
 
       {/* Pin Banner */}
       <PinBanner
@@ -997,20 +782,6 @@ const styles = StyleSheet.create({
     marginBottom: koolaSpacing.xs,
   },
   emptyBody: { paddingHorizontal: 16 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg,
-    paddingTop: koolaSpacing.sm, paddingBottom: koolaSpacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.sm, marginLeft: koolaSpacing.xs },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.xs },
-  onlineDot: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 11, height: 11, borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.accent,
-    borderWidth: 2, borderColor: koolaColors.surface,
-  },
   systemMessage: { color: koolaColors.muted, fontSize: 12 },
   dayContainer: { alignItems: 'center', marginVertical: koolaSpacing.lg },
   dayText: {

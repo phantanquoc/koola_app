@@ -24,6 +24,16 @@ import * as messageRepo from '../../../services/db/messageRepository';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+// useCallback returns the function as-is so the hook can run in Node without a
+// renderer (Strategy A — matches useMessagesFromDb.spec.ts precedent).
+jest.mock('react', () => {
+  const actual = jest.requireActual('react');
+  return {
+    ...actual,
+    useCallback: jest.fn((fn: unknown) => fn),
+  };
+});
+
 jest.mock('react-native', () => ({
   AppState: {
     currentState: 'active',
@@ -37,6 +47,8 @@ jest.mock('react-native', () => ({
 jest.mock('@react-native-community/netinfo', () => ({
   addEventListener: jest.fn(() => jest.fn()),
 }));
+
+import { useDeadLetterActions } from '../hooks/useDeadLetterActions';
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
@@ -298,5 +310,77 @@ describe('non-message ops dead_letter', () => {
 
     const isTempMessage = row!.message_id?.startsWith('temp_') ?? false;
     expect(isTempMessage).toBe(false);
+  });
+});
+
+// ─── Test 6: useDeadLetterActions hook drives the real handlers ───────────────
+//
+// As of the FIX-1 change, send_message outbox rows are enqueued with
+// message_id = temp_<clientMessageId> (matching the optimistic messages-table
+// row id), so the handler's `r.message_id === messageId` lookup matches failed
+// text sends end-to-end — no manual setup needed.
+
+describe('useDeadLetterActions hook', () => {
+  it('handleRetryFailedMessage flips outbox + message rows back to pending', () => {
+    const outboxId = outboxRepo.enqueue('send_message', {
+      conversationId: 'conv1',
+      clientMessageId: 'cmi_hook_retry',
+      content: 'hi',
+      type: 'text',
+    });
+    outboxRepo.markInFlight(outboxId);
+    outboxRepo.markDeadLetter(outboxId, { code: '5XX', status: 500, hint: 'err' });
+
+    messageRepo.insertOptimistic({
+      id: 'temp_cmi_hook_retry',
+      conversationId: 'conv1',
+      senderId: 'user1',
+      clientMessageId: 'cmi_hook_retry',
+      type: 'text',
+      content: 'hi',
+      createdAt: Date.now(),
+    });
+    messageRepo.markFailed('temp_cmi_hook_retry');
+
+    const { handleRetryFailedMessage } = useDeadLetterActions();
+    handleRetryFailedMessage('temp_cmi_hook_retry');
+
+    expect(getOutboxRow(outboxId).state).toBe('pending');
+    expect(getMessageRow('temp_cmi_hook_retry').status).toBe('pending');
+  });
+
+  it('handleDiscardFailedMessage hard-deletes both rows', () => {
+    const outboxId = outboxRepo.enqueue('send_message', {
+      conversationId: 'conv1',
+      clientMessageId: 'cmi_hook_discard',
+      content: 'hi',
+      type: 'text',
+    });
+    outboxRepo.markInFlight(outboxId);
+    outboxRepo.markDeadLetter(outboxId, { code: 'NETWORK', status: null, hint: 'err' });
+
+    messageRepo.insertOptimistic({
+      id: 'temp_cmi_hook_discard',
+      conversationId: 'conv1',
+      senderId: 'user1',
+      clientMessageId: 'cmi_hook_discard',
+      type: 'text',
+      content: 'hi',
+      createdAt: Date.now(),
+    });
+    messageRepo.markFailed('temp_cmi_hook_discard');
+
+    const { handleDiscardFailedMessage } = useDeadLetterActions();
+    handleDiscardFailedMessage('temp_cmi_hook_discard');
+
+    expect(getOutboxRow(outboxId)).toBeNull();
+    expect(getMessageRow('temp_cmi_hook_discard')).toBeNull();
+  });
+
+  it('handlers are no-ops (no throw) when the message id is unknown', () => {
+    const { handleRetryFailedMessage, handleDiscardFailedMessage } =
+      useDeadLetterActions();
+    expect(() => handleRetryFailedMessage('temp_does_not_exist')).not.toThrow();
+    expect(() => handleDiscardFailedMessage('temp_does_not_exist')).not.toThrow();
   });
 });

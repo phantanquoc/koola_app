@@ -78,6 +78,9 @@ export async function runAsyncStorageQueueBackfill(): Promise<void> {
 
         const outboxId = generateClientId();
         const state = msg.status === 'failed' ? 'dead_letter' : 'pending';
+        // Link to the optimistic messages-table id convention (temp_<clientMessageId>)
+        // so dead-letter retry/discard can match, consistent with enqueue().
+        const messageId = `temp_${msg.id}`;
         const payload = JSON.stringify({
           conversationId: msg.conversationId,
           clientMessageId: msg.id, // legacy id is the clientMessageId
@@ -97,11 +100,12 @@ export async function runAsyncStorageQueueBackfill(): Promise<void> {
              (id, op_type, payload_version, payload_json, conversation_id,
               message_id, dedup_key, state, retry_count, next_retry_at,
               created_at, updated_at, last_error, last_error_at)
-           VALUES (?, 'send_message', 1, ?, ?, NULL, NULL, ?, 0, 0, ?, ?, ?, ?)`,
+           VALUES (?, 'send_message', 1, ?, ?, ?, NULL, ?, 0, 0, ?, ?, ?, ?)`,
           [
             outboxId,
             payload,
             msg.conversationId,
+            messageId,
             state,
             now,
             now,

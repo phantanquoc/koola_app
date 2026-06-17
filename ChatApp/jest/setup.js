@@ -153,3 +153,76 @@ jest.mock('socket.io-client', () => {
   mockSocket.connected = false;
   return jest.fn(() => mockSocket);
 });
+
+// ─── react-native-image-picker ────────────────────────────────────────────────
+jest.mock('react-native-image-picker', () => ({
+  launchImageLibrary: jest.fn().mockResolvedValue({ didCancel: true }),
+  launchCamera: jest.fn().mockResolvedValue({ didCancel: true }),
+}));
+
+// ─── react-native-document-picker ─────────────────────────────────────────────
+jest.mock('react-native-document-picker', () => ({
+  __esModule: true,
+  default: { pick: jest.fn().mockResolvedValue([]), isCancel: jest.fn(() => false) },
+  pick: jest.fn().mockResolvedValue([]),
+  isCancel: jest.fn(() => false),
+  types: { allFiles: 'public.item', images: 'public.image', pdf: 'com.adobe.pdf' },
+}));
+
+// ─── react-native-compressor ──────────────────────────────────────────────────
+jest.mock('react-native-compressor', () => ({
+  Video: { compress: jest.fn(async (uri) => uri) },
+  Image: { compress: jest.fn(async (uri) => uri) },
+  Audio: { compress: jest.fn(async (uri) => uri) },
+}));
+
+// ─── @react-native-clipboard/clipboard ────────────────────────────────────────
+jest.mock('@react-native-clipboard/clipboard', () => ({
+  __esModule: true,
+  default: { setString: jest.fn(), getString: jest.fn().mockResolvedValue('') },
+}));
+
+// ─── react-native-permissions ─────────────────────────────────────────────────
+jest.mock('react-native-permissions', () => ({
+  PERMISSIONS: { ANDROID: {}, IOS: {} },
+  RESULTS: { GRANTED: 'granted', DENIED: 'denied', BLOCKED: 'blocked', UNAVAILABLE: 'unavailable' },
+  check: jest.fn().mockResolvedValue('granted'),
+  request: jest.fn().mockResolvedValue('granted'),
+  requestMultiple: jest.fn().mockResolvedValue({}),
+  checkMultiple: jest.fn().mockResolvedValue({}),
+  openSettings: jest.fn().mockResolvedValue(undefined),
+}));
+
+// ─── Native UI component shells (render children / null) ───────────────────────
+jest.mock('react-native-video', () => 'Video');
+jest.mock('react-native-qrcode-svg', () => 'QRCode');
+jest.mock('@react-native-community/slider', () => 'Slider');
+jest.mock('react-native-pager-view', () => 'PagerView');
+jest.mock('@react-native-community/blur', () => ({ BlurView: 'BlurView' }));
+jest.mock('react-native-blurhash', () => ({ Blurhash: 'Blurhash' }));
+
+// ─── react-native-vision-camera ───────────────────────────────────────────────
+jest.mock('react-native-vision-camera', () => ({
+  Camera: 'Camera',
+  useCameraDevice: jest.fn(() => null),
+  useCameraDevices: jest.fn(() => ({})),
+  useCodeScanner: jest.fn(() => ({})),
+}));
+
+// ─── react-native-keyboard-controller ─────────────────────────────────────────
+jest.mock('react-native-keyboard-controller', () => {
+  const View = require('react-native').View;
+  return {
+    KeyboardProvider: ({ children }) => children,
+    KeyboardAwareScrollView: View,
+    KeyboardController: { setInputMode: jest.fn(), dismiss: jest.fn() },
+    useKeyboardHandler: jest.fn(),
+    useReanimatedKeyboardAnimation: jest.fn(() => ({ height: { value: 0 }, progress: { value: 0 } })),
+  };
+});
+
+// ─── react-native-toast-message ───────────────────────────────────────────────
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: Object.assign(() => null, { show: jest.fn(), hide: jest.fn() }),
+}));
