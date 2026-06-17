@@ -94,6 +94,7 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
       {/* DEBUG: paused-frame <Video> preview disabled — caused Fabric
           "child already has a parent" crash when previewVideoUri resolved
           async after ChatScreen mount. Falls back to dark container. */}
+      {/* eslint-disable-next-line no-constant-condition, no-constant-binary-expression -- intentionally disabled block, kept for re-enable */}
       {false && previewVideoUri ? (
         <Video
           pointerEvents="none"

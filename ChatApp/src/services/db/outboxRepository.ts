@@ -181,6 +181,13 @@ function messageIdFor(
   payload: OutboxPayload,
 ): string | null {
   switch (opType) {
+    case 'send_message': {
+      // Link the outbox row to the optimistic messages-table row so the
+      // dead-letter retry/discard handlers can find it. useMessagesFromDb
+      // inserts the optimistic row with id = `temp_${clientMessageId}`.
+      const p = payload as SendMessagePayloadV1;
+      return p.clientMessageId ? `temp_${p.clientMessageId}` : null;
+    }
     case 'react':
       return (payload as ReactPayloadV1).messageId;
     case 'delete':
@@ -278,7 +285,7 @@ export function enqueue(
   // Trigger processor (deferred import to avoid circular dependency)
   // outboxProcessor.scheduleTick() is called from Phase 4 wiring
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // Deferred require breaks the outboxRepository <-> outboxProcessor cycle.
     const proc = require('../sync/outboxProcessor');
     proc.scheduleTick?.();
     proc.ensurePeriodicInterval?.();

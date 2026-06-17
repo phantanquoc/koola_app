@@ -153,3 +153,31 @@ jest.mock('socket.io-client', () => {
   mockSocket.connected = false;
   return jest.fn(() => mockSocket);
 });
+
+// ─── react-native-image-picker ────────────────────────────────────────────────
+jest.mock('react-native-image-picker', () => ({
+  launchImageLibrary: jest.fn().mockResolvedValue({ didCancel: true }),
+  launchCamera: jest.fn().mockResolvedValue({ didCancel: true }),
+}));
+
+// ─── react-native-document-picker ─────────────────────────────────────────────
+jest.mock('react-native-document-picker', () => ({
+  __esModule: true,
+  default: { pick: jest.fn().mockResolvedValue([]), isCancel: jest.fn(() => false) },
+  pick: jest.fn().mockResolvedValue([]),
+  isCancel: jest.fn(() => false),
+  types: { allFiles: 'public.item', images: 'public.image', pdf: 'com.adobe.pdf' },
+}));
+
+// ─── react-native-compressor ──────────────────────────────────────────────────
+jest.mock('react-native-compressor', () => ({
+  Video: { compress: jest.fn(async (uri) => uri) },
+  Image: { compress: jest.fn(async (uri) => uri) },
+  Audio: { compress: jest.fn(async (uri) => uri) },
+}));
+
+// ─── @react-native-clipboard/clipboard ────────────────────────────────────────
+jest.mock('@react-native-clipboard/clipboard', () => ({
+  __esModule: true,
+  default: { setString: jest.fn(), getString: jest.fn().mockResolvedValue('') },
+}));

@@ -150,6 +150,7 @@ registerHandler('send_message', 1, async (payload) => {
     if (parentRow) {
       // Row still has temp id — parent not yet confirmed; getDue should have blocked this
       // but handle defensively
+      // eslint-disable-next-line no-self-assign -- intentional: keep temp id as-is
       replyTo = replyTo;
     } else {
       // Try to find by clientMessageId

@@ -58,6 +58,19 @@ describe('enqueue — send_message', () => {
     expect(row!.retry_count).toBe(0);
   });
 
+  it('links message_id to the optimistic temp row id (temp_<clientMessageId>)', () => {
+    // Enables the dead-letter retry/discard handlers to find the row by the
+    // messages-table id (temp_<clientMessageId>) the failed bubble passes.
+    const id = repo.enqueue('send_message', {
+      conversationId: 'conv1',
+      clientMessageId: 'cmi_link',
+      content: 'hello',
+      type: 'text',
+    });
+    const row = getRow(id);
+    expect(row!.message_id).toBe('temp_cmi_link');
+  });
+
   it('inserts multiple send_message rows independently (no coalesce)', () => {
     repo.enqueue('send_message', { conversationId: 'conv1', clientMessageId: 'cmi1', content: 'a', type: 'text' });
     repo.enqueue('send_message', { conversationId: 'conv1', clientMessageId: 'cmi2', content: 'b', type: 'text' });
