@@ -181,3 +181,48 @@ jest.mock('@react-native-clipboard/clipboard', () => ({
   __esModule: true,
   default: { setString: jest.fn(), getString: jest.fn().mockResolvedValue('') },
 }));
+
+// ─── react-native-permissions ─────────────────────────────────────────────────
+jest.mock('react-native-permissions', () => ({
+  PERMISSIONS: { ANDROID: {}, IOS: {} },
+  RESULTS: { GRANTED: 'granted', DENIED: 'denied', BLOCKED: 'blocked', UNAVAILABLE: 'unavailable' },
+  check: jest.fn().mockResolvedValue('granted'),
+  request: jest.fn().mockResolvedValue('granted'),
+  requestMultiple: jest.fn().mockResolvedValue({}),
+  checkMultiple: jest.fn().mockResolvedValue({}),
+  openSettings: jest.fn().mockResolvedValue(undefined),
+}));
+
+// ─── Native UI component shells (render children / null) ───────────────────────
+jest.mock('react-native-video', () => 'Video');
+jest.mock('react-native-qrcode-svg', () => 'QRCode');
+jest.mock('@react-native-community/slider', () => 'Slider');
+jest.mock('react-native-pager-view', () => 'PagerView');
+jest.mock('@react-native-community/blur', () => ({ BlurView: 'BlurView' }));
+jest.mock('react-native-blurhash', () => ({ Blurhash: 'Blurhash' }));
+
+// ─── react-native-vision-camera ───────────────────────────────────────────────
+jest.mock('react-native-vision-camera', () => ({
+  Camera: 'Camera',
+  useCameraDevice: jest.fn(() => null),
+  useCameraDevices: jest.fn(() => ({})),
+  useCodeScanner: jest.fn(() => ({})),
+}));
+
+// ─── react-native-keyboard-controller ─────────────────────────────────────────
+jest.mock('react-native-keyboard-controller', () => {
+  const View = require('react-native').View;
+  return {
+    KeyboardProvider: ({ children }) => children,
+    KeyboardAwareScrollView: View,
+    KeyboardController: { setInputMode: jest.fn(), dismiss: jest.fn() },
+    useKeyboardHandler: jest.fn(),
+    useReanimatedKeyboardAnimation: jest.fn(() => ({ height: { value: 0 }, progress: { value: 0 } })),
+  };
+});
+
+// ─── react-native-toast-message ───────────────────────────────────────────────
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: Object.assign(() => null, { show: jest.fn(), hide: jest.fn() }),
+}));
