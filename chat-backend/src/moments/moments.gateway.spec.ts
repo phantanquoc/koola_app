@@ -19,7 +19,10 @@ describe('MomentsGateway', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MomentsGateway,
-        { provide: getModelToken(AudienceList.name), useValue: audienceListModel },
+        {
+          provide: getModelToken(AudienceList.name),
+          useValue: audienceListModel,
+        },
       ],
     }).compile();
 
@@ -46,11 +49,14 @@ describe('MomentsGateway', () => {
 
       await gateway.emitStoryNew(story);
 
-      expect(mockIo.emit).toHaveBeenCalledWith('story.new', expect.objectContaining({
-        storyId: 'story-1',
-        authorId: 'author-1',
-        audienceScope: AudienceScope.PUBLIC,
-      }));
+      expect(mockIo.emit).toHaveBeenCalledWith(
+        'story.new',
+        expect.objectContaining({
+          storyId: 'story-1',
+          authorId: 'author-1',
+          audienceScope: AudienceScope.PUBLIC,
+        }),
+      );
       // Should NOT call .to() for public
       expect(mockIo.to).not.toHaveBeenCalled();
     });
@@ -99,7 +105,13 @@ describe('MomentsGateway', () => {
 
   describe('emitStoryReaction', () => {
     it('should include action field when action is remove', async () => {
-      await gateway.emitStoryReaction('story-1', 'author-1', 'viewer-1', '', 'remove');
+      await gateway.emitStoryReaction(
+        'story-1',
+        'author-1',
+        'viewer-1',
+        '',
+        'remove',
+      );
 
       expect(mockIo.to).toHaveBeenCalledWith('user:author-1');
       expect(mockIo.emit).toHaveBeenCalledWith('story.reaction', {

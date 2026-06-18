@@ -352,7 +352,12 @@ describe('MomentsService', () => {
           mediaType: MediaType.IMAGE,
           audienceScope: AudienceScope.PUBLIC,
           mentions: [
-            { userId: '507f1f77bcf86cd799439099', username: 'baduser', offset: 0, length: 8 },
+            {
+              userId: '507f1f77bcf86cd799439099',
+              username: 'baduser',
+              offset: 0,
+              length: 8,
+            },
           ],
         }),
       ).rejects.toThrow(BadRequestException);
@@ -361,7 +366,10 @@ describe('MomentsService', () => {
     it('should persist story with valid mentions', async () => {
       const usersService = (service as any).usersService;
       usersService.findByIds.mockResolvedValue([
-        { _id: { toString: () => '507f1f77bcf86cd799439011' }, displayName: 'good' },
+        {
+          _id: { toString: () => '507f1f77bcf86cd799439011' },
+          displayName: 'good',
+        },
       ]);
 
       const fakeStory = {
@@ -384,7 +392,12 @@ describe('MomentsService', () => {
           mediaType: MediaType.IMAGE,
           audienceScope: AudienceScope.PUBLIC,
           mentions: [
-            { userId: '507f1f77bcf86cd799439011', username: 'good', offset: 0, length: 5 },
+            {
+              userId: '507f1f77bcf86cd799439011',
+              username: 'good',
+              offset: 0,
+              length: 5,
+            },
           ],
         }),
       ).resolves.not.toThrow();
@@ -441,7 +454,7 @@ describe('MomentsService', () => {
 
   describe('removeReaction', () => {
     it('should return silently when story not found', async () => {
-      (storyModel as any).findOneAndUpdate = jest.fn().mockResolvedValue(null);
+      storyModel.findOneAndUpdate = jest.fn().mockResolvedValue(null);
 
       await expect(
         service.removeReaction('507f1f77bcf86cd799439011', 'viewer-1'),

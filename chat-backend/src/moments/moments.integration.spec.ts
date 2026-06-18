@@ -815,9 +815,13 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
       senderId: 'viewer-1',
     });
 
-    const result = await service.commentOnStory('507f1f77bcf86cd799439011', 'viewer-1', {
-      content: 'Nice story!',
-    });
+    const result = await service.commentOnStory(
+      '507f1f77bcf86cd799439011',
+      'viewer-1',
+      {
+        content: 'Nice story!',
+      },
+    );
 
     expect(messagesService.sendMessageWithStoryReply).toHaveBeenCalledWith(
       'conv-between-viewer-author', // conversationId from createDirect mock

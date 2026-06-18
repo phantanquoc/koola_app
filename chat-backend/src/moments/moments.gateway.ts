@@ -81,7 +81,9 @@ export class MomentsGateway {
     // Broadcast to namespace — all connected clients prune from feed state
     this.io.emit('story.deleted', { storyId, authorId });
 
-    this.logger.debug(`[MomentsGateway] story.deleted broadcast for ${storyId}`);
+    this.logger.debug(
+      `[MomentsGateway] story.deleted broadcast for ${storyId}`,
+    );
   }
 
   // ─── story.mention ────────────────────────────────────────────────────────
