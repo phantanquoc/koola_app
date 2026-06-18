@@ -69,6 +69,8 @@ Frosted/glass surfaces are layered, never a single flat alpha fill. Compose from
 
 A sheen overlay must decay to ~0 alpha at its lower edge — a sheen ending on a non-zero alpha step reads as a visible seam across the surface. With no gradient lib available, fake the fade with a few stacked low-alpha bands (1px overlap), not one solid block.
 
+Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeViewAt unmount) layer in this order: SVG vertical gradient fill (white 0.78 → cool-blue 0.62) → primary tint cast → SVG top sheen → 1px side-edge shines → 1px white inner top edge → 1px cool-tone bottom hairline. SVG comes from `react-native-svg` with `Defs` + `LinearGradient` + `Rect`. No `BlurView`, no perpetual reanimated loops.
+
 ---
 
 ## Component Patterns

@@ -351,7 +351,9 @@ const ConversationListScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: koolaColors.surface },
+  // Slight off-white (was koolaColors.surface = #FFFFFF) so the floating tab
+  // dock's translucent fill doesn't sit on a pure-white background.
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: koolaColors.line },
   errorContainer: { flex: 1 },
 });

@@ -1,32 +1,37 @@
 import React, { useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import { KoolaIconButton, koolaColors, koolaSpacing } from '../../../ui';
 
-// Matches the floating tab dock in MainNavigator (borderRadius 26) so the
-// composer reads as the same dock family when navigating between the
-// conversation list (tab dock) and a chat (this composer dock).
+// ─── Liquid-glass dock for the chat composer ────────────────────────────────
+// Static recreation of Apple's iOS 26 "Liquid Glass" material. We can't use
+// BlurView (lives inside the chat screen — would flash during pop-back, see
+// [[chat_popback_flicker]]), so the illusion is built from layered Views:
+//
+//   1. Outer wrapper      — owns the drop shadow (no overflow:hidden so the
+//                           shadow isn't clipped); transparent fill.
+//   2. Surface            — owns the opaque fill + crisp inner border + clip.
+//   3. Top specular sheen — a 3dp SVG linear gradient pinned to the top edge,
+//                           white 0.72 → transparent. Strongest "glass" cue
+//                           once blur is off the table.
+//   4. Inner highlight    — a 1px white-on-top inset stroke giving the
+//                           cut-glass thickness illusion.
+//
+// Token values lifted from the WWDC 2025 Liquid Glass spec adapted for KOOLA:
+//   fill        rgba(247,249,252,0.96)   ← keeps text legibility (NNG warning)
+//   border      rgba(255,255,255,0.48)   ← visible main rim
+//   topSheen    rgba(255,255,255,0.72) → 0    ← specular highlight
+//   innerEdge   rgba(255,255,255,0.55)   ← cut-glass top edge (1px, top only)
+//   shadow      koolaColors.primary @ 0.18  ← soft blue-tinted lift
+//
+// Brand: KOOLA primary #2563EB used for the shadow tint so the dock reads as
+// "ours" rather than a generic Apple clone.
 const DOCK_RADIUS = 26;
 
 export const CHAT_COMPOSER_DOCK_HEIGHT = 54;
 export const CHAT_COMPOSER_TOP_GAP = koolaSpacing.sm;
 export const CHAT_COMPOSER_SCROLL_GAP = koolaSpacing.md;
-
-// Top sheen faked as stacked, fading bands. No gradient lib exists in the
-// project, so the glass highlight is built from a few low-alpha white strips
-// whose alpha decays to ~0 at the bottom. A single half-height block (the
-// previous approach) ended on a hard alpha edge that read as a white seam
-// across the dock middle — the bands remove that step. See [[chat_dock_sheen_seam]].
-const SHEEN_BAND_ALPHAS = [0.16, 0.12, 0.09, 0.06, 0.035, 0.013];
-const SHEEN_BAND_HEIGHT = 7; // 1px overlap between bands hides sub-pixel gaps
-const sheenBands = SHEEN_BAND_ALPHAS.map((alpha, i) => ({
-  position: 'absolute' as const,
-  left: 0,
-  right: 0,
-  top: i * (SHEEN_BAND_HEIGHT - 1),
-  height: SHEEN_BAND_HEIGHT,
-  backgroundColor: `rgba(255,255,255,${alpha})`,
-}));
 
 export interface ChatComposerHandle {
   /** Clears the input — call after a successful send. */
@@ -48,25 +53,6 @@ interface ChatComposerProps {
   offline?: boolean;
 }
 
-/**
- * Chat input bar styled as a floating dock — same visual format as the bottom
- * tab dock (rounded 26, tinted border + shadow), floated with side margins and
- * lifted above the safe-area inset.
- *
- * Intentionally NO real backdrop-blur (BlurView): a live BlurView re-captures
- * its backdrop every frame, and because this dock lives INSIDE the Chat screen,
- * during the slide-pop it captures the conversation list sliding in behind it
- * → stale-frame flash over the list. (The MainNavigator tab dock CAN use
- * BlurView because it sits OUTSIDE the popped screen.) Proven by isolating
- * static-blur-on vs animations-off — blur alone still flashed. Instead we fake
- * frosted glass with a translucent fill, which never flashes and keeps the
- * slide animation. Do NOT reintroduce BlurView here. See [[chat_popback_flicker]].
- *
- * IME-safety: the TextInput is **uncontrolled** (no `value` prop). Vietnamese
- * IME composition resets on every re-render under Fabric when a controlled
- * value is used, so text lives in a ref and `hasText` is the only state that
- * drives the UI. Keep it this way.
- */
 const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
   ({ onSend, onChangeText, onPressEmoji, onPressVoice, onPressImage, onPressAttach, disabled, offline }, ref) => {
     const textRef = useRef('');
@@ -102,94 +88,124 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
 
     return (
       <View pointerEvents="box-none" style={[styles.host, { paddingBottom: bottomPad }]}>
-        <View
-          style={[
-            styles.dock,
-            offline ? styles.dockOffline : null,
-            disabled ? styles.dockDisabled : null,
-          ]}>
-          {/* Static glass layering (no BlurView/animation) — see component doc.
-              Top sheen = stacked fading bands so there's no hard alpha seam. */}
-          {sheenBands.map((band, i) => (
-            <View key={i} pointerEvents="none" style={band} />
-          ))}
-          {!offline && <View pointerEvents="none" style={styles.dockRing} />}
-          <View style={styles.row}>
-            <KoolaIconButton
-              icon="sentiment-satisfied-alt"
-              tone="muted"
-              variant="ghost"
-              size={36}
-              iconSize={22}
-              disabled={disabled}
-              hitSlop={8}
-              onPress={onPressEmoji}
-              accessibilityLabel="Mở bảng biểu tượng cảm xúc"
-            />
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder="Tin nhắn"
-              placeholderTextColor={koolaColors.faint}
-              // Android draws a default bottom underline on TextInput — it shows
-              // through the glass dock as a faint line under the input. Kill it.
-              underlineColorAndroid="transparent"
-              multiline
-              editable={!disabled}
-              onChangeText={handleChange}
-              accessibilityLabel="Nhập tin nhắn"
-            />
-            {hasText ? (
-              // Typing → the send arrow replaces the attach/mic/image cluster,
-              // matching Zalo / Telegram behaviour.
+        {/* Outer wrapper — drop shadow only. No overflow:hidden so the shadow
+            isn't squared off on Android. */}
+        <View style={styles.shadowWrap}>
+          <View
+            style={[
+              styles.dock,
+              offline ? styles.dockOffline : null,
+              disabled ? styles.dockDisabled : null,
+            ]}>
+            {/* Layer 1 — base SVG gradient fill: light at top, cool tint at
+                bottom. Faux-blur cue: simulates the way blurred light
+                bunches up under the top edge of a glass dock. */}
+            <View pointerEvents="none" style={styles.dockFill}>
+              <Svg width="100%" height="100%" preserveAspectRatio="none">
+                <Defs>
+                  <SvgLinearGradient id="composerFill" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
+                    <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
+                    <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
+                  </SvgLinearGradient>
+                </Defs>
+                <Rect width="100%" height="100%" fill="url(#composerFill)" />
+              </Svg>
+            </View>
+            {/* Layer 1b — subtle primary-blue glass cast for KOOLA brand. */}
+            <View pointerEvents="none" style={styles.dockTint} />
+            {/* Layer 2 — top specular sheen (decays to 0 at lower edge). */}
+            <View pointerEvents="none" style={styles.topSheen}>
+              <Svg width="100%" height="100%" preserveAspectRatio="none">
+                <Defs>
+                  <SvgLinearGradient id="composerSheen" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
+                    <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+                  </SvgLinearGradient>
+                </Defs>
+                <Rect width="100%" height="100%" fill="url(#composerSheen)" />
+              </Svg>
+            </View>
+            {/* Layer 3 — side-edge shines (left + right) for refractive feel. */}
+            <View pointerEvents="none" style={styles.edgeShineLeft} />
+            <View pointerEvents="none" style={styles.edgeShineRight} />
+            {/* Layer 4 — 1px white inner top edge for cut-glass thickness. */}
+            <View pointerEvents="none" style={styles.innerEdge} />
+            {/* Layer 5 — cool-tone bottom hairline (subtle inner shadow). */}
+            <View pointerEvents="none" style={styles.bottomHairline} />
+            <View style={styles.row}>
               <KoolaIconButton
-                icon="send"
+                icon="sentiment-satisfied-alt"
                 tone="primary"
                 variant="ghost"
                 size={36}
-                iconSize={24}
+                iconSize={22}
                 disabled={disabled}
                 hitSlop={8}
-                onPress={handleSendPress}
-                accessibilityLabel="Gửi tin nhắn"
+                onPress={onPressEmoji}
+                accessibilityLabel="Mở bảng biểu tượng cảm xúc"
               />
-            ) : (
-              <>
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                placeholder="Tin nhắn"
+                placeholderTextColor={koolaColors.faint}
+                underlineColorAndroid="transparent"
+                multiline
+                editable={!disabled}
+                onChangeText={handleChange}
+                accessibilityLabel="Nhập tin nhắn"
+              />
+              {hasText ? (
                 <KoolaIconButton
-                  icon="add-circle-outline"
-                  tone="muted"
+                  icon="send"
+                  tone="primary"
                   variant="ghost"
                   size={36}
-                  iconSize={22}
+                  iconSize={24}
                   disabled={disabled}
                   hitSlop={8}
-                  onPress={onPressAttach}
-                  accessibilityLabel="Đính kèm tệp"
+                  onPress={handleSendPress}
+                  accessibilityLabel="Gửi tin nhắn"
                 />
-                <KoolaIconButton
-                  icon="mic-none"
-                  tone="muted"
-                  variant="ghost"
-                  size={36}
-                  iconSize={22}
-                  disabled={disabled}
-                  hitSlop={8}
-                  onPress={onPressVoice}
-                  accessibilityLabel="Ghi âm tin nhắn thoại"
-                />
-                <KoolaIconButton
-                  icon="crop-original"
-                  tone="muted"
-                  variant="ghost"
-                  size={36}
-                  iconSize={22}
-                  disabled={disabled}
-                  hitSlop={8}
-                  onPress={onPressImage}
-                  accessibilityLabel="Gửi ảnh"
-                />
-              </>
-            )}
+              ) : (
+                <>
+                  <KoolaIconButton
+                    icon="add-circle-outline"
+                    tone="primary"
+                    variant="ghost"
+                    size={36}
+                    iconSize={22}
+                    disabled={disabled}
+                    hitSlop={8}
+                    onPress={onPressAttach}
+                    accessibilityLabel="Đính kèm tệp"
+                  />
+                  <KoolaIconButton
+                    icon="mic-none"
+                    tone="primary"
+                    variant="ghost"
+                    size={36}
+                    iconSize={22}
+                    disabled={disabled}
+                    hitSlop={8}
+                    onPress={onPressVoice}
+                    accessibilityLabel="Ghi âm tin nhắn thoại"
+                  />
+                  <KoolaIconButton
+                    icon="crop-original"
+                    tone="primary"
+                    variant="ghost"
+                    size={36}
+                    iconSize={22}
+                    disabled={disabled}
+                    hitSlop={8}
+                    onPress={onPressImage}
+                    accessibilityLabel="Gửi ảnh"
+                  />
+                </>
+              )}
+            </View>
           </View>
         </View>
       </View>
@@ -209,32 +225,83 @@ const styles = StyleSheet.create({
     paddingTop: CHAT_COMPOSER_TOP_GAP,
     backgroundColor: 'transparent',
     zIndex: 20,
-    elevation: 20,
   },
+  // Outer wrapper carries the drop shadow only. NO overflow:hidden — that
+  // would clip the shadow on Android and re-introduce the rectangular bleed.
+  shadowWrap: {
+    borderRadius: DOCK_RADIUS,
+    backgroundColor: 'transparent',
+  },
+  // Surface — fill, border, clip.
   dock: {
     minHeight: CHAT_COMPOSER_DOCK_HEIGHT,
     borderRadius: DOCK_RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.32)',
-    // Faux frosted glass, lighter & more transparent than before (canvas @ 74%
-    // alpha, was 94%) so the conversation shows through. Layered statically
-    // (sheen + highlight + primary-tint ring below) — NO BlurView/animation,
-    // which flash during the slide-pop (see component doc).
-    backgroundColor: 'rgba(247,249,252,0.74)',
+    borderWidth: 2,
+    borderColor: koolaColors.primary,
+    backgroundColor: 'transparent',
     overflow: 'hidden',
-    shadowColor: koolaColors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.09,
-    shadowRadius: 18,
-    elevation: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
   },
-  // Static glass layers (all pointerEvents="none", below the row at zIndex 0).
-  // The top sheen is rendered from `sheenBands` (module scope), not a style here.
-  dockRing: {
+  // Layer 1 — base translucent fill. Acts as host for an SVG gradient.
+  dockFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: DOCK_RADIUS,
-    borderWidth: 1,
-    borderColor: 'rgba(37,99,235,0.14)',
+    overflow: 'hidden',
+  },
+  // Layer 1b — primary-blue glass cast.
+  dockTint: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: DOCK_RADIUS,
+    backgroundColor: 'rgba(37,99,235,0.04)',
+  },
+  // Layer 2 — top specular sheen, ~38% of dock height.
+  topSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 22,
+    borderTopLeftRadius: DOCK_RADIUS,
+    borderTopRightRadius: DOCK_RADIUS,
+    overflow: 'hidden',
+  },
+  // Layer 3 — side-edge shines (faux refraction).
+  edgeShineLeft: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.40)',
+  },
+  edgeShineRight: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    right: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.40)',
+  },
+  // Layer 4 — 1px inner top edge.
+  innerEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  // Layer 5 — cool-tone bottom hairline (mimics blurred shadow underneath).
+  bottomHairline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(37,99,235,0.18)',
   },
   dockOffline: {
     borderColor: koolaColors.warning,
@@ -243,9 +310,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   row: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: CHAT_COMPOSER_DOCK_HEIGHT,
     paddingHorizontal: koolaSpacing.xs,
     zIndex: 1,
   },
@@ -258,6 +325,10 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     maxHeight: 100,
     color: koolaColors.ink,
+    // Force transparent — Android TextInput inherits a white background from
+    // the theme, which would re-introduce the brighter band across the dock
+    // middle when the dock fill is even slightly translucent.
+    backgroundColor: 'transparent',
   },
 });
 

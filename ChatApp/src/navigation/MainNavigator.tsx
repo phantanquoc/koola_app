@@ -8,6 +8,7 @@ import { getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { BlurView } from '@react-native-community/blur';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -46,7 +47,14 @@ const FULLSCREEN_PERSONAL_ROUTES = new Set(['EditProfile', 'StorageSettings']);
 export const TAB_BAR_FLOATING_INSET = 86;
 
 const TAB_DOCK_HEIGHT = 66; // dock minHeight only — no extra paddings counted twice
-const TAB_DOCK_BOTTOM_BUFFER = 0;
+// Extra clearance ABOVE the floating dock so scrollable lists can't push their
+// last item into the area covered by the translucent glass dock. The dock fill
+// is intentionally translucent (so the surface reads as glass), which means
+// any row that sits beneath the dock — including its white background and
+// hairline divider — bleeds through and reads as a faint horizontal band
+// across the dock middle. A 16px buffer keeps the bottom row clearly above
+// the dock so nothing is composited under the glass.
+const TAB_DOCK_BOTTOM_BUFFER = 16;
 
 /**
  * Returns the actual pixel clearance needed at the bottom of any
@@ -328,62 +336,99 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         styles.tabBarHost,
         { paddingBottom: Math.max(insets.bottom, 8) },
       ]}>
-      <View style={styles.tabDock}>
-        {DIAG_STATIC_TABDOCK ? (
-          <View pointerEvents="none" style={styles.tabDockStaticFill} />
-        ) : (
-          <>
-            <BlurView
-              style={StyleSheet.absoluteFillObject}
-              blurType={Platform.OS === 'ios' ? 'xlight' : 'light'}
-              blurAmount={Platform.OS === 'ios' ? 16 : 8}
-              blurRadius={Platform.OS === 'android' ? 8 : undefined}
-              downsampleFactor={Platform.OS === 'android' ? 10 : undefined}
-              overlayColor={Platform.OS === 'android' ? 'rgba(255,255,255,0.08)' : undefined}
-              reducedTransparencyFallbackColor="rgba(255,255,255,0.28)"
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.dockBorderGlow, animatedBorderStyle]}
-            />
-            <Animated.View pointerEvents="none" style={[styles.dockSheen, sheenStyle]} />
-          </>
-        )}
-        {state.routes.map((route, index) => {
-          const routeName = route.name as TabName;
-          const meta = TAB_META[routeName];
-          const isFocused = state.index === index;
-          const { options } = descriptors[route.key];
-          const label = meta.label;
-          const accessibilityLabel =
-            options.tabBarAccessibilityLabel ?? meta.accessibilityLabel;
+      <View style={styles.shadowWrap}>
+        <View style={styles.tabDock}>
+          {DIAG_STATIC_TABDOCK ? (
+            <>
+              {/* Layer 1 — SVG gradient fill (faux blur). */}
+              <View pointerEvents="none" style={styles.tabDockStaticFill}>
+                <Svg width="100%" height="100%" preserveAspectRatio="none">
+                  <Defs>
+                    <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
+                      <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
+                      <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
+                    </SvgLinearGradient>
+                  </Defs>
+                  <Rect width="100%" height="100%" fill="url(#tabFill)" />
+                </Svg>
+              </View>
+              {/* Layer 1b — primary-blue glass cast. */}
+              <View pointerEvents="none" style={styles.tabDockTint} />
+              {/* Layer 2 — top specular sheen. */}
+              <View pointerEvents="none" style={styles.tabTopSheen}>
+                <Svg width="100%" height="100%" preserveAspectRatio="none">
+                  <Defs>
+                    <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
+                      <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+                    </SvgLinearGradient>
+                  </Defs>
+                  <Rect width="100%" height="100%" fill="url(#tabSheen)" />
+                </Svg>
+              </View>
+              {/* Layer 3 — side-edge shines. */}
+              <View pointerEvents="none" style={styles.tabEdgeShineLeft} />
+              <View pointerEvents="none" style={styles.tabEdgeShineRight} />
+              {/* Layer 4 — 1px inner top edge. */}
+              <View pointerEvents="none" style={styles.tabInnerEdge} />
+              {/* Layer 5 — cool-tone bottom hairline. */}
+              <View pointerEvents="none" style={styles.tabBottomHairline} />
+            </>
+          ) : (
+            <>
+              <BlurView
+                style={StyleSheet.absoluteFillObject}
+                blurType={Platform.OS === 'ios' ? 'xlight' : 'light'}
+                blurAmount={Platform.OS === 'ios' ? 16 : 8}
+                blurRadius={Platform.OS === 'android' ? 8 : undefined}
+                downsampleFactor={Platform.OS === 'android' ? 10 : undefined}
+                overlayColor={Platform.OS === 'android' ? 'rgba(255,255,255,0.08)' : undefined}
+                reducedTransparencyFallbackColor="rgba(255,255,255,0.28)"
+              />
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.dockBorderGlow, animatedBorderStyle]}
+              />
+              <Animated.View pointerEvents="none" style={[styles.dockSheen, sheenStyle]} />
+            </>
+          )}
+          {state.routes.map((route, index) => {
+            const routeName = route.name as TabName;
+            const meta = TAB_META[routeName];
+            const isFocused = state.index === index;
+            const { options } = descriptors[route.key];
+            const label = meta.label;
+            const accessibilityLabel =
+              options.tabBarAccessibilityLabel ?? meta.accessibilityLabel;
 
-          return (
-            <TabBarItem
-              key={route.key}
-              meta={meta}
-              isFocused={isFocused}
-              accessibilityLabel={accessibilityLabel}
-              label={label}
-              onPress={() => {
-                const event = navigation.emit({
-                  type: 'tabPress',
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-                if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name as never);
-                }
-              }}
-              onLongPress={() => {
-                navigation.emit({
-                  type: 'tabLongPress',
-                  target: route.key,
-                });
-              }}
-            />
-          );
-        })}
+            return (
+              <TabBarItem
+                key={route.key}
+                meta={meta}
+                isFocused={isFocused}
+                accessibilityLabel={accessibilityLabel}
+                label={label}
+                onPress={() => {
+                  const event = navigation.emit({
+                    type: 'tabPress',
+                    target: route.key,
+                    canPreventDefault: true,
+                  });
+                  if (!isFocused && !event.defaultPrevented) {
+                    navigation.navigate(route.name as never);
+                  }
+                }}
+                onLongPress={() => {
+                  navigation.emit({
+                    type: 'tabLongPress',
+                    target: route.key,
+                  });
+                }}
+              />
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -445,42 +490,91 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     backgroundColor: 'transparent',
     zIndex: 20,
-    elevation: 20,
+  },
+  // Liquid-glass shadow wrapper. Drop shadow lives here so it isn't clipped
+  // by `tabDock`'s overflow:hidden. Mirrors ChatComposer.shadowWrap.
+  shadowWrap: {
+    borderRadius: 26,
+    backgroundColor: 'transparent',
   },
   tabDock: {
     minHeight: 66,
     borderRadius: 26,
     backgroundColor: 'transparent',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 2,
+    // DEBUG — solid mid-gray so the dock outline is unambiguous.
+    borderColor: '#6B7280',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
     paddingVertical: 6,
     overflow: 'hidden',
-    shadowColor: koolaColors.primary,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
-    shadowRadius: 22,
-    elevation: 10,
   },
   dockBorderGlow: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 26,
     borderWidth: 1.25,
     borderColor: 'rgba(37,99,235,0.25)',
-    shadowColor: koolaColors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
   },
-  // DIAG_STATIC_TABDOCK: static faux-frosted fill replacing the live BlurView
-  // + animated glow layers (those crash on logout teardown — see top of file).
+  // Liquid glass layer 1 — DEBUG: very low alpha so artifacts under the dock
+  // are clearly visible.
   tabDockStaticFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 26,
-    backgroundColor: 'rgba(247,249,252,0.94)',
+    overflow: 'hidden',
+  },
+  // Liquid glass layer 1b — primary-blue cast.
+  tabDockTint: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    backgroundColor: 'rgba(37,99,235,0.04)',
+  },
+  // Layer 2 — top specular sheen (~33% of dock height).
+  tabTopSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 22,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    overflow: 'hidden',
+  },
+  // Layer 3 — side-edge shines.
+  tabEdgeShineLeft: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.40)',
+  },
+  tabEdgeShineRight: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    right: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.40)',
+  },
+  // Layer 4 — 1px inner top edge.
+  tabInnerEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  // Layer 5 — cool-tone bottom hairline.
+  tabBottomHairline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(37,99,235,0.18)',
   },
   dockSheen: {
     position: 'absolute',

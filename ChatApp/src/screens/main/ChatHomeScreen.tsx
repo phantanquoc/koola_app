@@ -278,7 +278,11 @@ const ChatHomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: koolaColors.surface,
+    // Slight off-white so the floating tab dock's translucent fill doesn't
+    // sit on a pure-white surface (which made the empty bottom strip below
+    // the tab labels read as a brighter band). #F8FAFC is one notch cooler
+    // than `koolaColors.surface` (#FFFFFF).
+    backgroundColor: '#F8FAFC',
   },
 });
 
