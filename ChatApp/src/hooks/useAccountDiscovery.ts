@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Business, BusinessSort } from '../types';
-import { businessesApi } from '../services/api/apiService';
+import type { BusinessAccountItem } from '../services/api/apiService';
+import { accountDiscoveryApi } from '../services/api/apiService';
+import type { BusinessSort } from '../types';
 
-interface BusinessFilters {
+interface AccountDiscoveryFilters {
   relationshipType?: string;
-  category?: string;
+  businessCategory?: string;
   sort?: BusinessSort;
   province?: string;
 }
 
-export function useBusinessList(filters: BusinessFilters) {
-  const [items, setItems] = useState<Business[]>([]);
+export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
+  const [items, setItems] = useState<BusinessAccountItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,8 +25,8 @@ export function useBusinessList(filters: BusinessFilters) {
     if (filters.relationshipType && filters.relationshipType !== 'all') {
       params.relationshipType = filters.relationshipType;
     }
-    if (filters.category && filters.category !== 'all') {
-      params.category = filters.category;
+    if (filters.businessCategory && filters.businessCategory !== 'all') {
+      params.businessCategory = filters.businessCategory;
     }
     if (filters.sort && filters.sort !== 'latest') {
       params.sort = filters.sort;
@@ -34,9 +35,9 @@ export function useBusinessList(filters: BusinessFilters) {
       params.province = filters.province;
     }
     return params;
-  }, [filters.relationshipType, filters.category, filters.sort, filters.province]);
+  }, [filters.relationshipType, filters.businessCategory, filters.sort, filters.province]);
 
-  // Reset when filters change
+  // Fetch on filter change
   useEffect(() => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
@@ -49,14 +50,13 @@ export function useBusinessList(filters: BusinessFilters) {
     const doFetch = async () => {
       try {
         const params = buildParams();
-        const res = await businessesApi.list(params);
+        const res = await accountDiscoveryApi.list(params);
         if (!mountedRef.current) return;
         setError(null);
         setItems(res.items);
         setCursor(res.nextCursor);
         setHasMore(res.hasMore);
       } catch (err: any) {
-        console.warn('useBusinessList fetch error:', err);
         if (mountedRef.current) {
           setError(err?.message || 'Không thể tải dữ liệu');
         }
@@ -81,14 +81,13 @@ export function useBusinessList(filters: BusinessFilters) {
     try {
       const params = buildParams();
       params.cursor = cursor;
-      const res = await businessesApi.list(params);
+      const res = await accountDiscoveryApi.list(params);
       if (!mountedRef.current) return;
       setError(null);
       setItems((prev) => [...prev, ...res.items]);
       setCursor(res.nextCursor);
       setHasMore(res.hasMore);
     } catch (err: any) {
-      console.warn('useBusinessList loadMore error:', err);
       if (mountedRef.current) {
         setError(err?.message || 'Không thể tải dữ liệu');
       }
@@ -105,14 +104,13 @@ export function useBusinessList(filters: BusinessFilters) {
     setCursor(null);
     try {
       const params = buildParams();
-      const res = await businessesApi.list(params);
+      const res = await accountDiscoveryApi.list(params);
       if (!mountedRef.current) return;
       setError(null);
       setItems(res.items);
       setCursor(res.nextCursor);
       setHasMore(res.hasMore);
     } catch (err: any) {
-      console.warn('useBusinessList refresh error:', err);
       if (mountedRef.current) {
         setError(err?.message || 'Không thể tải dữ liệu');
       }
@@ -122,11 +120,5 @@ export function useBusinessList(filters: BusinessFilters) {
     }
   }, [buildParams]);
 
-  const updateItem = useCallback((id: string, updates: Partial<Business>) => {
-    setItems((prev) =>
-      prev.map((item) => (item._id === id ? { ...item, ...updates } : item)),
-    );
-  }, []);
-
-  return { items, loading, refreshing, hasMore, error, loadMore, refresh, updateItem };
+  return { items, loading, refreshing, hasMore, error, loadMore, refresh };
 }

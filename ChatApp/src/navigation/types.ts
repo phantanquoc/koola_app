@@ -38,7 +38,6 @@ export type ConnectTabStackParamList = {
   ConnectHome: undefined;
   BusinessProfile: { businessId: string };
   BusinessSearch: undefined;
-  CreateBusiness: undefined;
 };
 
 // ─── Personal Tab Stack ───────────────────────────────────────────────────────
@@ -46,6 +45,7 @@ export type PersonalTabStackParamList = {
   PersonalHome: undefined;
   EditProfile: undefined;
   StorageSettings: undefined;
+  AccountList: undefined;
 };
 
 // ─── Shopping Tab Stack ───────────────────────────────────────────────────────

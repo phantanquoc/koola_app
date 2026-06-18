@@ -23,22 +23,26 @@ The system SHALL allow new users to register with phone number (+84 Vietnam), pa
 - **THEN** system returns HTTP 400 Bad Request with validation error "Password must be at least 8 characters"
 
 ### Requirement: User Login
-The system SHALL allow registered users to log in with phone number and password.
+The system SHALL allow registered users to log in with phone number and password, and SHALL reject login for any user whose `isBanned` is `true`.
 
 #### Scenario: Successful login
-- **WHEN** user submits valid phone number and correct password
-- **THEN** system returns HTTP 200 with JWT access token (1h expiry) and refresh token (30 days expiry)
+- **WHEN** a non-banned user submits a valid phone number and correct password
+- **THEN** the system returns HTTP 200 with a JWT access token and a refresh token
 
 #### Scenario: Login with wrong password
-- **WHEN** user submits valid phone number but incorrect password
-- **THEN** system returns HTTP 401 Unauthorized with message "Invalid credentials"
+- **WHEN** a user submits a valid phone number but incorrect password
+- **THEN** the system returns HTTP 401 Unauthorized with message "Invalid credentials"
 
 #### Scenario: Login with non-existent phone
-- **WHEN** user submits phone number that does not exist
-- **THEN** system returns HTTP 401 Unauthorized with message "Invalid credentials"
+- **WHEN** a user submits a phone number that does not exist
+- **THEN** the system returns HTTP 401 Unauthorized with message "Invalid credentials"
+
+#### Scenario: Banned user cannot log in
+- **WHEN** a user whose `isBanned` is `true` submits correct credentials
+- **THEN** the system SHALL reject the login (HTTP 403 Forbidden) and SHALL NOT issue tokens
 
 ### Requirement: User Schema
-The system SHALL store user records with phone as the primary identifier and email as optional.
+The system SHALL store user records with phone as the primary identifier and email as optional, SHALL support the `accountType` discriminator (`personal` | `business`), and SHALL include an `isPlatformAdmin` boolean field (default `false`) that designates platform-administration authority.
 
 #### Scenario: Phone field uniqueness
 - **WHEN** a user record is created with a phone number
@@ -48,16 +52,32 @@ The system SHALL store user records with phone as the primary identifier and ema
 - **WHEN** a user registers with phone number only (no email)
 - **THEN** the email field SHALL be null/undefined and the sparse unique index SHALL allow multiple null values
 
+#### Scenario: Admin flag defaults false
+- **WHEN** a user is created
+- **THEN** `isPlatformAdmin` SHALL default to `false`
+
+#### Scenario: Admin flag governs admin access
+- **WHEN** a user's `isPlatformAdmin` is `true`
+- **THEN** that user (as a human actor) SHALL be authorized by the AdminGuard for `/admin/*` routes
+
 ### Requirement: JWT Token Payload
-The system SHALL include phone number in JWT access token payload instead of email.
+The system SHALL include the user's phone in the JWT access token payload, and SHALL additionally support an optional `act` (actor) claim and an `accountType` claim to support delegated business-account sessions. When a token represents a business-account session, `sub` is the business account id and `act` is the root human user id. JWT validation SHALL expose an `actorId` resolved as `act ?? sub`.
 
 #### Scenario: Access token contains phone
-- **WHEN** system generates a JWT access token for a user
-- **THEN** the token payload SHALL contain `{ sub: userId, phone: userPhone }`
+- **WHEN** system generates a JWT access token for a personal login
+- **THEN** the token payload SHALL contain `{ sub: userId, phone: userPhone }` and MAY include `accountType: 'personal'`
+
+#### Scenario: Delegated business-account token
+- **WHEN** the system issues a token for an account switch into a business account
+- **THEN** the payload SHALL contain `{ sub: businessAccountId, act: rootUserId, accountType: 'business' }`
 
 #### Scenario: JWT strategy validation
 - **WHEN** system validates a JWT token
-- **THEN** system SHALL extract userId from `sub` claim and phone from `phone` claim
+- **THEN** system SHALL extract the active identity from `sub` and SHALL expose `actorId = act ?? sub`
+
+#### Scenario: Backward-compatible legacy token
+- **WHEN** system validates a token that has no `act` claim
+- **THEN** `actorId` SHALL equal `sub` and existing behavior SHALL be unchanged
 
 ### Requirement: User Resource Shape Includes Profile Fields
 

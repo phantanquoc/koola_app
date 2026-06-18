@@ -21,7 +21,7 @@ export class WsAuthGuard implements CanActivate {
         secret: process.env.JWT_SECRET,
       });
       // Attach user to socket data for use in gateway handlers
-      (client.data as { user?: { sub: string; email: string } }).user = {
+      (client.data as { user?: { sub: string; email?: string } }).user = {
         sub: payload.sub,
         email: payload.email,
       };

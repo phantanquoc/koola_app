@@ -7,7 +7,10 @@ import { User, UserDocument } from '../users/user.schema';
 
 export interface JwtPayload {
   sub: string;
-  email: string;
+  email?: string;
+  /** RFC 8693 actor claim — set when acting as a business account (actor = root user id) */
+  act?: string;
+  accountType?: 'personal' | 'business';
   iat?: number;
   exp?: number;
 }
@@ -22,16 +25,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(
-    payload: JwtPayload,
-  ): Promise<{ id: string; userId: string; email: string }> {
+  async validate(payload: JwtPayload): Promise<{
+    id: string;
+    userId: string;
+    email: string | undefined;
+    actorId: string;
+    accountType: 'personal' | 'business';
+  }> {
     const user = await this.userModel.findById(payload.sub).select('_id email');
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-    // Expose the user id under both `id` (used by `@CurrentUser('id')` in
-    // controllers) and `userId` (kept for backward-compat with any older
-    // code that reads `request.user.userId`). Both refer to the same value.
-    return { id: payload.sub, userId: payload.sub, email: payload.email };
+    // actorId = the human actor behind this session.
+    // For a personal session, act is absent → actorId === sub (backward-compat).
+    // For a business session, act = rootUserId → actorId = root.
+    const actorId = payload.act ?? payload.sub;
+    return {
+      id: payload.sub,
+      userId: payload.sub,
+      email: payload.email,
+      actorId,
+      accountType: payload.accountType ?? 'personal',
+    };
   }
 }

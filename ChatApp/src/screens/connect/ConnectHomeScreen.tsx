@@ -15,18 +15,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
 import KoolaHeader from '../../components/KoolaHeader';
-import BusinessCard from '../../components/connect/BusinessCard';
 import EmptyConnect from '../../components/connect/EmptyConnect';
 import ListErrorState from '../../components/connect/ListErrorState';
 import BusinessCardSkeleton from '../../components/connect/BusinessCardSkeleton';
 import ConnectContextBanner from '../../components/connect/ConnectContextBanner';
 import SortMenu from '../../components/connect/SortMenu';
 import ProvincePicker from '../../components/connect/ProvincePicker';
-import { useBusinessList } from '../../hooks/useBusinessList';
-import { businessesApi, conversationsApi } from '../../services/api/apiService';
+import { useAccountDiscovery } from '../../hooks/useAccountDiscovery';
+import { conversationsApi } from '../../services/api/apiService';
+import type { BusinessAccountItem } from '../../services/api/apiService';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { BUSINESS_CATEGORIES, RELATIONSHIP_FILTERS } from './constants';
-import type { Business, BusinessSort } from '../../types';
+import type { BusinessSort } from '../../types';
 import {
   KoolaChip,
   KoolaText,
@@ -36,11 +36,10 @@ import {
 
 type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
-// ─── Shared business actions ───────────────────────────────────────────────────
+// ─── Shared account actions ───────────────────────────────────────────────────
+// "Nhắn tin" opens a DM with the business account id directly (D7).
 
-function useBusinessActions(navigation: ConnectNavProp) {
-  const [connectingId, setConnectingId] = useState<string | null>(null);
-
+function useAccountActions(navigation: ConnectNavProp) {
   const navigateToChat = useCallback(
     (conversationId: string) => {
       (navigation as any).navigate('ChatTab', {
@@ -51,39 +50,10 @@ function useBusinessActions(navigation: ConnectNavProp) {
     [navigation],
   );
 
-  const handleConnectAndChat = useCallback(
-    async (
-      business: Business,
-      updateItem: (id: string, updates: Partial<Business>) => void,
-    ) => {
-      setConnectingId(business._id);
-      // Optimistic update
-      updateItem(business._id, { isConnected: true });
-      try {
-        await businessesApi.connect(business._id);
-      } catch (err) {
-        // Rollback on connect failure
-        updateItem(business._id, { isConnected: false });
-        console.warn('Connect failed:', err);
-        setConnectingId(null);
-        return;
-      }
-      try {
-        const { conversation } = await conversationsApi.startDirectChat(business.ownerId);
-        navigateToChat(conversation._id);
-      } catch (err) {
-        console.warn('Start direct chat failed after connect:', err);
-      } finally {
-        setConnectingId(null);
-      }
-    },
-    [navigateToChat],
-  );
-
   const handleMessage = useCallback(
-    async (business: Business) => {
+    async (account: BusinessAccountItem) => {
       try {
-        const { conversation } = await conversationsApi.startDirectChat(business.ownerId);
+        const { conversation } = await conversationsApi.startDirectChat(account._id);
         navigateToChat(conversation._id);
       } catch (err) {
         console.warn('Start direct chat failed:', err);
@@ -92,7 +62,7 @@ function useBusinessActions(navigation: ConnectNavProp) {
     [navigateToChat],
   );
 
-  return { connectingId, handleConnectAndChat, handleMessage };
+  return { handleMessage };
 }
 
 // ─── RelationshipTabBar ───────────────────────────────────────────────────────
@@ -309,9 +279,14 @@ const filterBarStyles = StyleSheet.create({
   },
 });
 
-// ─── BusinessListTab ───────────────────────────────────────────────────────────
+// ─── AccountListTab ───────────────────────────────────────────────────────────
+// Replaces BusinessListTab — sources from verified business accounts endpoint.
 
-interface BusinessListTabProps {
+// Built once at module level so renderItem's useCallback doesn't recreate it.
+const ACCOUNT_CATEGORY_LABELS: Record<string, string> = {};
+BUSINESS_CATEGORIES.forEach((c) => { ACCOUNT_CATEGORY_LABELS[c.slug] = c.label; });
+
+interface AccountListTabProps {
   navigation: ConnectNavProp;
   activeCategory: string | null;
   activeRelationship: string;
@@ -320,7 +295,7 @@ interface BusinessListTabProps {
   onClearFilters: () => void;
 }
 
-const BusinessListTab: React.FC<BusinessListTabProps> = ({
+const AccountListTab: React.FC<AccountListTabProps> = ({
   navigation,
   activeCategory,
   activeRelationship,
@@ -329,35 +304,80 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
   onClearFilters,
 }) => {
   const tabBarInset = useTabBarBottomInset();
-  const { items, loading, refreshing, hasMore, error, loadMore, refresh, updateItem } =
-    useBusinessList({
-      category: activeCategory ?? undefined,
+  const { items, loading, refreshing, hasMore, error, loadMore, refresh } =
+    useAccountDiscovery({
+      businessCategory: activeCategory ?? undefined,
       relationshipType: activeRelationship === 'all' ? undefined : activeRelationship,
       sort: activeSort,
       province: activeProvince || undefined,
     });
 
-  const { connectingId, handleConnectAndChat, handleMessage } =
-    useBusinessActions(navigation);
+  const { handleMessage } = useAccountActions(navigation);
 
   const renderItem = useCallback(
-    ({ item }: { item: Business }) => (
-      <BusinessCard
-        business={item}
-        onPress={() =>
-          navigation.navigate('BusinessProfile', {
-            businessId: item._id,
-          })
-        }
-        onConnectAndChatPress={() => handleConnectAndChat(item, updateItem)}
-        onMessagePress={() => handleMessage(item)}
-        isConnecting={connectingId === item._id}
-      />
-    ),
-    [navigation, handleConnectAndChat, handleMessage, connectingId, updateItem],
+    ({ item }: { item: BusinessAccountItem }) => {
+      const categoryLabel = item.businessCategory
+        ? ACCOUNT_CATEGORY_LABELS[item.businessCategory] ?? item.businessCategory
+        : '';
+      return (
+        <Pressable
+          style={accountCardStyles.card}
+          onPress={() =>
+            (navigation as any).navigate('BusinessProfile', { businessId: item._id })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
+          <View style={accountCardStyles.logo}>
+            <MaterialIcons name="business" size={22} color={koolaColors.primary} />
+          </View>
+          <View style={accountCardStyles.content}>
+            <View style={accountCardStyles.nameRow}>
+              <KoolaText variant="label" weight="700" numberOfLines={1} style={accountCardStyles.name}>
+                {item.displayName}
+              </KoolaText>
+              {item.verificationStatus === 'verified' && (
+                <MaterialIcons name="verified" size={14} color={koolaColors.success} />
+              )}
+            </View>
+            <View style={accountCardStyles.meta}>
+              {categoryLabel ? (
+                <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
+                  {categoryLabel}
+                </KoolaText>
+              ) : null}
+              {item.province ? (
+                <>
+                  <View style={accountCardStyles.dot} />
+                  <MaterialIcons name="location-on" size={11} color={koolaColors.muted} />
+                  <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+                    {item.province}
+                  </KoolaText>
+                </>
+              ) : null}
+            </View>
+            {item.tagline ? (
+              <KoolaText variant="caption" tone="muted" numberOfLines={2} style={accountCardStyles.tagline}>
+                {item.tagline}
+              </KoolaText>
+            ) : null}
+          </View>
+          <Pressable
+            style={accountCardStyles.cta}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleMessage(item);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Nhắn tin">
+            <MaterialIcons name="chat-bubble-outline" size={16} color={koolaColors.primary} />
+            <KoolaText variant="caption" tone="primary" weight="700">Nhắn tin</KoolaText>
+          </Pressable>
+        </Pressable>
+      );
+    },
+    [navigation, handleMessage],
   );
 
-  // Error state — show when fetch failed and no cached items
   if (error && items.length === 0 && !loading) {
     return (
       <View style={listStyles.container}>
@@ -376,7 +396,6 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
         </View>
       ) : (
         <FlatList
-          // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
           removeClippedSubviews={false}
           data={items}
           keyExtractor={(item) => item._id}
@@ -414,6 +433,61 @@ const BusinessListTab: React.FC<BusinessListTabProps> = ({
     </View>
   );
 };
+
+const accountCardStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: koolaColors.surface,
+    padding: 14,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
+  },
+  logo: {
+    width: 44,
+    height: 44,
+    borderRadius: koolaRadii.md,
+    backgroundColor: koolaColors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  name: {
+    flex: 1,
+  },
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: 4,
+  },
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: koolaColors.faint,
+  },
+  tagline: {
+    marginTop: 2,
+  },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: koolaRadii.pill,
+    backgroundColor: koolaColors.primarySoft,
+  },
+});
 
 const listStyles = StyleSheet.create({
   container: {
@@ -472,7 +546,9 @@ const ConnectHomeScreen: React.FC = () => {
         searchPlaceholder="Tìm doanh nghiệp..."
         onSearchPress={() => navigation.navigate('BusinessSearch')}
         onQrPress={() => {}}
-        onAddPress={() => navigation.navigate('CreateBusiness')}
+        onAddPress={() =>
+          (navigation as any).navigate('PersonalTab', { screen: 'AccountList' })
+        }
       />
 
       <RelationshipTabBar
@@ -494,12 +570,14 @@ const ConnectHomeScreen: React.FC = () => {
       {/* Onboarding banner — shown once for new users, above list */}
       {!bannerDismissed && (
         <ConnectContextBanner
-          onCreatePress={() => navigation.navigate('CreateBusiness')}
+          onCreatePress={() =>
+            (navigation as any).navigate('PersonalTab', { screen: 'AccountList' })
+          }
           onDismiss={handleDismissBanner}
         />
       )}
 
-      <BusinessListTab
+      <AccountListTab
         navigation={navigation}
         activeCategory={activeRelationship === 'all' ? null : activeCategory}
         activeRelationship={activeRelationship}

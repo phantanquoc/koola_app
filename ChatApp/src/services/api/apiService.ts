@@ -11,10 +11,9 @@ import type {
   PaginatedResponse,
   UserSearchResult,
   User,
-  Business,
-  BusinessListResponse,
-  CreateBusinessPayload,
   MessageSearchItem,
+  Account,
+  CreateBusinessAccountPayload,
 } from '../../types';
 
 // ─── Axios Instance ───────────────────────────────────────────────────────────
@@ -57,19 +56,41 @@ apiClient.interceptors.response.use(
         const refreshToken = await asyncStorage.getRefreshToken();
         if (!refreshToken) throw new Error('No refresh token');
 
+        // Step 1: Refresh root access token
         const { data } = await axios.post(`${ENV.API_URL}/auth/refresh`, {
           refreshToken,
         });
 
-        accessToken = data.accessToken;
+        let newAccessToken: string = data.accessToken;
         await asyncStorage.setRefreshToken(data.refreshToken);
 
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        // Step 2: If active account is a business account, re-mint the biz token
+        const activeAccountId = await asyncStorage.getActiveAccountId();
+        if (activeAccountId) {
+          try {
+            // Use the root token to switch into the business account
+            const { data: switchData } = await axios.post(
+              `${ENV.API_URL}/accounts/switch`,
+              { targetAccountId: activeAccountId },
+              { headers: { Authorization: `Bearer ${newAccessToken}` } },
+            );
+            newAccessToken = switchData.accessToken;
+          } catch {
+            // Switch failed — fall back to root personal and clear active account
+            await asyncStorage.clearActiveAccountId();
+            // newAccessToken remains the root personal token
+          }
+        }
+
+        accessToken = newAccessToken;
+
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return apiClient(originalRequest);
       } catch {
         // Refresh failed — force logout
         accessToken = null;
         await asyncStorage.clearTokens();
+        await asyncStorage.clearActiveAccountId();
         // Notify the UI so AuthContext can clear user state and disconnect
         // sockets. Wrapped in try/catch so a buggy handler can't break the
         // interceptor chain.
@@ -104,12 +125,30 @@ export async function refreshAccessTokenInMemory(): Promise<string | null> {
       refreshToken,
     });
 
-    accessToken = data.accessToken;
+    let newAccessToken: string = data.accessToken;
     await asyncStorage.setRefreshToken(data.refreshToken);
-    return data.accessToken;
+
+    // If active account is a business account, re-mint the biz token
+    const activeAccountId = await asyncStorage.getActiveAccountId();
+    if (activeAccountId) {
+      try {
+        const { data: switchData } = await axios.post(
+          `${ENV.API_URL}/accounts/switch`,
+          { targetAccountId: activeAccountId },
+          { headers: { Authorization: `Bearer ${newAccessToken}` } },
+        );
+        newAccessToken = switchData.accessToken;
+      } catch {
+        await asyncStorage.clearActiveAccountId();
+      }
+    }
+
+    accessToken = newAccessToken;
+    return newAccessToken;
   } catch {
     accessToken = null;
     await asyncStorage.clearTokens();
+    await asyncStorage.clearActiveAccountId();
     try {
       forceLogoutHandler?.();
     } catch {
@@ -441,51 +480,64 @@ export const mediaApi = {
   },
 };
 
-// ─── Businesses API ───────────────────────────────────────────────────────────
+// ─── Accounts API ─────────────────────────────────────────────────────────────
 
-export const businessesApi = {
+export const accountsApi = {
+  async list(): Promise<Account[]> {
+    const { data } = await apiClient.get('/accounts');
+    return data;
+  },
+  async createBusiness(payload: CreateBusinessAccountPayload): Promise<{ account: Account }> {
+    const { data } = await apiClient.post('/accounts/business', payload);
+    return data;
+  },
+  async switch(targetAccountId: string): Promise<{ accessToken: string }> {
+    const { data } = await apiClient.post('/accounts/switch', { targetAccountId });
+    return data;
+  },
+};
+
+// ─── Account Discovery API ───────────────────────────────────────────────────
+
+export interface BusinessAccountItem {
+  _id: string;
+  displayName: string;
+  avatar?: string;
+  logoKey?: string;
+  tagline?: string;
+  description?: string;
+  relationshipType?: 'partner' | 'supplier';
+  province?: string;
+  businessCategory?: string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected';
+  address?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+}
+
+export interface BusinessAccountListResponse {
+  items: BusinessAccountItem[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+export const accountDiscoveryApi = {
   async list(params?: {
     q?: string;
     relationshipType?: string;
-    category?: string;
+    businessCategory?: string;
     province?: string;
     cursor?: string;
     limit?: number | string;
-  }): Promise<BusinessListResponse> {
-    const { data } = await apiClient.get('/businesses', { params });
+    sort?: string;
+  }): Promise<BusinessAccountListResponse> {
+    const { data } = await apiClient.get('/accounts/discover', { params });
     return data;
   },
-  async getById(id: string): Promise<Business> {
-    const { data } = await apiClient.get(`/businesses/${id}`);
-    return data;
-  },
-  async getMine(): Promise<Business[]> {
-    const { data } = await apiClient.get('/businesses/me');
-    return data;
-  },
-  async getMyConnections(): Promise<{ items: Business[] }> {
-    const { data } = await apiClient.get('/businesses/connected');
-    return data;
-  },
-  async create(
-    body: CreateBusinessPayload,
-  ): Promise<{ business: Business }> {
-    const { data } = await apiClient.post('/businesses', body);
-    return data;
-  },
-  async update(
-    id: string,
-    body: Partial<CreateBusinessPayload>,
-  ): Promise<{ business: Business }> {
-    const { data } = await apiClient.put(`/businesses/${id}`, body);
-    return data;
-  },
-  async connect(id: string): Promise<{ message: string }> {
-    const { data } = await apiClient.post(`/businesses/${id}/connect`);
-    return data;
-  },
-  async disconnect(id: string): Promise<{ message: string }> {
-    const { data } = await apiClient.delete(`/businesses/${id}/connect`);
+
+  async getById(accountId: string): Promise<BusinessAccountItem> {
+    const { data } = await apiClient.get(`/accounts/discover/${accountId}`);
     return data;
   },
 };

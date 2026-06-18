@@ -166,9 +166,38 @@ export interface MessageSearchItem {
   createdAt: string;
 }
 
-// ─── Business / Connect Tab ────────────────────────────────────────────────────
+// ─── Account (polymorphic user identity) ──────────────────────────────────────
 
-export type RelationshipType = 'partner' | 'supplier';
+export type AccountType = 'personal' | 'business';
+export type VerificationStatus = 'pending' | 'verified' | 'rejected';
+
+export interface Account {
+  _id: string;
+  displayName: string;
+  avatar?: string;
+  accountType: AccountType;
+  verificationStatus?: VerificationStatus;
+  logoKey?: string;
+  /** Only set on business accounts */
+  ownerUserId?: string;
+}
+
+export interface CreateBusinessAccountPayload {
+  displayName: string;
+  businessCategory: string;
+  province: string;
+  relationshipType: 'partner' | 'supplier';
+  licenseImageKey: string;
+  tagline?: string;
+  description?: string;
+  address?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  logoKey?: string;
+}
+
+// ─── Business / Connect Tab ────────────────────────────────────────────────────
 
 export type BusinessSort = 'latest' | 'popular' | 'name';
 
@@ -176,55 +205,6 @@ export interface BusinessCategory {
   slug: string;
   label: string;
   icon: string;
-}
-
-export interface BusinessConnectedUser {
-  _id: string;
-  displayName: string;
-  avatar?: string;
-}
-
-export interface Business {
-  _id: string;
-  name: string;
-  logoKey?: string;
-  tagline?: string;
-  description?: string;
-  relationshipType: RelationshipType;
-  category: string;
-  province: string;
-  address?: string;
-  website?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  ownerId: string;
-  connectionCount: number;
-  connectedUsers?: BusinessConnectedUser[];
-  isConnected?: boolean;
-  isVerified?: boolean;
-  isActive?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface CreateBusinessPayload {
-  name: string;
-  relationshipType: RelationshipType;
-  category: string;
-  province: string;
-  tagline?: string;
-  description?: string;
-  address?: string;
-  website?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  logoKey?: string;
-}
-
-export interface BusinessListResponse {
-  items: Business[];
-  hasMore: boolean;
-  nextCursor: string | null;
 }
 
 // ─── Recent Searches (client-side) ─────────────────────────────────────────────

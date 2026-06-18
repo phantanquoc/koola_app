@@ -4,17 +4,19 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
+  Pressable,
   StyleSheet,
   StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ConnectTabStackParamList } from '../../navigation/types';
-import type { Business } from '../../types';
-import { businessesApi, conversationsApi } from '../../services/api/apiService';
-import BusinessCard from '../../components/connect/BusinessCard';
+import type { BusinessAccountItem } from '../../services/api/apiService';
+import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
 import EmptyConnect from '../../components/connect/EmptyConnect';
-import { KoolaIconButton, KoolaState, koolaColors } from '../../ui';
+import { CATEGORY_LABELS } from './constants';
+import { KoolaIconButton, KoolaState, KoolaText, koolaColors, koolaRadii } from '../../ui';
 
 type BusinessSearchNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -23,9 +25,9 @@ const BusinessSearchScreen: React.FC = () => {
   const inputRef = useRef<TextInput>(null);
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Business[]>([]);
+  const [results, setResults] = useState<BusinessAccountItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [messagingId, setMessagingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (query.length < 2) {
@@ -36,10 +38,10 @@ const BusinessSearchScreen: React.FC = () => {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await businessesApi.list({ q: query });
+        const res = await accountDiscoveryApi.list({ q: query });
         setResults(res.items);
       } catch (err) {
-        console.warn('Business search error:', err);
+        console.warn('Business account search error:', err);
       } finally {
         setLoading(false);
       }
@@ -47,12 +49,6 @@ const BusinessSearchScreen: React.FC = () => {
 
     return () => clearTimeout(timer);
   }, [query]);
-
-  const updateResult = useCallback((id: string, updates: Partial<Business>) => {
-    setResults((prev) =>
-      prev.map((item) => (item._id === id ? { ...item, ...updates } : item)),
-    );
-  }, []);
 
   const navigateToChat = useCallback(
     (conversationId: string) => {
@@ -64,57 +60,86 @@ const BusinessSearchScreen: React.FC = () => {
     [navigation],
   );
 
-  const handleConnectAndChat = useCallback(
-    async (business: Business) => {
-      setConnectingId(business._id);
-      updateResult(business._id, { isConnected: true });
-      try {
-        await businessesApi.connect(business._id);
-      } catch (err) {
-        updateResult(business._id, { isConnected: false });
-        console.warn('Connect failed:', err);
-        setConnectingId(null);
-        return;
-      }
-      try {
-        const { conversation } = await conversationsApi.startDirectChat(business.ownerId);
-        navigateToChat(conversation._id);
-      } catch (err) {
-        console.warn('Start direct chat failed after connect:', err);
-      } finally {
-        setConnectingId(null);
-      }
-    },
-    [updateResult, navigateToChat],
-  );
-
   const handleMessage = useCallback(
-    async (business: Business) => {
+    async (account: BusinessAccountItem) => {
+      setMessagingId(account._id);
       try {
-        const { conversation } = await conversationsApi.startDirectChat(business.ownerId);
+        const { conversation } = await conversationsApi.startDirectChat(account._id);
         navigateToChat(conversation._id);
       } catch (err) {
         console.warn('Start direct chat failed:', err);
+      } finally {
+        setMessagingId(null);
       }
     },
     [navigateToChat],
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Business }) => (
-      <BusinessCard
-        business={item}
-        onPress={() =>
-          navigation.navigate('BusinessProfile', {
-            businessId: item._id,
-          })
-        }
-        onConnectAndChatPress={() => handleConnectAndChat(item)}
-        onMessagePress={() => handleMessage(item)}
-        isConnecting={connectingId === item._id}
-      />
-    ),
-    [navigation, handleConnectAndChat, handleMessage, connectingId],
+    ({ item }: { item: BusinessAccountItem }) => {
+      const categoryLabel =
+        (item.businessCategory ? CATEGORY_LABELS[item.businessCategory] : undefined) ||
+        item.businessCategory ||
+        '';
+      return (
+        <Pressable
+          style={styles.card}
+          onPress={() =>
+            navigation.navigate('BusinessProfile', { businessId: item._id })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
+          <View style={styles.logo}>
+            <MaterialIcons name="business" size={22} color={koolaColors.primary} />
+          </View>
+          <View style={styles.content}>
+            <View style={styles.nameRow}>
+              <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.name}>
+                {item.displayName}
+              </KoolaText>
+              {item.verificationStatus === 'verified' && (
+                <MaterialIcons name="verified" size={14} color={koolaColors.success} />
+              )}
+            </View>
+            <View style={styles.meta}>
+              {categoryLabel ? (
+                <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
+                  {categoryLabel}
+                </KoolaText>
+              ) : null}
+              {item.province ? (
+                <>
+                  <View style={styles.dot} />
+                  <MaterialIcons name="location-on" size={11} color={koolaColors.muted} />
+                  <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+                    {item.province}
+                  </KoolaText>
+                </>
+              ) : null}
+            </View>
+          </View>
+          <Pressable
+            style={styles.cta}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleMessage(item);
+            }}
+            disabled={messagingId === item._id}
+            accessibilityRole="button"
+            accessibilityLabel="Nhắn tin">
+            {messagingId === item._id ? (
+              <ActivityIndicator size="small" color={koolaColors.primary} />
+            ) : (
+              <>
+                <MaterialIcons name="chat-bubble-outline" size={16} color={koolaColors.primary} />
+                <KoolaText variant="caption" tone="primary" weight="700">Nhắn tin</KoolaText>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      );
+    },
+    [navigation, handleMessage, messagingId],
   );
 
   const renderEmpty = () => {
@@ -135,7 +160,6 @@ const BusinessSearchScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-
       {/* Search bar header */}
       <View style={styles.header}>
         <KoolaIconButton
@@ -166,7 +190,6 @@ const BusinessSearchScreen: React.FC = () => {
       </View>
 
       <FlatList
-        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
         data={results}
         keyExtractor={(item) => item._id}
@@ -206,6 +229,55 @@ const styles = StyleSheet.create({
   },
   inputLoader: {
     marginLeft: 4,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: koolaColors.surface,
+    padding: 14,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
+  },
+  logo: {
+    width: 44,
+    height: 44,
+    borderRadius: koolaRadii.md,
+    backgroundColor: koolaColors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  name: {
+    flex: 1,
+  },
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: 4,
+  },
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: koolaColors.faint,
+  },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: koolaRadii.pill,
+    backgroundColor: koolaColors.primarySoft,
   },
   listContent: {
     paddingTop: 8,
