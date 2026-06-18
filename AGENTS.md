@@ -14,6 +14,7 @@ A symlink/pointer `CLAUDE.md` can reference this file so Claude Code picks up th
 |-----------|------|-------|
 | Mobile app | `ChatApp/` | React Native 0.76 + TypeScript + React Navigation |
 | Backend API | `chat-backend/` | NestJS 11 + MongoDB (Mongoose) + Socket.IO |
+| Admin web | `admin-web/` | Vite + React 19 + TypeScript + React Router + Axios |
 | Local infra | `infra-local/` | Docker Compose: MongoDB, Redis, MinIO, Coturn |
 
 Feature workflow is driven by **OpenSpec** (`openspec/` directory) — proposals, specs, and archived changes.
@@ -30,6 +31,34 @@ npm run lint             # ESLint --fix
 npm test                 # Jest (*.spec.ts)
 npm run test:e2e         # E2E Jest config
 ```
+
+### Admin web (`admin-web/`)
+```bash
+npm install              # Install dependencies (first time)
+npm run dev              # Vite dev server on :5173
+npm run build            # TypeScript check + production build → dist/
+npm run lint             # ESLint
+npm run preview          # Serve the production build locally
+```
+
+Config: copy `admin-web/.env.example` → `admin-web/.env`, set `VITE_API_URL` to the backend base URL (e.g. `http://localhost:3000`).
+
+#### Bootstrap the first platform admin
+
+Option A — ts-node script (from `chat-backend/`):
+```bash
+npx ts-node -r tsconfig-paths/register scripts/grant-admin.ts --email admin@example.com
+# or by phone: --phone +84900000000
+# or by MongoDB _id: --id <objectId>
+```
+Requires `MONGODB_URI` env var (set in `chat-backend/.env`).
+
+Option B — mongosh one-liner (connect to your MongoDB instance):
+```js
+db.users.updateOne({ email: "admin@example.com" }, { $set: { isPlatformAdmin: true } })
+```
+
+The script and one-liner are idempotent — safe to re-run.
 
 ### Mobile (`ChatApp/`)
 ```bash
