@@ -16,9 +16,10 @@ import { RedisModule } from './common/redis/redis.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { HealthModule } from './health/health.module';
-import { BusinessesModule } from './businesses/businesses.module';
 import { CallLogsModule } from './call-logs/call-logs.module';
 import { MomentsModule } from './moments/moments.module';
+import { AccountsModule } from './accounts/accounts.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -53,9 +54,10 @@ import { MomentsModule } from './moments/moments.module';
     GatewayModule,
     WebrtcModule,
     HealthModule,
-    BusinessesModule,
     CallLogsModule,
     MomentsModule, // ← Moments feature (story system)
+    AccountsModule,
+    AdminModule,
   ],
   providers: [
     {

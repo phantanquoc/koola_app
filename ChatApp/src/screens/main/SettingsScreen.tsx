@@ -76,6 +76,12 @@ const SettingsScreen: React.FC = () => {
       </Pressable>
 
       <KoolaSurface variant="raised" style={styles.section}>
+        <SettingsRow
+          icon="account-circle"
+          label="Danh sách tài khoản"
+          onPress={() => navigation.navigate('AccountList')}
+        />
+        <KoolaDivider />
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
             <MaterialIcons

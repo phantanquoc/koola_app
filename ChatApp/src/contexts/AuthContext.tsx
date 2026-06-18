@@ -6,8 +6,8 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
-import { authApi, usersApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
+import { AppState, AppStateStatus, Alert } from 'react-native';
+import { authApi, usersApi, accountsApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
 import { asyncStorage } from '../services/storage/asyncStorage';
 import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
@@ -21,7 +21,8 @@ import { isLocalFirstEnabled } from '../config/featureFlags';
 import { pause as pauseOutboxProcessor, start as startOutboxProcessor, stop as stopOutboxProcessor } from '../services/sync/outboxProcessor';
 import { navigationRef } from '../navigation/RootNavigator';
 import { momentsService } from '../services/moments/momentsService';
-import type { User } from '../types';
+import { clearAccountBadge } from '../services/push/accountBadgeStorage';
+import type { User, Account } from '../types';
 
 // ─── Local-first wiring teardown refs ─────────────────────────────────────────
 // Stored at module level so logout can call them regardless of React lifecycle.
@@ -67,6 +68,10 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** All accounts (root + owned businesses) for the signed-in user */
+  accounts: Account[];
+  /** The currently active account (may be a business account) */
+  activeAccount: Account | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   registerInit: (body: {
@@ -78,12 +83,18 @@ interface AuthContextType {
   verifyOtp: (email: string, otp: string) => Promise<void>;
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Switch to any owned account (personal or business). Guards against active calls. */
+  switchAccount: (targetId: string) => Promise<void>;
+  /** Convenience: switch back to the root personal account */
+  switchBackToPersonal: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const appStateRef = useRef(AppState.currentState);
 
@@ -125,6 +136,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       shutdownDb();
       setUser(null);
+      setAccounts([]);
+      setActiveAccount(null);
     });
     return () => setForceLogoutHandler(null);
   }, []);
@@ -169,37 +182,124 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // Step 1: Refresh root token
       const tokens = await authApi.refresh(refreshToken);
+      let workingAccessToken = tokens.accessToken;
       setAccessTokenInMemory(tokens.accessToken);
       await asyncStorage.setRefreshToken(tokens.refreshToken);
 
       const me = await usersApi.getMe();
       setUser(me);
-      setCurrentUserId(me._id);
-      momentsService.setCurrentUserId(me._id);
 
-      // Initialise local SQLite DB for this user (additive — no-op if already open)
-      await initDb(me._id).catch((e) =>
+      // Step 2: Load account list
+      let loadedAccounts: Account[] = [];
+      try {
+        loadedAccounts = await accountsApi.list();
+        setAccounts(loadedAccounts);
+      } catch {
+        // Non-fatal — degrade gracefully
+      }
+
+      // Step 3: If last active account was a business, re-switch into it
+      const storedActiveAccountId = await asyncStorage.getActiveAccountId();
+      let activeId = me._id;
+      if (storedActiveAccountId && storedActiveAccountId !== me._id) {
+        try {
+          const { accessToken: bizToken } = await accountsApi.switch(storedActiveAccountId);
+          workingAccessToken = bizToken;
+          setAccessTokenInMemory(bizToken);
+          activeId = storedActiveAccountId;
+        } catch {
+          // Switch failed — fall back to personal
+          await asyncStorage.clearActiveAccountId();
+          activeId = me._id;
+        }
+      }
+
+      const resolvedActive = loadedAccounts.find((a) => a._id === activeId) ?? {
+        _id: me._id,
+        displayName: me.displayName,
+        avatar: me.avatar,
+        accountType: 'personal' as const,
+      };
+      setActiveAccount(resolvedActive);
+
+      setCurrentUserId(activeId);
+      momentsService.setCurrentUserId(activeId);
+
+      // Initialise local SQLite DB (additive — no-op if already open)
+      await initDb(activeId).catch((e) =>
         console.warn('[AuthContext] restoreSession: initDb failed', e),
       );
 
-      // Wire local-first services (socket router, sync triggers, media preloader)
+      // Wire local-first services
       wireLocalFirst();
 
-      // Connect socket + webrtc
-      socketService.connect(tokens.accessToken);
-      webrtcService.connect(tokens.accessToken);
+      // Connect socket + webrtc with the working token
+      socketService.connect(workingAccessToken);
+      webrtcService.connect(workingAccessToken);
 
       // Register push notifications
       pushNotificationService.registerToken().catch(() => {});
     } catch {
       // Session restore failed — clear tokens
       await asyncStorage.clearTokens();
+      await asyncStorage.clearActiveAccountId();
       setAccessTokenInMemory(null);
     } finally {
       setIsLoading(false);
     }
   };
+
+  // ─── Switch account (D5) ──────────────────────────────────────────────────
+
+  const switchAccount = useCallback(async (targetId: string) => {
+    // (a) Guard: block switch during active/ringing call
+    const callState = webrtcService.getCallState();
+    if (callState !== 'idle' && callState !== 'ended' && callState !== 'failed') {
+      Alert.alert('Không thể chuyển tài khoản', 'Hãy kết thúc cuộc gọi trước');
+      return;
+    }
+
+    // (b) Get delegated token from server
+    const { accessToken: newToken } = await accountsApi.switch(targetId);
+
+    // (c) Tear down current account
+    unwireLocalFirst();
+    setCurrentUserId(null);
+    momentsService.setCurrentUserId(null);
+    socketService.disconnect();
+    webrtcService.disconnect();
+    shutdownDb();
+    // NOTE: do NOT clear the root refresh token here
+
+    // (d) Set new access token in-memory and persist active account
+    setAccessTokenInMemory(newToken);
+    await asyncStorage.setActiveAccountId(targetId);
+
+    // (e) Re-init under the new account
+    setCurrentUserId(targetId);
+    momentsService.setCurrentUserId(targetId);
+    await initDb(targetId).catch((e) =>
+      console.warn('[AuthContext] switchAccount: initDb failed', e),
+    );
+    wireLocalFirst();
+    socketService.connect(newToken);
+    webrtcService.connect(newToken);
+    // Re-register FCM context (token stays on root, but we want listeners active)
+    pushNotificationService.registerToken().catch(() => {});
+
+    // (f) Update active account in state
+    const found = accounts.find((a) => a._id === targetId);
+    setActiveAccount(found ?? { _id: targetId, displayName: targetId, accountType: 'personal' });
+    // (g) Clear per-account notification badge now that this account is active
+    void clearAccountBadge(targetId);
+  }, [accounts]);
+
+  const switchBackToPersonal = useCallback(async () => {
+    if (!user) return;
+    await switchAccount(user._id);
+  }, [user, switchAccount]);
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login(email, password);
@@ -210,6 +310,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(me);
     setCurrentUserId(me._id);
     momentsService.setCurrentUserId(me._id);
+
+    // Load accounts
+    try {
+      const loadedAccounts = await accountsApi.list();
+      setAccounts(loadedAccounts);
+    } catch {
+      // Non-fatal
+    }
+
+    const personalAccount: Account = {
+      _id: me._id,
+      displayName: me.displayName,
+      avatar: me.avatar,
+      accountType: 'personal',
+    };
+    setActiveAccount(personalAccount);
+    await asyncStorage.clearActiveAccountId();
 
     // Initialise local SQLite DB for this user
     await initDb(me._id).catch((e) =>
@@ -237,6 +354,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(me);
       setCurrentUserId(me._id);
       momentsService.setCurrentUserId(me._id);
+
+      const personalAccount: Account = {
+        _id: me._id,
+        displayName: me.displayName,
+        avatar: me.avatar,
+        accountType: 'personal',
+      };
+      setAccounts([personalAccount]);
+      setActiveAccount(personalAccount);
+      await asyncStorage.clearActiveAccountId();
 
       // Initialise local SQLite DB for this user
       await initDb(me._id).catch((e) =>
@@ -277,6 +404,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(me);
     setCurrentUserId(me._id);
 
+    const personalAccount: Account = {
+      _id: me._id,
+      displayName: me.displayName,
+      avatar: me.avatar,
+      accountType: 'personal',
+    };
+    setAccounts([personalAccount]);
+    setActiveAccount(personalAccount);
+    await asyncStorage.clearActiveAccountId();
+
     // Initialise local SQLite DB for this user
     await initDb(me._id).catch((e) =>
       console.warn('[AuthContext] verifyOtp: initDb failed', e),
@@ -312,7 +449,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // so Fabric only processes a small diff, never a full subtree remove. After
     // 3 rAF frames the native settle is complete; we run teardown and THEN flip
     // setUser(null) — at that point only LogoutTransition needs to unmount (1
-    // screen, tiny Fabric batch) → no index drift, no crash.
+    // screen, tiny Fabric batch) → no removeViewAt race.
     // See [[logout_removeviewat_crash]].
     if (navigationRef.isReady()) {
       navigationRef.reset({ index: 0, routes: [{ name: 'LogoutTransition' }] });
@@ -354,6 +491,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('[AuthContext] logout: wipeAllData failed', e),
       );
       shutdownDb();
+      setAccounts([]);
+      setActiveAccount(null);
       // setUser(null) flips the auth group — only LogoutTransition is on the
       // stack at this point (1 screen), so Fabric's unmount batch is tiny and
       // the RNSScreenStack is already idle → no removeViewAt race.
@@ -367,12 +506,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated,
         isLoading,
+        accounts,
+        activeAccount,
         login,
         register,
         registerInit,
         verifyOtp,
         refreshUser,
         logout,
+        switchAccount,
+        switchBackToPersonal,
       }}>
       {children}
     </AuthContext.Provider>

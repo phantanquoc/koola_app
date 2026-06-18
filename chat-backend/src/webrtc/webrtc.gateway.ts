@@ -33,7 +33,12 @@ import { CallJoinDto } from './dto/call-join.dto';
 import { CallRingingDto } from './dto/call-ringing.dto';
 
 interface AuthSocketData {
-  user?: { sub: string; phone: string };
+  user?: {
+    sub: string;
+    phone: string;
+    actorId?: string;
+    accountType?: 'personal' | 'business';
+  };
 }
 
 type AuthSocket = Socket & { data: AuthSocketData };
@@ -81,7 +86,12 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    let payload: { sub: string; phone: string };
+    let payload: {
+      sub: string;
+      phone: string;
+      act?: string;
+      accountType?: string;
+    };
     try {
       payload = this.jwtService.verify(token, {
         secret: process.env.JWT_SECRET,
@@ -92,7 +102,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const userId = payload.sub;
-    client.data.user = { sub: payload.sub, phone: payload.phone };
+    client.data.user = {
+      sub: payload.sub,
+      phone: payload.phone,
+      actorId: payload.act ?? payload.sub,
+      accountType:
+        (payload.accountType as 'personal' | 'business') ?? 'personal',
+    };
 
     this.logger.log(
       `[WebrtcGateway] Client connected: ${client.id} (user: ${userId})`,
@@ -945,10 +961,15 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     try {
-      const payload: { sub?: string; phone?: string } =
-        this.jwtService.verify(newToken);
+      const payload: {
+        sub?: string;
+        phone?: string;
+        act?: string;
+        accountType?: string;
+      } = this.jwtService.verify(newToken);
       const sub = payload?.sub;
       const phone = payload?.phone;
+      const newActorId = payload?.act ?? sub;
       if (!sub) {
         client.emit('auth:rejected', {
           code: 401,
@@ -956,15 +977,33 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
         return;
       }
+
       const currentSub = client.data.user?.sub;
-      if (currentSub && currentSub !== sub) {
+      const currentActorId = client.data.user?.actorId ?? currentSub;
+
+      // Accept when:
+      //  (a) same sub as before (no switch), OR
+      //  (b) new token's actor matches the current actor — same human, switching
+      //      to an account they own (D6: same-root-owned account switch is valid).
+      // Reject when a token from a completely different human arrives.
+      const sameIdentity = currentSub === sub;
+      const sameRoot =
+        currentActorId && newActorId && currentActorId === newActorId;
+      if (currentSub && !sameIdentity && !sameRoot) {
         client.emit('auth:rejected', {
           code: 403,
           message: 'Token user mismatch',
         });
         return;
       }
-      client.data.user = { sub, phone: phone ?? undefined };
+
+      client.data.user = {
+        sub,
+        phone: phone ?? undefined,
+        actorId: newActorId,
+        accountType:
+          (payload.accountType as 'personal' | 'business') ?? 'personal',
+      };
       client.emit('auth:refreshed', { userId: sub });
       this.logger.log('[WebrtcGateway] Socket auth refreshed', { userId: sub });
     } catch {

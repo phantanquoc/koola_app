@@ -4,6 +4,7 @@ import type { PersonalTabStackParamList } from './types';
 import SettingsScreen from '../screens/main/SettingsScreen';
 import EditProfileScreen from '../screens/main/EditProfileScreen';
 import StorageSettingsScreen from '../screens/main/StorageSettingsScreen';
+import AccountListScreen from '../screens/main/AccountListScreen';
 
 const Stack = createNativeStackNavigator<PersonalTabStackParamList>();
 
@@ -20,6 +21,7 @@ const PersonalTabStack: React.FC = () => {
         component={EditProfileScreen}
       />
       <Stack.Screen name="StorageSettings" component={StorageSettingsScreen} />
+      <Stack.Screen name="AccountList" component={AccountListScreen} />
     </Stack.Navigator>
   );
 };

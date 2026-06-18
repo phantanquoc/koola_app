@@ -7,6 +7,7 @@ const KEYS = {
   OFFLINE_QUEUE: 'offline_queue',
   LAST_SYNC_AT: 'last_sync_at',
   RECENT_SEARCHES: 'recent_searches',
+  ACTIVE_ACCOUNT_ID: 'active_account_id',
 };
 
 const RECENT_SEARCHES_MAX = 10;
@@ -53,6 +54,17 @@ export const asyncStorage = {
   },
   async setLastSyncAt(timestamp: string): Promise<void> {
     await AsyncStorage.setItem(KEYS.LAST_SYNC_AT, timestamp);
+  },
+
+  // ─── Active account ────────────────────────────────────────────────────────
+  async getActiveAccountId(): Promise<string | null> {
+    return AsyncStorage.getItem(KEYS.ACTIVE_ACCOUNT_ID);
+  },
+  async setActiveAccountId(accountId: string): Promise<void> {
+    await AsyncStorage.setItem(KEYS.ACTIVE_ACCOUNT_ID, accountId);
+  },
+  async clearActiveAccountId(): Promise<void> {
+    await AsyncStorage.removeItem(KEYS.ACTIVE_ACCOUNT_ID);
   },
 
   // ─── Recent Searches ──────────────────────────────────────────────────────

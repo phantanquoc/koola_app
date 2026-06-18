@@ -107,6 +107,8 @@ export class NotificationsService {
         conversationName,
         messageId,
         preview,
+        recipientId,
+        recipientAccountType: (user.accountType as string) ?? 'personal',
       });
 
       const tokens = user.fcmTokens.map((t) => t.token);
@@ -193,6 +195,10 @@ export class NotificationsService {
     conversationName?: string | null;
     messageId: string;
     preview: string;
+    /** The userId this push is addressed to — used as accountId on the client. */
+    recipientId: string;
+    /** The accountType of the recipient — forwarded so the client can badge per-account. */
+    recipientAccountType: string;
   }): FirebaseMessagingPayload {
     const {
       senderName,
@@ -201,6 +207,8 @@ export class NotificationsService {
       conversationName,
       messageId,
       preview,
+      recipientId,
+      recipientAccountType,
     } = params;
 
     // Title: group name or sender name
@@ -221,6 +229,10 @@ export class NotificationsService {
         conversationId,
         messageId,
         type: 'new_message',
+        // Account context — client uses these to badge per-account and
+        // auto-switch on tap when the notification targets a non-active account.
+        accountId: recipientId,
+        accountType: recipientAccountType,
       },
       android: {
         priority: 'high' as const,

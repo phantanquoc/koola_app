@@ -1,6 +1,7 @@
 import {
   Injectable,
   ConflictException,
+  ForbiddenException,
   UnauthorizedException,
   Inject,
   forwardRef,
@@ -52,7 +53,7 @@ export class AuthService {
     });
 
     // Generate tokens
-    return this.generateTokenPair(user._id, user.email);
+    return this.generateTokenPair(user._id, user.email!);
   }
 
   // ─── Login ─────────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export class AuthService {
     const user = await this.userModel.findOne({
       email: dto.email.toLowerCase(),
     });
-    if (!user) {
+    if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -71,7 +72,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.generateTokenPair(user._id, user.email);
+    // Reject banned users — do not issue tokens
+    if (user.isBanned) {
+      throw new ForbiddenException(
+        'Account has been banned. Contact support for assistance.',
+      );
+    }
+
+    return this.generateTokenPair(user._id, user.email!);
   }
 
   // ─── Refresh Token ─────────────────────────────────────────────────────────
@@ -116,7 +124,7 @@ export class AuthService {
     }
 
     // Issue new pair
-    return this.generateTokenPair(user._id, user.email);
+    return this.generateTokenPair(user._id, user.email!);
   }
 
   // ─── Logout ────────────────────────────────────────────────────────────────
@@ -147,6 +155,32 @@ export class AuthService {
   // ─── Get User by ID ────────────────────────────────────────────────────────
   async getUserById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId).select('-passwordHash');
+  }
+
+  // ─── Mint delegated access token (for account switching) ────────────────────
+  /**
+   * Signs a short-lived access token with the given sub, act, and accountType.
+   * `act` is OMITTED for personal sessions (switch-back) so the token is
+   * structurally identical to a login token. Set `act` only for business sessions.
+   * Does NOT create or rotate any refresh token — the root refresh token is
+   * the only durable credential and must remain untouched on a switch.
+   */
+  mintAccessToken(params: {
+    sub: string;
+    act?: string;
+    accountType: 'personal' | 'business';
+  }): string {
+    const payload: Record<string, string> = {
+      sub: params.sub,
+      accountType: params.accountType,
+    };
+    if (params.act) {
+      payload.act = params.act;
+    }
+    return this.jwtService.sign(payload, {
+      expiresIn: (process.env.JWT_ACCESS_EXPIRY ||
+        '1h') as import('ms').StringValue,
+    });
   }
 
   // ─── Token Generation Helper ────────────────────────────────────────────────

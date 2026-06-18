@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -8,12 +7,12 @@ import {
   View,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
-import type { Business } from '../../types';
-import { businessesApi } from '../../services/api/apiService';
-import ConnectedUsersStack from '../../components/connect/ConnectedUsersStack';
+import type { BusinessAccountItem } from '../../services/api/apiService';
+import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
 import { CATEGORY_LABELS } from './constants';
 import {
   KoolaBadge,
@@ -31,6 +30,8 @@ type BusinessProfileRouteProp = RouteProp<
   'BusinessProfile'
 >;
 
+type BusinessProfileNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
+
 const LOGO_COLORS = [
   koolaColors.primary,
   koolaColors.accent,
@@ -41,21 +42,22 @@ const LOGO_COLORS = [
 
 const BusinessProfileScreen: React.FC = () => {
   const route = useRoute<BusinessProfileRouteProp>();
+  const navigation = useNavigation<BusinessProfileNavProp>();
   const { businessId } = route.params;
 
-  const [business, setBusiness] = useState<Business | null>(null);
+  const [account, setAccount] = useState<BusinessAccountItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [messaging, setMessaging] = useState(false);
 
-  const fetchBusiness = useCallback(async () => {
+  const fetchAccount = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await businessesApi.getById(businessId);
-      setBusiness(data);
+      const data = await accountDiscoveryApi.getById(businessId);
+      setAccount(data);
     } catch (err) {
-      console.warn('Failed to load business:', err);
+      console.warn('Failed to load business account:', err);
       setFetchError(
         (err as Error)?.message || 'Không thể tải thông tin doanh nghiệp',
       );
@@ -65,48 +67,24 @@ const BusinessProfileScreen: React.FC = () => {
   }, [businessId]);
 
   useEffect(() => {
-    fetchBusiness();
-  }, [fetchBusiness]);
+    fetchAccount();
+  }, [fetchAccount]);
 
-  const handleConnect = useCallback(async () => {
-    if (!business) return;
-    setConnecting(true);
-
-    if (business.isConnected) {
-      try {
-        await businessesApi.disconnect(business._id);
-        setBusiness((prev) =>
-          prev
-            ? {
-                ...prev,
-                isConnected: false,
-                connectionCount: Math.max(0, prev.connectionCount - 1),
-              }
-            : prev,
-        );
-      } catch (err) {
-        console.warn('Disconnect failed:', err);
-        Alert.alert('Lỗi', 'Không thể hủy kết nối. Vui lòng thử lại.');
-      }
-    } else {
-      try {
-        await businessesApi.connect(business._id);
-        setBusiness((prev) =>
-          prev
-            ? {
-                ...prev,
-                isConnected: true,
-                connectionCount: prev.connectionCount + 1,
-              }
-            : prev,
-        );
-      } catch (err) {
-        console.warn('Connect failed:', err);
-        Alert.alert('Lỗi', 'Không thể kết nối. Vui lòng thử lại.');
-      }
+  const handleMessage = useCallback(async () => {
+    if (!account) return;
+    setMessaging(true);
+    try {
+      const { conversation } = await conversationsApi.startDirectChat(account._id);
+      (navigation as any).navigate('ChatTab', {
+        screen: 'Chat',
+        params: { conversationId: conversation._id },
+      });
+    } catch (err) {
+      console.warn('Start direct chat failed:', err);
+    } finally {
+      setMessaging(false);
     }
-    setConnecting(false);
-  }, [business]);
+  }, [account, navigation]);
 
   if (loading) {
     return (
@@ -129,14 +107,14 @@ const BusinessProfileScreen: React.FC = () => {
           title="Không thể tải doanh nghiệp"
           message={fetchError}
           actionLabel="Thử lại"
-          onActionPress={fetchBusiness}
+          onActionPress={fetchAccount}
           style={styles.centerState}
         />
       </View>
     );
   }
 
-  if (!business) {
+  if (!account) {
     return (
       <View style={styles.container}>
         <KoolaState
@@ -149,9 +127,11 @@ const BusinessProfileScreen: React.FC = () => {
     );
   }
 
-  const bgColor = LOGO_COLORS[business.name.charCodeAt(0) % LOGO_COLORS.length];
+  const bgColor = LOGO_COLORS[account.displayName.charCodeAt(0) % LOGO_COLORS.length];
   const categoryLabel =
-    CATEGORY_LABELS[business.category] || business.category;
+    (account.businessCategory ? CATEGORY_LABELS[account.businessCategory] : undefined) ||
+    account.businessCategory ||
+    '';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -162,89 +142,79 @@ const BusinessProfileScreen: React.FC = () => {
         <View style={styles.nameSection}>
           <View style={styles.nameRow}>
             <KoolaText variant="heading" weight="800" numberOfLines={2} style={styles.name}>
-              {business.name}
+              {account.displayName}
             </KoolaText>
-            {business.isVerified ? (
+            {account.verificationStatus === 'verified' ? (
               <MaterialIcons name="verified" size={21} color={koolaColors.success} />
             ) : null}
           </View>
           <View style={styles.badgeRow}>
-            <KoolaBadge label={categoryLabel} tone="primary" />
-            <KoolaBadge label={business.province} tone="muted" />
+            {categoryLabel ? <KoolaBadge label={categoryLabel} tone="primary" /> : null}
+            {account.province ? <KoolaBadge label={account.province} tone="muted" /> : null}
           </View>
         </View>
       </KoolaSurface>
 
-      <KoolaSurface variant="soft" style={styles.typeRow}>
-        <MaterialIcons
-          name={business.relationshipType === 'partner' ? 'handshake' : 'local-shipping'}
-          size={17}
-          color={koolaColors.muted}
-        />
-        <KoolaText variant="caption" tone="muted" weight="800">
-          {business.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
-        </KoolaText>
-      </KoolaSurface>
+      {account.relationshipType ? (
+        <KoolaSurface variant="soft" style={styles.typeRow}>
+          <MaterialIcons
+            name={account.relationshipType === 'partner' ? 'handshake' : 'local-shipping'}
+            size={17}
+            color={koolaColors.muted}
+          />
+          <KoolaText variant="caption" tone="muted" weight="800">
+            {account.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
+          </KoolaText>
+        </KoolaSurface>
+      ) : null}
 
-      {business.description || business.tagline ? (
+      {account.tagline ? (
         <InfoSection title="Giới thiệu">
           <KoolaText variant="body" tone="muted">
-            {business.description || business.tagline}
+            {account.tagline}
           </KoolaText>
         </InfoSection>
       ) : null}
 
-      {business.website || business.contactEmail || business.contactPhone ? (
+      {account.website || account.contactEmail || account.contactPhone ? (
         <InfoSection title="Liên hệ">
-          {business.website ? (
+          {account.website ? (
             <ContactRow
               icon="language"
-              label={business.website}
-              onPress={() => Linking.openURL(business.website!)}
+              label={account.website}
+              onPress={() => Linking.openURL(account.website!)}
             />
           ) : null}
-          {business.contactEmail ? (
+          {account.contactEmail ? (
             <ContactRow
               icon="email"
-              label={business.contactEmail}
-              onPress={() => Linking.openURL(`mailto:${business.contactEmail}`)}
+              label={account.contactEmail}
+              onPress={() => Linking.openURL(`mailto:${account.contactEmail}`)}
             />
           ) : null}
-          {business.contactPhone ? (
+          {account.contactPhone ? (
             <ContactRow
               icon="phone"
-              label={business.contactPhone}
-              onPress={() => Linking.openURL(`tel:${business.contactPhone}`)}
+              label={account.contactPhone}
+              onPress={() => Linking.openURL(`tel:${account.contactPhone}`)}
             />
           ) : null}
         </InfoSection>
       ) : null}
 
-      {business.address ? (
+      {account.address ? (
         <InfoSection title="Địa chỉ">
-          <ContactRow icon="place" label={business.address} />
+          <ContactRow icon="place" label={account.address} />
         </InfoSection>
       ) : null}
 
-      <InfoSection title="Kết nối">
-        <View style={styles.connectedRow}>
-          <ConnectedUsersStack
-            users={business.connectedUsers || []}
-            totalCount={business.connectionCount}
-          />
-          <KoolaText tone="muted" weight="700">
-            {business.connectionCount} người đã kết nối
-          </KoolaText>
-        </View>
-      </InfoSection>
-
       <KoolaButton
-        title={business.isConnected ? 'Đã kết nối' : 'Kết nối ngay'}
-        icon={business.isConnected ? 'check-circle' : 'handshake'}
-        variant={business.isConnected ? 'secondary' : 'primary'}
-        loading={connecting}
-        disabled={connecting}
-        onPress={handleConnect}
+        title="Nhắn tin"
+        icon="chat-bubble-outline"
+        variant="primary"
+        loading={messaging}
+        disabled={messaging}
+        onPress={handleMessage}
         style={styles.actionBtn}
       />
     </ScrollView>
@@ -353,11 +323,6 @@ const styles = StyleSheet.create({
   },
   contactText: {
     flex: 1,
-  },
-  connectedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   actionBtn: {
     marginTop: 6,

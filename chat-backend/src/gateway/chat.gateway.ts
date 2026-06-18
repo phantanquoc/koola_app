@@ -24,7 +24,12 @@ import { MessageType } from '../messages/message.schema';
 const HEARTBEAT_TIMEOUT_MS = 30_000; // 30 seconds
 
 interface AuthSocketData {
-  user?: { sub: string; phone: string };
+  user?: {
+    sub: string;
+    phone: string;
+    actorId?: string;
+    accountType?: 'personal' | 'business';
+  };
   heartbeatTimer?: NodeJS.Timeout;
 }
 
@@ -120,7 +125,12 @@ export class ChatGateway
       return;
     }
 
-    let payload: { sub: string; phone: string };
+    let payload: {
+      sub: string;
+      phone: string;
+      act?: string;
+      accountType?: string;
+    };
     try {
       payload = this.jwtService.verify(token, {
         secret: process.env.JWT_SECRET,
@@ -134,6 +144,9 @@ export class ChatGateway
     (client.data as AuthSocketData).user = {
       sub: payload.sub,
       phone: payload.phone,
+      actorId: payload.act ?? payload.sub,
+      accountType:
+        (payload.accountType as 'personal' | 'business') ?? 'personal',
     };
 
     this.logger.log(
