@@ -72,6 +72,8 @@ interface AuthContextType {
   accounts: Account[];
   /** The currently active account (may be a business account) */
   activeAccount: Account | null;
+  /** True while switchAccount is tearing down + re-initialising the new account */
+  isSwitchingAccount: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   registerInit: (body: {
@@ -95,8 +97,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const appStateRef = useRef(AppState.currentState);
+
+  // The ROOT human's user id. `user._id` tracks the ACTIVE identity (it changes
+  // to the business id on switch so chat bubbles / "other member" detection are
+  // correct), so we keep the durable root id here for switchBackToPersonal and
+  // ownership-derived flows. Seeded on login/restore, never on a business switch.
+  const rootUserIdRef = useRef<string | null>(null);
 
   const isAuthenticated = !!user;
 
@@ -138,6 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setAccounts([]);
       setActiveAccount(null);
+      rootUserIdRef.current = null;
     });
     return () => setForceLogoutHandler(null);
   }, []);
@@ -190,6 +200,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const me = await usersApi.getMe();
       setUser(me);
+      // `me` here is the ROOT (token was just refreshed, before any switch).
+      rootUserIdRef.current = me._id;
 
       // Step 2: Load account list
       let loadedAccounts: Account[] = [];
@@ -209,6 +221,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           workingAccessToken = bizToken;
           setAccessTokenInMemory(bizToken);
           activeId = storedActiveAccountId;
+          // Adopt the business identity so `user._id` reflects the active
+          // account after a cold start into a business account (parity with
+          // switchAccount's getMe step).
+          try {
+            const bizMe = await usersApi.getMe();
+            setUser(bizMe);
+          } catch (e) {
+            console.warn('[AuthContext] restoreSession: business getMe failed', e);
+          }
         } catch {
           // Switch failed — fall back to personal
           await asyncStorage.clearActiveAccountId();
@@ -261,44 +282,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // (b) Get delegated token from server
-    const { accessToken: newToken } = await accountsApi.switch(targetId);
+    setIsSwitchingAccount(true);
+    try {
+      // (b) Get delegated token from server
+      const { accessToken: newToken } = await accountsApi.switch(targetId);
 
-    // (c) Tear down current account
-    unwireLocalFirst();
-    setCurrentUserId(null);
-    momentsService.setCurrentUserId(null);
-    socketService.disconnect();
-    webrtcService.disconnect();
-    shutdownDb();
-    // NOTE: do NOT clear the root refresh token here
+      // (c) Tear down current account
+      unwireLocalFirst();
+      setCurrentUserId(null);
+      momentsService.setCurrentUserId(null);
+      socketService.disconnect();
+      webrtcService.disconnect();
+      shutdownDb();
+      // NOTE: do NOT clear the root refresh token here
 
-    // (d) Set new access token in-memory and persist active account
-    setAccessTokenInMemory(newToken);
-    await asyncStorage.setActiveAccountId(targetId);
+      // (d) Set new access token in-memory and persist active account
+      setAccessTokenInMemory(newToken);
+      await asyncStorage.setActiveAccountId(targetId);
 
-    // (e) Re-init under the new account
-    setCurrentUserId(targetId);
-    momentsService.setCurrentUserId(targetId);
-    await initDb(targetId).catch((e) =>
-      console.warn('[AuthContext] switchAccount: initDb failed', e),
-    );
-    wireLocalFirst();
-    socketService.connect(newToken);
-    webrtcService.connect(newToken);
-    // Re-register FCM context (token stays on root, but we want listeners active)
-    pushNotificationService.registerToken().catch(() => {});
+      // (e) Re-init under the new account
+      setCurrentUserId(targetId);
+      momentsService.setCurrentUserId(targetId);
+      await initDb(targetId).catch((e) =>
+        console.warn('[AuthContext] switchAccount: initDb failed', e),
+      );
+      wireLocalFirst();
+      socketService.connect(newToken);
+      webrtcService.connect(newToken);
+      // Re-register FCM context (token stays on root, but we want listeners active)
+      pushNotificationService.registerToken().catch(() => {});
 
-    // (f) Update active account in state
-    const found = accounts.find((a) => a._id === targetId);
-    setActiveAccount(found ?? { _id: targetId, displayName: targetId, accountType: 'personal' });
-    // (g) Clear per-account notification badge now that this account is active
-    void clearAccountBadge(targetId);
+      // (f) Adopt the target's identity so every `user._id` consumer (chat
+      // bubble left/right, conversation "other member" detection, the profile
+      // screen) reflects the account the user is now acting as — not the root.
+      try {
+        const me = await usersApi.getMe();
+        setUser(me);
+      } catch (e) {
+        console.warn('[AuthContext] switchAccount: getMe failed', e);
+      }
+
+      // (g) Update active account in state
+      const found = accounts.find((a) => a._id === targetId);
+      setActiveAccount(found ?? { _id: targetId, displayName: targetId, accountType: 'personal' });
+      // (h) Clear per-account notification badge now that this account is active
+      void clearAccountBadge(targetId);
+    } finally {
+      setIsSwitchingAccount(false);
+    }
   }, [accounts]);
 
   const switchBackToPersonal = useCallback(async () => {
-    if (!user) return;
-    await switchAccount(user._id);
+    const rootId = rootUserIdRef.current ?? user?._id;
+    if (!rootId) return;
+    await switchAccount(rootId);
   }, [user, switchAccount]);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -308,6 +345,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const me = await usersApi.getMe();
     setUser(me);
+    rootUserIdRef.current = me._id;
     setCurrentUserId(me._id);
     momentsService.setCurrentUserId(me._id);
 
@@ -352,6 +390,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const me = await usersApi.getMe();
       setUser(me);
+      rootUserIdRef.current = me._id;
       setCurrentUserId(me._id);
       momentsService.setCurrentUserId(me._id);
 
@@ -402,6 +441,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const me = await usersApi.getMe();
     setUser(me);
+    rootUserIdRef.current = me._id;
     setCurrentUserId(me._id);
 
     const personalAccount: Account = {
@@ -493,6 +533,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       shutdownDb();
       setAccounts([]);
       setActiveAccount(null);
+      rootUserIdRef.current = null;
       // setUser(null) flips the auth group — only LogoutTransition is on the
       // stack at this point (1 screen), so Fabric's unmount batch is tiny and
       // the RNSScreenStack is already idle → no removeViewAt race.
@@ -508,6 +549,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         accounts,
         activeAccount,
+        isSwitchingAccount,
         login,
         register,
         registerInit,

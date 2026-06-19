@@ -72,6 +72,7 @@ export class AccountsController {
   @ApiOperation({ summary: 'Discover verified business accounts' })
   @ApiResponse({ status: 200 })
   async discover(
+    @CurrentUser() user: { actorId: string },
     @Query('relationshipType') relationshipType?: string,
     @Query('province') province?: string,
     @Query('businessCategory') businessCategory?: string,
@@ -80,7 +81,8 @@ export class AccountsController {
     @Query('cursor') cursor?: string,
     @Query('limit') limitStr?: string,
   ) {
-    const limit = limitStr ? parseInt(limitStr, 10) : 20;
+    const parsed = limitStr ? parseInt(limitStr, 10) : 20;
+    const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
     return this.accountsService.discoverBusinesses({
       relationshipType,
       province,
@@ -89,6 +91,7 @@ export class AccountsController {
       sort,
       cursor,
       limit,
+      actorId: user.actorId,
     });
   }
 

@@ -307,9 +307,46 @@ describe('AccountsService', () => {
       await service.discoverBusinesses({ q: 'Koola' });
       expect(mockUserModel.find).toHaveBeenCalledWith(
         expect.objectContaining({
+          // Plain alphanumeric input passes through escape unchanged
           displayName: { $regex: 'Koola', $options: 'i' },
         }),
       );
+    });
+
+    it('escapes regex metacharacters in q so user input cannot trigger ReDoS or invalid patterns', async () => {
+      mockUserModel.find.mockReturnValue(mockFindChain([]));
+
+      await service.discoverBusinesses({ q: '(a+)+$' });
+      const calledFilter = (
+        mockUserModel.find.mock.calls as Array<[Record<string, unknown>]>
+      )[0][0];
+      const dn = calledFilter.displayName as { $regex: string };
+      // Each metachar must be backslash-prefixed
+      expect(dn.$regex).toBe('\\(a\\+\\)\\+\\$');
+    });
+
+    it('excludes businesses owned by the calling actor (self-exclusion)', async () => {
+      mockUserModel.find.mockReturnValue(mockFindChain([]));
+
+      const actorId = 'aabbcc001122334455667788';
+      await service.discoverBusinesses({ actorId });
+      const calledFilter = (
+        mockUserModel.find.mock.calls as Array<[Record<string, unknown>]>
+      )[0][0];
+      expect(calledFilter).toHaveProperty('ownerUserId');
+      expect(calledFilter.ownerUserId).toEqual({
+        $ne: expect.objectContaining({ _bsontype: 'ObjectId' }),
+      });
+    });
+
+    it('ignores actorId silently when it is not a valid ObjectId', async () => {
+      mockUserModel.find.mockReturnValue(mockFindChain([]));
+
+      await service.discoverBusinesses({ actorId: 'not-an-objectid' });
+      const calledFilter = (
+        mockUserModel.find.mock.calls as Array<[Record<string, unknown>]>
+      )[0][0];
+      expect(calledFilter).not.toHaveProperty('ownerUserId');
     });
 
     it('does NOT apply relationshipType filter when value is "all"', async () => {

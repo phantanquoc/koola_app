@@ -17,8 +17,15 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const mountedRef = useRef(true);
-  const fetchingRef = useRef(false);
+  // Monotonic id; every initial fetch / refresh bumps it. Stale responses
+  // whose id !== current are dropped (last-call-wins). loadMore captures
+  // the active id at call-time and only commits if it still matches.
+  const reqIdRef = useRef(0);
+  // Tracks whether a loadMore is in flight so concurrent loadMore calls
+  // don't fan out into duplicate page fetches.
+  const loadingMoreRef = useRef(false);
 
   const buildParams = useCallback(() => {
     const params: Record<string, string | number> = { limit: 20 };
@@ -37,35 +44,34 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
     return params;
   }, [filters.relationshipType, filters.businessCategory, filters.sort, filters.province]);
 
-  // Fetch on filter change
+  // Fetch on filter change. Always issues a new request and ignores any
+  // older in-flight responses via the reqId guard.
   useEffect(() => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
+    const myId = ++reqIdRef.current;
+    loadingMoreRef.current = false;
 
     setCursor(null);
     setItems([]);
     setHasMore(false);
     setLoading(true);
 
-    const doFetch = async () => {
+    (async () => {
       try {
-        const params = buildParams();
-        const res = await accountDiscoveryApi.list(params);
-        if (!mountedRef.current) return;
+        const res = await accountDiscoveryApi.list(buildParams());
+        if (!mountedRef.current || reqIdRef.current !== myId) return;
         setError(null);
         setItems(res.items);
         setCursor(res.nextCursor);
         setHasMore(res.hasMore);
       } catch (err: any) {
-        if (mountedRef.current) {
-          setError(err?.message || 'Không thể tải dữ liệu');
-        }
+        if (!mountedRef.current || reqIdRef.current !== myId) return;
+        setError(err?.message || 'Không thể tải dữ liệu');
       } finally {
-        if (mountedRef.current) setLoading(false);
-        fetchingRef.current = false;
+        if (mountedRef.current && reqIdRef.current === myId) {
+          setLoading(false);
+        }
       }
-    };
-    doFetch();
+    })();
   }, [buildParams]);
 
   useEffect(() => {
@@ -75,48 +81,50 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || fetchingRef.current || !cursor) return;
-    fetchingRef.current = true;
+    if (!hasMore || loadingMoreRef.current || !cursor) return;
+    const myId = reqIdRef.current;
+    loadingMoreRef.current = true;
     setLoading(true);
     try {
       const params = buildParams();
       params.cursor = cursor;
       const res = await accountDiscoveryApi.list(params);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || reqIdRef.current !== myId) return;
       setError(null);
       setItems((prev) => [...prev, ...res.items]);
       setCursor(res.nextCursor);
       setHasMore(res.hasMore);
     } catch (err: any) {
-      if (mountedRef.current) {
-        setError(err?.message || 'Không thể tải dữ liệu');
-      }
+      if (!mountedRef.current || reqIdRef.current !== myId) return;
+      setError(err?.message || 'Không thể tải dữ liệu');
     } finally {
-      if (mountedRef.current) setLoading(false);
-      fetchingRef.current = false;
+      if (mountedRef.current && reqIdRef.current === myId) {
+        setLoading(false);
+      }
+      loadingMoreRef.current = false;
     }
   }, [hasMore, cursor, buildParams]);
 
   const refresh = useCallback(async () => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
+    const myId = ++reqIdRef.current;
+    loadingMoreRef.current = false;
     setRefreshing(true);
     setCursor(null);
     try {
-      const params = buildParams();
-      const res = await accountDiscoveryApi.list(params);
-      if (!mountedRef.current) return;
+      const res = await accountDiscoveryApi.list(buildParams());
+      if (!mountedRef.current || reqIdRef.current !== myId) return;
       setError(null);
       setItems(res.items);
       setCursor(res.nextCursor);
       setHasMore(res.hasMore);
     } catch (err: any) {
-      if (mountedRef.current) {
-        setError(err?.message || 'Không thể tải dữ liệu');
-      }
+      if (!mountedRef.current || reqIdRef.current !== myId) return;
+      setError(err?.message || 'Không thể tải dữ liệu');
     } finally {
-      if (mountedRef.current) setRefreshing(false);
-      fetchingRef.current = false;
+      if (mountedRef.current && reqIdRef.current === myId) {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
   }, [buildParams]);
 

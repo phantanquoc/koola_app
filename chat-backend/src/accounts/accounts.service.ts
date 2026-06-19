@@ -13,6 +13,15 @@ import { CreateBusinessAccountDto } from './dto/create-business-account.dto';
 /** Soft per-owner limit for business accounts. Raise via env or code as needed. */
 export const MAX_BUSINESS_ACCOUNTS_PER_OWNER = 10;
 
+/**
+ * Escape user input destined for a MongoDB $regex operator. Without this a
+ * caller can craft a pattern that triggers catastrophic backtracking or fails
+ * to compile, surfacing as a 500 from a public-facing search endpoint.
+ */
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 @Injectable()
 export class AccountsService {
   constructor(
@@ -139,12 +148,17 @@ export class AccountsService {
     sort?: string;
     cursor?: string;
     limit?: number;
+    /** Caller's actorId — used to hide their own owned businesses from the list */
+    actorId?: string;
   }): Promise<{
     items: UserDocument[];
     hasMore: boolean;
     nextCursor: string | null;
   }> {
-    const limit = Math.min(params.limit ?? 20, 50);
+    const rawLimit = params.limit ?? 20;
+    const safeLimit =
+      Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 20;
+    const limit = Math.min(safeLimit, 50);
     const filter: Record<string, unknown> = {
       accountType: 'business',
       verificationStatus: 'verified',
@@ -161,9 +175,17 @@ export class AccountsService {
       filter.businessCategory = params.businessCategory;
     }
     if (params.q) {
-      filter.displayName = { $regex: params.q, $options: 'i' };
+      filter.displayName = {
+        $regex: escapeRegex(params.q),
+        $options: 'i',
+      };
     }
-    if (params.cursor) {
+    // Hide the caller's own owned businesses so they cannot self-message via
+    // the discovery surface (POST /conversations/direct/:self → 400).
+    if (params.actorId && Types.ObjectId.isValid(params.actorId)) {
+      filter.ownerUserId = { $ne: new Types.ObjectId(params.actorId) };
+    }
+    if (params.cursor && Types.ObjectId.isValid(params.cursor)) {
       filter._id = { $lt: new Types.ObjectId(params.cursor) };
     }
 

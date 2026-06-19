@@ -34,7 +34,7 @@ const Separator = () => <View style={styles.separator} />;
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation<ConversationListScreenNavigationProp>();
   const tabBarInset = useTabBarBottomInset();
-  const { user } = useAuth();
+  const { user, activeAccount } = useAuth();
   const { sync } = useMessageSync();
   const { isConnected } = useNetworkStatus();
   const localFirstEnabled = useLocalFirstFlag();
@@ -53,8 +53,18 @@ const ConversationListScreen: React.FC = () => {
   // When LOCAL_FIRST_SQLITE is on: read from conversationRepository + subscribe.
   // Replace the useFocusEffect REST reset with: read SQLite first, fire
   // background sync if cursor is stale.
+  //
+  // Re-runs on account switch (activeAccount?._id): switchAccount() wipes the DB
+  // and clears the invalidation broadcaster, which silently drops this screen's
+  // subscription. Without the dep the effect would never re-subscribe, so the
+  // list would keep rendering the previous account's stale conversations even
+  // after REST re-seeds SQLite for the new account.
   useEffect(() => {
     if (!localFirstEnabled) return;
+
+    // Clear any stale rows from the previous account immediately so the list
+    // never flashes the old account's conversations while the new ones load.
+    setConversations([]);
 
     // Initial read from SQLite
     const loadFromDb = () => {
@@ -93,7 +103,7 @@ const ConversationListScreen: React.FC = () => {
     }
 
     return unsub;
-  }, [localFirstEnabled]);
+  }, [localFirstEnabled, activeAccount?._id]);
 
   const fetchConversations = useCallback(
     async (reset = false) => {

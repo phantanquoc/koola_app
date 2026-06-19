@@ -630,9 +630,11 @@ const ChatScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         )}
-        {/* Empty state — conversation has no messages yet */}
+        {/* Empty state — conversation has no messages yet.
+            pointerEvents="none" so the overlay does not swallow taps targeting
+            the absolute-positioned ChatComposer that sits visually below it. */}
         {chatReady && !isInitialLoading && !initialLoadError && messages.length === 0 && (
-          <View style={styles.emptyOverlay}>
+          <View pointerEvents="none" style={styles.emptyOverlay}>
             <View style={styles.emptyIconShell}>
               <MaterialIcons name="chat-bubble-outline" size={28} color={koolaColors.primary} />
             </View>

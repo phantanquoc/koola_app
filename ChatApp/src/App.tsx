@@ -1,7 +1,7 @@
 import '../global.css';
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { LogBox, StatusBar } from 'react-native';
+import { ActivityIndicator, LogBox, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -56,7 +56,7 @@ function navigateToIncomingCall(params: IncomingCallNavParams): void {
 /** Inner component that uses hooks requiring AuthProvider context */
 const AppInner: React.FC = () => {
   useIncomingCall();
-  const { isAuthenticated, activeAccount, switchAccount } = useAuth();
+  const { isAuthenticated, activeAccount, switchAccount, isSwitchingAccount } = useAuth();
 
   // Replay any pending incoming-call payload (delivered via FCM while app
   // was killed/background) and listen for foreground call pushes. Both gated
@@ -131,7 +131,19 @@ const AppInner: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  return <RootNavigator />;
+  return (
+    <>
+      <RootNavigator />
+      {isSwitchingAccount && (
+        <View style={styles.switchOverlay} pointerEvents="auto">
+          <View style={styles.switchCard}>
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={styles.switchText}>Đang chuyển tài khoản…</Text>
+          </View>
+        </View>
+      )}
+    </>
+  );
 };
 
 const App: React.FC = () => {
@@ -169,5 +181,32 @@ const App: React.FC = () => {
     </GestureHandlerRootView>
   );
 };
+
+const styles = StyleSheet.create({
+  // Full-screen blocking overlay shown while switchAccount() tears down and
+  // re-initialises the new account (token swap + SQLite re-init + socket
+  // reconnect). pointerEvents:'auto' blocks taps so the user can't interact
+  // with the previous account's still-mounted screens mid-switch.
+  switchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  switchCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    gap: 12,
+  },
+  switchText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+});
 
 export default App;
