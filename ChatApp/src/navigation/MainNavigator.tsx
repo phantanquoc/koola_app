@@ -30,6 +30,20 @@ import { KoolaText, koolaColors } from '../ui';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+type TabDockSuppressionContextValue = {
+  isTabDockSuppressed: boolean;
+  suppressTabDock: () => () => void;
+};
+
+const TabDockSuppressionContext = React.createContext<TabDockSuppressionContextValue>({
+  isTabDockSuppressed: false,
+  suppressTabDock: () => () => {},
+});
+
+export function useTabDockSuppression(): () => () => void {
+  return React.useContext(TabDockSuppressionContext).suppressTabDock;
+}
+
 // ─── DIAGNOSTIC (logout removeViewAt crash) ─────────────────────────────────
 // The tab dock runs a live BlurView + perpetual reanimated loops (borderPulse,
 // sheen, per-icon breath) on the UI thread. On logout the whole MainNavigator
@@ -290,7 +304,23 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   navigation,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
+  const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
+
+  // Small one-shot reveal so the dock doesn't pop in after a fullscreen route
+  // finishes closing. It is not a perpetual loop, so it remains unmount-safe.
+  const reveal = useSharedValue(isHidden ? 0 : 1);
+  React.useEffect(() => {
+    reveal.value = isHidden
+      ? 0
+      : withTiming(1, { duration: 110, easing: Easing.out(Easing.cubic) });
+  }, [isHidden, reveal]);
+
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: 8 * (1 - reveal.value) }],
+  }));
 
   // Border breathing pulse (slow ambient)
   const borderPulse = useSharedValue(0);
@@ -327,14 +357,15 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     };
   });
 
-  if (shouldHideTabBar(activeRoute)) return null;
+  if (isHidden) return null;
 
   return (
-    <View
+    <Animated.View
       pointerEvents="box-none"
       style={[
         styles.tabBarHost,
         { paddingBottom: Math.max(insets.bottom, 8) },
+        revealStyle,
       ]}>
       <View style={styles.shadowWrap}>
         <View style={styles.tabDock}>
@@ -430,53 +461,74 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
           })}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
 const MainNavigator: React.FC = () => {
+  const suppressionIdsRef = React.useRef(new Set<symbol>());
+  const [isTabDockSuppressed, setIsTabDockSuppressed] = React.useState(false);
+
+  const suppressTabDock = React.useCallback(() => {
+    const id = Symbol('tab-dock-suppression');
+    suppressionIdsRef.current.add(id);
+    setIsTabDockSuppressed(true);
+
+    return () => {
+      suppressionIdsRef.current.delete(id);
+      setIsTabDockSuppressed(suppressionIdsRef.current.size > 0);
+    };
+  }, []);
+
+  const suppressionContext = React.useMemo(
+    () => ({ isTabDockSuppressed, suppressTabDock }),
+    [isTabDockSuppressed, suppressTabDock],
+  );
+
   return (
-    <Tab.Navigator
-      tabBar={(props) => <CustomKoolaTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: 'transparent',
-          borderTopWidth: 0,
-          elevation: 0,
-        },
-      }}>
-      <Tab.Screen name="ChatTab" component={ChatTabStack} />
-      <Tab.Screen
-        name="ShoppingTab"
-        component={ShoppingTabStack}
-        options={{
-          tabBarAccessibilityLabel: 'Mua sắm',
-        }}
-      />
-      <Tab.Screen
-        name="ConnectTab"
-        component={ConnectTabStack}
-        options={{
-          tabBarAccessibilityLabel: 'Kết nối',
-        }}
-      />
-      <Tab.Screen
-        name="SupportTab"
-        component={SupportTabStack}
-        options={{
-          tabBarAccessibilityLabel: 'Dịch vụ',
-        }}
-      />
-      <Tab.Screen
-        name="PersonalTab"
-        component={PersonalTabStack}
-        options={{
-          tabBarAccessibilityLabel: 'Cá nhân',
-        }}
-      />
-    </Tab.Navigator>
+    <TabDockSuppressionContext.Provider value={suppressionContext}>
+      <Tab.Navigator
+        tabBar={(props) => <CustomKoolaTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            position: 'absolute',
+            backgroundColor: 'transparent',
+            borderTopWidth: 0,
+            elevation: 0,
+          },
+        }}>
+        <Tab.Screen name="ChatTab" component={ChatTabStack} />
+        <Tab.Screen
+          name="ShoppingTab"
+          component={ShoppingTabStack}
+          options={{
+            tabBarAccessibilityLabel: 'Mua sắm',
+          }}
+        />
+        <Tab.Screen
+          name="ConnectTab"
+          component={ConnectTabStack}
+          options={{
+            tabBarAccessibilityLabel: 'Kết nối',
+          }}
+        />
+        <Tab.Screen
+          name="SupportTab"
+          component={SupportTabStack}
+          options={{
+            tabBarAccessibilityLabel: 'Dịch vụ',
+          }}
+        />
+        <Tab.Screen
+          name="PersonalTab"
+          component={PersonalTabStack}
+          options={{
+            tabBarAccessibilityLabel: 'Cá nhân',
+          }}
+        />
+      </Tab.Navigator>
+    </TabDockSuppressionContext.Provider>
   );
 };
 

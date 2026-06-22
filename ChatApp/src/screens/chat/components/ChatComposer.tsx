@@ -1,5 +1,11 @@
-import React, { useCallback, useImperativeHandle, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import { KoolaIconButton, koolaColors, koolaSpacing } from '../../../ui';
@@ -51,15 +57,30 @@ interface ChatComposerProps {
   disabled?: boolean;
   /** Offline → send still allowed (queued), but the bar reflects the state. */
   offline?: boolean;
+  /** Starts a quick exit motion during native pop so the tab dock can return sooner. */
+  exiting?: boolean;
 }
 
 const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
-  ({ onSend, onChangeText, onPressEmoji, onPressVoice, onPressImage, onPressAttach, disabled, offline }, ref) => {
+  ({ onSend, onChangeText, onPressEmoji, onPressVoice, onPressImage, onPressAttach, disabled, offline, exiting }, ref) => {
     const textRef = useRef('');
     const inputRef = useRef<TextInput>(null);
     const [hasText, setHasText] = useState(false);
     const insets = useSafeAreaInsets();
     const bottomPad = Math.max(insets.bottom, 8);
+    const exitProgress = useSharedValue(exiting ? 1 : 0);
+
+    useEffect(() => {
+      exitProgress.value = withTiming(exiting ? 1 : 0, {
+        duration: exiting ? 100 : 90,
+        easing: Easing.out(Easing.cubic),
+      });
+    }, [exiting, exitProgress]);
+
+    const exitStyle = useAnimatedStyle(() => ({
+      opacity: 1 - exitProgress.value,
+      transform: [{ translateY: 24 * exitProgress.value }],
+    }));
 
     const clear = useCallback(() => {
       textRef.current = '';
@@ -87,7 +108,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
     }, [clear, onSend]);
 
     return (
-      <View pointerEvents="box-none" style={[styles.host, { paddingBottom: bottomPad }]}>
+      <Animated.View pointerEvents="box-none" style={[styles.host, { paddingBottom: bottomPad }, exitStyle]}>
         {/* Outer wrapper — drop shadow only. No overflow:hidden so the shadow
             isn't squared off on Android. */}
         <View style={styles.shadowWrap}>
@@ -208,7 +229,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
             </View>
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   },
 );

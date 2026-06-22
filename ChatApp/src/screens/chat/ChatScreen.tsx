@@ -53,6 +53,7 @@ import { KoolaText, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabDockSuppression } from '../../navigation/MainNavigator';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 50,
@@ -73,7 +74,47 @@ const ChatScreen: React.FC = () => {
   const { sendViaQueue } = useOfflineQueue();
   const [chatReady, setChatReady] = useState(true);
   const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false);
+  const [isComposerExiting, setIsComposerExiting] = useState(false);
   const composerRef = useRef<ChatComposerHandle>(null);
+  const suppressTabDock = useTabDockSuppression();
+
+  // While Chat is on screen, the main tab dock stays hidden. On back, hide the
+  // composer first and return the dock after the tuned handoff delay; this avoids
+  // the heavy overlap of an immediate release without waiting for full pop end.
+  useEffect(() => {
+    const releaseSuppression = suppressTabDock();
+    let released = false;
+    let isRemoving = false;
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (releaseTimer) clearTimeout(releaseTimer);
+      releaseSuppression();
+    };
+
+    const scheduleComposerExitRelease = () => {
+      if (released) return;
+      if (releaseTimer) clearTimeout(releaseTimer);
+      releaseTimer = setTimeout(release, 280);
+    };
+
+    const unsubscribeRemove = navigation.addListener('beforeRemove', () => {
+      isRemoving = true;
+      setIsComposerExiting(true);
+      scheduleComposerExitRelease();
+    });
+
+    return () => {
+      unsubscribeRemove();
+      if (isRemoving) {
+        scheduleComposerExitRelease();
+        return;
+      }
+      release();
+    };
+  }, [navigation, suppressTabDock]);
 
   // ─── Focus + mount guard for async setState ────────────────────────────────
   // Prevents async callbacks from calling setState on a screen that is already
@@ -552,6 +593,7 @@ const ChatScreen: React.FC = () => {
         onPressAttach={handleAttachment}
         disabled={isUploading}
         offline={isConnected === false}
+        exiting={isComposerExiting}
       />
     ),
     [
@@ -563,6 +605,7 @@ const ChatScreen: React.FC = () => {
       handleAttachment,
       isUploading,
       isConnected,
+      isComposerExiting,
     ],
   );
 
