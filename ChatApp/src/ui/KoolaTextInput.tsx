@@ -35,6 +35,7 @@ export const KoolaTextInput: React.FC<KoolaTextInputProps> = ({
       ) : null}
       <TextInput
         {...props}
+        underlineColorAndroid="transparent"
         placeholderTextColor={placeholderTextColor}
         style={[styles.input, style]}
       />

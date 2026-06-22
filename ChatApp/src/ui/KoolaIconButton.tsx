@@ -29,6 +29,7 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
   disabled,
   style,
   accessibilityRole = 'button',
+  accessibilityState,
   onPressIn,
   onPressOut,
   ...props
@@ -39,6 +40,10 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
     <Pressable
       {...props}
       accessibilityRole={accessibilityRole}
+      accessibilityState={{
+        ...accessibilityState,
+        disabled: disabled || accessibilityState?.disabled,
+      }}
       disabled={disabled}
       onPressIn={(event) => {
         if (!disabled) setPressed(true);

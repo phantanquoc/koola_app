@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import apiClient, { conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
 import { useAuth } from '../../contexts/AuthContext';
+import { KoolaText, koolaColors } from '../../ui';
+import type { ChatTabStackParamList } from '../../navigation/types';
 import type { Conversation, User } from '../../types';
 
 const memberUserId = (m: any): string =>
@@ -16,10 +20,11 @@ const memberUserId = (m: any): string =>
     : String(m?.userId || '');
 
 const GroupInfoScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const route = useRoute<{ key: string; name: string; params: { conversationId: string } }>();
   const { conversationId } = route.params;
   const { user: currentUser } = useAuth();
+  const insets = useSafeAreaInsets();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
@@ -75,6 +80,11 @@ const GroupInfoScreen: React.FC = () => {
     ]);
   };
 
+  const handleOpenProfile = useCallback((userId: string) => {
+    if (!userId.trim()) return;
+    navigation.navigate('Profile', { userId });
+  }, [navigation]);
+
   const handleLeaveGroup = () => {
     Alert.alert('Rời nhóm', 'Bạn có chắc chắn muốn rời nhóm?', [
       { text: 'Hủy', style: 'cancel' },
@@ -85,11 +95,47 @@ const GroupInfoScreen: React.FC = () => {
     ]);
   };
 
-  if (loading) return <SafeAreaView style={s.ctr} edges={['bottom','left','right']}><ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 60 }} /></SafeAreaView>;
-  if (!conversation) return <SafeAreaView style={s.ctr} edges={['bottom','left','right']}><Text style={s.err}>Không tìm thấy nhóm</Text></SafeAreaView>;
+  const renderHeader = () => (
+    <View style={[s.topHeader, { paddingTop: insets.top }]}>
+      <View style={s.topHeaderRow}>
+        <Pressable
+          onPress={navigation.goBack}
+          hitSlop={12}
+          android_ripple={{ color: koolaColors.line, borderless: true, radius: 22 }}
+          style={({ pressed }) => [s.topHeaderBack, pressed && s.topHeaderBackPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại">
+          <MaterialIcons name="arrow-back" size={24} color={koolaColors.ink} />
+        </Pressable>
+        <KoolaText variant="heading" weight="700" style={s.topHeaderTitle} numberOfLines={1}>
+          Thông tin nhóm
+        </KoolaText>
+        <View style={s.topHeaderSpacer} />
+      </View>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={s.ctr} edges={['bottom','left','right']}>
+        {renderHeader()}
+        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 60 }} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!conversation) {
+    return (
+      <SafeAreaView style={s.ctr} edges={['bottom','left','right']}>
+        {renderHeader()}
+        <Text style={s.err}>Không tìm thấy nhóm</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={s.ctr} edges={['bottom','left','right']}>
+      {renderHeader()}
       <View style={s.hdr}>
         <UserAvatar displayName={conversation.name || 'Nhóm'} size={72} />
         {editingName ? (
@@ -125,8 +171,16 @@ const GroupInfoScreen: React.FC = () => {
           const self = uid === currentUser?._id;
           return (
             <View style={s.mi}>
-              <UserAvatar displayName={nm} avatar={u?.avatar || undefined} size={40} />
-              <View style={s.miInfo}><Text style={s.miName}>{nm}{self ? ' (Bạn)' : ''}</Text><Text style={s.miRole}>{item.role === 'admin' ? 'Quản trị' : 'Thành viên'}</Text></View>
+              <Pressable
+                onPress={() => handleOpenProfile(uid)}
+                disabled={!uid}
+                android_ripple={{ color: '#f0f0f0' }}
+                style={({ pressed }) => [s.miProfile, pressed && s.miProfilePressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Mở hồ sơ của ${nm}${self ? ' (Bạn)' : ''}`}>
+                <UserAvatar displayName={nm} avatar={u?.avatar || undefined} size={40} />
+                <View style={s.miInfo}><Text style={s.miName}>{nm}{self ? ' (Bạn)' : ''}</Text><Text style={s.miRole}>{item.role === 'admin' ? 'Quản trị' : 'Thành viên'}</Text></View>
+              </Pressable>
               {isAdmin && !self && <TouchableOpacity onPress={() => handleRemoveMember(uid, nm)}><Text style={s.rmBtn}>Xóa</Text></TouchableOpacity>}
             </View>);
         }} ItemSeparatorComponent={() => <View style={s.sep} />} />
@@ -137,6 +191,34 @@ const GroupInfoScreen: React.FC = () => {
 
 const s = StyleSheet.create({
   ctr: { flex: 1, backgroundColor: '#fff' },
+  topHeader: {
+    backgroundColor: koolaColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
+  },
+  topHeaderRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  topHeaderBack: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderBackPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
+  },
+  topHeaderTitle: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  topHeaderSpacer: {
+    width: 44,
+  },
   hdr: { alignItems: 'center', paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   gName: { fontSize: 22, fontWeight: 'bold', color: '#333', marginTop: 12, textAlign: 'center' },
   hint: { fontSize: 12, color: '#2196F3', textAlign: 'center', marginTop: 2 },
@@ -154,6 +236,8 @@ const s = StyleSheet.create({
   addGo: { marginLeft: 8, backgroundColor: '#2196F3', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   addGoT: { color: '#fff', fontWeight: '600', fontSize: 13 },
   mi: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
+  miProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  miProfilePressed: { opacity: 0.72 },
   miInfo: { flex: 1, marginLeft: 12 },
   miName: { fontSize: 15, fontWeight: '500', color: '#333' },
   miRole: { fontSize: 12, color: '#999', marginTop: 2 },

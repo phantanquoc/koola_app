@@ -12,6 +12,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -68,76 +69,88 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#f4f6f8',
-      }}
-    >
-      <div
-        style={{
-          background: '#fff',
-          padding: '2rem',
-          borderRadius: 8,
-          boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-          width: 360,
-        }}
-      >
-        <h1 style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>
-          Koola Admin
-        </h1>
-        <form onSubmit={handleSubmit} aria-label="Đăng nhập quản trị">
-          <div style={{ marginBottom: '1rem' }}>
-            <label
-              htmlFor="email"
-              style={{ display: 'block', marginBottom: 4 }}
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="username"
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-            />
+    <main className="login-page">
+      <section className="login-card" aria-label="Đăng nhập Koola Admin">
+        <div className="login-hero">
+          <div className="admin-brand" style={{ marginBottom: 'var(--space-7)' }}>
+            <div className="admin-brand-mark" aria-hidden="true">
+              K
+            </div>
+            <div>
+              <div className="admin-brand-title">Koola Admin</div>
+              <div className="admin-brand-subtitle" style={{ color: 'rgba(255,255,255,0.72)' }}>
+                Operations console
+              </div>
+            </div>
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label
-              htmlFor="password"
-              style={{ display: 'block', marginBottom: 4 }}
-            >
-              Mật khẩu
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-            />
-          </div>
-          {error && (
-            <p role="alert" style={{ color: '#c0392b', marginBottom: '1rem' }}>
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{ width: '100%', padding: '0.6rem', cursor: 'pointer' }}
-          >
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
-          </button>
-        </form>
-      </div>
-    </div>
+          <h1>Điều hành Koola gọn, rõ và an toàn.</h1>
+          <p>
+            Duyệt doanh nghiệp, kiểm soát tài khoản và theo dõi trạng thái vận hành từ một bề mặt quản trị tập trung.
+          </p>
+        </div>
+
+        <div className="login-form-panel">
+          <div className="page-eyebrow">Admin access</div>
+          <h2 className="panel-title">Đăng nhập quản trị</h2>
+          <p className="panel-subtitle">
+            Dùng tài khoản có quyền admin để tiếp tục.
+          </p>
+
+          <form className="login-form" onSubmit={handleSubmit} aria-label="Đăng nhập quản trị">
+            <div className="form-field">
+              <label className="form-label" htmlFor="email">
+                Email
+              </label>
+              <input
+                className="input"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="username"
+                placeholder="admin@koola.app"
+              />
+            </div>
+
+            <div className="form-field">
+              <label className="form-label" htmlFor="password">
+                Mật khẩu
+              </label>
+              <div className="password-row">
+                <input
+                  className="input"
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  placeholder="Nhập mật khẩu"
+                />
+                <button
+                  className="btn btn-ghost btn-sm password-toggle"
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                >
+                  {showPassword ? 'Ẩn' : 'Hiện'}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <p className="alert" role="alert">
+                {error}
+              </p>
+            )}
+
+            <button className="btn btn-primary" type="submit" disabled={loading}>
+              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            </button>
+          </form>
+        </div>
+      </section>
+    </main>
   );
 }

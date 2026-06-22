@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { getOrDownload } from '../../services/media/mediaCacheService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   ProfileScreenNavigationProp,
   ProfileScreenRouteProp,
@@ -22,12 +23,16 @@ import {
   KoolaText,
   KoolaSkeleton,
   koolaColors,
+  koolaRadii,
+  koolaShadows,
+  koolaSpacing,
 } from '../../ui';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const route = useRoute<ProfileScreenRouteProp>();
   const { userId } = route.params;
+  const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarBottomInset();
 
   const [profileUser, setProfileUser] = useState<User | null>(null);
@@ -58,6 +63,8 @@ const ProfileScreen: React.FC = () => {
             email: u.email,
             displayName: u.displayName,
             avatar: u.avatar || '',
+            username: u.username,
+            bio: u.bio,
             isOnline: u.isOnline,
             lastSeen: u.lastSeen,
             settings: u.settings || { notificationsEnabled: true },
@@ -96,9 +103,30 @@ const ProfileScreen: React.FC = () => {
     }
   }, [userId, navigation]);
 
+  const renderHeader = () => (
+    <View style={[styles.header, { paddingTop: insets.top }]}>
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={navigation.goBack}
+          hitSlop={12}
+          android_ripple={{ color: koolaColors.line, borderless: true, radius: 22 }}
+          style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại">
+          <MaterialIcons name="arrow-back" size={24} color={koolaColors.ink} />
+        </Pressable>
+        <KoolaText variant="heading" weight="700" style={styles.headerTitle} numberOfLines={1}>
+          Hồ sơ
+        </KoolaText>
+        <View style={styles.headerSpacer} />
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
+        {renderHeader()}
         <View style={styles.loadingWrap}>
           <KoolaSurface variant="raised" style={styles.loadingCard}>
             <KoolaSkeleton width={92} height={92} radius={46} />
@@ -108,19 +136,22 @@ const ProfileScreen: React.FC = () => {
             <KoolaSkeleton width="100%" height={84} radius={14} />
           </KoolaSurface>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!profileUser) {
     return (
-      <SafeAreaView style={styles.container}>
-        <KoolaState
-          icon="person-off"
-          title="Không tìm thấy người dùng"
-          message="Hồ sơ này không tồn tại hoặc bạn không có quyền xem."
-        />
-      </SafeAreaView>
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.stateWrap}>
+          <KoolaState
+            icon="person-off"
+            title="Không tìm thấy người dùng"
+            message="Hồ sơ này không tồn tại hoặc bạn không có quyền xem."
+          />
+        </View>
+      </View>
     );
   }
 
@@ -134,7 +165,8 @@ const ProfileScreen: React.FC = () => {
       : 'Đang ngoại tuyến';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      {renderHeader()}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
@@ -142,24 +174,25 @@ const ProfileScreen: React.FC = () => {
           { paddingBottom: tabBarInset + 18 },
         ]}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.heroBand}>
-          {coverUri ? (
-            <Image
-              source={{ uri: coverUri }}
-              style={styles.heroBandImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <FakeGradientBand />
-          )}
-        </View>
-
         <KoolaSurface variant="raised" style={styles.profileCard}>
+          <View style={styles.coverFrame}>
+            {coverUri ? (
+              <Image
+                source={{ uri: coverUri }}
+                style={styles.coverImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <FakeGradientBand />
+            )}
+            <View style={styles.coverScrim} />
+          </View>
+
           <View style={styles.avatarFrame}>
             <UserAvatar
               displayName={profileUser.displayName}
               avatar={profileUser.avatar || undefined}
-              size={104}
+              size={112}
             />
           </View>
 
@@ -167,9 +200,11 @@ const ProfileScreen: React.FC = () => {
             <KoolaText variant="title" align="center" numberOfLines={2} style={styles.name}>
               {profileUser.displayName}
             </KoolaText>
-            <KoolaText variant="body" tone="muted" align="center" numberOfLines={1}>
-              {profileUser.email}
-            </KoolaText>
+            {profileUser.username ? (
+              <KoolaText variant="label" tone="primary" align="center" numberOfLines={1}>
+                @{profileUser.username}
+              </KoolaText>
+            ) : null}
           </View>
 
           <View style={styles.statusRow}>
@@ -184,9 +219,25 @@ const ProfileScreen: React.FC = () => {
               tone={profileUser.isOnline ? 'success' : 'muted'}
             />
           </View>
+
+          {profileUser.bio ? (
+            <View style={styles.bioBox}>
+              <KoolaText variant="body" tone="muted" align="center" numberOfLines={3}>
+                {profileUser.bio}
+              </KoolaText>
+            </View>
+          ) : null}
         </KoolaSurface>
 
         <KoolaSurface variant="outline" style={styles.infoCard}>
+          <View style={styles.sectionIntro}>
+            <KoolaText variant="heading" weight="700">
+              Thông tin hồ sơ
+            </KoolaText>
+            <KoolaText variant="caption" tone="muted">
+              Những thông tin giúp bạn nhận diện và liên hệ đúng người.
+            </KoolaText>
+          </View>
           <InfoRow
             icon="alternate-email"
             label="Email"
@@ -218,7 +269,7 @@ const ProfileScreen: React.FC = () => {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -274,12 +325,42 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
+  header: {
+    backgroundColor: koolaColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: koolaColors.line,
+  },
+  headerRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: koolaSpacing.sm,
+  },
+  headerBack: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerBackPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 44,
+  },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingTop: koolaSpacing.lg,
   },
   loadingWrap: {
+    flex: 1,
     padding: 16,
+    justifyContent: 'center',
   },
   loadingCard: {
     alignItems: 'center',
@@ -287,37 +368,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     gap: 14,
   },
-  heroBand: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 156,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: 'hidden',
+  stateWrap: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  heroBandImage: {
+  coverFrame: {
+    width: '100%',
+    height: 164,
+    overflow: 'hidden',
+    borderTopLeftRadius: koolaRadii.lg,
+    borderTopRightRadius: koolaRadii.lg,
+    backgroundColor: koolaColors.primarySoft,
+  },
+  coverImage: {
     ...StyleSheet.absoluteFillObject,
+  },
+  coverScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16,24,40,0.08)',
   },
   profileCard: {
     alignItems: 'center',
-    paddingTop: 26,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    marginTop: 28,
+    overflow: 'hidden',
+    borderRadius: koolaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
+    ...koolaShadows.soft,
   },
   avatarFrame: {
-    padding: 4,
-    borderRadius: 999,
+    marginTop: -58,
+    padding: 5,
+    borderRadius: koolaRadii.pill,
     backgroundColor: koolaColors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: koolaColors.line,
+    ...koolaShadows.subtle,
   },
   identityBlock: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: koolaSpacing.md,
+    paddingHorizontal: koolaSpacing.lg,
   },
   name: {
     color: koolaColors.ink,
@@ -325,8 +416,8 @@ const styles = StyleSheet.create({
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 14,
+    gap: koolaSpacing.sm,
+    marginTop: koolaSpacing.md,
   },
   statusDot: {
     width: 9,
@@ -339,36 +430,54 @@ const styles = StyleSheet.create({
   offline: {
     backgroundColor: koolaColors.faint,
   },
+  bioBox: {
+    marginTop: koolaSpacing.lg,
+    marginHorizontal: koolaSpacing.xl,
+    marginBottom: koolaSpacing.xl,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.md,
+    borderRadius: koolaRadii.md,
+    backgroundColor: koolaColors.canvas,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
+  },
   infoCard: {
-    marginTop: 14,
+    marginTop: koolaSpacing.lg,
     overflow: 'hidden',
+    borderRadius: koolaRadii.lg,
+  },
+  sectionIntro: {
+    paddingHorizontal: koolaSpacing.lg,
+    paddingTop: koolaSpacing.lg,
+    paddingBottom: koolaSpacing.md,
+    gap: koolaSpacing.xs,
   },
   infoRow: {
-    minHeight: 72,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: 74,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: koolaSpacing.md,
   },
   infoIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: koolaRadii.md,
     backgroundColor: koolaColors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   infoCopy: {
     flex: 1,
-    gap: 2,
+    gap: koolaSpacing.xs,
   },
   actionPanel: {
-    marginTop: 14,
-    gap: 10,
+    marginTop: koolaSpacing.lg,
+    gap: koolaSpacing.md,
   },
   chatButton: {
-    borderRadius: 14,
+    borderRadius: koolaRadii.md,
   },
 });
 

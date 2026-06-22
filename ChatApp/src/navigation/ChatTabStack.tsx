@@ -35,12 +35,12 @@ const ChatTabStack: React.FC = () => {
       <Stack.Screen
         name="GroupInfo"
         component={GroupInfoScreen}
-        options={{ headerShown: true, title: 'Thông tin nhóm' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ headerShown: true, title: 'Hồ sơ' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="UniversalSearch"
