@@ -554,8 +554,10 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: 'transparent',
     borderWidth: 2,
-    // DEBUG — solid mid-gray so the dock outline is unambiguous.
-    borderColor: '#6B7280',
+    // Glass rim — matches the ChatComposer dock so the two floating docks read
+    // as the same material. (Was a debug mid-gray outline during the tab-dock
+    // crash investigation; restored to the brand primary rim.)
+    borderColor: koolaColors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -569,8 +571,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.25,
     borderColor: 'rgba(37,99,235,0.25)',
   },
-  // Liquid glass layer 1 — DEBUG: very low alpha so artifacts under the dock
-  // are clearly visible.
+  // Liquid glass layer 1 — translucent SVG gradient fill (faux blur host).
   tabDockStaticFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 26,

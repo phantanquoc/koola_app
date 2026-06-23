@@ -18,6 +18,7 @@ import {
 import Slider from '@react-native-community/slider';
 import Video from 'react-native-video';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KoolaText, KoolaButton, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
 import { momentsService } from '../../services/moments/momentsService';
 import type { MusicTrack, MusicRef } from '../../services/moments/momentsApi';
@@ -59,6 +60,7 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const searchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const insets = useSafeAreaInsets();
 
   // Stop any preview when the modal closes so audio never leaks across screens.
   useEffect(() => {
@@ -225,7 +227,7 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
           />
         ) : null}
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + koolaSpacing.sm }]}>
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
@@ -261,6 +263,16 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
             accessibilityLabel="Tìm kiếm nhạc"
           />
         </View>
+
+        {/* Selected-track summary — makes the current choice obvious */}
+        {selectedTrack && (
+          <View style={styles.selectedBanner} accessibilityLabel={`Đã chọn: ${selectedTrack.title} bởi ${selectedTrack.artist}`}>
+            <MaterialIcons name="check-circle" size={18} color={koolaColors.primary} />
+            <KoolaText variant="caption" tone="ink" numberOfLines={1} style={styles.selectedBannerText}>
+              Đã chọn: {selectedTrack.title} · {selectedTrack.artist}
+            </KoolaText>
+          </View>
+        )}
 
         {/* Start offset slider (only when track selected) */}
         {selectedTrack && durationSeconds > 0 && (
@@ -299,8 +311,11 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
             contentContainerStyle={styles.trackList}
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <KoolaText tone="muted" align="center">
-                  Không tìm thấy nhạc nào.
+                <MaterialIcons name="music-off" size={40} color={koolaColors.faint} />
+                <KoolaText tone="muted" align="center" style={styles.emptyText}>
+                  {query.trim()
+                    ? `Không tìm thấy nhạc cho "${query.trim()}". Thử từ khóa khác.`
+                    : 'Chưa có nhạc nào. Kéo xuống để thử lại sau.'}
                 </KoolaText>
               </View>
             }
@@ -435,6 +450,22 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     padding: 40,
+    alignItems: 'center',
+    gap: koolaSpacing.sm,
+  },
+  emptyText: {
+    marginTop: koolaSpacing.xs,
+  },
+  selectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: koolaSpacing.sm,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.sm,
+    backgroundColor: koolaColors.primarySoft,
+  },
+  selectedBannerText: {
+    flex: 1,
   },
   removeButton: {
     padding: 16,

@@ -113,6 +113,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
             isn't squared off on Android. */}
         <View style={styles.shadowWrap}>
           <View
+            accessibilityState={{ disabled: !!disabled, busy: !!disabled }}
             style={[
               styles.dock,
               offline ? styles.dockOffline : null,
@@ -188,6 +189,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
                   hitSlop={8}
                   onPress={handleSendPress}
                   accessibilityLabel="Gửi tin nhắn"
+                  accessibilityHint={offline ? 'Tin nhắn sẽ được gửi khi có kết nối mạng' : undefined}
                 />
               ) : (
                 <>

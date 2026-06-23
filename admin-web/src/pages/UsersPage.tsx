@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import apiClient from '../apiClient';
+import StateBlock from '../components/StateBlock';
+import { VerificationBadge } from '../components/StatusBadge';
+import { initials } from '../components/formatters';
 
 interface User {
   _id: string;
@@ -21,24 +24,8 @@ interface PaginatedUsers {
   limit: number;
 }
 
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'U';
-}
-
 function accountTypeLabel(type: string) {
   return type === 'business' ? 'Doanh nghiệp' : 'Cá nhân';
-}
-
-function verificationTone(status?: string) {
-  if (status === 'verified') return 'badge-success';
-  if (status === 'rejected') return 'badge-danger';
-  if (status === 'pending') return 'badge-warning';
-  return 'badge-muted';
 }
 
 export default function UsersPage() {
@@ -59,6 +46,7 @@ export default function UsersPage() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [banSubmitting, setBanSubmitting] = useState(false);
 
   const [requestedPage, setRequestedPage] = useState(1);
 
@@ -114,8 +102,9 @@ export default function UsersPage() {
   }
 
   async function executeBanAction() {
-    if (!confirmBan) return;
+    if (!confirmBan || banSubmitting) return; // guard double-submit
     const { id, action } = confirmBan;
+    setBanSubmitting(true);
     try {
       await apiClient.post(`/admin/users/${id}/${action}`);
       const isBanned = action === 'ban';
@@ -128,6 +117,7 @@ export default function UsersPage() {
     } catch {
       alert('Thao tác thất bại. Vui lòng thử lại.');
     } finally {
+      setBanSubmitting(false);
       setConfirmBan(null);
     }
   }
@@ -205,28 +195,27 @@ export default function UsersPage() {
         {error && <p className="alert" role="alert" style={{ margin: 'var(--space-5)' }}>{error}</p>}
 
         {loading && (
-          <div className="loading-state">
-            <div>
-              <div className="state-icon" aria-hidden="true">⌁</div>
-              <p className="state-title">Đang tải danh sách</p>
-              <p className="state-copy">Koola đang lấy dữ liệu người dùng mới nhất.</p>
-            </div>
-          </div>
+          <StateBlock
+            variant="loading"
+            icon="⌁"
+            title="Đang tải danh sách"
+            copy="Koola đang lấy dữ liệu người dùng mới nhất."
+          />
         )}
 
         {!loading && users.length === 0 && !error && (
-          <div className="empty-state">
-            <div>
-              <div className="state-icon" aria-hidden="true">◎</div>
-              <p className="state-title">Không tìm thấy người dùng</p>
-              <p className="state-copy">Thử đổi từ khóa hoặc xóa bộ lọc để xem toàn bộ danh sách.</p>
-              {hasActiveFilters && (
-                <button className="btn btn-secondary" onClick={clearFilters} type="button">
-                  Xóa bộ lọc
-                </button>
-              )}
-            </div>
-          </div>
+          <StateBlock
+            variant="empty"
+            icon="◎"
+            title="Không tìm thấy người dùng"
+            copy="Thử đổi từ khóa hoặc xóa bộ lọc để xem toàn bộ danh sách."
+          >
+            {hasActiveFilters && (
+              <button className="btn btn-secondary" onClick={clearFilters} type="button">
+                Xóa bộ lọc
+              </button>
+            )}
+          </StateBlock>
         )}
 
         {!loading && users.length > 0 && (
@@ -247,7 +236,7 @@ export default function UsersPage() {
                   <tr key={u._id}>
                     <td>
                       <div className="cell-primary">
-                        <div className="cell-avatar" aria-hidden="true">{initials(u.displayName)}</div>
+                        <div className="cell-avatar" aria-hidden="true">{initials(u.displayName, 'U')}</div>
                         <div>
                           <button
                             className="cell-link"
@@ -276,9 +265,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td>
-                      <span className={`badge ${verificationTone(u.verificationStatus)}`}>
-                        {u.verificationStatus ?? '—'}
-                      </span>
+                      <VerificationBadge status={u.verificationStatus} />
                     </td>
                     <td>
                       <div className="table-actions">
@@ -357,7 +344,7 @@ export default function UsersPage() {
             </div>
             <div className="drawer-body page-stack">
               <div className="cell-primary">
-                <div className="cell-avatar" aria-hidden="true">{initials(detailUser.displayName)}</div>
+                <div className="cell-avatar" aria-hidden="true">{initials(detailUser.displayName, 'U')}</div>
                 <div>
                   <div className="cell-title">{detailUser.displayName}</div>
                   <div className="cell-meta k-mono">{detailUser._id}</div>
@@ -440,10 +427,20 @@ export default function UsersPage() {
                   className={confirmBan.action === 'ban' ? 'btn btn-danger' : 'btn btn-primary'}
                   onClick={executeBanAction}
                   type="button"
+                  disabled={banSubmitting}
                 >
-                  {confirmBan.action === 'ban' ? 'Xác nhận cấm' : 'Bỏ cấm'}
+                  {banSubmitting
+                    ? 'Đang xử lý...'
+                    : confirmBan.action === 'ban'
+                    ? 'Xác nhận cấm'
+                    : 'Bỏ cấm'}
                 </button>
-                <button className="btn btn-secondary" onClick={() => setConfirmBan(null)} type="button">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setConfirmBan(null)}
+                  type="button"
+                  disabled={banSubmitting}
+                >
                   Hủy
                 </button>
               </div>

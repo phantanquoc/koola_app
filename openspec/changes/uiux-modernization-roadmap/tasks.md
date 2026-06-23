@@ -25,33 +25,33 @@
 
 ## 4. Moments Viewer, Composer, and Music Picker
 
-- [ ] 4.1 Audit `MomentViewerScreen`, `MomentComposerScreen`, and `MusicPicker` before making viewer/composer/music changes
-- [ ] 4.2 Improve viewer safe-area, close/back affordance, loading, and error presentation without changing timer or playback semantics
-- [ ] 4.3 Improve composer step hierarchy and publish-state clarity without changing story DTO semantics
-- [ ] 4.4 Improve music picker search/loading/empty/selected/preview states without changing music API semantics
+- [x] 4.1 Audit `MomentViewerScreen`, `MomentComposerScreen`, and `MusicPicker` (now committed/archived via moments-polish-and-music) before making viewer/composer/music changes; note the hidden audio `<Video>` blocks, `pausedValueRef`/`startProgress`, `paused` sync, `seek(startMs)`, and stop-on-close effects as do-not-touch
+- [x] 4.2 Improve viewer safe-area, close/back affordance, loading, and error presentation without changing timer, playback, or the hidden music-audio player semantics
+- [x] 4.3 Improve composer step hierarchy and publish-state clarity without changing story DTO semantics
+- [x] 4.4 Improve music picker search/loading/empty/selected/preview states without changing music API semantics or the preview stop-on-close behavior
 - [ ] 4.5 Verify viewer/composer/music lifecycle: hold-to-pause resume, close stops media, rapid open/close, preview stops on close/change ← (verify: no audio/video continues after dismiss and specs/moments-music-library/spec.md lifecycle scenarios pass)
 
 ## 5. Chat UX Clarity
 
-- [ ] 5.1 Audit `ChatScreen`, `ChatComposer`, `useMessages`, and related presentational components before changing chat UI
-- [ ] 5.2 Improve composer action clarity while preserving uncontrolled input behavior
-- [ ] 5.3 Improve visible disabled/loading/unavailable action states in composer controls
-- [ ] 5.4 Improve supported sending/offline/failed visual states only where existing message data exposes those states
-- [ ] 5.5 Verify chat open/back, keyboard open/close, send responsiveness, and absence of pop-back flicker ← (verify: `freezeOnBlur` remains effective and `ChatComposer` remains uncontrolled)
+- [x] 5.1 Audit `ChatScreen`, `ChatComposer`, `useMessagesFromDb`, `useDeadLetterActions`, and the existing delivery-tick / dead-letter retry UX (`chat-read-receipts`, `message-outbox`) before changing chat UI
+- [x] 5.2 Improve composer action clarity while preserving uncontrolled input behavior
+- [x] 5.3 Improve visible disabled/loading/unavailable action states in composer controls
+- [x] 5.4 Reuse the existing sending/sent/read tick indicators and the dead-letter "tap to retry" / "Discard" flow; do NOT re-implement or replace them, and do NOT invent states the data does not expose
+- [ ] 5.5 Verify chat open/back, keyboard open/close, send responsiveness, failed-bubble retry still works, and absence of pop-back flicker ← (verify: `freezeOnBlur` remains effective, `ChatComposer` remains uncontrolled, and the `message-outbox` retry flow is unchanged)
 
 ## 6. Navigation Shell and Global Mobile Polish
 
-- [ ] 6.1 Audit `MainNavigator`, `ChatTabStack`, `KoolaHeader`, `ProfileScreen`, and `GroupInfoScreen` before global shell changes
-- [ ] 6.2 Preserve route structure, chat `freezeOnBlur`, and Moments modal/fullscreen modal presentation while polishing headers
-- [ ] 6.3 Remove or contain diagnostic visual artifacts only after confirming tab dock behavior remains stable
+- [x] 6.1 Audit `MainNavigator`, `ChatTabStack`, `KoolaHeader`, `ProfileScreen`, and `GroupInfoScreen` before global shell changes
+- [x] 6.2 Preserve route structure, chat `freezeOnBlur`, and Moments modal/fullscreen modal presentation while polishing headers
+- [x] 6.3 Remove or contain diagnostic visual artifacts only after confirming tab dock behavior remains stable
 - [ ] 6.4 Verify tab dock suppression, fullscreen route behavior, chat pop-back, and no `BlurView` reintroduction ← (verify: navigation safety non-goals in design.md remain intact)
 
 ## 7. Admin Web UX and Trust Workflow
 
-- [ ] 7.1 Audit admin page-level patterns in `AppLayout`, `DashboardPage`, `UsersPage`, `BusinessesPage`, `LoginPage`, and `index.css`
-- [ ] 7.2 Extract small admin primitives for page header, panel, metric card, status badge, empty/loading/error state, and table shell where patterns repeat
-- [ ] 7.3 Improve dashboard operational hierarchy so pending work and recovery states are obvious
-- [ ] 7.4 Improve business verification queue trust signals, status clarity, reject reason flow, and duplicate-submit protection without changing admin APIs
+- [x] 7.1 Audit admin page-level patterns in `AppLayout`, `DashboardPage`, `UsersPage`, `BusinessesPage`, `LoginPage`, and `index.css`; confirm what responsive/narrow-viewport CSS already exists before promising responsive behavior
+- [x] 7.2 Extract small admin primitives for page header, panel, metric card, status badge, empty/loading/error state, and table shell where patterns repeat
+- [x] 7.3 Improve dashboard operational hierarchy so pending work and recovery states are obvious
+- [x] 7.4 Improve business verification queue trust signals, status clarity, and duplicate-submit protection; surface the reject-reason field the backend already requires (HTTP 400 on missing reason) without changing admin APIs
 - [ ] 7.5 Verify admin login, dashboard loading/error, users table, businesses queue, responsive layout, and keyboard/accessibility basics ← (verify: admin-web-app and admin-business-verification spec scenarios pass without heavy UI framework adoption)
 
 ## 8. Accessibility, Performance, and Regression Gates

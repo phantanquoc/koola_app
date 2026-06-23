@@ -7,7 +7,7 @@ APP_KOOLA already has a strong mobile and admin UI foundation, but the experienc
 - Introduce an incremental UI/UX modernization plan for mobile and admin surfaces, implemented in small reviewable batches.
 - Harden the mobile `Koola` UI foundation with accessibility, input, and component-state improvements without changing business logic.
 - Improve the Moments entry experience first, then progressively polish Moment rings, viewer, composer, and music picker while preserving media/audio lifecycle behavior.
-- Improve chat UX clarity around composer controls and visible message states without rewriting message synchronization or the uncontrolled composer input.
+- Improve chat UX clarity around composer controls and visible message states by reusing the existing `chat-read-receipts` delivery ticks and `message-outbox` dead-letter retry flow, without rewriting message synchronization or the uncontrolled composer input.
 - Improve admin-web UX through small reusable primitives, dashboard hierarchy, and business verification trust signals without adopting a heavy UI framework.
 - Add accessibility, performance, and regression gates to each major batch so visual improvements remain safe.
 - Preserve explicit non-goals until separately approved: no navigation rewrite, no API/service/data-model changes for UI polish, no heavy dependency adoption, no `BlurView` reintroduction in sensitive chat/tab surfaces, no removal of `freezeOnBlur`, and no conversion of `ChatComposer` to a controlled input.
@@ -21,7 +21,7 @@ APP_KOOLA already has a strong mobile and admin UI foundation, but the experienc
 ### Modified Capabilities
 - `moments-stories`: Adds UX requirements for the Moments entry, ring, viewer, composer, and state presentation without changing story data semantics.
 - `moments-music-library`: Adds UX requirements for music picker search, selected-track, preview, loading, empty, and close/stop behavior without changing music API semantics.
-- `messaging`: Adds UX requirements for chat composer clarity and visible sending/offline/failure states without changing message transport semantics.
+- `chat-read-receipts`: Adds UX requirements for chat composer clarity and reuses the existing delivery-tick and dead-letter retry UX for visible sending/offline/failure states without changing message transport semantics or re-implementing the `message-outbox` retry flow.
 - `admin-web-app`: Adds UX requirements for reusable admin primitives, dashboard hierarchy, responsive operations layout, and consistent loading/empty/error states.
 - `admin-business-verification`: Adds UX requirements for trust-oriented business verification queues, reject reason clarity, and review affordances without changing authorization or verification APIs.
 

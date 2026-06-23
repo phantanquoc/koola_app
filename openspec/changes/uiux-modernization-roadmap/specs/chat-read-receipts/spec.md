@@ -11,16 +11,20 @@ Chat composer UI polish SHALL preserve existing input behavior and message send 
 - **WHEN** a composer action is disabled, loading, or unavailable
 - **THEN** the UI SHALL communicate that state visually and accessibly without blocking unrelated actions
 
-### Requirement: Chat message state clarity
-Chat UI polish SHALL make supported message states easier to understand without changing message transport or storage behavior.
+### Requirement: Chat message state clarity reuses existing delivery and retry UX
+Chat UI polish SHALL make supported message states easier to understand by reusing the existing delivery-state indicators and dead-letter retry flow, NOT by introducing a parallel message-state system. The sending/sent/read tick indicators are owned by `chat-read-receipts` and the failed/retry/discard flow is owned by `message-outbox`; this batch SHALL keep them consistent, not re-implement them.
 
-#### Scenario: Existing sending or failed state is available
-- **WHEN** the current message data exposes sending, queued, offline, failed, or retryable state
-- **THEN** the UI SHALL present that state inline near the relevant message or composer area rather than using a blocking modal for normal network conditions
+#### Scenario: Delivery and failed states already exist
+- **WHEN** a message exposes pending, sent, read, or failed state
+- **THEN** the UI SHALL rely on the existing `chat-read-receipts` tick indicators and the `message-outbox` dead-letter "tap to retry" / long-press "Discard" affordances, and SHALL NOT re-implement or replace that flow
 
 #### Scenario: State data is not available
 - **WHEN** the current message data does not expose a desired visual state
 - **THEN** the implementation SHALL NOT invent fake message states and SHALL defer that UX until the data contract is explicitly scoped
+
+#### Scenario: Composer-area network state
+- **WHEN** offline or queued state is surfaced near the composer
+- **THEN** the UI SHALL present it inline without a blocking modal for normal network conditions and SHALL NOT alter offline-queue or outbox behavior
 
 ### Requirement: Chat navigation safety
 Chat UI modernization SHALL preserve navigation behavior that prevents pop-back flicker and tab dock regressions.

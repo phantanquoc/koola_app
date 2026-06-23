@@ -52,6 +52,10 @@ Viewer visual polish SHALL preserve existing story playback, pause, progress, cl
 - **WHEN** viewer controls, safe area, loading state, or error state are updated
 - **THEN** hold-to-pause, tap navigation, progress advancement, close behavior, view recording, and media stop-on-dismiss behavior SHALL continue to work as before
 
+#### Scenario: Hidden music audio player is preserved
+- **WHEN** viewer presentation is polished for a story that carries music
+- **THEN** the hidden audio-only `react-native-video` instance, its `paused` sync to story state, its `seek(startMs)` on load, and its stop-on-dismiss behavior SHALL remain unchanged so no audio continues playing after the viewer is closed
+
 ### Requirement: Moments composer polish preserves creation semantics
 Composer visual polish SHALL preserve existing story creation validation and API semantics.
 

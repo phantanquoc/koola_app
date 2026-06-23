@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../apiClient';
+import MetricCard, { MetricCardSkeleton } from '../components/MetricCard';
+import { formatNumber } from '../components/formatters';
 
 interface Stats {
   totalPersonal: number;
@@ -9,57 +11,6 @@ interface Stats {
   verifiedBusinesses: number;
   rejectedBusinesses: number;
   bannedUsers: number;
-}
-
-function formatNumber(value: number | string) {
-  return typeof value === 'number' ? new Intl.NumberFormat('vi-VN').format(value) : value;
-}
-
-function MetricCard({
-  href,
-  icon,
-  label,
-  value,
-  helper,
-  tone,
-}: {
-  href?: string;
-  icon: string;
-  label: string;
-  value: number | string;
-  helper: string;
-  tone?: 'warning' | 'success' | 'danger';
-}) {
-  const card = (
-    <article className={`metric-card ${tone ?? ''}`.trim()}>
-      <div className="metric-topline">
-        <span>{label}</span>
-        <span className="metric-icon" aria-hidden="true">
-          {icon}
-        </span>
-      </div>
-      <div className="metric-value">{formatNumber(value)}</div>
-      <p className="metric-helper">{helper}</p>
-    </article>
-  );
-
-  return href ? (
-    <Link className="kpi-link" to={href}>
-      {card}
-    </Link>
-  ) : (
-    card
-  );
-}
-
-function DashboardSkeleton() {
-  return (
-    <div className="grid grid-4" aria-label="Đang tải thống kê">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div className="skeleton-card" key={index} />
-      ))}
-    </div>
-  );
 }
 
 export default function DashboardPage() {
@@ -106,7 +57,7 @@ export default function DashboardPage() {
 
       {error && <p className="alert" role="alert">{error}</p>}
 
-      {!stats && !error && <DashboardSkeleton />}
+      {!stats && !error && <MetricCardSkeleton />}
 
       {stats && (
         <>

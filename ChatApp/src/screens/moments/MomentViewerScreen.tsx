@@ -33,7 +33,9 @@ import {
   Image,
 } from 'react-native';
 import Video from 'react-native-video';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
@@ -56,6 +58,7 @@ const VIEW_DEBOUNCE_MS = 1000;
 const MomentViewerScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<ViewerRouteProp>();
+  const insets = useSafeAreaInsets();
   const { authorId, startStoryId } = route.params;
   const { user } = useAuth();
 
@@ -380,55 +383,36 @@ const MomentViewerScreen: React.FC = () => {
 
   // ─── Special states ───────────────────────────────────────────────────────
 
+  // Expired / blocked / error share the same centered layout; only the icon and
+  // copy differ. This is presentation only — the viewerState values and the
+  // transitions that set them are unchanged.
+  const renderSpecialState = (icon: string, message: string) => (
+    <View style={[styles.container, styles.centerContent, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <MaterialIcons name={icon} size={48} color={koolaColors.faint} />
+      <KoolaText tone="surface" align="center" variant="body">
+        {message}
+      </KoolaText>
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        style={styles.dismissButton}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="Quay lại">
+        <KoolaText tone="primary">Quay lại</KoolaText>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (viewerState === 'expired') {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <KoolaText tone="surface" align="center" variant="body">
-          Khoảnh khắc không còn khả dụng
-        </KoolaText>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.dismissButton}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại">
-          <KoolaText tone="primary">Quay lại</KoolaText>
-        </TouchableOpacity>
-      </View>
-    );
+    return renderSpecialState('schedule', 'Khoảnh khắc không còn khả dụng');
   }
 
   if (viewerState === 'blocked') {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <KoolaText tone="surface" align="center" variant="body">
-          Bạn không có quyền xem khoảnh khắc này
-        </KoolaText>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.dismissButton}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại">
-          <KoolaText tone="primary">Quay lại</KoolaText>
-        </TouchableOpacity>
-      </View>
-    );
+    return renderSpecialState('lock-outline', 'Bạn không có quyền xem khoảnh khắc này');
   }
 
   if (viewerState === 'error') {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <KoolaText tone="surface" align="center">
-          Đã xảy ra lỗi khi tải khoảnh khắc
-        </KoolaText>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.dismissButton}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại">
-          <KoolaText tone="primary">Quay lại</KoolaText>
-        </TouchableOpacity>
-      </View>
-    );
+    return renderSpecialState('error-outline', 'Đã xảy ra lỗi khi tải khoảnh khắc');
   }
 
   return (
@@ -442,7 +426,7 @@ const MomentViewerScreen: React.FC = () => {
       }
       accessibilityRole="image">
       {/* Progress bars */}
-      <View style={styles.progressContainer}>
+      <View style={[styles.progressContainer, { top: insets.top + 8 }]}>
         {stories.map((s, i) => (
           <View key={s._id} style={styles.progressTrack}>
             <Animated.View
@@ -463,8 +447,9 @@ const MomentViewerScreen: React.FC = () => {
 
       {/* Close button */}
       <TouchableOpacity
-        style={styles.closeButton}
+        style={[styles.closeButton, { top: insets.top + 16 }]}
         onPress={() => navigation.goBack()}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityRole="button"
         accessibilityLabel="Đóng xem khoảnh khắc">
         <KoolaText style={styles.closeIcon} tone="surface">
@@ -725,7 +710,6 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     position: 'absolute',
-    top: 48,
     left: 8,
     right: 8,
     flexDirection: 'row',
@@ -745,7 +729,6 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 56,
     right: 16,
     zIndex: 20,
     padding: 8,

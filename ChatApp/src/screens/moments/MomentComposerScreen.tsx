@@ -23,6 +23,8 @@ import {
   FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { ChatTabStackParamList } from '../../navigation/types';
@@ -60,6 +62,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 
 const MomentComposerScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
+  const insets = useSafeAreaInsets();
 
   const [step, setStep] = useState<ComposerStep>('media-picker');
   const [media, setMedia] = useState<PickedMedia | null>(null);
@@ -195,7 +198,7 @@ const MomentComposerScreen: React.FC = () => {
   if (step === 'media-picker') {
     return (
       <View style={styles.container}>
-        <View style={styles.pickerHeader}>
+        <View style={[styles.pickerHeader, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             accessibilityRole="button"
@@ -237,7 +240,7 @@ const MomentComposerScreen: React.FC = () => {
   if (step === 'error') {
     return (
       <View style={styles.container}>
-        <View style={styles.pickerHeader}>
+        <View style={[styles.pickerHeader, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity
             onPress={() => setStep('preview')}
             accessibilityRole="button"
@@ -266,7 +269,7 @@ const MomentComposerScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.pickerHeader}>
+      <View style={[styles.pickerHeader, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity
           onPress={() => setStep('media-picker')}
           accessibilityRole="button"
@@ -322,6 +325,11 @@ const MomentComposerScreen: React.FC = () => {
           <KoolaText variant="caption" tone="faint" align="right">
             {caption.length}/500
           </KoolaText>
+          {caption.length > 500 ? (
+            <KoolaText variant="caption" tone="danger" align="right">
+              Chú thích vượt quá 500 ký tự
+            </KoolaText>
+          ) : null}
         </View>
 
         {/* Music picker entry */}
@@ -334,7 +342,7 @@ const MomentComposerScreen: React.FC = () => {
           <KoolaText tone={musicRef ? 'primary' : 'ink'}>
             {musicRef ? 'Nhạc đã chọn' : 'Thêm nhạc'}
           </KoolaText>
-          <KoolaText tone="muted">{'>'}</KoolaText>
+          <MaterialIcons name="chevron-right" size={22} color={koolaColors.muted} />
         </TouchableOpacity>
 
         {/* Audience picker entry */}
@@ -345,7 +353,7 @@ const MomentComposerScreen: React.FC = () => {
           accessibilityLabel={`Đối tượng: ${audienceScopeLabel}`}
           accessibilityHint="Chọn ai có thể xem khoảnh khắc này">
           <KoolaText tone="ink">Đối tượng: {audienceScopeLabel}</KoolaText>
-          <KoolaText tone="muted">{'>'}</KoolaText>
+          <MaterialIcons name="chevron-right" size={22} color={koolaColors.muted} />
         </TouchableOpacity>
       </ScrollView>
 

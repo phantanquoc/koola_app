@@ -12,7 +12,7 @@ Admin business verification UI SHALL help operators distinguish pending, verifie
 - **THEN** the UI SHALL pair color with text or iconography so the state remains understandable without color perception
 
 ### Requirement: Reject reason clarity
-Business verification rejection UI SHALL make reject reasons explicit, reviewable, and recoverable before submission.
+Business verification rejection UI SHALL make reject reasons explicit, reviewable, and recoverable before submission. The backend already enforces `rejectionReason` as required (the existing `POST /admin/businesses/:id/reject` returns HTTP 400 on a missing/empty reason); this requirement only surfaces that contract in the UI and SHALL NOT change the reject API semantics.
 
 #### Scenario: Operator rejects a business
 - **WHEN** an admin starts a reject action
@@ -20,7 +20,7 @@ Business verification rejection UI SHALL make reject reasons explicit, reviewabl
 
 #### Scenario: Rejection reason is missing
 - **WHEN** an admin attempts to submit a rejection without a required reason
-- **THEN** the UI SHALL prevent submission and present an inline error explaining what is needed
+- **THEN** the UI SHALL prevent submission client-side and present an inline error explaining what is needed, consistent with the backend's existing HTTP 400 validation
 
 ### Requirement: Business verification actions preserve API semantics
 Visual improvements to business verification SHALL preserve existing authorization and verification API semantics.

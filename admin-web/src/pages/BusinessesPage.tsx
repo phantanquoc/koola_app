@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import apiClient from '../apiClient';
+import StateBlock from '../components/StateBlock';
+import { VerificationBadge } from '../components/StatusBadge';
+import { initials } from '../components/formatters';
 
 interface Business {
   _id: string;
@@ -23,15 +26,6 @@ const rejectTemplates = [
   'Thiếu giấy phép hợp lệ để xác minh doanh nghiệp.',
 ];
 
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'B';
-}
-
 export default function BusinessesPage() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,6 +37,10 @@ export default function BusinessesPage() {
   const [rejectError, setRejectError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guards against double-submit: the id being approved inline, and whether the
+  // reject dialog request is in flight. UI-only — no API change.
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
 
   const [requestedPage, setRequestedPage] = useState(1);
 
@@ -77,11 +75,15 @@ export default function BusinessesPage() {
   }
 
   async function handleApprove(id: string) {
+    if (actioningId) return; // guard double-submit
+    setActioningId(id);
     try {
       await apiClient.post(`/admin/businesses/${id}/approve`);
       removeFromList(id);
     } catch {
       alert('Duyệt thất bại. Vui lòng thử lại.');
+    } finally {
+      setActioningId(null);
     }
   }
 
@@ -92,11 +94,12 @@ export default function BusinessesPage() {
   }
 
   async function handleRejectSubmit() {
-    if (!rejectTarget) return;
+    if (!rejectTarget || rejectSubmitting) return; // guard double-submit
     if (!rejectReason.trim()) {
       setRejectError('Vui lòng nhập lý do từ chối.');
       return;
     }
+    setRejectSubmitting(true);
     try {
       await apiClient.post(`/admin/businesses/${rejectTarget}/reject`, {
         rejectionReason: rejectReason.trim(),
@@ -111,6 +114,8 @@ export default function BusinessesPage() {
       } else {
         alert('Từ chối thất bại. Vui lòng thử lại.');
       }
+    } finally {
+      setRejectSubmitting(false);
     }
   }
 
@@ -142,23 +147,21 @@ export default function BusinessesPage() {
         {error && <p className="alert" role="alert" style={{ margin: 'var(--space-5)' }}>{error}</p>}
 
         {loading && (
-          <div className="loading-state">
-            <div>
-              <div className="state-icon" aria-hidden="true">⌁</div>
-              <p className="state-title">Đang tải queue</p>
-              <p className="state-copy">Koola đang lấy danh sách doanh nghiệp cần xét duyệt.</p>
-            </div>
-          </div>
+          <StateBlock
+            variant="loading"
+            icon="⌁"
+            title="Đang tải queue"
+            copy="Koola đang lấy danh sách doanh nghiệp cần xét duyệt."
+          />
         )}
 
         {!loading && businesses.length === 0 && !error && (
-          <div className="empty-state">
-            <div>
-              <div className="state-icon" aria-hidden="true">✓</div>
-              <p className="state-title">Queue đã sạch</p>
-              <p className="state-copy">Không có doanh nghiệp nào đang chờ xét duyệt.</p>
-            </div>
-          </div>
+          <StateBlock
+            variant="empty"
+            icon="✓"
+            title="Queue đã sạch"
+            copy="Không có doanh nghiệp nào đang chờ xét duyệt."
+          />
         )}
 
         {!loading && businesses.length > 0 && (
@@ -178,7 +181,7 @@ export default function BusinessesPage() {
                   <tr key={b._id}>
                     <td>
                       <div className="cell-primary">
-                        <div className="cell-avatar" aria-hidden="true">{initials(b.displayName)}</div>
+                        <div className="cell-avatar" aria-hidden="true">{initials(b.displayName, 'B')}</div>
                         <div>
                           <div className="cell-title">{b.displayName}</div>
                           <div className="cell-meta k-mono">{b._id}</div>
@@ -210,7 +213,7 @@ export default function BusinessesPage() {
                       )}
                     </td>
                     <td>
-                      <span className="badge badge-warning">{b.verificationStatus}</span>
+                      <VerificationBadge status={b.verificationStatus} />
                     </td>
                     <td>
                       <div className="table-actions">
@@ -218,14 +221,16 @@ export default function BusinessesPage() {
                           className="btn btn-primary btn-sm"
                           onClick={() => handleApprove(b._id)}
                           type="button"
+                          disabled={actioningId === b._id}
                           aria-label={`Duyệt ${b.displayName}`}
                         >
-                          Duyệt
+                          {actioningId === b._id ? 'Đang duyệt...' : 'Duyệt'}
                         </button>
                         <button
                           className="btn btn-danger-ghost btn-sm"
                           onClick={() => openRejectDialog(b._id)}
                           type="button"
+                          disabled={actioningId === b._id}
                           aria-label={`Từ chối ${b.displayName}`}
                         >
                           Từ chối
@@ -325,8 +330,13 @@ export default function BusinessesPage() {
                 </p>
               )}
               <div className="table-actions">
-                <button className="btn btn-danger" onClick={handleRejectSubmit} type="button">
-                  Xác nhận từ chối
+                <button
+                  className="btn btn-danger"
+                  onClick={handleRejectSubmit}
+                  type="button"
+                  disabled={rejectSubmitting}
+                >
+                  {rejectSubmitting ? 'Đang gửi...' : 'Xác nhận từ chối'}
                 </button>
                 <button
                   className="btn btn-secondary"
