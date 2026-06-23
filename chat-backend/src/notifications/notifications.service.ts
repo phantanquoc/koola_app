@@ -125,6 +125,73 @@ export class NotificationsService {
 
   // ─── FCM Send ───────────────────────────────────────────────────────────────
 
+  /**
+   * Send a story-mention push to a single user with a moments deep-link.
+   * Reuses the same eligibility gates as message pushes (disabled / online /
+   * no-token / dedup) and the same multicast + invalid-token cleanup path.
+   * Privacy gating (public mentioner, or private+connected) is decided by the
+   * caller; this method only handles delivery.
+   */
+  async sendMentionPush(params: {
+    mentionedUserId: string;
+    authorName: string;
+    storyId: string;
+    captionSnippet: string;
+  }): Promise<void> {
+    const { mentionedUserId, authorName, storyId, captionSnippet } = params;
+
+    const user = await this.usersService.findById(mentionedUserId);
+    if (!user) return;
+
+    if (user.settings?.notificationsEnabled === false) return;
+    if (user.isOnline) return; // in-app handled by the story.mention socket event
+    if (!user.fcmTokens || user.fcmTokens.length === 0) return;
+
+    // Dedup per (user, story) so re-processing a story doesn't double-push.
+    const dedupKey = `notif:mention:${mentionedUserId}:${storyId}`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+
+    const body = captionSnippet
+      ? `${authorName} đã nhắc đến bạn: ${captionSnippet}`
+      : `${authorName} đã nhắc đến bạn trong một khoảnh khắc`;
+
+    const payload: FirebaseMessagingPayload = {
+      notification: { title: authorName, body },
+      data: {
+        type: 'story_mention',
+        storyId,
+        deepLink: `koola://moments/story/${storyId}`,
+        accountId: mentionedUserId,
+        accountType: (user.accountType as string) ?? 'personal',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    const tokens = user.fcmTokens.map((t) => t.token);
+    try {
+      await this.sendMulticast(mentionedUserId, tokens, payload);
+    } catch (err) {
+      this.logger.error(
+        `[Notifications] Failed to send mention push to ${mentionedUserId}:`,
+        err,
+      );
+    }
+  }
+
   private async sendMulticast(
     recipientId: string,
     tokens: string[],

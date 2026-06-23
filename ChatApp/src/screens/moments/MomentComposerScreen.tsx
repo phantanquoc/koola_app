@@ -80,8 +80,9 @@ const MomentComposerScreen: React.FC = () => {
   const handlePickMedia = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
-        mediaType: 'photo',
+        mediaType: 'mixed',
         quality: 0.8,
+        videoQuality: 'medium',
         selectionLimit: 1,
         includeExtra: true,
       });
@@ -90,12 +91,21 @@ const MomentComposerScreen: React.FC = () => {
 
       const asset = result.assets[0];
 
+      const isVideo = (asset.type ?? '').startsWith('video/') || asset.duration != null;
+      const detectedType: 'image' | 'video' = isVideo ? 'video' : 'image';
+
+      if (isVideo && typeof asset.duration === 'number' && asset.duration > 60) {
+        setErrorMsg('Video dài quá 60 giây');
+        setStep('error');
+        return;
+      }
+
       setMedia({
         uri: asset.uri ?? '',
-        type: 'image',
-        mimeType: asset.type ?? 'image/jpeg',
+        type: detectedType,
+        mimeType: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
         fileSize: asset.fileSize ?? 0,
-        duration: undefined,
+        duration: isVideo ? asset.duration : undefined,
         filename: asset.fileName ?? 'moment',
       });
       setStep('preview');
@@ -206,7 +216,7 @@ const MomentComposerScreen: React.FC = () => {
             accessibilityLabel="Chọn ảnh hoặc video từ thư viện"
           />
           <KoolaText variant="caption" tone="muted" align="center" style={styles.hint}>
-            Chỉ ảnh, tối đa 5MB
+            Ảnh hoặc video tối đa 60 giây
           </KoolaText>
         </View>
       </View>
@@ -278,14 +288,20 @@ const MomentComposerScreen: React.FC = () => {
 
       <ScrollView contentContainerStyle={styles.previewContent} keyboardShouldPersistTaps="handled">
         {/* Media preview */}
-        {media && (
+        {media && (media.type === 'image' ? (
           <Image
             source={{ uri: media.uri }}
             style={styles.previewMedia}
             resizeMode="cover"
             accessibilityLabel="Ảnh xem trước"
           />
-        )}
+        ) : (
+          <View style={[styles.previewMedia, styles.videoPreviewPlaceholder]}>
+            <KoolaText tone="surface" align="center">
+              Video đã chọn ({media.duration != null ? Math.round(media.duration) : '?'}s)
+            </KoolaText>
+          </View>
+        ))}
 
         {/* Caption with mention support */}
         <View style={styles.captionSection}>
@@ -333,7 +349,7 @@ const MomentComposerScreen: React.FC = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Music Picker Modal */}
+      {/* Music picker modal */}
       <MusicPicker
         visible={showMusicPicker}
         onSelect={(ref) => setMusicRef(ref)}
@@ -450,6 +466,10 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 9 / 16,
     backgroundColor: koolaColors.ink,
+  },
+  videoPreviewPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   captionSection: {
     padding: 16,

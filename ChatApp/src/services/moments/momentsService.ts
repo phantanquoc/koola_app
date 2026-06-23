@@ -38,6 +38,8 @@ export interface FeedRingItem {
   authorId: string;
   lastStoryId: string;
   hasUnviewed: boolean;
+  authorDisplayName: string;
+  authorAvatar: string | null;
 }
 
 export interface MomentsState {
@@ -107,6 +109,8 @@ class MomentsService {
         authorId: item.authorId,
         lastStoryId: item.lastStoryId,
         hasUnviewed: item.hasUnviewed,
+        authorDisplayName: item.authorDisplayName,
+        authorAvatar: item.authorAvatar,
       }));
 
       const storiesByAuthor = new Map<string, Story[]>(this.state.storiesByAuthor);
@@ -339,8 +343,15 @@ class MomentsService {
     // full story data loads on tap.
     const existing = this.state.feedRing.find((r) => r.authorId === event.authorId);
     if (!existing) {
+      // Placeholder fields: real name/avatar will be filled on the next refreshFeed() call.
       const feedRing: FeedRingItem[] = [
-        { authorId: event.authorId, lastStoryId: event.storyId, hasUnviewed: true },
+        {
+          authorId: event.authorId,
+          lastStoryId: event.storyId,
+          hasUnviewed: true,
+          authorDisplayName: '',
+          authorAvatar: null,
+        },
         ...this.state.feedRing,
       ];
       this.setState({ feedRing });

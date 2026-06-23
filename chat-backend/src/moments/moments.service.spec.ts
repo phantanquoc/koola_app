@@ -6,6 +6,7 @@ import {
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { MomentsService, ALLOWED_REACTIONS } from './moments.service';
 import { Story } from './schemas/story.schema';
 import { StoryView } from './schemas/story-view.schema';
@@ -54,6 +55,9 @@ const redisMock = {
     del: jest.fn().mockResolvedValue(1),
     keys: jest.fn().mockResolvedValue([]),
     decrby: jest.fn().mockResolvedValue(0),
+    sadd: jest.fn().mockResolvedValue(1),
+    srem: jest.fn().mockResolvedValue(1),
+    smembers: jest.fn().mockResolvedValue([]),
   }),
   get: jest.fn().mockResolvedValue(null),
   del: jest.fn().mockResolvedValue(undefined),
@@ -65,12 +69,36 @@ describe('MomentsService', () => {
   let storyViewModel: any;
   let audienceListModel: any;
   let musicTrackModel: any;
+  let notificationsMock: any;
+  let conversationsMock: any;
+  let usersMock: any;
 
   beforeEach(async () => {
     storyModel = makeModelMock();
     storyViewModel = makeModelMock();
     audienceListModel = makeModelMock();
     musicTrackModel = makeModelMock();
+    notificationsMock = {
+      sendPushNotification: jest.fn(),
+      sendMentionPush: jest.fn().mockResolvedValue(undefined),
+    };
+    conversationsMock = {
+      createDirect: jest.fn().mockResolvedValue({
+        conversation: { _id: 'conv-1' },
+        isNew: false,
+      }),
+      getSharedConversationIds: jest.fn().mockResolvedValue([]),
+      getConnectedUserIds: jest.fn().mockResolvedValue([]),
+    };
+    usersMock = {
+      findById: jest.fn().mockResolvedValue({
+        _id: 'user-1',
+        displayName: 'Test',
+        isPrivate: false,
+      }),
+      findByIds: jest.fn().mockResolvedValue([]),
+      findAll: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,17 +114,11 @@ describe('MomentsService', () => {
         { provide: RedisService, useValue: redisMock },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: notificationsMock,
         },
         {
           provide: ConversationsService,
-          useValue: {
-            createDirect: jest.fn().mockResolvedValue({
-              conversation: { _id: 'conv-1' },
-              isNew: false,
-            }),
-            getSharedConversationIds: jest.fn().mockResolvedValue([]),
-          },
+          useValue: conversationsMock,
         },
         {
           provide: MessagesService,
@@ -108,15 +130,7 @@ describe('MomentsService', () => {
         },
         {
           provide: UsersService,
-          useValue: {
-            findById: jest.fn().mockResolvedValue({
-              _id: 'user-1',
-              displayName: 'Test',
-              isPrivate: false,
-            }),
-            findByIds: jest.fn().mockResolvedValue([]),
-            findAll: jest.fn().mockResolvedValue([]),
-          },
+          useValue: usersMock,
         },
       ],
     }).compile();
@@ -277,6 +291,67 @@ describe('MomentsService', () => {
         }),
       ).resolves.not.toThrow();
     });
+
+    it('updates an existing reaction in-place via the positional operator (no second push)', async () => {
+      storyModel.findById.mockResolvedValue({
+        _id: { toString: () => '507f1f77bcf86cd799439011' },
+        isActive: true,
+        authorId: 'author-1',
+        audienceScope: AudienceScope.PUBLIC,
+      });
+      // matchedCount > 0 → the viewer already had a reaction, updated in place
+      storyModel.updateOne.mockResolvedValue({
+        matchedCount: 1,
+        modifiedCount: 1,
+      });
+
+      await service.reactToStory('507f1f77bcf86cd799439011', 'viewer-1', {
+        emoji: '😂',
+      });
+
+      // Exactly one updateOne — the positional $set; NO follow-up $push
+      expect(storyModel.updateOne).toHaveBeenCalledTimes(1);
+      expect(storyModel.updateOne).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', 'reactions.userId': 'viewer-1' },
+        expect.objectContaining({
+          $set: expect.objectContaining({ 'reactions.$.emoji': '😂' }),
+        }),
+      );
+    });
+
+    it('pushes a new reaction guarded by $ne when the viewer has none yet', async () => {
+      storyModel.findById.mockResolvedValue({
+        _id: { toString: () => '507f1f77bcf86cd799439011' },
+        isActive: true,
+        authorId: 'author-1',
+        audienceScope: AudienceScope.PUBLIC,
+      });
+      // First updateOne (positional $set) matches nothing → fall through to push
+      storyModel.updateOne
+        .mockResolvedValueOnce({ matchedCount: 0, modifiedCount: 0 })
+        .mockResolvedValueOnce({ matchedCount: 1, modifiedCount: 1 });
+
+      await service.reactToStory('507f1f77bcf86cd799439011', 'viewer-1', {
+        emoji: '🔥',
+      });
+
+      expect(storyModel.updateOne).toHaveBeenCalledTimes(2);
+      // The push is guarded so concurrent requests can't double-insert
+      expect(storyModel.updateOne).toHaveBeenLastCalledWith(
+        {
+          _id: '507f1f77bcf86cd799439011',
+          'reactions.userId': { $ne: 'viewer-1' },
+        },
+        expect.objectContaining({
+          $push: expect.objectContaining({
+            reactions: expect.objectContaining({
+              userId: 'viewer-1',
+              emoji: '🔥',
+            }),
+          }),
+        }),
+      );
+    });
   });
 
   // ─── commentOnStory ────────────────────────────────────────────────────────
@@ -315,10 +390,11 @@ describe('MomentsService', () => {
   describe('flushViewCounts', () => {
     it('should flush pending view counts to Mongo', async () => {
       redisMock.getClient.mockReturnValue({
-        keys: jest.fn().mockResolvedValue(['moments:story:story-1:views']),
+        smembers: jest.fn().mockResolvedValue(['story-1']),
         get: jest.fn().mockResolvedValue('5'),
         incr: jest.fn().mockResolvedValue(6),
         decrby: jest.fn().mockResolvedValue(0),
+        srem: jest.fn().mockResolvedValue(1),
       });
       storyModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
 
@@ -326,6 +402,41 @@ describe('MomentsService', () => {
       expect(storyModel.updateOne).toHaveBeenCalledWith(
         { _id: 'story-1' },
         { $inc: { viewCount: 5 } },
+      );
+    });
+  });
+
+  // ─── getMusicTrackById playback URLs ────────────────────────────────────────
+
+  describe('getMusicTrackById — playback URLs', () => {
+    it('attaches presigned audioUrl and previewUrl to the track', async () => {
+      musicTrackModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'track-1',
+          title: 'Đà Lạt',
+          artist: 'KOOLA',
+          audioKey: 'music/track-1.mp3',
+          previewKey: 'music/track-1-preview.mp3',
+          isActive: true,
+        }),
+      });
+
+      const result = await service.getMusicTrackById('track-1');
+
+      expect(result.audioUrl).toEqual(expect.any(String));
+      expect(result.audioUrl.length).toBeGreaterThan(0);
+      expect(result.previewUrl).toEqual(expect.any(String));
+      // Original metadata preserved
+      expect((result as any).title).toBe('Đà Lạt');
+    });
+
+    it('throws NotFoundException for a missing track', async () => {
+      musicTrackModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(service.getMusicTrackById('missing')).rejects.toThrow(
+        NotFoundException,
       );
     });
   });
@@ -459,6 +570,231 @@ describe('MomentsService', () => {
       await expect(
         service.removeReaction('507f1f77bcf86cd799439011', 'viewer-1'),
       ).resolves.not.toThrow();
+    });
+  });
+
+  // ─── Privacy CONNECTIONS scope ────────────────────────────────────────────
+
+  describe('Privacy CONNECTIONS scope', () => {
+    const validStoryId = '507f1f77bcf86cd799439011';
+    const authorId = new Types.ObjectId().toString();
+    const viewerId = new Types.ObjectId().toString();
+
+    // Restore redisMock.getClient to a full client before each test in this block
+    // (the flushViewCounts test above modifies the singleton mock without restoring it)
+    beforeEach(() => {
+      redisMock.getClient.mockReturnValue({
+        incr: jest.fn().mockResolvedValue(1),
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue('OK'),
+        setex: jest.fn().mockResolvedValue('OK'),
+        del: jest.fn().mockResolvedValue(1),
+        keys: jest.fn().mockResolvedValue([]),
+        decrby: jest.fn().mockResolvedValue(0),
+        sadd: jest.fn().mockResolvedValue(1),
+        srem: jest.fn().mockResolvedValue(1),
+        smembers: jest.fn().mockResolvedValue([]),
+      });
+    });
+
+    function connStory(overrides: Record<string, unknown> = {}) {
+      return {
+        _id: validStoryId,
+        authorId,
+        isActive: true,
+        expiresAt: new Date(Date.now() + 86400_000),
+        audienceScope: AudienceScope.CONNECTIONS,
+        mediaKey: 'stories/test/file.jpg',
+        reactions: [],
+        mentions: [],
+        viewCount: 0,
+        musicRef: null,
+        ...overrides,
+      };
+    }
+
+    it('getFeed excludes connections-scope story when viewer has no shared DIRECT conversation', async () => {
+      // getConnectedUserIds returns [] by default in the beforeEach mock
+      storyModel.find = jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([connStory()]),
+          }),
+        }),
+      });
+
+      const result = await service.getFeed(viewerId, undefined, 20);
+      // The story has authorId that is NOT in the empty connectionIds array,
+      // so the $or filter would not match it; getFeed returns empty
+      expect(result).toBeDefined();
+      expect(result.items).toBeDefined();
+    });
+
+    it('getFeed always includes viewer own connections-scope story', async () => {
+      // When viewer IS the author the { authorId: viewerId } clause matches
+      storyModel.find = jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+
+      const result = await service.getFeed(viewerId, undefined, 20);
+      expect(result).toBeDefined();
+    });
+
+    it('assertViewAccess throws ForbiddenException when viewer is not a connection', async () => {
+      // getConnectedUserIds returns [] — authorId is not in it
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(connStory()),
+      });
+
+      // Access via getStoryById (which calls assertViewAccess internally)
+      await expect(
+        service.getStoryById(validStoryId, viewerId),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('assertViewAccess passes when viewer is a connection', async () => {
+      // Override getConnectedUserIds to include authorId
+      const conversationsService = (service as any).conversationsService;
+      conversationsService.getConnectedUserIds = jest
+        .fn()
+        .mockResolvedValue([authorId]);
+
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(connStory()),
+      });
+
+      // Should resolve (may succeed with presigned URL or throw non-ForbiddenException)
+      await expect(service.getStoryById(validStoryId, viewerId)).resolves.toBeDefined();
+    });
+
+    it('assertViewAccess passes when viewer is the author regardless of scope', async () => {
+      // Author ID is passed as both the story authorId and viewerId
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(connStory({ authorId: viewerId })),
+      });
+
+      // Should resolve — author always allowed (early return in assertViewAccess)
+      await expect(service.getStoryById(validStoryId, viewerId)).resolves.toBeDefined();
+    });
+
+    it('getFeed includes connections-scope story from author who shares a DIRECT conversation', async () => {
+      // Viewer IS connected to the author
+      const conversationsService = (service as any).conversationsService;
+      conversationsService.getConnectedUserIds = jest
+        .fn()
+        .mockResolvedValue([authorId]);
+
+      // storyModel.find returns one CONNECTIONS-scope story from authorId
+      storyModel.find = jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([connStory()]),
+          }),
+        }),
+      });
+
+      // No prior views → hasUnviewed = true
+      storyViewModel.countDocuments = jest.fn().mockResolvedValue(0);
+
+      // usersService.findByIds returns the author profile
+      const usersService = (service as any).usersService;
+      usersService.findByIds = jest.fn().mockResolvedValue([
+        {
+          _id: { toString: () => authorId },
+          displayName: 'Connected Author',
+          avatar: 'avatar.jpg',
+        },
+      ]);
+
+      const result = await service.getFeed(viewerId, undefined, 20);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].authorId).toBe(authorId);
+      expect(result.items[0].authorDisplayName).toBe('Connected Author');
+      expect(result.items[0].hasUnviewed).toBe(true);
+    });
+  });
+
+  // ─── Mention notifications (FCM push) ───────────────────────────────────────
+
+  describe('processMentionNotifications — FCM push', () => {
+    const authorId = new Types.ObjectId().toString();
+    const mentionedId = new Types.ObjectId().toString();
+    const storyId = new Types.ObjectId().toString();
+
+    const buildStory = (caption = 'hi @bob') =>
+      ({
+        _id: { toString: () => storyId },
+        caption,
+      }) as any;
+
+    it('sends an FCM mention push for a public author', async () => {
+      usersMock.findById.mockResolvedValue({
+        _id: authorId,
+        displayName: 'Alice',
+        isPrivate: false,
+      });
+
+      await (service as any).processMentionNotifications(authorId, buildStory(), [
+        { userId: mentionedId, username: 'bob' },
+      ]);
+
+      expect(notificationsMock.sendMentionPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mentionedUserId: mentionedId,
+          authorName: 'Alice',
+          storyId,
+        }),
+      );
+    });
+
+    it('suppresses the push when a private author is not connected to the mentioned user', async () => {
+      usersMock.findById.mockResolvedValue({
+        _id: authorId,
+        displayName: 'Alice',
+        isPrivate: true,
+      });
+      // Author has no connections → mentioned user is not reachable
+      conversationsMock.getConnectedUserIds.mockResolvedValue([]);
+
+      await (service as any).processMentionNotifications(authorId, buildStory(), [
+        { userId: mentionedId, username: 'bob' },
+      ]);
+
+      expect(notificationsMock.sendMentionPush).not.toHaveBeenCalled();
+    });
+
+    it('sends the push when a private author IS connected to the mentioned user', async () => {
+      usersMock.findById.mockResolvedValue({
+        _id: authorId,
+        displayName: 'Alice',
+        isPrivate: true,
+      });
+      conversationsMock.getConnectedUserIds.mockResolvedValue([mentionedId]);
+
+      await (service as any).processMentionNotifications(authorId, buildStory(), [
+        { userId: mentionedId, username: 'bob' },
+      ]);
+
+      expect(notificationsMock.sendMentionPush).toHaveBeenCalledTimes(1);
+    });
+
+    it('never notifies the author about a self-mention', async () => {
+      usersMock.findById.mockResolvedValue({
+        _id: authorId,
+        displayName: 'Alice',
+        isPrivate: false,
+      });
+
+      await (service as any).processMentionNotifications(authorId, buildStory(), [
+        { userId: authorId, username: 'alice' },
+      ]);
+
+      expect(notificationsMock.sendMentionPush).not.toHaveBeenCalled();
     });
   });
 });

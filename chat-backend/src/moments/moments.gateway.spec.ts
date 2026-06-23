@@ -3,11 +3,13 @@ import { getModelToken } from '@nestjs/mongoose';
 import { MomentsGateway } from './moments.gateway';
 import { AudienceList } from './schemas/audience-list.schema';
 import { AudienceScope, MediaType } from './schemas/story.schema';
+import { ConversationsService } from '../conversations/conversations.service';
 
 describe('MomentsGateway', () => {
   let gateway: MomentsGateway;
   let audienceListModel: any;
   let mockIo: any;
+  let conversationsService: any;
 
   beforeEach(async () => {
     audienceListModel = {
@@ -16,12 +18,20 @@ describe('MomentsGateway', () => {
       }),
     };
 
+    conversationsService = {
+      getConnectedUserIds: jest.fn().mockResolvedValue(['userA', 'userB']),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MomentsGateway,
         {
           provide: getModelToken(AudienceList.name),
           useValue: audienceListModel,
+        },
+        {
+          provide: ConversationsService,
+          useValue: conversationsService,
         },
       ],
     }).compile();
@@ -86,7 +96,7 @@ describe('MomentsGateway', () => {
       expect(mockIo.to).not.toHaveBeenCalledWith('user:author-1');
     });
 
-    it('should exclude author from CONNECTIONS scope recipients', async () => {
+    it('should emit to author connections for CONNECTIONS scope', async () => {
       const story = {
         _id: 'story-3',
         authorId: 'author-1',
@@ -97,8 +107,11 @@ describe('MomentsGateway', () => {
 
       await gateway.emitStoryNew(story);
 
-      // CONNECTIONS currently returns [authorId] via resolvePermittedViewers,
-      // but author is excluded, so no .to() calls
+      // getConnectedUserIds returns ['userA', 'userB'] per mock
+      // Both should receive the event
+      expect(mockIo.to).toHaveBeenCalledWith('user:userA');
+      expect(mockIo.to).toHaveBeenCalledWith('user:userB');
+      // Author should NOT receive the event (excluded in emitStoryNew loop)
       expect(mockIo.to).not.toHaveBeenCalledWith('user:author-1');
     });
   });
@@ -143,6 +156,66 @@ describe('MomentsGateway', () => {
         storyId: 'story-1',
         authorId: 'author-1',
       });
+    });
+  });
+
+  describe('resolvePermittedViewers', () => {
+    it('returns getConnectedUserIds result for CONNECTIONS scope', async () => {
+      // getConnectedUserIds mock returns ['userA', 'userB']
+      const story = {
+        _id: 'story-conn',
+        authorId: 'author-1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.CONNECTIONS,
+        createdAt: new Date(),
+      } as any;
+
+      await gateway.emitStoryNew(story);
+
+      expect(conversationsService.getConnectedUserIds).toHaveBeenCalledWith('author-1');
+      expect(mockIo.to).toHaveBeenCalledWith('user:userA');
+      expect(mockIo.to).toHaveBeenCalledWith('user:userB');
+    });
+
+    it('returns AudienceList memberIds for CUSTOM scope', async () => {
+      audienceListModel.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'list-custom',
+          memberIds: ['viewer-x', 'viewer-y', 'author-1'],
+        }),
+      });
+
+      const story = {
+        _id: 'story-custom',
+        authorId: 'author-1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.CUSTOM,
+        audienceListId: 'list-custom',
+        createdAt: new Date(),
+      } as any;
+
+      await gateway.emitStoryNew(story);
+
+      expect(mockIo.to).toHaveBeenCalledWith('user:viewer-x');
+      expect(mockIo.to).toHaveBeenCalledWith('user:viewer-y');
+      expect(mockIo.to).not.toHaveBeenCalledWith('user:author-1');
+    });
+
+    it('returns empty array for CONNECTIONS scope with no connections (emits to nobody)', async () => {
+      conversationsService.getConnectedUserIds = jest.fn().mockResolvedValue([]);
+
+      const story = {
+        _id: 'story-lonely',
+        authorId: 'author-1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.CONNECTIONS,
+        createdAt: new Date(),
+      } as any;
+
+      await gateway.emitStoryNew(story);
+
+      // No targeted emits — no connections
+      expect(mockIo.to).not.toHaveBeenCalled();
     });
   });
 });

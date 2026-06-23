@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AudienceList } from './schemas/audience-list.schema';
 import type { ChatGateway } from '../gateway/chat.gateway';
+import { ConversationsService } from '../conversations/conversations.service';
 
 /**
  * MomentsGateway
@@ -27,6 +28,7 @@ export class MomentsGateway {
   constructor(
     @InjectModel(AudienceList.name)
     private readonly audienceListModel: Model<AudienceListDocument>,
+    private readonly conversationsService: ConversationsService,
   ) {}
 
   setChatGateway(gw: ChatGateway): void {
@@ -130,19 +132,16 @@ export class MomentsGateway {
     const scope = story.audienceScope;
 
     if (scope === AudienceScope.PUBLIC) {
-      // We don't maintain a global user list for broadcasting — emit to a
-      // special broadcast marker that clients can subscribe to on their user room.
-      // For v1, the server-side fanout for public stories emits to author's own room;
-      // mobile polls/refreshes feed on foreground resume.
-      // A proper implementation would fan out to all connected users, but that
-      // requires an online-users index which this codebase doesn't have yet.
-      return [story.authorId];
+      // PUBLIC stories are broadcast via io.emit() in emitStoryNew — this path is
+      // never reached for PUBLIC (emitStoryNew returns early before calling
+      // resolvePermittedViewers). Return an empty array as a safety fallback.
+      return [];
     }
 
     if (scope === AudienceScope.CONNECTIONS) {
-      // For v1, same as public — emit to author's room only
-      // Full implementation would look up author's connections list
-      return [story.authorId];
+      // Return the author's real connection set (users who share a DIRECT conversation
+      // with the author). The emitStoryNew loop already excludes the author.
+      return this.conversationsService.getConnectedUserIds(story.authorId);
     }
 
     if (scope === AudienceScope.CUSTOM && story.audienceListId) {

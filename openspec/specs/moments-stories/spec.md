@@ -4,7 +4,7 @@
 TBD - created by archiving change moments-feature. Update Purpose after archive.
 ## Requirements
 ### Requirement: Story Creation
-The system SHALL allow authenticated users to create a story consisting of exactly one image or one video, an optional caption (≤ 500 characters) with @mentions, an optional music track reference, and an audience scope.
+The system SHALL allow authenticated users to create a story consisting of exactly one image or one video, an optional caption (≤ 500 characters) with @mentions, an optional music track reference, and an audience scope. The composer accepts both image and video assets via a unified mixed-mode picker, with a 60-second client-side cap on video duration.
 
 #### Scenario: Create image story with public scope
 - **WHEN** authenticated user calls `POST /moments/stories` with `{ mediaKey, mediaType: "image", caption?: string, audienceScope: "public" }`
@@ -13,6 +13,22 @@ The system SHALL allow authenticated users to create a story consisting of exact
 #### Scenario: Create video story with connections-only scope
 - **WHEN** user calls `POST /moments/stories` with `{ mediaKey, mediaType: "video", duration: 12, audienceScope: "connections" }`
 - **THEN** system creates the story, emits `story.new` only to user-rooms of users who are connections of the author at creation time
+
+#### Scenario: Composer opens picker in mixed mode
+- **WHEN** the user taps "Chọn ảnh / video" in the composer
+- **THEN** the composer opens `launchImageLibrary` with `mediaType: 'mixed'` and `videoQuality: 'medium'`, allowing both image and video selection. The 60-second cap is enforced client-side after selection (not via picker option) because `durationLimit` is only available on `launchCamera`/`CameraOptions` in `react-native-image-picker@8.x`, not on `launchImageLibrary`/`ImageLibraryOptions`.
+
+#### Scenario: Composer detects asset type and sets DTO mediaType correctly
+- **WHEN** the picker returns an asset whose MIME type starts with `video/`
+- **THEN** the composer sets the DTO `mediaType = 'video'` and includes the asset's duration field; when the MIME type is image-like, the composer sets `mediaType = 'image'` and omits the duration field
+
+#### Scenario: Composer rejects video over 60 seconds before upload
+- **WHEN** the picker returns a video asset whose duration > 60 seconds
+- **THEN** the composer surfaces an inline error "Video dài quá 60 giây" and does not call `POST /moments/stories`
+
+#### Scenario: Composer hint text reflects mixed support
+- **WHEN** the composer is in the media-picker step
+- **THEN** the helper text under the picker button reads "Ảnh hoặc video tối đa 60 giây"
 
 #### Scenario: Create story with custom audience list
 - **WHEN** user calls `POST /moments/stories` with `{ mediaKey, mediaType: "image", audienceScope: "custom", audienceListId: "<listId>" }` and `audienceListId` references an AudienceList owned by the author
@@ -69,19 +85,23 @@ The system SHALL automatically remove story documents 24 hours after creation vi
 - **THEN** feed query MUST filter `expiresAt > now` so the stale story is not returned
 
 ### Requirement: Feed Query with 3-Tier Privacy
-The system SHALL return a viewer's story feed scoped by `public` / `connections` / `custom` audience filters in a single query without N+1 cost.
+The system SHALL return a viewer's story feed scoped by `public` / `connections` / `custom` audience filters in a single query without N+1 cost. For the `connections` scope, the connection graph for v1 is derived from DIRECT conversations: two users are "connected" if they share at least one conversation of `type='direct'`. Each feed item SHALL include the author's `displayName` and `avatar` fields so clients can render the author identity without an extra round-trip.
 
 #### Scenario: Feed returns public stories
 - **WHEN** authenticated user calls `GET /moments/feed`
 - **THEN** system returns active stories where `audienceScope = "public"` from any author the viewer has not blocked, sorted by `createdAt DESC`, grouped by author
 
 #### Scenario: Feed returns connections-only stories from connected authors
-- **WHEN** viewer is connected to author A and A has a `"connections"` story
+- **WHEN** viewer shares at least one DIRECT conversation with author A and A has a `"connections"` story
 - **THEN** that story appears in the viewer's feed
 
 #### Scenario: Feed excludes connections-only story from non-connection
-- **WHEN** viewer is NOT connected to author A and A has a `"connections"` story
+- **WHEN** viewer shares NO DIRECT conversation with author A and A has a `"connections"` story
 - **THEN** that story does NOT appear in the viewer's feed
+
+#### Scenario: Viewer always sees own connections-only stories
+- **WHEN** viewer is the author of a `"connections"` story
+- **THEN** that story appears in the viewer's feed regardless of the viewer's own connection set
 
 #### Scenario: Feed includes custom-scope story when viewer is in the list
 - **WHEN** author A's story is `"custom"` with `audienceListId = L`, and viewer is in `L.memberIds`
@@ -95,16 +115,32 @@ The system SHALL return a viewer's story feed scoped by `public` / `connections`
 - **WHEN** viewer requests the feed
 - **THEN** authors with unviewed stories sort before authors whose stories the viewer has already viewed; within an author, stories sort by `createdAt ASC` for in-order playback
 
+#### Scenario: Feed item carries author identity for ring rendering
+- **WHEN** any feed item is returned
+- **THEN** the item SHALL include `authorDisplayName: string` (from the author's `User.displayName`, empty string if the user is missing) and `authorAvatar: string | null` (from the author's `User.avatar`, null if absent), in addition to existing fields `{ authorId, lastStoryId, hasUnviewed, stories }`
+
 #### Scenario: Feed pagination
 - **WHEN** viewer passes `?cursor=<authorId>&limit=20`
 - **THEN** system returns the next 20 author groups after the cursor
 
 ### Requirement: Story Read by Story ID
-The system SHALL return a single story for playback if the viewer is permitted by its audience scope.
+The system SHALL return a single story for playback if the viewer is permitted by its audience scope. For the `connections` scope, permission is granted only when the viewer shares at least one DIRECT conversation with the author or the viewer IS the author.
 
 #### Scenario: Authorized viewer reads story
 - **WHEN** viewer calls `GET /moments/stories/:storyId` and is permitted by the story's audience scope
 - **THEN** system returns the story including `mediaKey`, `caption`, `mentions`, `musicRef`, `viewCount` (best-effort, may lag up to 60s), and a presigned media URL valid for 1 hour
+
+#### Scenario: Connections-scope story rejected for non-connection viewer
+- **WHEN** viewer is not the author and shares NO DIRECT conversation with the author of a `"connections"` story
+- **THEN** system returns HTTP 403
+
+#### Scenario: Connections-scope story allowed for connection viewer
+- **WHEN** viewer shares at least one DIRECT conversation with the author of a `"connections"` story
+- **THEN** system returns the story
+
+#### Scenario: Author always reads own story
+- **WHEN** the viewer is the author of the story
+- **THEN** system returns the story regardless of audience scope
 
 #### Scenario: Unauthorized viewer
 - **WHEN** viewer is not permitted by the audience scope
@@ -160,15 +196,19 @@ The system SHALL parse @mentions from the caption into a structured array and se
 - **THEN** the token is left as plain text and not added to `mentions`
 
 ### Requirement: story.new Real-Time Event
-The system SHALL emit a `story.new` socket event to user-rooms of every viewer permitted by the story's audience scope.
+The system SHALL emit a `story.new` socket event to user-rooms of every viewer permitted by the story's audience scope. For the `connections` scope, recipients are the author's connections derived from shared DIRECT conversations.
 
 #### Scenario: Public story emits to all online users in scope
 - **WHEN** a public story is created
 - **THEN** `story.new` is emitted with payload `{ storyId, authorId, mediaType, createdAt }` to user-rooms of all eligible viewers across all backend instances via Redis adapter
 
-#### Scenario: Connections-only story emits only to connections
-- **WHEN** a connections-only story is created
-- **THEN** `story.new` is emitted only to user-rooms of users connected to the author
+#### Scenario: Connections-only story emits only to author's connections
+- **WHEN** a connections-only story is created and the author shares DIRECT conversations with users U1, U2, U3
+- **THEN** `story.new` is emitted to `user:U1`, `user:U2`, `user:U3` rooms; it is NOT emitted to viewers who do not share a DIRECT conversation with the author; it is NOT emitted to the author's own room
+
+#### Scenario: Connections-only story with no connections emits to nobody
+- **WHEN** a connections-only story is created and the author shares DIRECT conversations with nobody
+- **THEN** `story.new` is not emitted to any room; story still persists for the author
 
 #### Scenario: Custom-scope story emits only to list members
 - **WHEN** a custom-scope story is created

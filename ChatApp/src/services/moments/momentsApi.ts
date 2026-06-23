@@ -65,6 +65,8 @@ export interface FeedItem {
   authorId: string;
   lastStoryId: string;
   hasUnviewed: boolean;
+  authorDisplayName: string;
+  authorAvatar: string | null;
   stories: Story[];
 }
 

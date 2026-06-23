@@ -74,9 +74,22 @@ const MomentViewerScreen: React.FC = () => {
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewRecordedRef = useRef(new Set<string>());
   const viewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Progress value (0..1) captured when paused, so resume continues from the
+  // remaining time instead of restarting the full image duration.
+  const pausedValueRef = useRef(0);
+  // Parallel audio player (compose-at-playback) for stories with musicRef.
+  const audioRef = useRef<React.ElementRef<typeof Video> | null>(null);
   const isOwnStory = user?._id === authorId;
 
   const currentStory = stories[currentIndex];
+
+  // Mirror currentIndex into a ref so advance/prev callbacks read the latest
+  // value without performing side effects inside a setState updater (which
+  // runs during render and would trigger navigation/setState-in-render warns).
+  const currentIndexRef = useRef(0);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // ─── Fetch music track info for current story ─────────────────────────────
 
@@ -140,14 +153,17 @@ const MomentViewerScreen: React.FC = () => {
   // ─── Progress animation ───────────────────────────────────────────────────
 
   const startProgress = useCallback(
-    (durationMs: number) => {
-      progressAnim.setValue(0);
+    (durationMs: number, fromValue = 0) => {
+      progressAnim.setValue(fromValue);
+      // Remaining wall-clock time scales with the un-elapsed fraction so a
+      // resume after pause finishes the bar in the time it had left.
+      const remainingMs = Math.max(0, durationMs * (1 - fromValue));
       Animated.timing(progressAnim, {
         toValue: 1,
-        duration: durationMs,
+        duration: remainingMs,
         useNativeDriver: false,
       }).start(({ finished }) => {
-        if (finished) advanceStory();
+        if (finished) advanceStoryRef.current();
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,30 +171,39 @@ const MomentViewerScreen: React.FC = () => {
   );
 
   const stopProgress = useCallback(() => {
-    progressAnim.stopAnimation();
+    // Capture where the bar is so handlePressOut can resume from here.
+    progressAnim.stopAnimation((value: number) => {
+      pausedValueRef.current = value;
+    });
   }, [progressAnim]);
 
   const advanceStory = useCallback(() => {
-    setCurrentIndex((prev) => {
-      if (prev + 1 < stories.length) {
-        setViewerState('loading');
-        return prev + 1;
-      }
+    const next = currentIndexRef.current + 1;
+    if (next < stories.length) {
+      setViewerState('loading');
+      setCurrentIndex(next);
+    } else {
       // No more stories — dismiss
       navigation.goBack();
-      return prev;
-    });
+    }
   }, [stories.length, navigation]);
 
   const goToPrevious = useCallback(() => {
-    setCurrentIndex((prev) => {
-      if (prev > 0) {
-        setViewerState('loading');
-        return prev - 1;
-      }
-      return prev;
-    });
+    const prev = currentIndexRef.current - 1;
+    if (prev >= 0) {
+      setViewerState('loading');
+      setCurrentIndex(prev);
+    }
   }, []);
+
+  // Keep a live ref to advanceStory so the progress-animation completion
+  // callback (created once in startProgress) always invokes the current
+  // version — otherwise it would capture a stale closure with stories.length
+  // frozen at 0 and dismiss the viewer instead of advancing.
+  const advanceStoryRef = useRef(advanceStory);
+  useEffect(() => {
+    advanceStoryRef.current = advanceStory;
+  }, [advanceStory]);
 
   // ─── View recording ───────────────────────────────────────────────────────
 
@@ -218,6 +243,7 @@ const MomentViewerScreen: React.FC = () => {
     setViewerState('loaded');
     if (currentStory) {
       recordViewDebounced(currentStory._id);
+      pausedValueRef.current = 0;
       const isVideo = currentStory.mediaType === 'video';
       if (!isVideo) {
         startProgress(IMAGE_DURATION_MS);
@@ -299,7 +325,8 @@ const MomentViewerScreen: React.FC = () => {
   const handlePressOut = useCallback(() => {
     setIsPaused(false);
     if (currentStory?.mediaType === 'image' && viewerState === 'loaded') {
-      startProgress(IMAGE_DURATION_MS);
+      // Resume the image timer from where it was paused, not from zero.
+      startProgress(IMAGE_DURATION_MS, pausedValueRef.current);
     }
   }, [currentStory, viewerState, startProgress]);
 
@@ -470,6 +497,33 @@ const MomentViewerScreen: React.FC = () => {
         />
       ) : null}
 
+      {/* Parallel audio player (compose-at-playback). Hidden, audio-only.
+          Plays trackInfo.audioUrl synced with the story; seeks to startMs on
+          load; pauses with the story. Drops silently if the URL fails. */}
+      {currentStory?.musicRef && trackInfo?.audioUrl ? (
+        <Video
+          key={`audio-${currentStory._id}`}
+          ref={audioRef}
+          source={{ uri: trackInfo.audioUrl }}
+          style={styles.hiddenAudio}
+          paused={isPaused || viewerState !== 'loaded'}
+          muted={false}
+          repeat
+          playInBackground={false}
+          onLoad={() => {
+            const startMs = currentStory.musicRef?.startMs ?? 0;
+            if (startMs > 0 && audioRef.current) {
+              audioRef.current.seek(startMs / 1000);
+            }
+          }}
+          onError={() => {
+            // Music is non-critical — keep playing the story without audio.
+          }}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
+
       {/* Loading spinner */}
       {(viewerState === 'loading') && (
         <View style={styles.loadingOverlay}>
@@ -517,8 +571,8 @@ const MomentViewerScreen: React.FC = () => {
         </View>
       ) : null}
 
-      {/* Music attribution pill */}
-      {currentStory?.musicRef && trackInfo && (
+      {/* Music attribution pill — shows the track playing behind the story */}
+      {currentStory?.musicRef && trackInfo != null && (
         <View style={styles.musicPill} accessibilityLabel={`Nhạc: ${trackInfo.title} bởi ${trackInfo.artist}`}>
           <KoolaText variant="caption" tone="surface" numberOfLines={1}>
             🎵 {trackInfo.title} · {trackInfo.artist}
@@ -657,6 +711,12 @@ const styles = StyleSheet.create({
   },
   media: {
     ...StyleSheet.absoluteFillObject,
+  },
+  // Audio-only player — zero footprint, kept off-screen but mounted.
+  hiddenAudio: {
+    width: 0,
+    height: 0,
+    position: 'absolute',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

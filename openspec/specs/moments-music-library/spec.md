@@ -72,7 +72,7 @@ The system SHALL allow a story to reference a music track with an optional start
 - **THEN** existing stories continue to play with audio (the audio file is retained); the picker stops surfacing the track for new stories
 
 ### Requirement: Compose-at-Playback Player
-The mobile story player SHALL render a story by composing the user's video (or image) and the referenced music track as parallel streams synchronized at start time.
+The mobile story player SHALL render a story by composing the user's video (or image) and the referenced music track as parallel streams synchronized at start time. When a story carries a `musicRef`, the viewer mounts a hidden audio-only `react-native-video` instance that plays the track's presigned `audioUrl`, seeks to `startMs` on load, and pauses/resumes in lockstep with the story; the viewer renders the music attribution pill for that story.
 
 #### Scenario: Image story with music
 - **WHEN** the player opens an image story with `musicRef`
@@ -94,32 +94,28 @@ The mobile story player SHALL render a story by composing the user's video (or i
 - **WHEN** the story has no `musicRef`
 - **THEN** the player plays the video with its native audio (if any) or the image with no audio
 
+#### Scenario: Music attribution pill rendered when a story has music
+- **WHEN** the viewer renders a story whose `musicRef` resolves to an active track
+- **THEN** the music attribution pill ("🎵 Title · Artist") is rendered; for stories without a resolvable track the pill is not shown
+
 ### Requirement: Music Picker UI
-The composer SHALL include a music picker showing trending tracks, search, and per-track preview, with provenance attribution displayed.
+The composer SHALL include a music picker showing trending tracks, search, and per-track preview, with provenance attribution displayed. The "Thêm nhạc" entry-point opens the picker; selecting a track sets the story's `musicRef = { trackId, startMs }`, which is sent on `POST /moments/stories`. The backend browse/search and single-track read endpoints return a presigned `previewUrl` (and `audioUrl` for the single-track read) so the picker can preview audio and the viewer can play it back.
 
-#### Scenario: Picker opens with trending list
-- **WHEN** user taps the music button in the composer
-- **THEN** the picker opens to a "Đang thịnh hành" tab listing active tracks sorted by trending order, each row showing title, artist, duration, and a play preview button
+#### Scenario: Composer shows the music picker entry
+- **WHEN** the composer is in the preview step
+- **THEN** the "Thêm nhạc" row is rendered and tapping it opens the `MusicPicker` modal
 
-#### Scenario: Preview a track
-- **WHEN** user taps the preview button on a track
-- **THEN** the picker plays the `previewKey` audio (15-30s preview clip) without selecting it
+#### Scenario: Selecting a track sets musicRef on the story
+- **WHEN** the user selects a track and confirms a start offset in the picker
+- **THEN** the composer holds `musicRef = { trackId, startMs }` and includes it in the `POST /moments/stories` request body; clearing the selection sends no `musicRef`
 
-#### Scenario: Search in picker
-- **WHEN** user types in the picker search field
-- **THEN** the picker queries `GET /moments/music-tracks?q=<query>` and displays matching tracks
+#### Scenario: Browse/search responses carry a presigned preview URL
+- **WHEN** a client calls `GET /moments/music-tracks` (browse or search)
+- **THEN** each track in the response includes a presigned `previewUrl` (falling back to the full audio object when no dedicated preview key exists) so the picker can preview without exposing raw MinIO keys
 
-#### Scenario: Confirm track selection with start offset
-- **WHEN** user selects a track and adjusts the start offset slider, then taps "Chọn"
-- **THEN** the picker returns `{ trackId, startMs }` to the composer; the composer displays the track title and a "Đổi nhạc" button
-
-#### Scenario: CC-BY attribution displayed in picker
-- **WHEN** a track has `licenseType: "cc-by"` with non-empty `attribution`
-- **THEN** the attribution text is displayed below the track title in the picker
-
-#### Scenario: Empty catalog
-- **WHEN** the catalog has no active tracks
-- **THEN** the picker shows the empty state "Chưa có nhạc — bạn có thể đăng khoảnh khắc không có nhạc"
+#### Scenario: Backend endpoints remain available
+- **WHEN** an admin client calls `GET /moments/music-tracks`, `POST /moments/music-tracks`, or related endpoints
+- **THEN** the endpoints continue to function as previously specified
 
 ### Requirement: Provenance Audit Trail
 The system SHALL retain provenance metadata even for deactivated tracks to support license audit at any time.

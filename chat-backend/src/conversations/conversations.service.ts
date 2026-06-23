@@ -470,6 +470,23 @@ export class ConversationsService {
     return userConvs.map((uc) => uc.conversationId.toString());
   }
 
+  async getConnectedUserIds(userId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(userId)) return [];
+    const oid = new Types.ObjectId(userId);
+    const convs = await this.conversationModel
+      .find({ type: ConversationType.DIRECT, 'members.userId': oid })
+      .select('members')
+      .lean();
+    const others = new Set<string>();
+    for (const c of convs) {
+      for (const m of (c as any).members) {
+        const id = m.userId?.toString();
+        if (id && id !== userId) others.add(id);
+      }
+    }
+    return Array.from(others);
+  }
+
   // ─── Pin/Unpin ────────────────────────────────────────────────────────────
 
   private pinEmitCallback?: (

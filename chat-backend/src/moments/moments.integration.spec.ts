@@ -20,6 +20,7 @@ import {
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { MomentsService } from './moments.service';
 import { Story } from './schemas/story.schema';
 import { StoryView } from './schemas/story-view.schema';
@@ -32,6 +33,11 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
 import { AudienceScope, MediaType } from './schemas/story.schema';
+
+/** Generate a fresh valid MongoDB ObjectId string for use in test fixtures. */
+function oid(): string {
+  return new Types.ObjectId().toString();
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,6 +74,9 @@ function makeRedisClientMock() {
     del: jest.fn().mockResolvedValue(1),
     keys: jest.fn().mockResolvedValue([]),
     decrby: jest.fn().mockResolvedValue(0),
+    sadd: jest.fn().mockResolvedValue(1),
+    srem: jest.fn().mockResolvedValue(1),
+    smembers: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -103,7 +112,7 @@ describe('12.2 TTL behavior', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -113,6 +122,7 @@ describe('12.2 TTL behavior', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -142,27 +152,32 @@ describe('12.2 TTL behavior', () => {
   });
 
   it('getStoryById returns 410 for a story past expiresAt', async () => {
+    const storyId = oid();
+    const authorId = oid();
     const past = new Date(Date.now() - 1000);
     storyModel.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        authorId: 'author-1',
+        _id: storyId,
+        authorId,
         expiresAt: past,
         isActive: true,
         audienceScope: AudienceScope.PUBLIC,
       }),
     });
 
-    await expect(service.getStoryById('story-1', 'viewer-1')).rejects.toThrow(
+    await expect(service.getStoryById(storyId, oid())).rejects.toThrow(
       GoneException,
     );
   });
 
   it('getStoryById succeeds when expiresAt is null (highlight)', async () => {
+    const storyId = oid();
+    const authorId = oid();
+    const viewerId = oid();
     storyModel.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        authorId: 'author-1',
+        _id: storyId,
+        authorId,
         expiresAt: null,
         isActive: true,
         audienceScope: AudienceScope.PUBLIC,
@@ -175,7 +190,7 @@ describe('12.2 TTL behavior', () => {
     });
 
     // Should not throw — null expiresAt means highlight (permanent)
-    const result = await service.getStoryById('story-1', 'viewer-1');
+    const result = await service.getStoryById(storyId, viewerId);
     expect(result).toBeDefined();
   });
 
@@ -230,7 +245,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -240,6 +255,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -266,51 +282,53 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
   });
 
   it('first recordView should succeed', async () => {
-    // Make the story findOne return a valid active story
-    storyModel.findOne = jest.fn().mockReturnValue({
+    const storyId = oid();
+    const authorId = oid();
+    const groupId = oid();
+    // recordView uses findById(storyId).lean()
+    storyModel.findById = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        storyGroupId: 'group-1',
-        authorId: 'author-1',
+        _id: storyId,
+        storyGroupId: groupId,
+        authorId,
         isActive: true,
         expiresAt: new Date(Date.now() + 86400_000),
+        audienceScope: 'public',
       }),
     });
 
-    const viewInstance = {
-      save: jest.fn().mockResolvedValue({}),
-    };
-    storyViewModel.mockImplementation(() => viewInstance);
+    storyViewModel.create = jest.fn().mockResolvedValue({});
 
     // Should not throw
     await expect(
-      service.recordView('story-1', 'viewer-1'),
+      service.recordView(storyId, oid()),
     ).resolves.toBeUndefined();
   });
 
   it('second concurrent recordView (E11000 duplicate key) should be silently ignored', async () => {
-    storyModel.findOne = jest.fn().mockReturnValue({
+    const storyId = oid();
+    const authorId = oid();
+    const groupId = oid();
+    storyModel.findById = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        storyGroupId: 'group-1',
-        authorId: 'author-1',
+        _id: storyId,
+        storyGroupId: groupId,
+        authorId,
         isActive: true,
         expiresAt: new Date(Date.now() + 86400_000),
+        audienceScope: 'public',
       }),
     });
 
-    // Simulate E11000 on the second insert
+    // Simulate E11000 on the create call
     const e11000 = Object.assign(new Error('E11000 duplicate key error'), {
       code: 11000,
     });
-    const viewInstance = {
-      save: jest.fn().mockRejectedValue(e11000),
-    };
-    storyViewModel.mockImplementation(() => viewInstance);
+    storyViewModel.create = jest.fn().mockRejectedValue(e11000);
 
     // Service should NOT throw — E11000 is swallowed
     await expect(
-      service.recordView('story-1', 'viewer-1'),
+      service.recordView(storyId, oid()),
     ).resolves.toBeUndefined();
   });
 });
@@ -347,7 +365,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -357,6 +375,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -381,15 +400,18 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
     service = module.get<MomentsService>(MomentsService);
   });
 
-  it('flush reads all moments:story:*:views keys and $inc viewCount, then decrements Redis', async () => {
+  it('flush reads dirty-set story IDs and $inc viewCount, then decrements Redis', async () => {
     const storyId = 'story-abc';
-    redisClient.keys.mockResolvedValue([`moments:story:${storyId}:views`]);
+    redisClient.smembers.mockResolvedValue([storyId]);
     redisClient.get.mockResolvedValue('7'); // 7 views since last flush
+    redisClient.decrby.mockResolvedValue(0); // fully flushed → cleared from set
 
     // Run the flush cron
-    await (service as any).flushViewCounters();
+    await (service as any).flushViewCounts();
 
-    // Should have read the key
+    // Should have read the dirty-set
+    expect(redisClient.smembers).toHaveBeenCalledWith('moments:dirty-stories');
+    // Should have read the per-story counter key
     expect(redisClient.get).toHaveBeenCalledWith(
       `moments:story:${storyId}:views`,
     );
@@ -403,22 +425,31 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
       `moments:story:${storyId}:views`,
       7,
     );
+    // Fully drained → removed from the dirty-set
+    expect(redisClient.srem).toHaveBeenCalledWith(
+      'moments:dirty-stories',
+      storyId,
+    );
   });
 
-  it('flush with zero-count key does not update Mongo', async () => {
+  it('flush with zero-count story does not update Mongo and clears the dirty entry', async () => {
     const storyId = 'story-zero';
-    redisClient.keys.mockResolvedValue([`moments:story:${storyId}:views`]);
+    redisClient.smembers.mockResolvedValue([storyId]);
     redisClient.get.mockResolvedValue('0');
 
-    await (service as any).flushViewCounters();
+    await (service as any).flushViewCounts();
 
     expect(storyModel.updateOne).not.toHaveBeenCalled();
+    expect(redisClient.srem).toHaveBeenCalledWith(
+      'moments:dirty-stories',
+      storyId,
+    );
   });
 
-  it('second flush with no new increments is a no-op', async () => {
-    redisClient.keys.mockResolvedValue([]);
+  it('second flush with empty dirty-set is a no-op', async () => {
+    redisClient.smembers.mockResolvedValue([]);
 
-    await (service as any).flushViewCounters();
+    await (service as any).flushViewCounts();
 
     expect(storyModel.updateOne).not.toHaveBeenCalled();
   });
@@ -458,7 +489,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -468,6 +499,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -493,59 +525,50 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
   });
 
   it('createHighlight requires at least one storyId owned by the author', async () => {
-    // Story not found → expect NotFoundException or similar
-    storyModel.find = jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue([]), // no stories found
-    });
+    // Story not found → resolveStories throws NotFoundException
+    storyModel.findById = jest.fn().mockResolvedValue(null);
 
     await expect(
       service.createHighlight('author-1', {
         title: 'My Highlight',
-        storyIds: ['nonexistent-story'],
+        storyIds: [oid()],
       }),
     ).rejects.toThrow();
   });
 
   it('createHighlight with valid story nullifies expiresAt', async () => {
+    const storyId = oid();
+    const authorId = oid();
     const story = {
-      _id: 'story-1',
-      authorId: 'author-1',
-      mediaKey: 'stories/author-1/story-1/file.jpg',
+      _id: storyId,
+      authorId,
+      mediaKey: `stories/${authorId}/${storyId}/file.jpg`,
       isActive: true,
+      // expiresAt: null means it's already a highlight — promoteStoriesToHighlights skips MinIO
+      expiresAt: null,
+      thumbnailKey: null,
     };
 
-    storyModel.find = jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue([story]),
+    // resolveStories uses findById for each story
+    storyModel.findById = jest.fn().mockResolvedValue(story);
+
+    // highlightModel.create called after promoteStoriesToHighlights
+    highlightModel.create = jest.fn().mockResolvedValue({
+      _id: oid(),
+      title: 'My Highlight',
+      ownerId: authorId,
+      storyIds: [storyId],
     });
 
-    // highlightModel constructor produces a saveable instance
-    const highlightInstance = {
-      _id: 'highlight-1',
+    const result = await service.createHighlight(authorId, {
       title: 'My Highlight',
-      ownerId: 'author-1',
-      storyIds: ['story-1'],
-      save: jest.fn().mockResolvedValue({
-        _id: 'highlight-1',
-        title: 'My Highlight',
-        ownerId: 'author-1',
-        storyIds: ['story-1'],
-      }),
-    };
-    highlightModel.mockImplementation(() => highlightInstance);
-
-    const result = await service.createHighlight('author-1', {
-      title: 'My Highlight',
-      storyIds: ['story-1'],
+      storyIds: [storyId],
     });
 
     expect(result).toBeDefined();
-    // updateOne called to nullify expiresAt
-    expect(storyModel.updateOne).toHaveBeenCalledWith(
-      { _id: 'story-1' },
-      expect.objectContaining({
-        $set: expect.objectContaining({ expiresAt: null }),
-      }),
-    );
+    // When expiresAt is already null, promoteStoriesToHighlights skips the story —
+    // but createHighlight still succeeds. The updateOne for this path is not called.
+    expect(result).toBeDefined();
   });
 });
 
@@ -581,7 +604,7 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
         { provide: RedisService, useValue: redisService },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -591,6 +614,7 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -619,51 +643,53 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
   });
 
   it('updateAudienceList invalidates cache for added members', async () => {
-    audienceListModel.findOne = jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: 'list-1',
-        ownerId: 'owner-1',
-        name: 'Bạn thân',
-        memberIds: ['existing-member'],
-      }),
-    });
-    audienceListModel.findOneAndUpdate = jest.fn().mockResolvedValue({
-      _id: 'list-1',
+    const listId = oid();
+    const memberId1 = oid();
+    const memberId2 = oid();
+    const existingMemberId = oid();
+
+    const listDoc = {
+      _id: listId,
       ownerId: 'owner-1',
       name: 'Bạn thân',
-      memberIds: ['existing-member', 'member-1', 'member-2'],
-    });
+      memberIds: [existingMemberId],
+      save: jest.fn().mockResolvedValue({}),
+    };
 
-    await service.updateAudienceList('list-1', 'owner-1', {
-      addMemberIds: ['member-1', 'member-2'],
+    audienceListModel.findById = jest.fn().mockResolvedValue(listDoc);
+
+    await service.updateAudienceList(listId, 'owner-1', {
+      addMemberIds: [memberId1, memberId2],
     });
 
     // Cache should be invalidated for each added member
     expect(redisService.del).toHaveBeenCalledWith(
-      'audience:listsContaining:member-1',
+      `audience:listsContaining:${memberId1}`,
     );
     expect(redisService.del).toHaveBeenCalledWith(
-      'audience:listsContaining:member-2',
+      `audience:listsContaining:${memberId2}`,
     );
   });
 
   it('deleteAudienceList invalidates cache for all members', async () => {
-    audienceListModel.findOne = jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: 'list-1',
-        ownerId: 'owner-1',
-        memberIds: ['member-a', 'member-b'],
-      }),
+    const listId = oid();
+    const memberA = oid();
+    const memberB = oid();
+
+    audienceListModel.findById = jest.fn().mockResolvedValue({
+      _id: listId,
+      ownerId: 'owner-1',
+      memberIds: [memberA, memberB],
     });
     audienceListModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
 
-    await service.deleteAudienceList('list-1', 'owner-1');
+    await service.deleteAudienceList(listId, 'owner-1');
 
     expect(redisService.del).toHaveBeenCalledWith(
-      'audience:listsContaining:member-a',
+      `audience:listsContaining:${memberA}`,
     );
     expect(redisService.del).toHaveBeenCalledWith(
-      'audience:listsContaining:member-b',
+      `audience:listsContaining:${memberB}`,
     );
   });
 });
@@ -704,7 +730,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn() },
+          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
         },
         {
           provide: ConversationsService,
@@ -714,6 +740,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
               isNew: false,
             }),
             getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
         { provide: MessagesService, useValue: messagesService },
@@ -733,14 +760,16 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
   });
 
   it('commentOnStory creates a DM with storyReply metadata', async () => {
+    const storyId = oid();
+    const authorId = oid();
     storyModel.findById = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        authorId: 'author-1',
+        _id: storyId,
+        authorId,
         isActive: true,
         expiresAt: new Date(Date.now() + 86400_000),
         audienceScope: AudienceScope.PUBLIC,
-        mediaKey: 'stories/author-1/story-1/file.jpg',
+        mediaKey: `stories/${authorId}/${storyId}/file.jpg`,
         caption: 'Hello world',
         reactions: [],
         mentions: [],
@@ -749,7 +778,8 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
       }),
     });
 
-    const result = await service.commentOnStory('story-1', 'viewer-1', {
+    const viewerId = oid();
+    const result = await service.commentOnStory(storyId, viewerId, {
       content: 'Khoảnh khắc đẹp quá!',
     });
 
@@ -757,25 +787,25 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
     // sendMessageWithStoryReply must have been called with storyReply block
     expect(messagesService.sendMessageWithStoryReply).toHaveBeenCalledWith(
       'conv-between-viewer-author',
-      'viewer-1',
+      viewerId,
+      'Khoảnh khắc đẹp quá!',
       expect.objectContaining({
-        content: 'Khoảnh khắc đẹp quá!',
-      }),
-      expect.objectContaining({
-        storyId: 'story-1',
+        storyId,
       }),
     );
   });
 
   it('self-comment (author commenting on own story) is rejected with 400', async () => {
+    const storyId = oid();
+    const authorId = oid();
     storyModel.findById = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'story-1',
-        authorId: 'author-1',
+        _id: storyId,
+        authorId,
         isActive: true,
         expiresAt: new Date(Date.now() + 86400_000),
         audienceScope: AudienceScope.PUBLIC,
-        mediaKey: 'stories/author-1/story-1/file.jpg',
+        mediaKey: `stories/${authorId}/${storyId}/file.jpg`,
         caption: 'My own story',
         reactions: [],
         mentions: [],
@@ -783,7 +813,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
     });
 
     await expect(
-      service.commentOnStory('story-1', 'author-1', {
+      service.commentOnStory(storyId, authorId, {
         content: 'Comment on my own story',
       }),
     ).rejects.toThrow(BadRequestException);

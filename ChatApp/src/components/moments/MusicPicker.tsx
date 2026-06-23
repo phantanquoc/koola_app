@@ -9,14 +9,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   TextInput,
   Modal,
   ActivityIndicator,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { KoolaText, KoolaButton, koolaColors, koolaRadii } from '../../ui';
+import Video from 'react-native-video';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { KoolaText, KoolaButton, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
 import { momentsService } from '../../services/moments/momentsService';
 import type { MusicTrack, MusicRef } from '../../services/moments/momentsApi';
 
@@ -52,7 +54,46 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
   const [query, setQuery] = useState('');
   const [selectedTrack, setSelectedTrack] = useState<MusicTrack | null>(null);
   const [startMs, setStartMs] = useState(0);
+  // Track currently previewing (id of the row whose preview audio is playing).
+  // Null = nothing playing. Only one preview plays at a time.
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const searchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stop any preview when the modal closes so audio never leaks across screens.
+  useEffect(() => {
+    if (!visible) {
+      setPreviewingId(null);
+      setPreviewUrl(null);
+    }
+  }, [visible]);
+
+  // Toggle preview for a track. Tapping the playing one stops it; tapping a
+  // different one switches. Uses the track's previewUrl (falls back to
+  // audioUrl) resolved by the backend when listing/fetching tracks.
+  const handleTogglePreview = useCallback(
+    async (track: MusicTrack) => {
+      if (previewingId === track._id) {
+        setPreviewingId(null);
+        setPreviewUrl(null);
+        return;
+      }
+      // Prefer the list's previewUrl; if absent, fetch full detail for audioUrl.
+      let url = track.previewUrl ?? track.audioUrl ?? null;
+      if (!url) {
+        try {
+          const detail = await momentsService.getMusicTrackById(track._id);
+          url = detail.previewUrl ?? detail.audioUrl ?? null;
+        } catch {
+          url = null;
+        }
+      }
+      if (!url) return;
+      setPreviewUrl(url);
+      setPreviewingId(track._id);
+    },
+    [previewingId],
+  );
 
   const loadTracks = useCallback(async (q?: string) => {
     setLoading(true);
@@ -106,13 +147,32 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
   const renderTrack = useCallback(
     ({ item }: { item: MusicTrack }) => {
       const isSelected = selectedTrack?._id === item._id || currentRef?.trackId === item._id;
+      const isPreviewing = previewingId === item._id;
       return (
-        <TouchableOpacity
-          style={[styles.trackItem, isSelected && styles.trackItemSelected]}
+        <Pressable
+          style={({ pressed }) => [
+            styles.trackItem,
+            isSelected && styles.trackItemSelected,
+            pressed && styles.trackItemPressed,
+          ]}
           onPress={() => handleSelectTrack(item)}
+          android_ripple={{ color: koolaColors.primarySoft }}
           accessibilityRole="button"
           accessibilityLabel={`${item.title} bởi ${item.artist}`}
           accessibilityState={{ selected: isSelected }}>
+          <Pressable
+            style={({ pressed }) => [styles.previewButton, pressed && styles.previewButtonPressed]}
+            onPress={() => handleTogglePreview(item)}
+            android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={isPreviewing ? `Dừng nghe thử ${item.title}` : `Nghe thử ${item.title}`}>
+            <MaterialIcons
+              name={isPreviewing ? 'stop-circle' : 'play-circle-outline'}
+              size={32}
+              color={isPreviewing ? koolaColors.primary : koolaColors.ink}
+            />
+          </Pressable>
           <View style={styles.trackInfo}>
             <KoolaText variant="label" tone={isSelected ? 'primary' : 'ink'} numberOfLines={1}>
               {item.title}
@@ -126,38 +186,67 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
               </KoolaText>
             ) : null}
           </View>
-          <KoolaText variant="caption" tone="faint">
-            {Math.floor(item.durationMs / 60000)}:
-            {String(Math.floor((item.durationMs % 60000) / 1000)).padStart(2, '0')}
-          </KoolaText>
-        </TouchableOpacity>
+          <View style={styles.trackMeta}>
+            {isSelected ? <MaterialIcons name="check-circle" size={18} color={koolaColors.primary} /> : null}
+            <KoolaText variant="caption" tone="faint">
+              {Math.floor(item.durationMs / 60000)}:
+              {String(Math.floor((item.durationMs % 60000) / 1000)).padStart(2, '0')}
+            </KoolaText>
+          </View>
+        </Pressable>
       );
     },
-    [selectedTrack, currentRef, handleSelectTrack],
+    [selectedTrack, currentRef, previewingId, handleSelectTrack, handleTogglePreview],
   );
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.container} accessibilityViewIsModal>
+        {/* Hidden audio-only player for previews. Mounts only while a preview is
+            active; auto-clears previewingId when the track finishes. */}
+        {previewUrl && previewingId ? (
+          <Video
+            source={{ uri: previewUrl }}
+            style={styles.hiddenAudio}
+            paused={false}
+            muted={false}
+            repeat={false}
+            playInBackground={false}
+            onEnd={() => {
+              setPreviewingId(null);
+              setPreviewUrl(null);
+            }}
+            onError={() => {
+              setPreviewingId(null);
+              setPreviewUrl(null);
+            }}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        ) : null}
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
+          <Pressable
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Đóng">
+            accessibilityLabel="Đóng"
+            android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
+            style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}>
             <KoolaText tone="primary">Hủy</KoolaText>
-          </TouchableOpacity>
+          </Pressable>
           <KoolaText variant="label" weight="700">
             Chọn nhạc
           </KoolaText>
-          <TouchableOpacity
+          <Pressable
             onPress={handleConfirm}
             accessibilityRole="button"
-            accessibilityLabel="Xác nhận chọn nhạc">
+            accessibilityLabel="Xác nhận chọn nhạc"
+            android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
+            style={({ pressed }) => [styles.headerAction, styles.headerActionRight, pressed && styles.headerActionPressed]}>
             <KoolaText tone="primary" weight="700">
               Xong
             </KoolaText>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {/* Search */}
@@ -168,6 +257,7 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
             onChangeText={handleSearch}
             placeholder="Tìm nhạc..."
             placeholderTextColor={koolaColors.faint}
+            underlineColorAndroid="transparent"
             accessibilityLabel="Tìm kiếm nhạc"
           />
         </View>
@@ -238,27 +328,41 @@ const styles = StyleSheet.create({
     backgroundColor: koolaColors.canvas,
   },
   header: {
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
     backgroundColor: koolaColors.surface,
   },
+  headerAction: {
+    minWidth: 56,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  headerActionRight: {
+    alignItems: 'flex-end',
+  },
+  headerActionPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
+  },
   searchBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.md,
     backgroundColor: koolaColors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
   },
   searchInput: {
+    minHeight: 44,
     backgroundColor: koolaColors.canvas,
-    borderRadius: koolaRadii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: koolaRadii.pill,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.sm,
     fontSize: 15,
     color: koolaColors.ink,
     borderWidth: 1,
@@ -276,23 +380,55 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   trackList: {
-    paddingBottom: 20,
+    paddingVertical: koolaSpacing.sm,
+    paddingBottom: koolaSpacing.xl,
   },
   trackItem: {
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
+    marginHorizontal: koolaSpacing.lg,
+    marginBottom: koolaSpacing.sm,
+    paddingHorizontal: koolaSpacing.md,
+    paddingVertical: koolaSpacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: koolaColors.line,
+    borderRadius: koolaRadii.md,
     backgroundColor: koolaColors.surface,
   },
   trackItemSelected: {
     backgroundColor: koolaColors.primarySoft,
+    borderColor: koolaColors.primary,
+  },
+  trackItemPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
   },
   trackInfo: {
     flex: 1,
-    marginRight: 8,
+    marginRight: koolaSpacing.sm,
+  },
+  trackMeta: {
+    minWidth: 44,
+    alignItems: 'flex-end',
+  },
+  previewButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: koolaSpacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewButtonPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
+  },
+  // Audio-only preview player — zero footprint, kept off-screen but mounted.
+  hiddenAudio: {
+    width: 0,
+    height: 0,
+    position: 'absolute',
   },
   loader: {
     marginTop: 40,

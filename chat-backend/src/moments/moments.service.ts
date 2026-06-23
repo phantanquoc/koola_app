@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   Story,
   StoryDocument,
@@ -61,6 +61,10 @@ export const ALLOWED_REACTIONS = new Set([
 // ─── Redis Key Helpers ────────────────────────────────────────────────────────
 
 const redisViewKey = (storyId: string) => `moments:story:${storyId}:views`;
+// Index set of story IDs with pending (unflushed) view increments.
+// Avoids a blocking `KEYS moments:story:*:views` scan in the flush cron —
+// same anti-KEYS/SCAN convention used by the WebRTC call-session service.
+const REDIS_DIRTY_STORIES_KEY = 'moments:dirty-stories';
 const redisAudienceKey = (userId: string) =>
   `audience:listsContaining:${userId}`;
 const AUDIENCE_CACHE_TTL = 300; // 5 minutes
@@ -287,6 +291,8 @@ export class MomentsService {
       authorId: string;
       lastStoryId: string;
       hasUnviewed: boolean;
+      authorDisplayName: string;
+      authorAvatar: string | null;
       stories: StoryDocument[];
     }[];
     nextCursor: string | null;
@@ -295,14 +301,19 @@ export class MomentsService {
     // Load viewer's audience list membership (cached)
     const viewerListMembership = await this.getViewerListMembership(viewerId);
 
-    // Build $or privacy filter
-    // NOTE: For 'connections' scope, we need the author list — in this implementation
-    // we include all connections-scope stories and rely on the Redis cache for custom.
-    // A full implementation would fetch the viewer's connection IDs.
-    // For v1, connections scope stories from all authors are returned (privacy is best-effort).
+    // Fetch viewer's connections (DIRECT-conversation graph)
+    const connectionIds =
+      await this.conversationsService.getConnectedUserIds(viewerId);
+
+    // Build $or privacy filter — connections scope enforced server-side
     const orFilter = [
       { audienceScope: AudienceScope.PUBLIC },
-      { audienceScope: AudienceScope.CONNECTIONS },
+      {
+        audienceScope: AudienceScope.CONNECTIONS,
+        authorId: { $in: connectionIds },
+      },
+      // Author always sees their own stories regardless of scope
+      { authorId: viewerId },
       ...(viewerListMembership.length > 0
         ? [
             {
@@ -342,6 +353,8 @@ export class MomentsService {
       authorId: string;
       lastStoryId: string;
       hasUnviewed: boolean;
+      authorDisplayName: string;
+      authorAvatar: string | null;
       stories: StoryDocument[];
     };
     const unviewedItems: FeedItem[] = [];
@@ -359,6 +372,8 @@ export class MomentsService {
         authorId,
         lastStoryId,
         hasUnviewed,
+        authorDisplayName: '',
+        authorAvatar: null,
         stories: authorStories,
       };
       if (hasUnviewed) {
@@ -370,6 +385,17 @@ export class MomentsService {
 
     const allItems = [...unviewedItems, ...viewedItems];
     const items = allItems.slice(0, limit);
+
+    // Enrich feed items with author identity (single findByIds call after slicing)
+    const authorIds = [...new Set(items.map((it) => it.authorId))];
+    const users = await this.usersService.findByIds(authorIds);
+    const userById = new Map(users.map((u) => [(u as any)._id.toString(), u]));
+    for (const item of items) {
+      const u = userById.get(item.authorId);
+      item.authorDisplayName = (u as any)?.displayName ?? '';
+      item.authorAvatar = (u as any)?.avatar ?? null;
+    }
+
     const nextCursor =
       items.length === limit ? items[items.length - 1].authorId : null;
 
@@ -408,7 +434,10 @@ export class MomentsService {
 
       // Only INCR for non-author views
       if (viewerId !== s.authorId) {
-        await this.redisService.getClient().incr(redisViewKey(storyId));
+        const redis = this.redisService.getClient();
+        await redis.incr(redisViewKey(storyId));
+        // Mark this story dirty so the flush cron can find it without KEYS/SCAN
+        await redis.sadd(REDIS_DIRTY_STORIES_KEY, storyId);
       }
     } catch (err: any) {
       if (err?.code === 11000) {
@@ -496,25 +525,36 @@ export class MomentsService {
     }
     await this.assertViewAccess(story, viewerId);
 
-    // $pull existing then $push new (single op with arrayFilters)
-    await this.storyModel.updateOne(
-      { _id: storyId },
+    // Atomic upsert of the viewer's single reaction.
+    // First try to update an existing reaction in-place via the positional
+    // operator. If the viewer has no reaction yet (modifiedCount === 0), push
+    // one — guarded by `reactions.userId $ne viewerId` so two concurrent
+    // requests can never insert a second entry for the same viewer.
+    const now = new Date();
+    const updated = await this.storyModel.updateOne(
+      { _id: storyId, 'reactions.userId': viewerId },
       {
-        $pull: { reactions: { userId: viewerId } } as any,
+        $set: {
+          'reactions.$.emoji': dto.emoji,
+          'reactions.$.createdAt': now,
+        },
       },
     );
-    await this.storyModel.updateOne(
-      { _id: storyId },
-      {
-        $push: {
-          reactions: {
-            userId: viewerId,
-            emoji: dto.emoji,
-            createdAt: new Date(),
-          },
-        } as any,
-      },
-    );
+
+    if (updated.matchedCount === 0) {
+      await this.storyModel.updateOne(
+        { _id: storyId, 'reactions.userId': { $ne: viewerId } },
+        {
+          $push: {
+            reactions: {
+              userId: viewerId,
+              emoji: dto.emoji,
+              createdAt: now,
+            },
+          } as any,
+        },
+      );
+    }
 
     // Emit story.reaction to author
     if (this.gatewayRef) {
@@ -551,20 +591,23 @@ export class MomentsService {
 
   // ─── Redis View Count Flush Cron ────────────────────────────────────────────
 
-  @Cron('*/60 * * * * *')
+  @Cron(CronExpression.EVERY_MINUTE)
   async flushViewCounts(): Promise<void> {
     const redis = this.redisService.getClient();
-    const keys = await redis.keys('moments:story:*:views');
+    // Read the dirty-set instead of `KEYS moments:story:*:views` (blocking).
+    const storyIds = await redis.smembers(REDIS_DIRTY_STORIES_KEY);
 
-    for (const key of keys) {
+    for (const storyId of storyIds) {
+      const key = redisViewKey(storyId);
       try {
         const value = await redis.get(key);
-        if (!value || parseInt(value, 10) === 0) continue;
+        const count = value ? parseInt(value, 10) : 0;
 
-        const count = parseInt(value, 10);
-        // Extract storyId from key pattern moments:story:<storyId>:views
-        const storyId = key.split(':')[2];
-        if (!storyId) continue;
+        if (!count || count === 0) {
+          // Nothing pending — drop it from the dirty-set so the cron stays cheap.
+          await redis.srem(REDIS_DIRTY_STORIES_KEY, storyId);
+          continue;
+        }
 
         // $inc viewCount in Mongo
         await this.storyModel.updateOne(
@@ -572,11 +615,16 @@ export class MomentsService {
           { $inc: { viewCount: count } },
         );
 
-        // Decrement Redis by flushed amount (atomic DECRBY)
-        await redis.decrby(key, count);
+        // Decrement Redis by flushed amount (atomic DECRBY). If new views
+        // arrived between GET and DECRBY they remain pending and the storyId
+        // stays dirty for the next tick; we only clear it when it hits zero.
+        const remaining = await redis.decrby(key, count);
+        if (remaining <= 0) {
+          await redis.srem(REDIS_DIRTY_STORIES_KEY, storyId);
+        }
       } catch (err) {
         this.logger.error(
-          `[MomentsService] viewCount flush failed for key ${key}`,
+          `[MomentsService] viewCount flush failed for story ${storyId}`,
           err,
         );
       }
@@ -994,20 +1042,64 @@ export class MomentsService {
       .limit(limit)
       .lean()) as unknown as MusicTrackDocument[];
 
-    return { tracks, nextCursor: null, total: tracks.length };
+    // Attach a presigned preview URL per track so the picker can play a
+    // short preview without exposing raw MinIO keys. Falls back to the full
+    // audio object when no dedicated preview exists.
+    const enriched = await Promise.all(
+      tracks.map(async (track) => {
+        const t = track as any;
+        const key = t.previewKey ?? t.audioKey;
+        let previewUrl = '';
+        try {
+          previewUrl = await getMinioPublicClient().presignedGetObject(
+            BUCKET,
+            key,
+            3600,
+          );
+        } catch {
+          previewUrl = '';
+        }
+        return { ...t, previewUrl };
+      }),
+    );
+
+    return {
+      tracks: enriched as unknown as MusicTrackDocument[],
+      nextCursor: null,
+      total: enriched.length,
+    };
   }
 
   async getMusicTrackById(
     trackId: string,
     includeInactive = false,
-  ): Promise<MusicTrackDocument> {
+  ): Promise<MusicTrackDocument & { audioUrl: string; previewUrl: string }> {
     const filter: Record<string, unknown> = { _id: trackId };
     if (!includeInactive) {
       filter.isActive = true;
     }
-    const track = await this.musicTrackModel.findOne(filter);
+    const track = await this.musicTrackModel.findOne(filter).lean();
     if (!track) throw new NotFoundException('Music track not found');
-    return track;
+
+    const t = track as any;
+
+    // Presigned playback URLs (valid 1h) so the mobile player can stream the
+    // audio without exposing raw MinIO keys. previewUrl is used by the picker;
+    // audioUrl is the full track played in the viewer at musicRef.startMs.
+    const audioUrl = await getMinioPublicClient().presignedGetObject(
+      BUCKET,
+      t.audioKey,
+      3600,
+    );
+    const previewUrl = t.previewKey
+      ? await getMinioPublicClient().presignedGetObject(
+          BUCKET,
+          t.previewKey,
+          3600,
+        )
+      : audioUrl;
+
+    return { ...t, audioUrl, previewUrl };
   }
 
   async auditMusicTracks(): Promise<MusicTrackDocument[]> {
@@ -1034,26 +1126,22 @@ export class MomentsService {
 
     // Author's isPrivate defaults to false if field doesn't exist
     const isPrivate = (author as any).isPrivate ?? false;
+    const authorName = (author as any).displayName ?? '';
+    const captionSnippet = (story as any).caption?.slice(0, 100) ?? '';
+
+    // For private authors, resolve the connection set once (shared DIRECT
+    // conversations) rather than per-mention. Consistent with assertViewAccess.
+    const connectionIds = isPrivate
+      ? new Set(await this.conversationsService.getConnectedUserIds(authorId))
+      : null;
 
     for (const mention of mentions) {
       if (mention.userId === authorId) continue; // skip self-mentions
 
       let shouldNotify = true;
 
-      if (isPrivate) {
-        // Check if mentioned user is a connection — for v1, we check
-        // if they share a DIRECT conversation (proxy for connection)
-        const sharedConvIds =
-          await this.conversationsService.getSharedConversationIds(authorId);
-        // Check by checking if the mentioned user is in any shared conversation
-        // This is an approximation — proper connections would require a dedicated table
-        const mentionedUserConvs =
-          await this.conversationsService.getSharedConversationIds(
-            mention.userId,
-          );
-        const mentionedSet = new Set(mentionedUserConvs);
-        const isConnected = sharedConvIds.some((id) => mentionedSet.has(id));
-        if (!isConnected) {
+      if (isPrivate && connectionIds) {
+        if (!connectionIds.has(mention.userId)) {
           shouldNotify = false;
           this.logger.debug(
             `[MomentsService] Suppressed mention notification for ${mention.userId} (private account, not connected)`,
@@ -1069,7 +1157,7 @@ export class MomentsService {
               story._id.toString(),
               authorId,
               mention.userId,
-              (story as any).caption?.slice(0, 100) ?? '',
+              captionSnippet,
             )
             .catch((err) =>
               this.logger.error(
@@ -1079,31 +1167,33 @@ export class MomentsService {
             );
         }
 
-        // FCM push notification
-        try {
-          const mentionedUser = await this.usersService.findById(
-            mention.userId,
+        // FCM push notification with moments deep-link (offline / background)
+        this.notificationsService
+          .sendMentionPush({
+            mentionedUserId: mention.userId,
+            authorName,
+            storyId: story._id.toString(),
+            captionSnippet,
+          })
+          .catch((err) =>
+            this.logger.error('[MomentsService] FCM mention push failed', err),
           );
-          if (mentionedUser?.fcmTokens?.length) {
-            // Use raw FCM via notificationsService — send generic push
-            // The deep link goes to koola://moments/story/<storyId>
-            this.logger.debug(
-              `[MomentsService] FCM mention push to ${mention.userId}`,
-            );
-          }
-        } catch (err) {
-          this.logger.error('[MomentsService] FCM mention push failed', err);
-        }
       }
     }
   }
 
   private async assertViewAccess(story: any, viewerId: string): Promise<void> {
+    // Author always has access to their own story
+    if (story.authorId === viewerId) return;
+
     if (story.audienceScope === AudienceScope.PUBLIC) return;
 
     if (story.audienceScope === AudienceScope.CONNECTIONS) {
-      // For v1, 'connections' scope allows all authenticated viewers
-      // (proper connection graph implementation would check a contacts table)
+      const connectionIds =
+        await this.conversationsService.getConnectedUserIds(viewerId);
+      if (!connectionIds.includes(story.authorId)) {
+        throw new ForbiddenException('Story is not accessible');
+      }
       return;
     }
 
