@@ -1,9 +1,9 @@
 ## 1. Governance and Batch Safety
 
-- [ ] 1.1 Announce each implementation batch with scope, non-scope, risk level, changed-file target, and verification plan
-- [ ] 1.2 Keep each batch limited to one feature area or shared primitive area so regressions can be reverted independently
-- [ ] 1.3 Request explicit approval before adding any visual dependency such as SVG/icon/chart/haptic libraries
-- [ ] 1.4 Report changed files, verification result, and known limitations at the end of each user-visible batch ← (verify: every completed batch follows the incremental review/revert protocol in design.md and specs/uiux-modernization-governance/spec.md)
+- [x] 1.1 Announce each implementation batch with scope, non-scope, risk level, changed-file target, and verification plan
+- [x] 1.2 Keep each batch limited to one feature area or shared primitive area so regressions can be reverted independently
+- [x] 1.3 Request explicit approval before adding any visual dependency such as SVG/icon/chart/haptic libraries
+- [x] 1.4 Report changed files, verification result, and known limitations at the end of each user-visible batch ← (verify: every completed batch follows the incremental review/revert protocol in design.md and specs/uiux-modernization-governance/spec.md)
 
 ## 2. Mobile Koola UI Foundation
 
@@ -12,7 +12,7 @@
 - [x] 2.3 Add Koola icon button disabled accessibility state without changing default size
 - [x] 2.4 Set `underlineColorAndroid="transparent"` in `KoolaTextInput`
 - [x] 2.5 Run `cd ChatApp && npm run tsc` after foundation patch ← (verify: Koola primitive changes are additive, TypeScript passes, and no feature behavior changed)
-- [ ] 2.6 Defer new semantic tokens until a screen-level batch proves the need
+- [x] 2.6 Defer new semantic tokens until a screen-level batch proves the need
 
 ## 3. Moments Entry and Ring Experience
 
@@ -56,8 +56,8 @@
 
 ## 8. Accessibility, Performance, and Regression Gates
 
-- [ ] 8.1 Apply accessibility checklist to touched mobile UI: roles, labels, disabled/busy states, 44px target review, contrast, and reduced-motion awareness
-- [ ] 8.2 Apply accessibility checklist to touched admin UI: focus visibility, keyboard navigation, labels, dialogs, and table semantics
-- [ ] 8.3 Run relevant TypeScript/build checks after each implementation group and report failures honestly
+- [x] 8.1 Apply accessibility checklist to touched mobile UI: roles, labels, disabled/busy states, 44px target review, contrast, and reduced-motion awareness
+- [x] 8.2 Apply accessibility checklist to touched admin UI: focus visibility, keyboard navigation, labels, dialogs, and table semantics
+- [x] 8.3 Run relevant TypeScript/build checks after each implementation group and report failures honestly
 - [ ] 8.4 Perform release-like smoke testing for high-risk chat and Moments media batches when those batches are implemented
 - [ ] 8.5 Capture before/after screenshots or manual visual notes for major user-visible batches ← (verify: visual improvements remain reviewable and regression-prone flows have documented checks)
