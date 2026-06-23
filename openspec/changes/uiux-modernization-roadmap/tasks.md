@@ -19,8 +19,8 @@
 - [x] 3.1 Improve `MomentsScreen` loading, error, empty, and friend-empty copy/actions without changing service behavior
 - [x] 3.2 Improve `MomentsScreen` header hierarchy and create-action accessibility hint
 - [x] 3.3 Run `cd ChatApp && npm run tsc` after `MomentsScreen` polish
-- [ ] 3.4 Improve `MomentRing` own/add/unseen/seen visual clarity without adding a gradient dependency
-- [ ] 3.5 Improve `MomentRing` accessibility labels and hints for own story, add story, unseen stories, and seen stories
+- [x] 3.4 Improve `MomentRing` own/add/unseen/seen visual clarity without adding a gradient dependency
+- [x] 3.5 Improve `MomentRing` accessibility labels and hints for own story, add story, unseen stories, and seen stories
 - [ ] 3.6 Smoke test Moments entry: empty feed, own ring create, friend ring open, pull-to-refresh, own long-press menu ← (verify: Moments entry requirements in specs/moments-stories/spec.md pass without media/viewer lifecycle changes)
 
 ## 4. Moments Viewer, Composer, and Music Picker

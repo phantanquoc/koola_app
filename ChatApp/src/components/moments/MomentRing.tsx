@@ -10,13 +10,13 @@
 
 import React from 'react';
 import {
-  TouchableOpacity,
+  Pressable,
   View,
   StyleSheet,
-  Platform,
 } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import UserAvatar from '../UserAvatar';
-import { KoolaText, koolaColors } from '../../ui';
+import { KoolaText, koolaColors, koolaShadows } from '../../ui';
 
 interface MomentRingProps {
   authorId: string;
@@ -32,7 +32,6 @@ interface MomentRingProps {
 
 const RING_SIZE = 64;
 const AVATAR_SIZE = 56;
-const UNVIEWED_COLOR = '#F97316'; // warm orange
 const VIEWED_COLOR = koolaColors.line;
 
 const MomentRing: React.FC<MomentRingProps> = ({
@@ -47,26 +46,22 @@ const MomentRing: React.FC<MomentRingProps> = ({
 }) => {
   return (
     <View style={styles.container}>
-      <TouchableOpacity
+      <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
-        activeOpacity={0.8}
+        android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
         accessibilityRole="button"
         accessibilityLabel={
           accessibilityLabel ??
           `${displayName}${hasUnviewed ? ', có khoảnh khắc mới' : ', đã xem'}`
         }
-        accessibilityHint="Nhấn để xem khoảnh khắc">
-        {/* Colored ring border */}
+        accessibilityHint={isOwn ? 'Nhấn để xem hoặc tạo khoảnh khắc' : 'Nhấn để xem khoảnh khắc'}
+        style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}>
         <View
           style={[
             styles.ring,
-            {
-              borderColor: hasUnviewed ? UNVIEWED_COLOR : VIEWED_COLOR,
-              borderWidth: hasUnviewed ? 2.5 : 1.5,
-            },
+            hasUnviewed ? styles.ringUnviewed : styles.ringViewed,
           ]}>
-          {/* White gap between ring and avatar */}
           <View style={styles.innerGap}>
             <UserAvatar
               displayName={displayName}
@@ -75,28 +70,24 @@ const MomentRing: React.FC<MomentRingProps> = ({
             />
           </View>
         </View>
-      </TouchableOpacity>
+      </Pressable>
 
-      {/* "+" button overlay for own ring item */}
       {isOwn && onAddPress && (
-        <TouchableOpacity
-          style={styles.addButton}
+        <Pressable
+          style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
           onPress={onAddPress}
-          activeOpacity={0.8}
+          android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
           accessibilityRole="button"
           accessibilityLabel="Tạo khoảnh khắc mới"
           accessibilityHint="Nhấn để thêm khoảnh khắc">
-          <View style={styles.addButtonInner}>
-            <KoolaText style={styles.addButtonText} accessibilityElementsHidden>
-              +
-            </KoolaText>
-          </View>
-        </TouchableOpacity>
+          <MaterialIcons name="add" size={16} color={koolaColors.surface} />
+        </Pressable>
       )}
 
       <KoolaText
         variant="caption"
-        tone="ink"
+        tone={hasUnviewed ? 'ink' : 'muted'}
+        weight={hasUnviewed ? '700' : '500'}
         align="center"
         numberOfLines={1}
         style={styles.label}>
@@ -110,14 +101,31 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     marginHorizontal: 6,
-    width: 72,
+    width: 78,
+  },
+  pressable: {
+    borderRadius: 999,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
   ring: {
-    width: RING_SIZE + 6,
-    height: RING_SIZE + 6,
-    borderRadius: (RING_SIZE + 6) / 2,
+    width: RING_SIZE + 8,
+    height: RING_SIZE + 8,
+    borderRadius: (RING_SIZE + 8) / 2,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: koolaColors.surface,
+  },
+  ringUnviewed: {
+    borderColor: koolaColors.warm,
+    borderWidth: 3,
+    ...koolaShadows.subtle,
+  },
+  ringViewed: {
+    borderColor: VIEWED_COLOR,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   innerGap: {
     width: RING_SIZE,
@@ -126,40 +134,30 @@ const styles = StyleSheet.create({
     backgroundColor: koolaColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: koolaColors.surface,
   },
   addButton: {
     position: 'absolute',
-    bottom: 20,
-    right: 0,
-  },
-  addButtonInner: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    bottom: 22,
+    right: 2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: koolaColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: koolaColors.surface,
-    ...Platform.select({
-      android: { elevation: 2 },
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.15,
-        shadowRadius: 2,
-      },
-    }),
+    ...koolaShadows.subtle,
   },
-  addButtonText: {
-    fontSize: 14,
-    lineHeight: 18,
-    color: koolaColors.surface,
-    fontWeight: '700',
+  addButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.96 }],
   },
   label: {
-    marginTop: 4,
-    maxWidth: 68,
+    marginTop: 6,
+    maxWidth: 74,
   },
 });
 

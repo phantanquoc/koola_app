@@ -8,7 +8,7 @@
  * with pull-to-refresh and loading/empty/error states.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -18,14 +18,16 @@ import {
   Alert,
   ActionSheetIOS,
   Platform,
+  Pressable,
 } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import { momentsService, type FeedRingItem, type MomentsState } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
 import MomentRing from '../../components/moments/MomentRing';
-import { KoolaText, KoolaState, koolaColors } from '../../ui';
+import { KoolaButton, KoolaText, KoolaState, KoolaSurface, koolaColors, koolaSpacing } from '../../ui';
 
 type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 
@@ -111,9 +113,13 @@ const MomentsScreen: React.FC = () => {
         authorId: user._id,
         lastStoryId: '',
         hasUnviewed: false,
+        authorDisplayName: '',
+        authorAvatar: null,
       })
     : undefined;
   const otherRings = state.feedRing.filter((r) => r.authorId !== user?._id);
+  const unviewedCount = otherRings.filter((r) => r.hasUnviewed).length;
+  const totalStoryCount = otherRings.length;
 
   const renderItem = useCallback(
     ({ item }: { item: FeedRingItem }) => {
@@ -121,8 +127,8 @@ const MomentsScreen: React.FC = () => {
       return (
         <MomentRing
           authorId={item.authorId}
-          displayName={isOwn ? (user?.displayName ?? 'Tôi') : item.authorId}
-          avatarKey={isOwn ? user?.avatar : undefined}
+          displayName={isOwn ? (user?.displayName ?? 'Tôi') : (item.authorDisplayName || 'Người dùng')}
+          avatarKey={isOwn ? user?.avatar : (item.authorAvatar ?? undefined)}
           hasUnviewed={item.hasUnviewed}
           isOwn={isOwn}
           onPress={() => {
@@ -146,8 +152,8 @@ const MomentsScreen: React.FC = () => {
       <View style={styles.center}>
         <KoolaState
           icon="hourglass-empty"
-          title="Đang tải..."
-          message="Vui lòng chờ trong giây lát."
+          title="Đang tải khoảnh khắc"
+          message="Đang đồng bộ những chia sẻ mới nhất từ bạn bè."
         />
       </View>
     );
@@ -159,7 +165,7 @@ const MomentsScreen: React.FC = () => {
         <KoolaState
           icon="wifi-off"
           title="Không thể tải khoảnh khắc"
-          message={state.error}
+          message={state.error || 'Kiểm tra kết nối rồi thử lại.'}
           actionLabel="Thử lại"
           onActionPress={() => momentsService.refreshFeed()}
         />
@@ -186,7 +192,9 @@ const MomentsScreen: React.FC = () => {
         <KoolaState
           icon="auto-awesome"
           title="Chưa có khoảnh khắc"
-          message="Nhấn vào ảnh đại diện của bạn để tạo khoảnh khắc đầu tiên."
+          message="Chia sẻ ảnh, video hoặc một bài hát để bạn bè biết hôm nay của bạn thế nào."
+          actionLabel="Tạo khoảnh khắc"
+          onActionPress={handleAddPress}
         />
       </ScrollView>
     );
@@ -197,29 +205,70 @@ const MomentsScreen: React.FC = () => {
       style={styles.container}
       accessibilityLabel="Danh sách khoảnh khắc"
       accessibilityRole="list">
-      <View style={styles.header}>
-        <KoolaText variant="heading" weight="700" tone="ink">
-          Khoảnh khắc
-        </KoolaText>
+      <View style={styles.headerWrap}>
+        <View style={styles.headerCopy}>
+          <KoolaText variant="caption" tone="primary" weight="800" style={styles.eyebrow}>
+            STORY HUB
+          </KoolaText>
+          <KoolaText variant="title">Khoảnh khắc</KoolaText>
+          <KoolaText variant="body" tone="muted" style={styles.subtitle}>
+            {totalStoryCount > 0
+              ? `${unviewedCount} mới • ${totalStoryCount} bạn bè đang chia sẻ hôm nay`
+              : 'Chia sẻ nhanh một ảnh, video hoặc bài hát trong ngày.'}
+          </KoolaText>
+        </View>
+        <Pressable
+          onPress={handleAddPress}
+          accessibilityRole="button"
+          accessibilityLabel="Tạo khoảnh khắc mới"
+          accessibilityHint="Mở trình tạo khoảnh khắc"
+          android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
+          style={({ pressed }) => [styles.createButton, pressed && styles.createButtonPressed]}>
+          <MaterialIcons name="add" size={22} color={koolaColors.surface} />
+        </Pressable>
       </View>
 
-      <FlatList
-        data={rings}
-        keyExtractor={(item) => item.authorId}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.ringList}
-        renderItem={renderItem}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={koolaColors.primary}
+      <KoolaSurface variant="raised" style={styles.ringCard}>
+        <FlatList
+          data={rings}
+          keyExtractor={(item) => item.authorId}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.ringList}
+          renderItem={renderItem}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={koolaColors.primary}
+            />
+          }
+          accessibilityRole="list"
+          accessibilityLabel="Danh sách người dùng có khoảnh khắc"
+        />
+      </KoolaSurface>
+
+      {otherRings.length === 0 && (
+        <KoolaSurface variant="outline" style={styles.friendsEmpty}>
+          <View style={styles.emptyIconWrap}>
+            <MaterialIcons name="auto-awesome" size={24} color={koolaColors.primary} />
+          </View>
+          <KoolaText variant="label" tone="ink" align="center">
+            Bạn bè chưa đăng khoảnh khắc mới
+          </KoolaText>
+          <KoolaText variant="caption" tone="muted" align="center" style={styles.friendsEmptyHint}>
+            Tạo khoảnh khắc của bạn để bắt đầu cuộc trò chuyện, hoặc kéo xuống để tải lại.
+          </KoolaText>
+          <KoolaButton
+            title="Tạo khoảnh khắc"
+            variant="secondary"
+            size="sm"
+            icon="add"
+            onPress={handleAddPress}
+            style={styles.friendsEmptyAction}
           />
-        }
-        accessibilityRole="list"
-        accessibilityLabel="Danh sách người dùng có khoảnh khắc"
-      />
+        </KoolaSurface>
+      )}
     </View>
   );
 };
@@ -228,21 +277,77 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: koolaColors.canvas,
+    paddingTop: koolaSpacing.lg,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+    backgroundColor: koolaColors.canvas,
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+  headerWrap: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: koolaSpacing.lg,
+    marginBottom: koolaSpacing.md,
+    gap: koolaSpacing.md,
+  },
+  headerCopy: {
+    flex: 1,
+  },
+  eyebrow: {
+    marginBottom: koolaSpacing.xs,
+    letterSpacing: 0.8,
+  },
+  subtitle: {
+    marginTop: koolaSpacing.xs,
+    maxWidth: 280,
+  },
+  createButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: koolaColors.primary,
+  },
+  createButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
+  },
+  ringCard: {
+    marginHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.md,
+    overflow: 'hidden',
   },
   ringList: {
-    paddingHorizontal: 10,
-    paddingVertical: 12,
+    paddingHorizontal: koolaSpacing.sm,
+  },
+  friendsEmpty: {
+    marginHorizontal: koolaSpacing.lg,
+    marginTop: koolaSpacing.lg,
+    paddingHorizontal: koolaSpacing.lg,
+    paddingVertical: koolaSpacing.xl,
+    alignItems: 'center',
+    backgroundColor: koolaColors.surface,
+  },
+  emptyIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    backgroundColor: koolaColors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: koolaSpacing.md,
+  },
+  friendsEmptyHint: {
+    marginTop: koolaSpacing.sm,
+  },
+  friendsEmptyAction: {
+    marginTop: koolaSpacing.md,
   },
 });
 
