@@ -202,7 +202,8 @@ export const reactionsApi = {
 
 export const commentsApi = {
   async commentOnStory(storyId: string, text: string): Promise<{ conversationId: string; messageId: string }> {
-    const { data } = await apiClient.post(`/moments/stories/${storyId}/comments`, { text });
+    // Backend CommentStoryDto expects `content` (not `text`).
+    const { data } = await apiClient.post(`/moments/stories/${storyId}/comments`, { content: text });
     return data;
   },
 };
