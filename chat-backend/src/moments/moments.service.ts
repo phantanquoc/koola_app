@@ -106,6 +106,16 @@ export class MomentsService {
     authorId: string,
     dto: CreateStoryDto,
   ): Promise<StoryDocument> {
+    // 0) Idempotency: if the client supplied a clientStoryId and a story with
+    // the same (authorId, clientStoryId) already exists, return it instead of
+    // creating a duplicate. Guards against offline-queue replay.
+    if (dto.clientStoryId) {
+      const existing = await this.storyModel
+        .findOne({ authorId, clientStoryId: dto.clientStoryId })
+        .exec();
+      if (existing) return existing;
+    }
+
     // 1) Validate video duration
     if (
       dto.mediaType === MediaType.VIDEO &&
@@ -169,26 +179,40 @@ export class MomentsService {
     const storyId = new Types.ObjectId();
 
     // 7) Create the root story document
-    const story = await this.storyModel.create({
-      _id: storyId,
-      storyGroupId: storyId.toString(),
-      overFlowIndex: 1,
-      authorId,
-      mediaKey: dto.mediaKey,
-      mediaType: dto.mediaType,
-      thumbnailKey: dto.thumbnailKey ?? null,
-      duration: dto.duration ?? null,
-      caption: dto.caption ?? '',
-      mentions,
-      musicRef: dto.musicRef ?? null,
-      audienceScope: dto.audienceScope,
-      audienceListId: dto.audienceListId ?? null,
-      reactions: [],
-      viewCount: 0,
-      hasOverflow: false,
-      isActive: true,
-      expiresAt,
-    });
+    let story: StoryDocument;
+    try {
+      story = await this.storyModel.create({
+        _id: storyId,
+        storyGroupId: storyId.toString(),
+        overFlowIndex: 1,
+        authorId,
+        mediaKey: dto.mediaKey,
+        mediaType: dto.mediaType,
+        thumbnailKey: dto.thumbnailKey ?? null,
+        duration: dto.duration ?? null,
+        caption: dto.caption ?? '',
+        mentions,
+        musicRef: dto.musicRef ?? null,
+        audienceScope: dto.audienceScope,
+        audienceListId: dto.audienceListId ?? null,
+        reactions: [],
+        viewCount: 0,
+        hasOverflow: false,
+        isActive: true,
+        expiresAt,
+        clientStoryId: dto.clientStoryId ?? null,
+      });
+    } catch (err: any) {
+      // Concurrent replay with the same clientStoryId lost the unique-index
+      // race — return the winner instead of surfacing a 500.
+      if (err?.code === 11000 && dto.clientStoryId) {
+        const winner = await this.storyModel
+          .findOne({ authorId, clientStoryId: dto.clientStoryId })
+          .exec();
+        if (winner) return winner;
+      }
+      throw err;
+    }
 
     // 8) Emit story.new to permitted viewer rooms
     if (this.gatewayRef) {
@@ -203,6 +227,23 @@ export class MomentsService {
     this.processMentionNotifications(authorId, story, mentions).catch((err) =>
       this.logger.error('[MomentsService] mention notifications failed', err),
     );
+
+    // 10) Bump the music track's usage counter so "trending" sort reflects
+    // real usage rather than always falling back to addedAt. Fire-and-forget —
+    // a failed counter bump must not fail story creation.
+    if (dto.musicRef) {
+      this.musicTrackModel
+        .updateOne(
+          { _id: dto.musicRef.trackId },
+          { $inc: { usageCount: 1 } },
+        )
+        .catch((err: unknown) =>
+          this.logger.error(
+            '[MomentsService] usageCount increment failed',
+            err,
+          ),
+        );
+    }
 
     return story;
   }
@@ -275,7 +316,7 @@ export class MomentsService {
     // Emit story.deleted
     if (this.gatewayRef) {
       this.gatewayRef
-        .emitStoryDeleted(storyId, authorId)
+        .emitStoryDeleted(story)
         .catch((err) =>
           this.logger.error('[MomentsService] emitStoryDeleted failed', err),
         );
@@ -348,7 +389,24 @@ export class MomentsService {
       grouped.get(key)!.push(s as StoryDocument);
     }
 
-    // For each author: determine hasUnviewed + lastStoryId, sort unviewed-first
+    // Resolve the viewer's "seen" set in a SINGLE query instead of one
+    // countDocuments per author group (former N+1). Root stories use
+    // storyGroupId === _id, so we look up by the same _id strings the loop
+    // below compares against.
+    const allStoryIds = stories.map((s) => (s as any)._id.toString());
+    const viewedDocs = await this.storyViewModel
+      .find(
+        { viewerId, storyGroupId: { $in: allStoryIds } },
+        { storyGroupId: 1 },
+      )
+      .lean();
+    const viewedGroupIds = new Set(
+      viewedDocs.map((v) => (v as any).storyGroupId as string),
+    );
+
+    // Build one FeedItem per author. `grouped` preserves authorId-ascending
+    // insertion order (stories were sorted by authorId), so iterating it keeps
+    // a stable monotonic order that the cursor can rely on.
     type FeedItem = {
       authorId: string;
       lastStoryId: string;
@@ -357,34 +415,41 @@ export class MomentsService {
       authorAvatar: string | null;
       stories: StoryDocument[];
     };
-    const unviewedItems: FeedItem[] = [];
-    const viewedItems: FeedItem[] = [];
+    const orderedItems: FeedItem[] = [];
 
     for (const [authorId, authorStories] of grouped.entries()) {
       const storyIds = authorStories.map((s) => (s as any)._id.toString());
-      const viewedCount = await this.storyViewModel.countDocuments({
-        storyGroupId: { $in: storyIds },
-        viewerId,
-      });
+      const viewedCount = storyIds.filter((id) =>
+        viewedGroupIds.has(id),
+      ).length;
       const hasUnviewed = viewedCount < storyIds.length;
       const lastStoryId = storyIds[storyIds.length - 1] ?? '';
-      const item: FeedItem = {
+      orderedItems.push({
         authorId,
         lastStoryId,
         hasUnviewed,
         authorDisplayName: '',
         authorAvatar: null,
         stories: authorStories,
-      };
-      if (hasUnviewed) {
-        unviewedItems.push(item);
-      } else {
-        viewedItems.push(item);
-      }
+      });
     }
 
-    const allItems = [...unviewedItems, ...viewedItems];
-    const items = allItems.slice(0, limit);
+    // Page selection happens on the MONOTONIC authorId order — never on the
+    // unviewed-first display order. Taking the cursor from the display-sorted
+    // list (the previous bug) skipped or re-included authors across pages.
+    const pageItems = orderedItems.slice(0, limit);
+    const hasMore = orderedItems.length > limit;
+    const nextCursor =
+      hasMore && pageItems.length > 0
+        ? pageItems[pageItems.length - 1].authorId
+        : null;
+
+    // Within the page, surface unviewed authors first — display ordering only,
+    // it does not influence pagination.
+    const items = [
+      ...pageItems.filter((it) => it.hasUnviewed),
+      ...pageItems.filter((it) => !it.hasUnviewed),
+    ];
 
     // Enrich feed items with author identity (single findByIds call after slicing)
     const authorIds = [...new Set(items.map((it) => it.authorId))];
@@ -396,10 +461,7 @@ export class MomentsService {
       item.authorAvatar = (u as any)?.avatar ?? null;
     }
 
-    const nextCursor =
-      items.length === limit ? items[items.length - 1].authorId : null;
-
-    return { items, nextCursor, total: allItems.length };
+    return { items, nextCursor, total: orderedItems.length };
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -801,16 +863,29 @@ export class MomentsService {
     }
 
     const storyIds = (highlight as any).storyIds ?? [];
-    const visibleStories: StoryDocument[] = [];
 
+    // Batch-load all referenced stories in a single query (former N+1:
+    // findById per storyId). Preserve the highlight's declared ordering and
+    // run the per-viewer audience check against the in-memory set.
+    const validIds = storyIds.filter((sid: string) =>
+      Types.ObjectId.isValid(sid),
+    );
+    const storyDocs = await this.storyModel
+      .find({ _id: { $in: validIds }, isActive: true })
+      .lean();
+    const storyById = new Map(
+      storyDocs.map((s) => [(s as any)._id.toString(), s]),
+    );
+
+    const visibleStories: StoryDocument[] = [];
     for (const sid of storyIds) {
+      const s = storyById.get(sid);
+      if (!s) continue;
       try {
-        const s = await this.storyModel.findById(sid).lean();
-        if (!s || !(s as any).isActive) continue;
         await this.assertViewAccess(s, viewerId);
         visibleStories.push(s as StoryDocument);
       } catch {
-        // Access denied or not found — silently filter
+        // Access denied — silently filter
       }
     }
 
@@ -1215,9 +1290,14 @@ export class MomentsService {
     storyIds: string[],
     ownerId: string,
   ): Promise<StoryDocument[]> {
+    // Single batched fetch instead of findById per id (former N+1).
+    // Hydrated (non-lean) docs are required by promoteStoriesToHighlights.
+    const docs = await this.storyModel.find({ _id: { $in: storyIds } });
+    const byId = new Map(docs.map((d) => [d._id.toString(), d]));
+
     const result: StoryDocument[] = [];
     for (const id of storyIds) {
-      const story = await this.storyModel.findById(id);
+      const story = byId.get(id);
       if (!story) throw new NotFoundException('Story no longer available');
       if (story.authorId !== ownerId)
         throw new ForbiddenException('You do not own story ' + id);
@@ -1239,29 +1319,45 @@ export class MomentsService {
       const oldKey = story.mediaKey;
       const newKey = `highlights/${ownerId}/${storyId}/${oldKey.split('/').pop()}`;
 
+      // Phase 1 — copy + DB flip must succeed together, else roll back fully.
       try {
-        // Copy media to highlights/ prefix
+        // copyObject is idempotent: re-copying the same key is harmless on
+        // retry, so this stays safe under the orphan-detector re-run path.
         await minioClient.copyObject(BUCKET, newKey, `/${BUCKET}/${oldKey}`);
-
-        // Update story's mediaKey to new location and nullify expiresAt
         await this.storyModel.updateOne(
           { _id: storyId },
           { $set: { mediaKey: newKey, expiresAt: null } },
         );
-
-        // Delete original object from stories/
-        await minioClient.removeObject(BUCKET, oldKey);
       } catch (err) {
         this.logger.error(
           `[MomentsService] Media migration failed for story ${storyId}`,
           err,
         );
-        // Rollback: restore expiresAt if we nullified it
+        // Best-effort: remove the copied object so we don't leave an orphan
+        // under highlights/ when the DB still points at stories/.
+        try {
+          await minioClient.removeObject(BUCKET, newKey);
+        } catch {
+          /* orphan detector / lifecycle will reconcile */
+        }
+        // Restore expiresAt/mediaKey only if we managed to flip the DB.
         await this.storyModel.updateOne(
           { _id: storyId, expiresAt: null, mediaKey: newKey },
           { $set: { expiresAt: story.expiresAt, mediaKey: oldKey } },
         );
         throw err;
+      }
+
+      // Phase 2 — delete the original. The DB already points at newKey, so a
+      // failure here is NON-fatal: it only leaves a stale object under
+      // stories/, which the 25h MinIO lifecycle reclaims. Do NOT roll back.
+      try {
+        await minioClient.removeObject(BUCKET, oldKey);
+      } catch {
+        this.logger.warn(
+          `[MomentsService] Old media cleanup failed for story ${storyId} ` +
+            `(key=${oldKey}); DB already migrated, lifecycle will reclaim`,
+        );
       }
     }
   }
@@ -1315,12 +1411,17 @@ export class MomentsService {
   }
 
   private async validateMemberIds(memberIds: string[]): Promise<void> {
+    // Validate id shape first, then resolve existence in a single query
+    // (former N+1: findById per member).
     for (const id of memberIds) {
       if (!Types.ObjectId.isValid(id)) {
         throw new BadRequestException(`Invalid member: ${id}`);
       }
-      const user = await this.usersService.findById(id);
-      if (!user) {
+    }
+    const users = await this.usersService.findByIds(memberIds);
+    const found = new Set(users.map((u) => u._id.toString()));
+    for (const id of memberIds) {
+      if (!found.has(id)) {
         throw new BadRequestException(`Invalid member: ${id}`);
       }
     }

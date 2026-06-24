@@ -148,14 +148,31 @@ describe('MomentsGateway', () => {
   });
 
   describe('emitStoryDeleted', () => {
-    it('should broadcast to namespace (not targeted)', async () => {
-      await gateway.emitStoryDeleted('story-1', 'author-1');
+    it('should broadcast to namespace for PUBLIC scope', async () => {
+      await gateway.emitStoryDeleted({
+        _id: 'story-1',
+        authorId: 'author-1',
+        audienceScope: AudienceScope.PUBLIC,
+      } as any);
 
       // Should call io.emit directly (broadcast), not io.to().emit
       expect(mockIo.emit).toHaveBeenCalledWith('story.deleted', {
         storyId: 'story-1',
         authorId: 'author-1',
       });
+    });
+
+    it('should target permitted viewers + author for CONNECTIONS scope', async () => {
+      // getConnectedUserIds mock returns ['userA', 'userB']
+      await gateway.emitStoryDeleted({
+        _id: 'story-2',
+        authorId: 'author-1',
+        audienceScope: AudienceScope.CONNECTIONS,
+      } as any);
+
+      expect(mockIo.to).toHaveBeenCalledWith('user:userA');
+      expect(mockIo.to).toHaveBeenCalledWith('user:userB');
+      expect(mockIo.to).toHaveBeenCalledWith('user:author-1');
     });
   });
 

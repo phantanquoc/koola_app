@@ -549,8 +549,8 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
       thumbnailKey: null,
     };
 
-    // resolveStories uses findById for each story
-    storyModel.findById = jest.fn().mockResolvedValue(story);
+    // resolveStories uses find({ _id: { $in } }) returning hydrated docs
+    storyModel.find = jest.fn().mockResolvedValue([story]);
 
     // highlightModel.create called after promoteStoriesToHighlights
     highlightModel.create = jest.fn().mockResolvedValue({
@@ -633,7 +633,9 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
               .mockResolvedValue({ _id: 'user-1', displayName: 'Test' }),
             findByIds: jest
               .fn()
-              .mockResolvedValue([{ _id: 'member-1' }, { _id: 'member-2' }]),
+              .mockImplementation((ids: string[]) =>
+                Promise.resolve(ids.map((id) => ({ _id: id }))),
+              ),
           },
         },
       ],

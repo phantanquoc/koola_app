@@ -77,14 +77,36 @@ export class MomentsGateway {
 
   // ─── story.deleted ────────────────────────────────────────────────────────
 
-  async emitStoryDeleted(storyId: string, authorId: string): Promise<void> {
+  /**
+   * Emit story.deleted. Mirrors emitStoryNew's audience scoping: PUBLIC stories
+   * broadcast namespace-wide (anyone could have them in-feed), while
+   * CONNECTIONS/CUSTOM target only the users who were permitted to see them —
+   * avoiding an O(N) fanout to every connected client for a private delete.
+   */
+  async emitStoryDeleted(story: StoryDocument): Promise<void> {
     if (!this.io) return;
 
-    // Broadcast to namespace — all connected clients prune from feed state
-    this.io.emit('story.deleted', { storyId, authorId });
+    const storyId = (story as any)._id.toString();
+    const authorId = story.authorId;
+    const payload = { storyId, authorId };
+
+    if (story.audienceScope === AudienceScope.PUBLIC) {
+      this.io.emit('story.deleted', payload);
+      this.logger.debug(
+        `[MomentsGateway] story.deleted broadcast for ${storyId}`,
+      );
+      return;
+    }
+
+    const recipientIds = await this.resolvePermittedViewers(story);
+    for (const viewerId of recipientIds) {
+      this.io.to(`user:${viewerId}`).emit('story.deleted', payload);
+    }
+    // The author also holds the story in their own feed state.
+    this.io.to(`user:${authorId}`).emit('story.deleted', payload);
 
     this.logger.debug(
-      `[MomentsGateway] story.deleted broadcast for ${storyId}`,
+      `[MomentsGateway] story.deleted emitted to ${recipientIds.length} viewer rooms`,
     );
   }
 

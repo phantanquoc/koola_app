@@ -122,6 +122,14 @@ export class Story {
    */
   @Prop({ type: Date, default: null })
   expiresAt: Date | null;
+
+  /**
+   * Client-generated idempotency key. When present, a unique compound index
+   * on { authorId, clientStoryId } prevents the offline queue from creating
+   * duplicate stories on replay. Null/absent for stories created without one.
+   */
+  @Prop({ type: String, default: null })
+  clientStoryId: string | null;
 }
 
 export const StorySchema = SchemaFactory.createForClass(Story);
@@ -148,3 +156,15 @@ StorySchema.index({ audienceListId: 1 });
 
 // Feed query: compound index for the $or feed query
 StorySchema.index({ authorId: 1, expiresAt: 1, isActive: 1 });
+
+// Idempotency: at most one story per (author, clientStoryId). Partial filter
+// so the many stories created WITHOUT a clientStoryId don't collide on null.
+StorySchema.index(
+  { authorId: 1, clientStoryId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientStoryId: { $exists: true, $ne: null },
+    },
+  },
+);

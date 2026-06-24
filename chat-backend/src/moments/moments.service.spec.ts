@@ -216,9 +216,106 @@ describe('MomentsService', () => {
 
       expect(storyModel.create).toHaveBeenCalled();
     });
+
+    it('increments the music track usageCount when story has a musicRef', async () => {
+      const trackId = new Types.ObjectId().toString();
+      musicTrackModel.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: trackId, isActive: true }),
+      });
+      storyModel.create.mockResolvedValue({
+        _id: 'story-music',
+        authorId: 'author-1',
+        toString: () => 'story-music',
+      });
+
+      await service.createStory('author-1', {
+        mediaKey: 'k1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.PUBLIC,
+        musicRef: { trackId, startMs: 0 },
+      });
+
+      // Allow the fire-and-forget $inc microtask to settle
+      await Promise.resolve();
+      expect(musicTrackModel.updateOne).toHaveBeenCalledWith(
+        { _id: trackId },
+        { $inc: { usageCount: 1 } },
+      );
+    });
   });
 
-  // ─── recordView ────────────────────────────────────────────────────────────
+  // ─── createStory — idempotency (clientStoryId) ─────────────────────────────
+
+  describe('createStory — idempotency', () => {
+    it('returns the existing story without creating when clientStoryId matches', async () => {
+      const existing = {
+        _id: 'story-existing',
+        authorId: 'author-1',
+        clientStoryId: 'cid-123',
+        toString: () => 'story-existing',
+      };
+      storyModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(existing),
+      });
+
+      const result = await service.createStory('author-1', {
+        mediaKey: 'k1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.PUBLIC,
+        clientStoryId: 'cid-123',
+      });
+
+      expect(result).toBe(existing);
+      expect(storyModel.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a new story when clientStoryId has no prior match', async () => {
+      storyModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+      storyModel.create.mockResolvedValue({
+        _id: 'story-new',
+        authorId: 'author-1',
+        clientStoryId: 'cid-new',
+        toString: () => 'story-new',
+      });
+
+      await service.createStory('author-1', {
+        mediaKey: 'k1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.PUBLIC,
+        clientStoryId: 'cid-new',
+      });
+
+      expect(storyModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clientStoryId: 'cid-new' }),
+      );
+    });
+
+    it('resolves the unique-index race (E11000) by returning the winner', async () => {
+      const winner = {
+        _id: 'story-winner',
+        authorId: 'author-1',
+        clientStoryId: 'cid-race',
+        toString: () => 'story-winner',
+      };
+      // First findOne (pre-check) sees nothing; create loses the race;
+      // second findOne (post-E11000) returns the winner.
+      storyModel.findOne
+        .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(null) })
+        .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(winner) });
+      storyModel.create.mockRejectedValue({ code: 11000 });
+
+      const result = await service.createStory('author-1', {
+        mediaKey: 'k1',
+        mediaType: MediaType.IMAGE,
+        audienceScope: AudienceScope.PUBLIC,
+        clientStoryId: 'cid-race',
+      });
+
+      expect(result).toBe(winner);
+    });
+  });
 
   describe('recordView', () => {
     it('should silently succeed on duplicate view (E11000)', async () => {
@@ -716,6 +813,95 @@ describe('MomentsService', () => {
       expect(result.items[0].authorId).toBe(authorId);
       expect(result.items[0].authorDisplayName).toBe('Connected Author');
       expect(result.items[0].hasUnviewed).toBe(true);
+    });
+  });
+
+  // ─── Feed cursor pagination correctness ─────────────────────────────────────
+
+  describe('getFeed — cursor pagination', () => {
+    const viewerId = new Types.ObjectId().toString();
+    // Three authors in ascending id order (matches DB sort by authorId: 1).
+    const authorA = '507f1f77bcf86cd799439011';
+    const authorB = '507f1f77bcf86cd799439012';
+    const authorC = '507f1f77bcf86cd799439013';
+
+    function pubStory(authorId: string, id: string) {
+      return {
+        _id: { toString: () => id },
+        storyGroupId: id,
+        authorId,
+        audienceScope: AudienceScope.PUBLIC,
+        createdAt: new Date(),
+      };
+    }
+
+    beforeEach(() => {
+      const conversationsService = (service as any).conversationsService;
+      conversationsService.getConnectedUserIds = jest
+        .fn()
+        .mockResolvedValue([]);
+      const usersService = (service as any).usersService;
+      usersService.findByIds = jest
+        .fn()
+        .mockImplementation((ids: string[]) =>
+          Promise.resolve(
+            ids.map((id) => ({
+              _id: { toString: () => id },
+              displayName: 'U',
+              avatar: null,
+            })),
+          ),
+        );
+    });
+
+    it('derives nextCursor from the max authorId on the page, not the unviewed-first order', async () => {
+      // DB returns stories already sorted by authorId asc: A, B, C
+      storyModel.find = jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest
+              .fn()
+              .mockResolvedValue([
+                pubStory(authorA, 'a1'),
+                pubStory(authorB, 'b1'),
+                pubStory(authorC, 'c1'),
+              ]),
+          }),
+        }),
+      });
+
+      // Author A is already viewed; B and C are unviewed. With unviewed-first
+      // display ordering, A would sort last — but it must NOT become the cursor.
+      storyViewModel.find = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ storyGroupId: 'a1' }]),
+      });
+
+      const result = await service.getFeed(viewerId, undefined, 2);
+
+      // Page = first 2 authors in monotonic order (A, B) → cursor is B
+      expect(result.nextCursor).toBe(authorB);
+      // Display order surfaces unviewed (B) before viewed (A)
+      expect(result.items.map((it) => it.authorId)).toEqual([authorB, authorA]);
+    });
+
+    it('returns null cursor when results fit within the limit', async () => {
+      storyModel.find = jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest
+              .fn()
+              .mockResolvedValue([pubStory(authorA, 'a1')]),
+          }),
+        }),
+      });
+      storyViewModel.find = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      const result = await service.getFeed(viewerId, undefined, 20);
+
+      expect(result.nextCursor).toBeNull();
+      expect(result.items).toHaveLength(1);
     });
   });
 
