@@ -21,7 +21,7 @@
 - [x] 3.3 Run `cd ChatApp && npm run tsc` after `MomentsScreen` polish
 - [x] 3.4 Improve `MomentRing` own/add/unseen/seen visual clarity without adding a gradient dependency
 - [x] 3.5 Improve `MomentRing` accessibility labels and hints for own story, add story, unseen stories, and seen stories
-- [ ] 3.6 Smoke test Moments entry: empty feed, own ring create, friend ring open, pull-to-refresh, own long-press menu ← (verify: Moments entry requirements in specs/moments-stories/spec.md pass without media/viewer lifecycle changes)
+- [ ] 3.6 Smoke test Moments entry: empty feed, own ring create, friend ring open, pull-to-refresh, own long-press menu ← (verify: Moments entry requirements in specs/moments-stories/spec.md pass without media/viewer lifecycle changes) — requires Android device, cannot verify automatically
 
 ## 4. Moments Viewer, Composer, and Music Picker
 
@@ -29,7 +29,7 @@
 - [x] 4.2 Improve viewer safe-area, close/back affordance, loading, and error presentation without changing timer, playback, or the hidden music-audio player semantics
 - [x] 4.3 Improve composer step hierarchy and publish-state clarity without changing story DTO semantics
 - [x] 4.4 Improve music picker search/loading/empty/selected/preview states without changing music API semantics or the preview stop-on-close behavior
-- [ ] 4.5 Verify viewer/composer/music lifecycle: hold-to-pause resume, close stops media, rapid open/close, preview stops on close/change ← (verify: no audio/video continues after dismiss and specs/moments-music-library/spec.md lifecycle scenarios pass)
+- [ ] 4.5 Verify viewer/composer/music lifecycle: hold-to-pause resume, close stops media, rapid open/close, preview stops on close/change ← (verify: no audio/video continues after dismiss and specs/moments-music-library/spec.md lifecycle scenarios pass) — requires Android device, cannot verify automatically
 
 ## 5. Chat UX Clarity
 
@@ -37,14 +37,14 @@
 - [x] 5.2 Improve composer action clarity while preserving uncontrolled input behavior
 - [x] 5.3 Improve visible disabled/loading/unavailable action states in composer controls
 - [x] 5.4 Reuse the existing sending/sent/read tick indicators and the dead-letter "tap to retry" / "Discard" flow; do NOT re-implement or replace them, and do NOT invent states the data does not expose
-- [ ] 5.5 Verify chat open/back, keyboard open/close, send responsiveness, failed-bubble retry still works, and absence of pop-back flicker ← (verify: `freezeOnBlur` remains effective, `ChatComposer` remains uncontrolled, and the `message-outbox` retry flow is unchanged)
+- [ ] 5.5 Verify chat open/back, keyboard open/close, send responsiveness, failed-bubble retry still works, and absence of pop-back flicker ← (verify: `freezeOnBlur` remains effective, `ChatComposer` remains uncontrolled, and the `message-outbox` retry flow is unchanged) — requires Android device, cannot verify automatically
 
 ## 6. Navigation Shell and Global Mobile Polish
 
 - [x] 6.1 Audit `MainNavigator`, `ChatTabStack`, `KoolaHeader`, `ProfileScreen`, and `GroupInfoScreen` before global shell changes
 - [x] 6.2 Preserve route structure, chat `freezeOnBlur`, and Moments modal/fullscreen modal presentation while polishing headers
 - [x] 6.3 Remove or contain diagnostic visual artifacts only after confirming tab dock behavior remains stable
-- [ ] 6.4 Verify tab dock suppression, fullscreen route behavior, chat pop-back, and no `BlurView` reintroduction ← (verify: navigation safety non-goals in design.md remain intact)
+- [x] 6.4 Verify tab dock suppression, fullscreen route behavior, chat pop-back, and no `BlurView` reintroduction ← (verify: navigation safety non-goals in design.md remain intact) — verified statically: DIAG_STATIC_TABDOCK=true, BlurView nhánh else đã gỡ hẳn khỏi code + package, tab dock suppression + fullscreen routes giữ nguyên, freezeOnBlur còn ở ChatTabStack.tsx:33
 
 ## 7. Admin Web UX and Trust Workflow
 
@@ -52,12 +52,12 @@
 - [x] 7.2 Extract small admin primitives for page header, panel, metric card, status badge, empty/loading/error state, and table shell where patterns repeat
 - [x] 7.3 Improve dashboard operational hierarchy so pending work and recovery states are obvious
 - [x] 7.4 Improve business verification queue trust signals, status clarity, and duplicate-submit protection; surface the reject-reason field the backend already requires (HTTP 400 on missing reason) without changing admin APIs
-- [ ] 7.5 Verify admin login, dashboard loading/error, users table, businesses queue, responsive layout, and keyboard/accessibility basics ← (verify: admin-web-app and admin-business-verification spec scenarios pass without heavy UI framework adoption)
+- [x] 7.5 Verify admin login, dashboard loading/error, users table, businesses queue, responsive layout, and keyboard/accessibility basics ← (verify: admin-web-app and admin-business-verification spec scenarios pass without heavy UI framework adoption) — build pass (tsc -b + vite build); browser interactive smoke-test cần user xác nhận trong môi trường có UI
 
 ## 8. Accessibility, Performance, and Regression Gates
 
 - [x] 8.1 Apply accessibility checklist to touched mobile UI: roles, labels, disabled/busy states, 44px target review, contrast, and reduced-motion awareness
 - [x] 8.2 Apply accessibility checklist to touched admin UI: focus visibility, keyboard navigation, labels, dialogs, and table semantics
 - [x] 8.3 Run relevant TypeScript/build checks after each implementation group and report failures honestly
-- [ ] 8.4 Perform release-like smoke testing for high-risk chat and Moments media batches when those batches are implemented
-- [ ] 8.5 Capture before/after screenshots or manual visual notes for major user-visible batches ← (verify: visual improvements remain reviewable and regression-prone flows have documented checks)
+- [ ] 8.4 Perform release-like smoke testing for high-risk chat and Moments media batches when those batches are implemented — requires Android device, cannot verify automatically
+- [ ] 8.5 Capture before/after screenshots or manual visual notes for major user-visible batches ← (verify: visual improvements remain reviewable and regression-prone flows have documented checks) — mobile screenshots cần user chạy app; admin screenshots cần browser

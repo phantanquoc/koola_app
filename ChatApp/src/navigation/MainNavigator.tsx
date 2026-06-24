@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import {
   BottomTabBarProps,
   createBottomTabNavigator,
@@ -7,7 +7,6 @@ import {
 import { getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { BlurView } from '@react-native-community/blur';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -45,14 +44,11 @@ export function useTabDockSuppression(): () => () => void {
 }
 
 // ─── DIAGNOSTIC (logout removeViewAt crash) ─────────────────────────────────
-// The tab dock runs a live BlurView + perpetual reanimated loops (borderPulse,
-// sheen, per-icon breath) on the UI thread. On logout the whole MainNavigator
-// unmounts in one Fabric commit WHILE those keep mutating views → "Cannot
-// remove child at index N … childCount may be incorrect" crash. Same class as
-// the chat-composer flash. Set true to neutralize them (static dock, no blur,
-// no perpetual loops). If logout stops crashing with this true, the dock is the
-// cause and we keep it as the permanent fix. Press animations stay (not
-// perpetual — they don't run at unmount time).
+// BlurView đã được gỡ HẲN (gây flash khi pop-back + crash removeViewAt lúc
+// logout). Tab dock nay luôn dùng faux-glass tĩnh. Cờ DIAG_STATIC_TABDOCK giờ
+// CHỈ còn gate các ambient reanimated loop (breath / borderPulse / sheen); đặt
+// false để bật lại animation ambient. Press animations stay (not perpetual —
+// they don't run at unmount time).
 const DIAG_STATIC_TABDOCK = true;
 
 const FULLSCREEN_CHAT_ROUTES = new Set(['Chat', 'MomentViewer', 'MomentComposer']);
@@ -369,61 +365,40 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       ]}>
       <View style={styles.shadowWrap}>
         <View style={styles.tabDock}>
-          {DIAG_STATIC_TABDOCK ? (
-            <>
-              {/* Layer 1 — SVG gradient fill (faux blur). */}
-              <View pointerEvents="none" style={styles.tabDockStaticFill}>
-                <Svg width="100%" height="100%" preserveAspectRatio="none">
-                  <Defs>
-                    <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
-                      <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
-                      <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
-                    </SvgLinearGradient>
-                  </Defs>
-                  <Rect width="100%" height="100%" fill="url(#tabFill)" />
-                </Svg>
-              </View>
-              {/* Layer 1b — primary-blue glass cast. */}
-              <View pointerEvents="none" style={styles.tabDockTint} />
-              {/* Layer 2 — top specular sheen. */}
-              <View pointerEvents="none" style={styles.tabTopSheen}>
-                <Svg width="100%" height="100%" preserveAspectRatio="none">
-                  <Defs>
-                    <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
-                      <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-                    </SvgLinearGradient>
-                  </Defs>
-                  <Rect width="100%" height="100%" fill="url(#tabSheen)" />
-                </Svg>
-              </View>
-              {/* Layer 3 — side-edge shines. */}
-              <View pointerEvents="none" style={styles.tabEdgeShineLeft} />
-              <View pointerEvents="none" style={styles.tabEdgeShineRight} />
-              {/* Layer 4 — 1px inner top edge. */}
-              <View pointerEvents="none" style={styles.tabInnerEdge} />
-              {/* Layer 5 — cool-tone bottom hairline. */}
-              <View pointerEvents="none" style={styles.tabBottomHairline} />
-            </>
-          ) : (
-            <>
-              <BlurView
-                style={StyleSheet.absoluteFillObject}
-                blurType={Platform.OS === 'ios' ? 'xlight' : 'light'}
-                blurAmount={Platform.OS === 'ios' ? 16 : 8}
-                blurRadius={Platform.OS === 'android' ? 8 : undefined}
-                downsampleFactor={Platform.OS === 'android' ? 10 : undefined}
-                overlayColor={Platform.OS === 'android' ? 'rgba(255,255,255,0.08)' : undefined}
-                reducedTransparencyFallbackColor="rgba(255,255,255,0.28)"
-              />
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.dockBorderGlow, animatedBorderStyle]}
-              />
-              <Animated.View pointerEvents="none" style={[styles.dockSheen, sheenStyle]} />
-            </>
-          )}
+          {/* Faux-glass layers (static — BlurView permanently removed). */}
+          <View pointerEvents="none" style={styles.tabDockStaticFill}>
+            <Svg width="100%" height="100%" preserveAspectRatio="none">
+              <Defs>
+                <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
+                  <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
+                  <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#tabFill)" />
+            </Svg>
+          </View>
+          {/* Layer 1b — primary-blue glass cast. */}
+          <View pointerEvents="none" style={styles.tabDockTint} />
+          {/* Layer 2 — top specular sheen. */}
+          <View pointerEvents="none" style={styles.tabTopSheen}>
+            <Svg width="100%" height="100%" preserveAspectRatio="none">
+              <Defs>
+                <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
+                  <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#tabSheen)" />
+            </Svg>
+          </View>
+          {/* Layer 3 — side-edge shines. */}
+          <View pointerEvents="none" style={styles.tabEdgeShineLeft} />
+          <View pointerEvents="none" style={styles.tabEdgeShineRight} />
+          {/* Layer 4 — 1px inner top edge. */}
+          <View pointerEvents="none" style={styles.tabInnerEdge} />
+          {/* Layer 5 — cool-tone bottom hairline. */}
+          <View pointerEvents="none" style={styles.tabBottomHairline} />
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
             const meta = TAB_META[routeName];

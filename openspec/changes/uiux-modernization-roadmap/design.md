@@ -117,7 +117,7 @@ Alternatives considered:
 
 ## Open Questions
 
-- Should later Moments ring polish use only existing flat tokens, `react-native-svg`, or a native gradient dependency?
+- ~~Should later Moments ring polish use only existing flat tokens, `react-native-svg`, or a native gradient dependency?~~ **Resolved:** `react-native-svg` đã tồn tại từ trước change này (thêm ở commit c84d610, 2026-05-08), đang dùng ACTIVE cho faux-glass (MainNavigator tab dock + ChatComposer), KHÔNG phải dependency mới — không vi phạm non-goal "no new dependency". Ngoài ra: `@react-native-community/blur` đã được gỡ HẲN trong batch cuối (lý do: flash pop-back + crash removeViewAt logout; thay bằng faux-glass tĩnh vĩnh viễn).
 - Should admin icon/chart work use lightweight dependencies such as `lucide-react` and `recharts`, or remain CSS-only initially?
 - Should haptic feedback be introduced later for send, reaction, and story interactions?
 - When should dark mode move from a prepared token direction into implementation scope?

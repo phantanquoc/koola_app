@@ -198,7 +198,6 @@ jest.mock('react-native-video', () => 'Video');
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 jest.mock('@react-native-community/slider', () => 'Slider');
 jest.mock('react-native-pager-view', () => 'PagerView');
-jest.mock('@react-native-community/blur', () => ({ BlurView: 'BlurView' }));
 jest.mock('react-native-blurhash', () => ({ Blurhash: 'Blurhash' }));
 
 // ─── react-native-vision-camera ───────────────────────────────────────────────
