@@ -158,6 +158,67 @@ export async function refreshAccessTokenInMemory(): Promise<string | null> {
   }
 }
 
+/**
+ * Socket-safe token refresh. Unlike `refreshAccessTokenInMemory` which
+ * force-logs-out on ANY failure (including transient network errors), this
+ * function distinguishes error classes so SocketService can decide whether to
+ * retry (network) or give up (auth expired / revoked).
+ */
+export async function refreshAccessTokenForSocket(): Promise<{
+  token: string | null;
+  reason: 'ok' | 'network' | 'auth';
+}> {
+  try {
+    const refreshToken = await asyncStorage.getRefreshToken();
+    if (!refreshToken) {
+      // No refresh token at all — session is gone
+      accessToken = null;
+      await asyncStorage.clearTokens();
+      await asyncStorage.clearActiveAccountId();
+      try { forceLogoutHandler?.(); } catch { /* ignore */ }
+      return { token: null, reason: 'auth' };
+    }
+
+    const { data } = await axios.post(`${ENV.API_URL}/auth/refresh`, {
+      refreshToken,
+    });
+
+    let newAccessToken: string = data.accessToken;
+    await asyncStorage.setRefreshToken(data.refreshToken);
+
+    // If active account is a business account, re-mint the biz token
+    const activeAccountId = await asyncStorage.getActiveAccountId();
+    if (activeAccountId) {
+      try {
+        const { data: switchData } = await axios.post(
+          `${ENV.API_URL}/accounts/switch`,
+          { targetAccountId: activeAccountId },
+          { headers: { Authorization: `Bearer ${newAccessToken}` } },
+        );
+        newAccessToken = switchData.accessToken;
+      } catch {
+        await asyncStorage.clearActiveAccountId();
+      }
+    }
+
+    accessToken = newAccessToken;
+    return { token: newAccessToken, reason: 'ok' };
+  } catch (err: unknown) {
+    // Classify the error
+    const axiosErr = err as { response?: { status?: number } };
+    if (axiosErr.response?.status === 401 || axiosErr.response?.status === 403) {
+      // Refresh token genuinely invalid / revoked — session is dead
+      accessToken = null;
+      await asyncStorage.clearTokens();
+      await asyncStorage.clearActiveAccountId();
+      try { forceLogoutHandler?.(); } catch { /* ignore */ }
+      return { token: null, reason: 'auth' };
+    }
+    // No response = network error, or any other unexpected error → retryable
+    return { token: null, reason: 'network' };
+  }
+}
+
 // ─── Auth API ─────────────────────────────────────────────────────────────────
 
 export const authApi = {
