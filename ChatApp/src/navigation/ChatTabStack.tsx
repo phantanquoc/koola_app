@@ -25,12 +25,18 @@ const ChatTabStack: React.FC = () => {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
-        // freezeOnBlur: once Chat loses focus (back-press pop), react-freeze
-        // suspends the whole subtree AFTER the slide animation (DelayedFreeze
-        // setTimeout(0)), so no late async setState (messages/pin/avatar) can
-        // re-render the native view and flash a stale snapshot over the list.
+        // slide_from_right kept, but animationDuration trimmed to 150ms (native
+        // default ~350ms) for a snappier push/pop. freezeOnBlur stays: once Chat
+        // loses focus (back-press pop), react-freeze suspends the whole subtree
+        // AFTER the slide animation (DelayedFreeze setTimeout(0)), so no late async
+        // setState (messages/pin/avatar) can re-render the native view and flash a
+        // stale snapshot over the list.
         // Root-cause fix for the pop-back flicker — see [[chat_popback_flicker]].
-        options={{ animation: 'slide_from_right', freezeOnBlur: true }}
+        options={{
+          animation: 'slide_from_right',
+          animationDuration: 150,
+          freezeOnBlur: true,
+        }}
       />
       <Stack.Screen
         name="GroupInfo"
