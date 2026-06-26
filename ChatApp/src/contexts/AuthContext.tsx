@@ -75,14 +75,15 @@ interface AuthContextType {
   /** True while switchAccount is tearing down + re-initialising the new account */
   isSwitchingAccount: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
   registerInit: (body: {
-    phone: string;
     email: string;
     password: string;
     displayName: string;
   }) => Promise<void>;
   verifyOtp: (email: string, otp: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ message: string }>;
+  verifyResetOtp: (email: string, otp: string) => Promise<{ resetToken: string }>;
+  resetPassword: (resetToken: string, newPassword: string) => Promise<{ message: string }>;
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
   /** Switch to any owned account (personal or business). Guards against active calls. */
@@ -382,49 +383,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     pushNotificationService.registerToken().catch(() => {});
   }, []);
 
-  const register = useCallback(
-    async (email: string, password: string, displayName: string) => {
-      const data = await authApi.register(email, password, displayName);
-      setAccessTokenInMemory(data.accessToken);
-      await asyncStorage.setRefreshToken(data.refreshToken);
-
-      const me = await usersApi.getMe();
-      setUser(me);
-      rootUserIdRef.current = me._id;
-      setCurrentUserId(me._id);
-      momentsService.setCurrentUserId(me._id);
-
-      const personalAccount: Account = {
-        _id: me._id,
-        displayName: me.displayName,
-        avatar: me.avatar,
-        accountType: 'personal',
-      };
-      setAccounts([personalAccount]);
-      setActiveAccount(personalAccount);
-      await asyncStorage.clearActiveAccountId();
-
-      // Initialise local SQLite DB for this user
-      await initDb(me._id).catch((e) =>
-        console.warn('[AuthContext] register: initDb failed', e),
-      );
-
-      // Wire local-first services (socket router, sync triggers, media preloader)
-      wireLocalFirst();
-
-      // Connect socket + webrtc
-      socketService.connect(data.accessToken);
-      webrtcService.connect(data.accessToken);
-
-      // Register push notifications
-      pushNotificationService.registerToken().catch(() => {});
-    },
-    [],
-  );
-
   const registerInit = useCallback(
     async (body: {
-      phone: string;
       email: string;
       password: string;
       displayName: string;
@@ -465,6 +425,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     socketService.connect(data.accessToken);
     webrtcService.connect(data.accessToken);
     pushNotificationService.registerToken().catch(() => {});
+  }, []);
+
+  const forgotPassword = useCallback(async (email: string) => {
+    return authApi.forgotPassword(email);
+  }, []);
+
+  const verifyResetOtp = useCallback(async (email: string, otp: string) => {
+    return authApi.verifyResetOtp(email, otp);
+  }, []);
+
+  const resetPassword = useCallback(async (resetToken: string, newPassword: string) => {
+    return authApi.resetPassword(resetToken, newPassword);
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -551,9 +523,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeAccount,
         isSwitchingAccount,
         login,
-        register,
         registerInit,
         verifyOtp,
+        forgotPassword,
+        verifyResetOtp,
+        resetPassword,
         refreshUser,
         logout,
         switchAccount,

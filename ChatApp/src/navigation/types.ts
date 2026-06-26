@@ -8,6 +8,8 @@ export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   OtpVerify: { email: string };
+  ForgotPassword: undefined;
+  ResetPassword: { email: string };
 };
 
 // ─── Chat Sub-Tabs (top tabs inside ChatHomeScreen) ──────────────────────────
@@ -87,6 +89,9 @@ export type RootStackParamList = {
   // dock is still mutating views → removeViewAt crash).
   Login: undefined;
   Register: undefined;
+  OtpVerify: { email: string };
+  ForgotPassword: undefined;
+  ResetPassword: { email: string };
   // Authenticated group
   Main: undefined;
   CallModal: CallStackParamList['Call'];

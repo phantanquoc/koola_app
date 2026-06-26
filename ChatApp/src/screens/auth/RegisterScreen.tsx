@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { AuthStackParamList } from '../../navigation/types';
+import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   KoolaButton,
@@ -18,10 +18,10 @@ import {
   koolaColors,
 } from '../../ui';
 
-type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
-  const { register } = useAuth();
+  const { registerInit } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -32,13 +32,18 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (password.length < 8) {
+      Alert.alert('Error', 'Password must be at least 8 characters');
       return;
     }
     setLoading(true);
     try {
-      await register(email.trim().toLowerCase(), password, displayName.trim());
+      await registerInit({
+        email: email.trim().toLowerCase(),
+        password,
+        displayName: displayName.trim(),
+      });
+      navigation.navigate('OtpVerify', { email: email.trim().toLowerCase() });
     } catch (err: unknown) {
       const error = err as {
         response?: { data?: { message?: string | string[] } };
@@ -59,18 +64,18 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.hero}>
         <KoolaText variant="title" align="center">
-          Tạo tài khoản
+          Tao tai khoan
         </KoolaText>
         <KoolaText variant="body" tone="muted" align="center">
-          Bắt đầu trò chuyện và kết nối với cộng đồng Koola.
+          Bat dau tro chuyen va ket noi voi cong dong Koola.
         </KoolaText>
       </View>
 
       <KoolaSurface variant="raised" style={styles.form}>
         <KoolaTextInput
-          label="Tên hiển thị"
+          label="Ten hien thi"
           icon="person-outline"
-          placeholder="Nguyễn Văn A"
+          placeholder="Nguyen Van A"
           value={displayName}
           onChangeText={setDisplayName}
           autoCapitalize="words"
@@ -86,16 +91,16 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           autoCorrect={false}
         />
         <KoolaTextInput
-          label="Mật khẩu"
+          label="Mat khau"
           icon="lock-outline"
-          placeholder="Ít nhất 6 ký tự"
+          placeholder="It nhat 8 ky tu"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
         />
 
         <KoolaButton
-          title="Tạo tài khoản"
+          title="Tao tai khoan"
           icon="person-add-alt"
           loading={loading}
           onPress={handleRegister}
@@ -107,9 +112,9 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => navigation.goBack()}
           accessibilityRole="button">
           <KoolaText tone="muted" align="center">
-            Đã có tài khoản?{' '}
+            Da co tai khoan?{' '}
             <KoolaText tone="primary" weight="800">
-              Đăng nhập
+              Dang nhap
             </KoolaText>
           </KoolaText>
         </Pressable>
