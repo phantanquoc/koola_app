@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import Toast from 'react-native-toast-message';
+import { ThemeProvider, useTheme } from './ui';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
@@ -52,6 +53,18 @@ function navigateToIncomingCall(params: IncomingCallNavParams): void {
   };
   tryNav();
 }
+
+/** StatusBar that follows the active theme palette */
+const ThemedStatusBar: React.FC = () => {
+  const { palette, resolvedScheme } = useTheme();
+  return (
+    <StatusBar
+      translucent={false}
+      backgroundColor={palette.surface}
+      barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
+    />
+  );
+};
 
 /** Inner component that uses hooks requiring AuthProvider context */
 const AppInner: React.FC = () => {
@@ -165,14 +178,16 @@ const App: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar translucent={false} backgroundColor="#FFFFFF" barStyle="dark-content" />
-      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <KeyboardProvider>
-          <AuthProvider>
-            <AppInner />
-          </AuthProvider>
-        </KeyboardProvider>
-      </SafeAreaProvider>
+      <ThemeProvider>
+        <ThemedStatusBar />
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+          <KeyboardProvider>
+            <AuthProvider>
+              <AppInner />
+            </AuthProvider>
+          </KeyboardProvider>
+        </SafeAreaProvider>
+      </ThemeProvider>
       {/* Toast must be a root-level singleton, rendered last so its overlay sits
           above everything. Rendering it inside a screen (ChatScreen) put the
           overlay deep in a conditionally-unmounted tree → Fabric double-remove

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -21,14 +21,64 @@ import {
   KoolaDivider,
   KoolaSurface,
   KoolaText,
-  koolaColors,
+  useTheme,
 } from '../../ui';
+import type { ThemeMode, Palette } from '../../ui/theme';
+
+// ─── Theme Segmented Control ─────────────────────────────────────────────────
+
+const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
+  { mode: 'light', label: 'Sáng' },
+  { mode: 'dark', label: 'Tối' },
+  { mode: 'system', label: 'Tự động' },
+];
+
+interface ThemeSegmentedControlProps {
+  currentMode: ThemeMode;
+  onSelect: (mode: ThemeMode) => void;
+  palette: Palette;
+}
+
+const ThemeSegmentedControl: React.FC<ThemeSegmentedControlProps> = ({
+  currentMode,
+  onSelect,
+  palette,
+}) => {
+  const segStyles = useMemo(() => makeSegStyles(palette), [palette]);
+  return (
+    <View style={segStyles.container} accessibilityRole="tablist">
+      {THEME_OPTIONS.map(({ mode, label }) => {
+        const isSelected = mode === currentMode;
+        return (
+          <Pressable
+            key={mode}
+            style={[segStyles.segment, isSelected && segStyles.segmentSelected]}
+            onPress={() => onSelect(mode)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isSelected }}
+            accessibilityLabel={label}>
+            <KoolaText
+              variant="caption"
+              weight="700"
+              tone={isSelected ? 'primary' : 'muted'}>
+              {label}
+            </KoolaText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+};
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 
 const SettingsScreen: React.FC = () => {
   const { user, logout } = useAuth();
   const tabBarInset = useTabBarBottomInset();
   const navigation =
     useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
+  const { palette, mode, setMode } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(palette), [palette]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     user?.settings?.notificationsEnabled ?? true,
   );
@@ -75,58 +125,43 @@ const SettingsScreen: React.FC = () => {
         </KoolaText>
       </Pressable>
 
+      {/* Theme mode selector */}
       <KoolaSurface variant="raised" style={styles.section}>
-        <SettingsRow
-          icon="account-circle"
-          label="Danh sách tài khoản"
-          onPress={() => navigation.navigate('AccountList')}
+        <View style={styles.menuItemRow}>
+          <View style={styles.menuLabelRow}>
+            <MaterialIcons name="palette" size={22} color={palette.primary} />
+            <KoolaText variant="label">Giao diện</KoolaText>
+          </View>
+        </View>
+        <ThemeSegmentedControl
+          currentMode={mode}
+          onSelect={setMode}
+          palette={palette}
         />
+      </KoolaSurface>
+
+      <KoolaSurface variant="raised" style={styles.section}>
+        <SettingsRow icon="account-circle" label="Danh sách tài khoản" onPress={() => navigation.navigate('AccountList')} palette={palette} />
         <KoolaDivider />
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
-            <MaterialIcons
-              name="notifications-none"
-              size={22}
-              color={koolaColors.primary}
-            />
+            <MaterialIcons name="notifications-none" size={22} color={palette.primary} />
             <KoolaText variant="label">Thông báo</KoolaText>
           </View>
           <Switch
             value={notificationsEnabled}
             onValueChange={handleToggleNotifications}
             disabled={toggling}
-            trackColor={{ false: '#D0D5DD', true: '#93C5FD' }}
-            thumbColor={notificationsEnabled ? koolaColors.primary : '#F2F4F7'}
+            trackColor={{ false: palette.line, true: palette.primarySoft }}
+            thumbColor={notificationsEnabled ? palette.primary : palette.faint}
           />
         </View>
         <KoolaDivider />
-        <SettingsRow
-          icon="lock-outline"
-          label="Quyền riêng tư"
-          onPress={() =>
-            Alert.alert(
-              'Quyền riêng tư',
-              'Dữ liệu của bạn được lưu trữ an toàn trên máy chủ.\n\nTin nhắn được mã hóa khi truyền qua TLS.\n\nMã hóa đầu cuối đang được phát triển.',
-            )
-          }
-        />
+        <SettingsRow icon="lock-outline" label="Quyền riêng tư" onPress={() => Alert.alert('Quyền riêng tư', 'Dữ liệu của bạn được lưu trữ an toàn trên máy chủ.\n\nTin nhắn được mã hóa khi truyền qua TLS.\n\nMã hóa đầu cuối đang được phát triển.')} palette={palette} />
         <KoolaDivider />
-        <SettingsRow
-          icon="info-outline"
-          label="Giới thiệu"
-          onPress={() =>
-            Alert.alert(
-              'Về Koola Chat',
-              'Phiên bản 1.0.0\n\nXây dựng bằng React Native + NestJS\n\n© 2026 Koola Chat',
-            )
-          }
-        />
+        <SettingsRow icon="info-outline" label="Giới thiệu" onPress={() => Alert.alert('Về Koola Chat', 'Phiên bản 1.0.0\n\nXây dựng bằng React Native + NestJS\n\n© 2026 Koola Chat')} palette={palette} />
         <KoolaDivider />
-        <SettingsRow
-          icon="storage"
-          label="Bộ nhớ đệm"
-          onPress={() => navigation.navigate('StorageSettings')}
-        />
+        <SettingsRow icon="storage" label="Bộ nhớ đệm" onPress={() => navigation.navigate('StorageSettings')} palette={palette} />
       </KoolaSurface>
 
       <KoolaButton
@@ -140,52 +175,26 @@ const SettingsScreen: React.FC = () => {
   );
 };
 
+// ─── SettingsRow helper ──────────────────────────────────────────────────────
+
 interface SettingsRowProps {
   icon: string;
   label: string;
   onPress: () => void;
+  palette: Palette;
 }
 
-const SettingsRow: React.FC<SettingsRowProps> = ({ icon, label, onPress }) => (
-  <Pressable style={styles.menuItem} onPress={onPress} accessibilityRole="button">
-    <View style={styles.menuLabelRow}>
-      <MaterialIcons name={icon} size={22} color={koolaColors.primary} />
+const SettingsRow: React.FC<SettingsRowProps> = ({ icon, label, onPress, palette }) => (
+  <Pressable style={settingsRowStyles.menuItem} onPress={onPress} accessibilityRole="button">
+    <View style={settingsRowStyles.menuLabelRow}>
+      <MaterialIcons name={icon} size={22} color={palette.primary} />
       <KoolaText variant="label">{label}</KoolaText>
     </View>
-    <MaterialIcons name="chevron-right" size={22} color={koolaColors.faint} />
+    <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
   </Pressable>
 );
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  contentContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 16,
-  },
-  profileSection: {
-    alignItems: 'center',
-    paddingTop: (StatusBar.currentHeight || 0) + 22,
-    paddingBottom: 28,
-  },
-  name: {
-    marginTop: 12,
-  },
-  editHint: {
-    marginTop: 6,
-  },
-  section: {
-    overflow: 'hidden',
-  },
-  menuItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
+const settingsRowStyles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -199,9 +208,58 @@ const styles = StyleSheet.create({
     gap: 12,
     flex: 1,
   },
-  logoutButton: {
-    marginTop: 22,
-  },
 });
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const makeScreenStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: p.canvas },
+    contentContainer: { flexGrow: 1, paddingHorizontal: 16 },
+    profileSection: {
+      alignItems: 'center',
+      paddingTop: (StatusBar.currentHeight || 0) + 22,
+      paddingBottom: 28,
+    },
+    name: { marginTop: 12 },
+    editHint: { marginTop: 6 },
+    section: { overflow: 'hidden', marginBottom: 16 },
+    menuItemRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 13,
+    },
+    menuLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      flex: 1,
+    },
+    logoutButton: { marginTop: 22 },
+  });
+
+const makeSegStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      marginHorizontal: 16,
+      marginBottom: 14,
+      borderRadius: 10,
+      backgroundColor: p.canvas,
+      padding: 3,
+    },
+    segment: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      borderRadius: 8,
+    },
+    segmentSelected: {
+      backgroundColor: p.surface,
+    },
+  });
 
 export default SettingsScreen;

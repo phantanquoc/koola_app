@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { RecentSearchItem } from '../../types';
+import type { ThemeMode } from '../../ui/theme';
+import { normalizeMode } from '../../ui/theme';
 
 const KEYS = {
   REFRESH_TOKEN: 'refresh_token',
@@ -8,6 +10,7 @@ const KEYS = {
   LAST_SYNC_AT: 'last_sync_at',
   RECENT_SEARCHES: 'recent_searches',
   ACTIVE_ACCOUNT_ID: 'active_account_id',
+  THEME: 'theme',
 };
 
 const RECENT_SEARCHES_MAX = 10;
@@ -98,6 +101,20 @@ export const asyncStorage = {
   },
   async clearRecentSearches(): Promise<void> {
     await AsyncStorage.removeItem(KEYS.RECENT_SEARCHES);
+  },
+
+  // ─── Theme Mode ──────────────────────────────────────────────────────────
+  async getThemeMode(): Promise<ThemeMode> {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.THEME);
+      return normalizeMode(raw);
+    } catch (err) {
+      console.warn('[asyncStorage] getThemeMode read failed, falling back to system:', err);
+      return 'system';
+    }
+  },
+  async setThemeMode(mode: ThemeMode): Promise<void> {
+    await AsyncStorage.setItem(KEYS.THEME, mode);
   },
 
   // ─── Clear all ────────────────────────────────────────────────────────────

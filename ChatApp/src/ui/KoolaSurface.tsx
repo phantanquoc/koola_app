@@ -1,11 +1,31 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, ViewProps, StyleSheet } from 'react-native';
-import { koolaColors, koolaRadii, koolaShadows } from './theme';
+import { useTheme } from './ThemeProvider';
+import { koolaRadii, koolaShadows, type Palette } from './theme';
 
 interface KoolaSurfaceProps extends ViewProps {
   variant?: 'flat' | 'raised' | 'soft' | 'outline';
   className?: string;
 }
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    base: {
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+    },
+    flat: {},
+    raised: {
+      ...koolaShadows.soft,
+    },
+    soft: {
+      backgroundColor: p.canvas,
+    },
+    outline: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+  });
 
 export const KoolaSurface: React.FC<KoolaSurfaceProps> = ({
   variant = 'flat',
@@ -13,6 +33,9 @@ export const KoolaSurface: React.FC<KoolaSurfaceProps> = ({
   style,
   ...props
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   return (
     <View
       {...props}
@@ -21,21 +44,3 @@ export const KoolaSurface: React.FC<KoolaSurfaceProps> = ({
     />
   );
 };
-
-const styles = StyleSheet.create({
-  base: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-  },
-  flat: {},
-  raised: {
-    ...koolaShadows.soft,
-  },
-  soft: {
-    backgroundColor: koolaColors.canvas,
-  },
-  outline: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-});

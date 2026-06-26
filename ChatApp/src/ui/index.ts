@@ -9,4 +9,5 @@ export * from './KoolaSurface';
 export * from './KoolaText';
 export * from './KoolaTextInput';
 export * from './theme';
+export * from './ThemeProvider';
 export { cn } from './cn';

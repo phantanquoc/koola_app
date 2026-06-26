@@ -1,7 +1,13 @@
-import React from 'react';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import React, { useMemo } from 'react';
+import {
+  NavigationContainer,
+  createNavigationContainerRef,
+  DefaultTheme,
+  DarkTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../ui';
 import MainNavigator from './MainNavigator';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -39,6 +45,25 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
+  const { palette, resolvedScheme } = useTheme();
+
+  // Derive a React Navigation theme from the active palette
+  const isDark = resolvedScheme === 'dark';
+  const navTheme = useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+        primary: palette.primary,
+        background: palette.canvas,
+        card: palette.surface,
+        text: palette.ink,
+        border: palette.line,
+        notification: palette.danger,
+      },
+    }),
+    [isDark, palette],
+  );
 
   if (isLoading) {
     return <SplashScreen />;
@@ -51,7 +76,7 @@ const RootNavigator: React.FC = () => {
   // Fabric commit. The latter raced the animated tab dock's view teardown and
   // crashed with "Cannot remove child at index N … childCount may be incorrect".
   return (
-    <NavigationContainer ref={navigationRef} linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking} theme={navTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
           <>

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Text, TextProps, StyleSheet } from 'react-native';
-import { koolaColors, koolaTypography } from './theme';
+import { useTheme } from './ThemeProvider';
+import { koolaTypography, type Palette } from './theme';
 
 type KoolaTextVariant = keyof typeof koolaTypography;
 type KoolaTextTone =
@@ -20,15 +21,15 @@ interface KoolaTextProps extends TextProps {
   className?: string;
 }
 
-const toneColor: Record<KoolaTextTone, string> = {
-  ink: koolaColors.ink,
-  muted: koolaColors.muted,
-  faint: koolaColors.faint,
-  primary: koolaColors.primary,
-  success: koolaColors.success,
-  danger: koolaColors.danger,
-  surface: koolaColors.surface,
-};
+const makeToneColor = (p: Palette): Record<KoolaTextTone, string> => ({
+  ink: p.ink,
+  muted: p.muted,
+  faint: p.faint,
+  primary: p.primary,
+  success: p.success,
+  danger: p.danger,
+  surface: p.surface,
+});
 
 export const KoolaText: React.FC<KoolaTextProps> = ({
   variant = 'body',
@@ -40,6 +41,9 @@ export const KoolaText: React.FC<KoolaTextProps> = ({
   children,
   ...props
 }) => {
+  const { palette } = useTheme();
+  const toneColor = useMemo(() => makeToneColor(palette), [palette]);
+
   return (
     <Text
       {...props}

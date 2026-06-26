@@ -1,12 +1,34 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, PressableProps, StyleSheet } from 'react-native';
 import { KoolaText } from './KoolaText';
-import { koolaColors, koolaRadii } from './theme';
+import { useTheme } from './ThemeProvider';
+import { koolaRadii, type Palette } from './theme';
 
 interface KoolaChipProps extends Omit<PressableProps, 'children'> {
   label: string;
   selected?: boolean;
 }
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    chip: {
+      minHeight: 34,
+      borderRadius: koolaRadii.pill,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: p.canvas,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+    selected: {
+      backgroundColor: p.primary,
+      borderColor: p.primary,
+    },
+    pressed: {
+      opacity: 0.78,
+    },
+  });
 
 export const KoolaChip: React.FC<KoolaChipProps> = ({
   label,
@@ -17,6 +39,8 @@ export const KoolaChip: React.FC<KoolaChipProps> = ({
   ...props
 }) => {
   const [pressed, setPressed] = React.useState(false);
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   return (
     <Pressable
@@ -45,23 +69,3 @@ export const KoolaChip: React.FC<KoolaChipProps> = ({
     </Pressable>
   );
 };
-
-const styles = StyleSheet.create({
-  chip: {
-    minHeight: 34,
-    borderRadius: koolaRadii.pill,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: koolaColors.canvas,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-  selected: {
-    backgroundColor: koolaColors.primary,
-    borderColor: koolaColors.primary,
-  },
-  pressed: {
-    opacity: 0.78,
-  },
-});

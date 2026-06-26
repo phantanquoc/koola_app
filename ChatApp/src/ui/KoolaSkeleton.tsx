@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, ViewProps, StyleSheet } from 'react-native';
-import { koolaColors, koolaRadii } from './theme';
+import { useTheme } from './ThemeProvider';
+import { koolaRadii } from './theme';
 
 interface KoolaSkeletonProps extends ViewProps {
   width?: number | `${number}%`;
@@ -14,19 +15,20 @@ export const KoolaSkeleton: React.FC<KoolaSkeletonProps> = ({
   radius = koolaRadii.sm,
   style,
   ...props
-}) => (
-  <View
-    {...props}
-    style={[
-      styles.skeleton,
-      { width, height, borderRadius: radius },
-      style,
-    ]}
-  />
-);
+}) => {
+  const { palette } = useTheme();
+  return (
+    <View
+      {...props}
+      style={[
+        styles.skeleton,
+        { backgroundColor: palette.skeleton, width, height, borderRadius: radius },
+        style,
+      ]}
+    />
+  );
+};
 
 const styles = StyleSheet.create({
-  skeleton: {
-    backgroundColor: koolaColors.skeleton,
-  },
+  skeleton: {},
 });
