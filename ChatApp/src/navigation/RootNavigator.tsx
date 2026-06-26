@@ -5,6 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import MainNavigator from './MainNavigator';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import OtpVerifyScreen from '../screens/auth/OtpVerifyScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import CallScreen from '../screens/call/CallScreen';
 import IncomingCallScreen from '../screens/call/IncomingCallScreen';
 import ImageViewerScreen from '../screens/chat/ImageViewerScreen';
@@ -102,6 +105,21 @@ const RootNavigator: React.FC = () => {
             <Stack.Screen
               name="Register"
               component={RegisterScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="OtpVerify"
+              component={OtpVerifyScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ForgotPassword"
+              component={ForgotPasswordScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ResetPassword"
+              component={ResetPasswordScreen}
               options={{ animation: 'slide_from_right' }}
             />
           </>

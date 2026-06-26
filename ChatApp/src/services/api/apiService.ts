@@ -3,7 +3,6 @@ import ENV from '../../config/env';
 import { asyncStorage } from '../storage/asyncStorage';
 import type {
   LoginResponse,
-  RegisterResponse,
   ConversationListResponse,
   Conversation,
   MessageListResponse,
@@ -226,18 +225,6 @@ export const authApi = {
     const { data } = await apiClient.post('/auth/login', { email, password });
     return data;
   },
-  async register(
-    email: string,
-    password: string,
-    displayName: string,
-  ): Promise<RegisterResponse> {
-    const { data } = await apiClient.post('/auth/register', {
-      email,
-      password,
-      displayName,
-    });
-    return data;
-  },
   async refresh(refreshToken: string) {
     const { data } = await apiClient.post('/auth/refresh', { refreshToken });
     return data;
@@ -246,11 +233,10 @@ export const authApi = {
     await apiClient.post('/auth/logout', { refreshToken });
   },
   async registerInit(body: {
-    phone: string;
     email: string;
     password: string;
     displayName: string;
-  }): Promise<{ message: string }> {
+  }): Promise<{ message: string; expiresIn: number }> {
     const { data } = await apiClient.post('/auth/register/init', body);
     return data;
   },
@@ -267,6 +253,30 @@ export const authApi = {
   async resendOtp(email: string): Promise<{ message: string }> {
     const { data } = await apiClient.post('/auth/register/resend-otp', {
       email,
+    });
+    return data;
+  },
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const { data } = await apiClient.post('/auth/forgot-password', { email });
+    return data;
+  },
+  async verifyResetOtp(
+    email: string,
+    otp: string,
+  ): Promise<{ resetToken: string }> {
+    const { data } = await apiClient.post('/auth/reset-password/verify', {
+      email,
+      otp,
+    });
+    return data;
+  },
+  async resetPassword(
+    resetToken: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const { data } = await apiClient.post('/auth/reset-password', {
+      resetToken,
+      newPassword,
     });
     return data;
   },

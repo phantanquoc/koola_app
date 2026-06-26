@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from '../users/user.schema';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
 import { UsersModule } from '../users/users.module';
+import { EmailService } from './email.service';
 import type { StringValue } from 'ms';
 
 @Module({
@@ -31,7 +32,7 @@ import type { StringValue } from 'ms';
     forwardRef(() => UsersModule),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, EmailService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

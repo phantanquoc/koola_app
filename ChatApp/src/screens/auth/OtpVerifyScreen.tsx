@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { AuthStackParamList } from '../../navigation/types';
+import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../services/api/apiService';
 import {
@@ -21,12 +21,12 @@ import {
   koolaRadii,
 } from '../../ui';
 
-type Props = NativeStackScreenProps<AuthStackParamList, 'OtpVerify'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerify'>;
 
 const OTP_EXPIRY = 300;
 const MAX_ATTEMPTS = 5;
 
-const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
+const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   const { email } = route.params;
   const { verifyOtp } = useAuth();
   const [otp, setOtp] = useState('');
@@ -61,9 +61,8 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
     setLoading(true);
     try {
       await verifyOtp(email, otp);
-      Alert.alert('Thành công', 'Đăng ký thành công! Vui lòng đăng nhập.', [
-        { text: 'OK', onPress: () => navigation.navigate('Login') },
-      ]);
+      // Auto-login: verifyOtp sets tokens + user in AuthContext,
+      // RootNavigator swaps to the authenticated group automatically.
     } catch (err: unknown) {
       setAttempts((prev) => prev + 1);
       const error = err as {
@@ -77,7 +76,7 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [otp, email, verifyOtp, navigation, attempts]);
+  }, [otp, email, verifyOtp, attempts]);
 
   const handleResend = useCallback(async () => {
     setResending(true);

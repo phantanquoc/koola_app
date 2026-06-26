@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { AuthStackParamList } from '../../navigation/types';
+import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   KoolaButton,
@@ -19,7 +19,7 @@ import {
   koolaShadows,
 } from '../../ui';
 
-type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const { login } = useAuth();
@@ -111,6 +111,15 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           onPress={handleLogin}
           style={styles.primaryButton}
         />
+
+        <Pressable
+          style={styles.linkButton}
+          onPress={() => navigation.navigate('ForgotPassword')}
+          accessibilityRole="button">
+          <KoolaText tone="primary" weight="800" align="center">
+            Quên mật khẩu?
+          </KoolaText>
+        </Pressable>
 
         <Pressable
           style={styles.linkButton}

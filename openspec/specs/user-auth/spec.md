@@ -4,37 +4,37 @@
 TBD - created by archiving change phone-otp-registration. Update Purpose after archive.
 ## Requirements
 ### Requirement: User Registration
-The system SHALL allow new users to register with phone number (+84 Vietnam), password, and display name, verified via SMS OTP.
+The system SHALL allow new users to register with email, password, and display name, verified via email OTP. Account creation SHALL occur only after successful OTP verification; there SHALL be no endpoint that creates an account without OTP verification.
 
 #### Scenario: Successful registration
-- **WHEN** user completes OTP verification after submitting phone number, password (min 8 chars), and display name
-- **THEN** system creates user record with phone, hashed password, and display name
+- **WHEN** a user completes email OTP verification after submitting email, password (min 8 chars), and display name
+- **THEN** the system creates a user record with lowercased email, hashed password, and display name, and returns an access token and refresh token (auto-login)
 
-#### Scenario: Registration with duplicate phone
-- **WHEN** user submits phone number that already exists
-- **THEN** system returns HTTP 409 Conflict with message "Số điện thoại đã được sử dụng"
+#### Scenario: Registration with duplicate email
+- **WHEN** a user submits an email that already exists
+- **THEN** the system returns HTTP 409 Conflict with message "Email đã được sử dụng" and does NOT send an OTP
 
-#### Scenario: Registration with invalid phone format
-- **WHEN** user submits phone number not matching +84 followed by 9-10 digits
-- **THEN** system returns HTTP 400 Bad Request with validation error
+#### Scenario: Registration with invalid email format
+- **WHEN** a user submits an email that fails email validation
+- **THEN** the system returns HTTP 400 Bad Request with a validation error
 
 #### Scenario: Registration with weak password
-- **WHEN** user submits password shorter than 8 characters
-- **THEN** system returns HTTP 400 Bad Request with validation error "Password must be at least 8 characters"
+- **WHEN** a user submits a password shorter than 8 characters
+- **THEN** the system returns HTTP 400 Bad Request with validation error "Password must be at least 8 characters"
 
 ### Requirement: User Login
-The system SHALL allow registered users to log in with phone number and password, and SHALL reject login for any user whose `isBanned` is `true`.
+The system SHALL allow registered users to log in with email and password, and SHALL reject login for any user whose `isBanned` is `true`.
 
 #### Scenario: Successful login
-- **WHEN** a non-banned user submits a valid phone number and correct password
+- **WHEN** a non-banned user submits a valid email and correct password
 - **THEN** the system returns HTTP 200 with a JWT access token and a refresh token
 
 #### Scenario: Login with wrong password
-- **WHEN** a user submits a valid phone number but incorrect password
+- **WHEN** a user submits a valid email but incorrect password
 - **THEN** the system returns HTTP 401 Unauthorized with message "Invalid credentials"
 
-#### Scenario: Login with non-existent phone
-- **WHEN** a user submits a phone number that does not exist
+#### Scenario: Login with non-existent email
+- **WHEN** a user submits an email that does not exist
 - **THEN** the system returns HTTP 401 Unauthorized with message "Invalid credentials"
 
 #### Scenario: Banned user cannot log in
