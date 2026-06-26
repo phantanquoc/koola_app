@@ -112,7 +112,10 @@ describe('12.2 TTL behavior', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,
@@ -245,7 +248,10 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,
@@ -300,9 +306,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
     storyViewModel.create = jest.fn().mockResolvedValue({});
 
     // Should not throw
-    await expect(
-      service.recordView(storyId, oid()),
-    ).resolves.toBeUndefined();
+    await expect(service.recordView(storyId, oid())).resolves.toBeUndefined();
   });
 
   it('second concurrent recordView (E11000 duplicate key) should be silently ignored', async () => {
@@ -327,9 +331,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
     storyViewModel.create = jest.fn().mockRejectedValue(e11000);
 
     // Service should NOT throw — E11000 is swallowed
-    await expect(
-      service.recordView(storyId, oid()),
-    ).resolves.toBeUndefined();
+    await expect(service.recordView(storyId, oid())).resolves.toBeUndefined();
   });
 });
 
@@ -365,7 +367,10 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,
@@ -489,7 +494,10 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,
@@ -604,7 +612,10 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
         { provide: RedisService, useValue: redisService },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,
@@ -732,7 +743,10 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendPushNotification: jest.fn(), sendMentionPush: jest.fn() },
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendMentionPush: jest.fn(),
+          },
         },
         {
           provide: ConversationsService,

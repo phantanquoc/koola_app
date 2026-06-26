@@ -189,7 +189,9 @@ describe('MomentsGateway', () => {
 
       await gateway.emitStoryNew(story);
 
-      expect(conversationsService.getConnectedUserIds).toHaveBeenCalledWith('author-1');
+      expect(conversationsService.getConnectedUserIds).toHaveBeenCalledWith(
+        'author-1',
+      );
       expect(mockIo.to).toHaveBeenCalledWith('user:userA');
       expect(mockIo.to).toHaveBeenCalledWith('user:userB');
     });
@@ -219,7 +221,9 @@ describe('MomentsGateway', () => {
     });
 
     it('returns empty array for CONNECTIONS scope with no connections (emits to nobody)', async () => {
-      conversationsService.getConnectedUserIds = jest.fn().mockResolvedValue([]);
+      conversationsService.getConnectedUserIds = jest
+        .fn()
+        .mockResolvedValue([]);
 
       const story = {
         _id: 'story-lonely',

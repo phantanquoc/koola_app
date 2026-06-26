@@ -233,10 +233,7 @@ export class MomentsService {
     // a failed counter bump must not fail story creation.
     if (dto.musicRef) {
       this.musicTrackModel
-        .updateOne(
-          { _id: dto.musicRef.trackId },
-          { $inc: { usageCount: 1 } },
-        )
+        .updateOne({ _id: dto.musicRef.trackId }, { $inc: { usageCount: 1 } })
         .catch((err: unknown) =>
           this.logger.error(
             '[MomentsService] usageCount increment failed',

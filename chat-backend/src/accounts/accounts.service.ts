@@ -156,8 +156,7 @@ export class AccountsService {
     nextCursor: string | null;
   }> {
     const rawLimit = params.limit ?? 20;
-    const safeLimit =
-      Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 20;
+    const safeLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 20;
     const limit = Math.min(safeLimit, 50);
     const filter: Record<string, unknown> = {
       accountType: 'business',

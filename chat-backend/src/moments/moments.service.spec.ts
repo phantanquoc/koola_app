@@ -765,7 +765,9 @@ describe('MomentsService', () => {
       });
 
       // Should resolve (may succeed with presigned URL or throw non-ForbiddenException)
-      await expect(service.getStoryById(validStoryId, viewerId)).resolves.toBeDefined();
+      await expect(
+        service.getStoryById(validStoryId, viewerId),
+      ).resolves.toBeDefined();
     });
 
     it('assertViewAccess passes when viewer is the author regardless of scope', async () => {
@@ -775,7 +777,9 @@ describe('MomentsService', () => {
       });
 
       // Should resolve — author always allowed (early return in assertViewAccess)
-      await expect(service.getStoryById(validStoryId, viewerId)).resolves.toBeDefined();
+      await expect(
+        service.getStoryById(validStoryId, viewerId),
+      ).resolves.toBeDefined();
     });
 
     it('getFeed includes connections-scope story from author who shares a DIRECT conversation', async () => {
@@ -841,17 +845,15 @@ describe('MomentsService', () => {
         .fn()
         .mockResolvedValue([]);
       const usersService = (service as any).usersService;
-      usersService.findByIds = jest
-        .fn()
-        .mockImplementation((ids: string[]) =>
-          Promise.resolve(
-            ids.map((id) => ({
-              _id: { toString: () => id },
-              displayName: 'U',
-              avatar: null,
-            })),
-          ),
-        );
+      usersService.findByIds = jest.fn().mockImplementation((ids: string[]) =>
+        Promise.resolve(
+          ids.map((id) => ({
+            _id: { toString: () => id },
+            displayName: 'U',
+            avatar: null,
+          })),
+        ),
+      );
     });
 
     it('derives nextCursor from the max authorId on the page, not the unviewed-first order', async () => {
@@ -888,9 +890,7 @@ describe('MomentsService', () => {
       storyModel.find = jest.fn().mockReturnValue({
         sort: jest.fn().mockReturnValue({
           limit: jest.fn().mockReturnValue({
-            lean: jest
-              .fn()
-              .mockResolvedValue([pubStory(authorA, 'a1')]),
+            lean: jest.fn().mockResolvedValue([pubStory(authorA, 'a1')]),
           }),
         }),
       });
@@ -925,9 +925,11 @@ describe('MomentsService', () => {
         isPrivate: false,
       });
 
-      await (service as any).processMentionNotifications(authorId, buildStory(), [
-        { userId: mentionedId, username: 'bob' },
-      ]);
+      await (service as any).processMentionNotifications(
+        authorId,
+        buildStory(),
+        [{ userId: mentionedId, username: 'bob' }],
+      );
 
       expect(notificationsMock.sendMentionPush).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -947,9 +949,11 @@ describe('MomentsService', () => {
       // Author has no connections → mentioned user is not reachable
       conversationsMock.getConnectedUserIds.mockResolvedValue([]);
 
-      await (service as any).processMentionNotifications(authorId, buildStory(), [
-        { userId: mentionedId, username: 'bob' },
-      ]);
+      await (service as any).processMentionNotifications(
+        authorId,
+        buildStory(),
+        [{ userId: mentionedId, username: 'bob' }],
+      );
 
       expect(notificationsMock.sendMentionPush).not.toHaveBeenCalled();
     });
@@ -962,9 +966,11 @@ describe('MomentsService', () => {
       });
       conversationsMock.getConnectedUserIds.mockResolvedValue([mentionedId]);
 
-      await (service as any).processMentionNotifications(authorId, buildStory(), [
-        { userId: mentionedId, username: 'bob' },
-      ]);
+      await (service as any).processMentionNotifications(
+        authorId,
+        buildStory(),
+        [{ userId: mentionedId, username: 'bob' }],
+      );
 
       expect(notificationsMock.sendMentionPush).toHaveBeenCalledTimes(1);
     });
@@ -976,9 +982,11 @@ describe('MomentsService', () => {
         isPrivate: false,
       });
 
-      await (service as any).processMentionNotifications(authorId, buildStory(), [
-        { userId: authorId, username: 'alice' },
-      ]);
+      await (service as any).processMentionNotifications(
+        authorId,
+        buildStory(),
+        [{ userId: authorId, username: 'alice' }],
+      );
 
       expect(notificationsMock.sendMentionPush).not.toHaveBeenCalled();
     });
