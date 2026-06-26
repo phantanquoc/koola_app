@@ -390,12 +390,12 @@ export class AuthService {
   async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
     const ticketKey = this.resetTicketKey(dto.resetToken);
 
-    // Atomically get + delete ticket
-    const userId = await this.redisService.get(ticketKey);
+    // Atomically get + delete ticket (GETDEL) so a concurrent double-submit
+    // cannot consume the same single-use ticket twice.
+    const userId = await this.redisService.getDel(ticketKey);
     if (!userId) {
       throw new BadRequestException('Vé đặt lại không hợp lệ hoặc đã hết hạn');
     }
-    await this.redisService.del(ticketKey);
 
     // Hash new password
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);

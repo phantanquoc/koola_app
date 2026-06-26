@@ -52,6 +52,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.get(key);
   }
 
+  /**
+   * Atomically get a key's value and delete it in a single operation (GETDEL,
+   * Redis 6.2+). Returns the value if the key existed, null otherwise.
+   * Used for single-use tokens (e.g. password-reset tickets) where a
+   * get-then-del race could otherwise allow double-spend.
+   */
+  async getDel(key: string): Promise<string | null> {
+    return this.client.getdel(key);
+  }
+
   async del(key: string): Promise<void> {
     await this.client.del(key);
   }

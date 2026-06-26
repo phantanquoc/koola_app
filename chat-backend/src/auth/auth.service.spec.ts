@@ -48,6 +48,7 @@ const mockRedisClient = {
 
 const mockRedisService = {
   get: jest.fn(),
+  getDel: jest.fn(),
   del: jest.fn().mockResolvedValue(undefined),
   setNXEX: jest.fn(),
   incrementWithExpiry: jest.fn(),
@@ -349,7 +350,7 @@ describe('AuthService', () => {
   describe('resetPassword', () => {
     it('resets password and revokes all refresh tokens', async () => {
       const validUserId = '507f1f77bcf86cd799439011';
-      mockRedisService.get.mockResolvedValue(validUserId);
+      mockRedisService.getDel.mockResolvedValue(validUserId);
       mockUserModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
       mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 3 });
 
@@ -361,11 +362,11 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('message');
       expect(mockUserModel.updateOne).toHaveBeenCalled();
       expect(mockRefreshTokenModel.updateMany).toHaveBeenCalled();
-      expect(mockRedisService.del).toHaveBeenCalled();
+      expect(mockRedisService.getDel).toHaveBeenCalled();
     });
 
     it('throws 400 for invalid/expired ticket', async () => {
-      mockRedisService.get.mockResolvedValue(null);
+      mockRedisService.getDel.mockResolvedValue(null);
 
       await expect(
         service.resetPassword({
