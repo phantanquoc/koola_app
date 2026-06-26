@@ -1,14 +1,19 @@
 import React from 'react';
 import { View, ViewProps, StyleSheet } from 'react-native';
-import { koolaColors } from './theme';
+import { useTheme } from './ThemeProvider';
 
-export const KoolaDivider: React.FC<ViewProps> = ({ style, ...props }) => (
-  <View {...props} style={[styles.divider, style]} />
-);
+export const KoolaDivider: React.FC<ViewProps> = ({ style, ...props }) => {
+  const { palette } = useTheme();
+  return (
+    <View
+      {...props}
+      style={[styles.divider, { backgroundColor: palette.line }, style]}
+    />
+  );
+};
 
 const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: koolaColors.line,
   },
 });

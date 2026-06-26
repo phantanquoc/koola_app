@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, PressableProps, StyleSheet } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { koolaColors } from './theme';
+import { useTheme } from './ThemeProvider';
+import { type Palette } from './theme';
 
 interface KoolaIconButtonProps extends PressableProps {
   icon: string;
@@ -12,12 +13,33 @@ interface KoolaIconButtonProps extends PressableProps {
   className?: string;
 }
 
-const toneColor = {
-  primary: koolaColors.primary,
-  muted: koolaColors.muted,
-  danger: koolaColors.danger,
-  surface: koolaColors.surface,
-} as const;
+const makeToneColor = (p: Palette) => ({
+  primary: p.primary,
+  muted: p.muted,
+  danger: p.danger,
+  surface: p.surface,
+});
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    base: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    soft: {
+      backgroundColor: p.canvas,
+    },
+    solid: {
+      backgroundColor: p.primary,
+    },
+    pressed: {
+      opacity: 0.78,
+      transform: [{ scale: 0.98 }],
+    },
+    disabled: {
+      opacity: 0.5,
+    },
+  });
 
 export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
   icon,
@@ -35,6 +57,9 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
   ...props
 }) => {
   const [pressed, setPressed] = React.useState(false);
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const toneColor = useMemo(() => makeToneColor(palette), [palette]);
 
   return (
     <Pressable
@@ -70,28 +95,8 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
       <MaterialIcons
         name={icon}
         size={iconSize}
-        color={variant === 'solid' ? koolaColors.surface : toneColor[tone]}
+        color={variant === 'solid' ? palette.surface : toneColor[tone]}
       />
     </Pressable>
   );
 };
-
-const styles = StyleSheet.create({
-  base: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  soft: {
-    backgroundColor: koolaColors.canvas,
-  },
-  solid: {
-    backgroundColor: koolaColors.primary,
-  },
-  pressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.98 }],
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-});
