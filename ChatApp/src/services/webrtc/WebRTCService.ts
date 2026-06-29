@@ -40,6 +40,17 @@ export interface IceServerConfig {
 
 type WebRTCEventCallback = (...args: unknown[]) => void;
 
+/**
+ * Client-side STUN fallback. The backend already prepends public STUN to the
+ * ICE list, but if that payload is ever missing/empty (older server, dropped
+ * field) we still want server-reflexive candidates instead of building the PC
+ * with no ICE servers at all — which strands the call on host candidates only.
+ */
+const FALLBACK_STUN_SERVERS: IceServerConfig[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
 export class WebRTCService {
   private socket: Socket | null = null;
   private peerConnection: RTCPeerConnection | null = null;
@@ -56,6 +67,8 @@ export class WebRTCService {
   private isInitiator: boolean = false;
   private iceRestartCount: number = 0;
   private currentSessionId: string | null = null;
+  // Tracked so audio routing (earpiece vs speaker) matches the call type.
+  private currentCallType: 'audio' | 'video' = 'audio';
 
   // ICE candidates can arrive before the remote SDP is applied. addIceCandidate
   // throws if called before setRemoteDescription, so we buffer early candidates
@@ -165,7 +178,7 @@ export class WebRTCService {
       // stop ringback first so the audio session is free when start() is
       // called inside setVoiceMode.
       callAudioService.stopRingback();
-      callAudioService.setVoiceMode();
+      callAudioService.setVoiceMode(this.currentCallType);
       // The offer is created HERE, not at CallScreen mount. Creating it earlier
       // (while the callee is still ringing) means the callee has no peer
       // connection yet, so the offer is dropped and both sides deadlock. By the
@@ -219,6 +232,7 @@ export class WebRTCService {
 
   initiateCall(targetUserId: string, conversationId: string, callType: 'audio' | 'video'): void {
     this.isInitiator = true;
+    this.currentCallType = callType;
     this.transition('initiating');
     this.socket?.emit('call_initiate', { targetUserId, conversationId, callType });
     // Start ringback so the caller hears feedback while the callee rings.
@@ -226,13 +240,14 @@ export class WebRTCService {
     callAudioService.startRingback();
   }
 
-  acceptCall(sessionId: string): void {
+  acceptCall(sessionId: string, callType: 'audio' | 'video' = 'audio'): void {
     this.isInitiator = false;
     this.currentSessionId = sessionId;
+    this.currentCallType = callType;
     // The callee never receives `call_accepted` (the server emits that only to
     // the initiator), so route audio to the in-call session here. Without this
     // the callee's audio mode is never set → wrong routing / one-way audio.
-    callAudioService.setVoiceMode();
+    callAudioService.setVoiceMode(callType);
     this.socket?.emit('call_accept', { sessionId });
   }
 
@@ -279,7 +294,18 @@ export class WebRTCService {
 
     const constraints = {
       audio: true,
-      video: callType === 'video' ? { facingMode: 'user', width: 640, height: 480 } : false,
+      video:
+        callType === 'video'
+          ? {
+              facingMode: 'user',
+              // `ideal` lets the device negotiate down on weak links instead of
+              // failing outright; frameRate cap keeps motion smooth without
+              // burning uplink on a high static resolution.
+              width: { ideal: 640, max: 1280 },
+              height: { ideal: 480, max: 720 },
+              frameRate: { ideal: 24, max: 30 },
+            }
+          : false,
     };
 
     this.localStream = await mediaDevices.getUserMedia(constraints) as MediaStream;
@@ -290,10 +316,62 @@ export class WebRTCService {
     return this.remoteStream;
   }
 
+  /**
+   * Phase 2: cap outbound bitrate and bias the encoder toward smooth motion.
+   * Without a maxBitrate the encoder can spike on a good first RTT estimate and
+   * then stall when the uplink can't sustain it — visible as freeze/recover
+   * churn. Values are conservative for mobile uplinks; the congestion
+   * controller still scales DOWN freely below these caps.
+   */
+  private applyEncodingParams(): void {
+    if (!this.peerConnection) return;
+    try {
+      const senders = (
+        this.peerConnection as unknown as {
+          getSenders?: () => Array<{
+            track?: { kind?: string } | null;
+            getParameters?: () => { encodings?: unknown[] };
+            setParameters?: (p: unknown) => Promise<void>;
+          }>;
+        }
+      ).getSenders?.();
+      if (!senders) return;
+      for (const sender of senders) {
+        const kind = sender.track?.kind;
+        if (!kind || !sender.getParameters || !sender.setParameters) continue;
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}];
+        }
+        const enc = params.encodings[0] as {
+          maxBitrate?: number;
+          maxFramerate?: number;
+        };
+        if (kind === 'video') {
+          enc.maxBitrate = 1_000_000; // ~1 Mbps
+          enc.maxFramerate = 30;
+          (params as { degradationPreference?: string }).degradationPreference =
+            'maintain-framerate';
+        } else if (kind === 'audio') {
+          enc.maxBitrate = 32_000; // 32 kbps — plenty for Opus voice
+        }
+        void sender.setParameters(params).catch((err) => {
+          console.warn('[WebRTC] setParameters failed:', err);
+        });
+      }
+    } catch (err) {
+      console.warn('[WebRTC] applyEncodingParams failed:', err);
+    }
+  }
+
   // ─── Peer Connection ────────────────────────────────────────────────────────
 
   async createPeerConnection(sessionId: string, iceServers: IceServerConfig[]): Promise<RTCPeerConnection> {
-    this.iceServers = iceServers;
+    // Guard against an empty/missing ICE list — build with public STUN rather
+    // than no servers at all (host-candidate-only = dead call across any NAT).
+    const effectiveIceServers =
+      iceServers && iceServers.length > 0 ? iceServers : FALLBACK_STUN_SERVERS;
+    this.iceServers = effectiveIceServers;
     // Fresh negotiation — reset the remote-description gate. Do NOT clear
     // pendingIceCandidates here: on the callee, ICE candidates routinely arrive
     // (and are buffered) BEFORE this PC finishes building, and wiping them would
@@ -304,11 +382,17 @@ export class WebRTCService {
     this.remoteDescriptionSet = false;
 
     const config = {
-      iceServers: iceServers.map((s) => ({
+      iceServers: effectiveIceServers.map((s) => ({
         urls: s.urls,
         username: s.username,
         credential: s.credential,
       })),
+      // Latency/setup tuning (Phase 2). max-bundle + rtcp-mux collapse all media
+      // onto a single transport → fewer ICE checks, faster connect. Pre-gather
+      // one candidate so the offer carries an ICE candidate immediately.
+      iceCandidatePoolSize: 1,
+      bundlePolicy: 'max-bundle' as const,
+      rtcpMuxPolicy: 'require' as const,
     };
 
     this.peerConnection = new RTCPeerConnection(config);
@@ -318,6 +402,8 @@ export class WebRTCService {
       this.localStream.getTracks().forEach((track) => {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
+      // Apply bitrate caps + degradation preference once senders exist.
+      this.applyEncodingParams();
     }
 
     // ICE candidates
@@ -545,6 +631,7 @@ export class WebRTCService {
     this.isInitiator = false;
     this.iceRestartCount = 0;
     this.currentSessionId = null;
+    this.currentCallType = 'audio';
     this.remoteDescriptionSet = false;
     this.pendingIceCandidates = [];
     this.offerPending = false;

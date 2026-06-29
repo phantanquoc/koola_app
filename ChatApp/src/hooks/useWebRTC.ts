@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import { webrtcService, CallState, IceServerConfig } from '../services/webrtc/WebRTCService';
 import { MediaStream } from 'react-native-webrtc';
 
@@ -39,6 +40,23 @@ export function useWebRTC(params: UseWebRTCParams) {
         setCallState('ringing');
       } catch (err) {
         console.error('[useWebRTC] Setup error:', err);
+        // Permission denial is the common, user-actionable failure — surface it
+        // explicitly instead of silently ending the call. getLocalStream throws
+        // `Permission denied: <perm>`; getUserMedia rejects with a name/message
+        // mentioning permission/NotAllowed on both platforms.
+        const msg = err instanceof Error ? err.message : String(err);
+        const isPermission =
+          /permission|notallowed|denied/i.test(msg);
+        if (isPermission) {
+          Alert.alert(
+            'Cần quyền truy cập',
+            callType === 'video'
+              ? 'Hãy cấp quyền micro và camera để thực hiện cuộc gọi video.'
+              : 'Hãy cấp quyền micro để thực hiện cuộc gọi.',
+          );
+        }
+        // End the session on the server too so the peer isn't left ringing.
+        webrtcService.endCall(sessionId);
         setCallState('ended');
       }
     };

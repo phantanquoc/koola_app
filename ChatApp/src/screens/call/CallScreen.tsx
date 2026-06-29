@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -18,7 +18,12 @@ const CallScreen: React.FC = () => {
   const route = useRoute<CallScreenRouteProp>();
   const { sessionId, callType, isInitiator, iceServers, remoteUser } = route.params;
 
-  // Task 9.5: Speaker toggle state
+  // Stabilize the ICE list reference — useWebRTC's setup effect depends on it,
+  // and an inline `?? []` would create a new array each render → effect churn
+  // (tear down + rebuild the peer connection mid-call).
+  const stableIceServers = useMemo(() => iceServers ?? [], [iceServers]);
+
+  // Task 9.1: Speaker toggle state
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
 
   const handleCallEnded = useCallback(() => {
@@ -43,7 +48,7 @@ const CallScreen: React.FC = () => {
     sessionId,
     callType,
     isInitiator,
-    iceServers: iceServers ?? [],
+    iceServers: stableIceServers,
     onCallEnded: handleCallEnded,
   });
 

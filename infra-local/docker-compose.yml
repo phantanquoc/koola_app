@@ -82,14 +82,38 @@ services:
     image: coturn/coturn:4
     container_name: chat-coturn
     restart: unless-stopped
+    volumes:
+      - ./storage/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    # ── Networking ───────────────────────────────────────────────────────────
+    # Option A (Linux / macOS / WSL2) — host networking is simplest and avoids
+    # NAT'ing the relay ports. Comment out the `ports:` block below if you use
+    # this. On Windows Docker Desktop WITHOUT WSL2, host networking does NOT
+    # work — use Option B and run calls from WSL2 or a Linux/VPS host.
+    # network_mode: host
+    #
+    # Option B (bridge networking, Windows-friendly) — publish the signalling
+    # port AND the relay range declared in turnserver.conf (min-port/max-port).
+    # Publishing the relay range is what lets media actually flow; without it
+    # TURN allocations succeed but the relayed stream is dropped.
     ports:
       - "3478:3478/udp"
       - "3478:3478/tcp"
-    volumes:
-      - ./storage/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    network_mode: host
-    # NOTE: network_mode: host requires Linux/macOS or WSL2.
-    # On Windows without WSL2, coturn will not work locally.
+      - "49160-49200:49160-49200/udp"
+    # Coturn does NOT read env vars on its own, but CLI flags OVERRIDE the conf
+    # file. We drive the three peer-dependent values from the SAME env vars the
+    # backend uses, so there is one source of truth and no manual conf editing:
+    #   - external-ip / realm  ← COTURN_IP  (host LAN IP in dev, public IP in prod)
+    #   - static-auth-secret   ← TURN_STATIC_SECRET (must match the backend)
+    # Defaults below keep `docker compose up` working out-of-the-box for same-LAN
+    # dev. For cross-NAT/prod, set COTURN_IP + TURN_STATIC_SECRET in your shell
+    # or infra-local/.env. The literal values in turnserver.conf are only used if
+    # you run coturn standalone without these flags.
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --external-ip=${COTURN_IP:-127.0.0.1}
+      - --realm=${COTURN_IP:-127.0.0.1}
+      - --static-auth-secret=${TURN_STATIC_SECRET:-koola-turn-secret-dev-2024}
 
   # ── Backend (production build) ───────────────────────────────────────────────
   backend:
@@ -119,9 +143,11 @@ services:
       MINIO_ROOT_USER: chatadmin
       MINIO_ROOT_PASSWORD: changeme123
       MINIO_BUCKET: chat-media
-      COTURN_IP: 10.0.2.2
+      # See backend-dev note: use a peer-reachable host (LAN/public IP), NOT
+      # 10.0.2.2. Defaults to localhost; override via shell/.env for real calls.
+      COTURN_IP: ${COTURN_IP:-localhost}
       COTURN_PORT: "3478"
-      TURN_STATIC_SECRET: koola-turn-secret-dev-2024
+      TURN_STATIC_SECRET: ${TURN_STATIC_SECRET:-koola-turn-secret-dev-2024}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -156,9 +182,13 @@ services:
       MINIO_ROOT_USER: chatadmin
       MINIO_ROOT_PASSWORD: changeme123
       MINIO_BUCKET: chat-media
-      COTURN_IP: localhost
+      # COTURN_IP must be an address BOTH call peers can reach (host LAN IP in
+      # dev, public IP in prod). Do NOT use 10.0.2.2 here — that alias only
+      # resolves on the Android emulator and breaks calls on real devices.
+      COTURN_IP: ${COTURN_IP:-localhost}
       COTURN_PORT: "3478"
-      TURN_STATIC_SECRET: your-turn-secret-here
+      # Single source of truth — must equal the secret coturn loads.
+      TURN_STATIC_SECRET: ${TURN_STATIC_SECRET:-koola-turn-secret-dev-2024}
     depends_on:
       mongodb:
         condition: service_healthy

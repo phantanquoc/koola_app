@@ -51,10 +51,12 @@ class CallAudioService {
     }
   }
 
-  // Task 5.5: Route audio to earpiece (active call mode)
-  setVoiceMode(): void {
+  // Task 5.5: Route audio for an active call. For video calls we ask
+  // InCallManager for the 'video' profile so it defaults to speakerphone
+  // (you hold the phone away from your ear); audio calls use the earpiece.
+  setVoiceMode(callType: 'audio' | 'video' = 'audio'): void {
     try {
-      InCallManager.start({ media: 'audio' });
+      InCallManager.start({ media: callType === 'video' ? 'video' : 'audio' });
     } catch (err) {
       console.warn('[CallAudio] setVoiceMode failed:', err);
     }

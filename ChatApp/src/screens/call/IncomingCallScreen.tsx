@@ -63,7 +63,7 @@ const IncomingCallScreen: React.FC = () => {
   // Task 8.5: Accept handler
   const handleAccept = useCallback(() => {
     callAudioService.stop();
-    webrtcService.acceptCall(sessionId);
+    webrtcService.acceptCall(sessionId, callType);
     navigation.replace('CallModal', {
       sessionId,
       callType,
