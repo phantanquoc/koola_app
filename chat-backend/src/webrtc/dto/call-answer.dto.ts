@@ -1,11 +1,13 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject } from 'class-validator';
 
 export class CallAnswerDto {
   @IsString()
   @IsNotEmpty()
   sessionId!: string;
 
-  @IsString()
+  // RTCSessionDescription object { type, sdp } — relayed verbatim. See
+  // CallOfferDto for why this is @IsObject() and not @IsString().
+  @IsObject()
   @IsNotEmpty()
-  sdp!: string;
+  sdp!: { type: string; sdp: string };
 }

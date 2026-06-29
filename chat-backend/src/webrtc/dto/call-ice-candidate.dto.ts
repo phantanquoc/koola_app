@@ -1,11 +1,13 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject } from 'class-validator';
 
 export class CallIceCandidateDto {
   @IsString()
   @IsNotEmpty()
   sessionId!: string;
 
-  @IsString()
+  // RTCIceCandidate object { candidate, sdpMid, sdpMLineIndex } emitted by the
+  // client — relayed verbatim. See CallOfferDto for why this is @IsObject().
+  @IsObject()
   @IsNotEmpty()
-  candidate!: string;
+  candidate!: Record<string, unknown>;
 }

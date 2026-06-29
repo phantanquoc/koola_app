@@ -348,7 +348,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
 
       const callerSocket = makeAuthSocket(CALLER_ID);
       await gateway.handleCallOffer(
-        { sessionId: SESSION_ID, sdp: 'sdp-offer' },
+        { sessionId: SESSION_ID, sdp: { type: 'offer', sdp: 'sdp-offer' } },
         callerSocket as unknown as Parameters<
           typeof gateway.handleCallOffer
         >[1],
@@ -358,7 +358,10 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       expect(mockIo.to).toHaveBeenCalledWith(`user:${CALLEE_ID}`);
       expect(mockToEmit).toHaveBeenCalledWith(
         'call_offer',
-        expect.objectContaining({ sessionId: SESSION_ID, sdp: 'sdp-offer' }),
+        expect.objectContaining({
+          sessionId: SESSION_ID,
+          sdp: { type: 'offer', sdp: 'sdp-offer' },
+        }),
       );
     });
 
@@ -383,7 +386,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       callSession.mock.updateSessionState.mockClear();
 
       await gateway.handleCallAnswer(
-        { sessionId: SESSION_ID, sdp: 'sdp-answer' },
+        { sessionId: SESSION_ID, sdp: { type: 'answer', sdp: 'sdp-answer' } },
         calleeSocket as unknown as Parameters<
           typeof gateway.handleCallAnswer
         >[1],
@@ -393,7 +396,10 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       expect(mockIo.to).toHaveBeenCalledWith(`user:${CALLER_ID}`);
       expect(mockToEmit).toHaveBeenCalledWith(
         'call_answer',
-        expect.objectContaining({ sessionId: SESSION_ID, sdp: 'sdp-answer' }),
+        expect.objectContaining({
+          sessionId: SESSION_ID,
+          sdp: { type: 'answer', sdp: 'sdp-answer' },
+        }),
       );
 
       // handleCallAnswer does NOT call updateSessionState again when state is already 'active'
@@ -531,7 +537,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
 
       const calleeSocket = makeAuthSocket(CALLEE_ID);
       await gateway.handleCallAnswer(
-        { sessionId: SESSION_ID, sdp: 'sdp-answer' },
+        { sessionId: SESSION_ID, sdp: { type: 'answer', sdp: 'sdp-answer' } },
         calleeSocket as unknown as Parameters<
           typeof gateway.handleCallAnswer
         >[1],
@@ -558,7 +564,7 @@ describe('WebrtcGateway — 1-1 call relay sequence', () => {
       mockIo.to.mockClear();
 
       await gateway.handleCallAnswer(
-        { sessionId: SESSION_ID, sdp: 'sdp-answer' },
+        { sessionId: SESSION_ID, sdp: { type: 'answer', sdp: 'sdp-answer' } },
         calleeSocket as unknown as Parameters<
           typeof gateway.handleCallAnswer
         >[1],
