@@ -123,18 +123,38 @@ export class CallSessionService {
 
   async updateSessionState(sessionId: string, state: CallState): Promise<void> {
     const key = `call:${sessionId}`;
+
+    // Terminal states no longer belong in the "waiting" structures.
+    // 'declined' | 'missed' | 'ended' are the terminal CallState values;
+    // 'active' means the call connected so it's no longer a pending invite.
+    // (Cancel/failed paths transition via endSession, which already prunes the
+    // active_calls index, so they don't reach here.)
+    const isTerminal =
+      state === 'declined' || state === 'missed' || state === 'ended';
+
+    // Fetch BEFORE mutating so we still have initiatorId/targetUserId for the
+    // active_calls index removal below.
+    const session = isTerminal ? await this.getSession(sessionId) : null;
+
     await this.redis.getClient().hset(key, 'state', state);
 
-    if (
-      state === 'active' ||
-      state === 'declined' ||
-      state === 'missed' ||
-      state === 'ended'
-    ) {
+    if (state === 'active' || isTerminal) {
       await Promise.all([
         this.redis.getClient().del(`call_timeout:${sessionId}`),
         this.redis.getClient().zrem(INITIATED_SESSIONS_KEY, sessionId),
       ]);
+    }
+
+    // Terminal states must also leave the active_calls index, otherwise the
+    // entry lingers until SESSION_TTL and falsely marks the user "busy" for
+    // every subsequent call (the phantom-busy bug). decline/missed transition
+    // via updateSessionState directly (no endSession), so cover them here.
+    if (isTerminal && session?.initiatorId && session?.targetUserId) {
+      await this.removeActiveCallIndex(
+        session.initiatorId,
+        session.targetUserId,
+        sessionId,
+      );
     }
 
     this.logger.log(`[CallSession] Session ${sessionId} → ${state}`);
@@ -221,10 +241,47 @@ export class CallSessionService {
   }
 
   /**
-   * Returns all sessionIds from the active_calls index for a given user.
+   * Returns sessionIds from the active_calls index for a user, filtered to
+   * those that are GENUINELY still live (state 'initiated' or 'active').
+   *
+   * The index can accumulate ghost entries: a session that reached a terminal
+   * state (declined/missed/ended/cancelled/failed) but whose handler updated
+   * state without removing the index, or whose `call:<id>` hash already expired
+   * via TTL. A ghost entry would otherwise make the busy-check (6.5/6.14) reject
+   * every new call to that user for up to SESSION_TTL — the "phantom busy" bug.
+   *
+   * So we read each candidate's session and drop (srem) any that no longer
+   * exists or is not active, self-healing the index as a side effect.
    */
   async getActiveSessionIds(userId: string): Promise<string[]> {
-    return this.redis.getClient().smembers(`active_calls:${userId}`);
+    const key = `active_calls:${userId}`;
+    const candidates = await this.redis.getClient().smembers(key);
+    if (candidates.length === 0) return candidates;
+
+    const live: string[] = [];
+    const dead: string[] = [];
+    for (const sessionId of candidates) {
+      const session = await this.getSession(sessionId);
+      if (
+        session &&
+        (session.state === 'initiated' || session.state === 'active')
+      ) {
+        live.push(sessionId);
+      } else {
+        dead.push(sessionId);
+      }
+    }
+
+    if (dead.length > 0) {
+      await this.redis.getClient().srem(key, ...dead);
+      this.logger.log(
+        `[CallSession] Pruned ${dead.length} stale active_calls entr${
+          dead.length === 1 ? 'y' : 'ies'
+        } for user ${userId}`,
+      );
+    }
+
+    return live;
   }
 
   /**
