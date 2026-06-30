@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 import { webrtcService, CallState, IceServerConfig } from '../services/webrtc/WebRTCService';
+import { callAudioService } from '../services/audio/callAudioService';
 import { MediaStream } from 'react-native-webrtc';
 
 interface UseWebRTCParams {
@@ -25,6 +26,14 @@ export function useWebRTC(params: UseWebRTCParams) {
   useEffect(() => {
     const setupCall = async () => {
       try {
+        // Video calls must keep the screen awake — the user holds the phone away
+        // from their ear and isn't touching it, so the OS would otherwise dim and
+        // lock the display mid-call (audio calls are fine asleep). Set this before
+        // acquiring media so the screen stays on through the whole connect flow.
+        if (callType === 'video') {
+          callAudioService.setKeepScreenOn(true);
+        }
+
         // Get local media
         const stream = await webrtcService.getLocalStream(callType);
         setLocalStream(stream);
@@ -64,6 +73,10 @@ export function useWebRTC(params: UseWebRTCParams) {
     setupCall();
 
     return () => {
+      // Release the screen-on lock taken for video calls. Safe (no-op) for audio.
+      if (callType === 'video') {
+        callAudioService.setKeepScreenOn(false);
+      }
       webrtcService.cleanup();
       if (timerRef.current) clearInterval(timerRef.current);
     };

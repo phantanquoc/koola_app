@@ -89,6 +89,7 @@ const CallScreen: React.FC = () => {
           streamURL={remoteStream.toURL()}
           style={styles.remoteVideo}
           objectFit="cover"
+          zOrder={0}
         />
       )}
 
@@ -100,6 +101,12 @@ const CallScreen: React.FC = () => {
             style={styles.localVideo}
             objectFit="cover"
             mirror
+            // Android renders RTCView as a SurfaceView. Two overlapping
+            // SurfaceViews at the same z-order let the full-screen remote video
+            // (drawn after) cover the small local preview — so the local box
+            // showed nothing. zOrderMediaOverlay (zOrder=1) lifts this surface
+            // above the remote one so the self-preview is actually visible.
+            zOrder={1}
           />
         </View>
       )}

@@ -273,7 +273,19 @@ export class WebRTCService {
   // ─── Media ──────────────────────────────────────────────────────────────────
 
   async getLocalStream(callType: 'audio' | 'video'): Promise<MediaStream> {
-    if (this.localStream) return this.localStream;
+    // Reuse a cached stream only if it actually satisfies this call type. A
+    // leftover audio-only stream (e.g. from a prior audio call that wasn't fully
+    // cleaned up) has no video track, so returning it for a video call would
+    // silently produce a one-way/black video with no error. Re-acquire in that
+    // case; stop the stale stream first so the mic isn't held twice.
+    if (this.localStream) {
+      const hasVideo = this.localStream.getVideoTracks().length > 0;
+      if (callType !== 'video' || hasVideo) {
+        return this.localStream;
+      }
+      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream = null;
+    }
 
     // Android 6+ requires runtime permission for mic/camera. Request only
     // what's needed for the call type — audio call should not prompt for
