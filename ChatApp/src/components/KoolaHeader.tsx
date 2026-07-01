@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { KoolaIconButton, KoolaText, koolaColors } from '../ui';
+import { KoolaIconButton, KoolaLogo, KoolaText, koolaColors } from '../ui';
 
 interface KoolaHeaderProps {
   searchPlaceholder?: string;
@@ -9,16 +9,6 @@ interface KoolaHeaderProps {
   onQrPress?: () => void;
   onAddPress?: () => void;
 }
-
-const Logo: React.FC = () => (
-  <KoolaText variant="heading" weight="800" style={styles.logo}>
-    <KoolaText variant="heading" weight="800" style={styles.logoBlue}>K</KoolaText>
-    <KoolaText variant="heading" weight="800" style={styles.logoGreen}>O</KoolaText>
-    <KoolaText variant="heading" weight="800" style={styles.logoWarm}>O</KoolaText>
-    <KoolaText variant="heading" weight="800" style={styles.logoBlue}>L</KoolaText>
-    <KoolaText variant="heading" weight="800" style={styles.logoGreen}>A</KoolaText>
-  </KoolaText>
-);
 
 const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   searchPlaceholder = 'Tìm kiếm...',
@@ -31,7 +21,7 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.logoRow}>
-        <Logo />
+        <KoolaLogo showMark={false} />
       </View>
       <View style={styles.actionsRow}>
         <Pressable
@@ -83,7 +73,7 @@ const styles = StyleSheet.create({
     borderBottomColor: koolaColors.line,
   },
   logoRow: {
-    minHeight: 26,
+    minHeight: 28,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -92,19 +82,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  logo: {
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-  logoBlue: {
-    color: koolaColors.primary,
-  },
-  logoGreen: {
-    color: koolaColors.accent,
-  },
-  logoWarm: {
-    color: koolaColors.warm,
   },
   searchBar: {
     flex: 1,

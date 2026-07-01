@@ -10,6 +10,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
   KoolaIconButton,
+  KoolaLogo,
   KoolaText,
   koolaColors,
   koolaShadows,
@@ -25,14 +26,7 @@ import {
 
 const ServicesHeader: React.FC = () => (
   <View style={styles.header}>
-    <View style={styles.titleBlock}>
-      <KoolaText variant="heading" weight="800">
-        Dịch vụ
-      </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
-        Đặt nhanh các nhu cầu hằng ngày
-      </KoolaText>
-    </View>
+    <KoolaLogo showMark={false} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm dịch vụ"
@@ -293,8 +287,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
   },
-  titleBlock: {
-    minWidth: 72,
+  logoWrap: {
+    marginRight: 2,
   },
   searchBox: {
     flex: 1,

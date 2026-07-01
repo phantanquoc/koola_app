@@ -107,6 +107,11 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Soft background + matching text color
 - Caption variant, weight 700
 
+### Brand Logo (KoolaLogo / KoolaMark)
+- Brand mark is a flat geometric tri-arc ring (red/blue/green), drawn as SVG `<Path>` arcs — never raster, never gradient/shadow. Round caps, stroke scales with size; crisp from 24px (app-icon/favicon ready).
+- Per-letter wordmark mapping is fixed: K=brandRed, OOL=brandBlue, A=brandGreen — reference `palette.brand*`, never the semantic primary/accent/danger tokens.
+- Always render via the `KoolaLogo`/`KoolaMark` primitive — do not rebuild the wordmark inline in screens. Source vector lives at `assets/brand/koola-mark.svg`.
+
 ### Skeleton Loading (KoolaSkeleton)
 - Match the layout of the real content exactly — prevent layout shift
 - Use skeleton color token (`#EEF2F7`)

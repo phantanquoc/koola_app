@@ -3,6 +3,7 @@ export * from './KoolaButton';
 export * from './KoolaChip';
 export * from './KoolaDivider';
 export * from './KoolaIconButton';
+export * from './KoolaLogo';
 export * from './KoolaSkeleton';
 export * from './KoolaState';
 export * from './KoolaSurface';

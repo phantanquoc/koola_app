@@ -10,6 +10,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
   KoolaIconButton,
+  KoolaLogo,
   KoolaText,
   koolaColors,
   koolaShadows,
@@ -25,13 +26,7 @@ import {
 
 const ShoppingHeader: React.FC<{ cartCount: number }> = ({ cartCount }) => (
   <View style={styles.header}>
-    <View style={styles.logoWrap}>
-      <KoolaText variant="heading" weight="800" style={styles.logoBlue}>K</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoGreen}>O</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoWarm}>O</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoBlue}>L</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoGreen}>A</KoolaText>
-    </View>
+    <KoolaLogo showMark={false} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm sản phẩm, cửa hàng"
@@ -355,21 +350,7 @@ const styles = StyleSheet.create({
     borderBottomColor: koolaColors.line,
   },
   logoWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginRight: 2,
-  },
-  logoBlue: {
-    color: koolaColors.primary,
-    letterSpacing: 1.2,
-  },
-  logoGreen: {
-    color: koolaColors.accent,
-    letterSpacing: 1.2,
-  },
-  logoWarm: {
-    color: koolaColors.warm,
-    letterSpacing: 1.2,
   },
   searchBox: {
     flex: 1,
