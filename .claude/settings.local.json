@@ -79,7 +79,11 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "mcp__codebase-retrieval__codebase-retrieval",
+      "Bash(node -e ' *)",
+      "Bash(npx jest *)",
+      "Bash(echo \"---LINT-EXIT-$?---\")"
     ]
   }
 }
