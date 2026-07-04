@@ -2,12 +2,15 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaIconButton, KoolaLogo, KoolaText, koolaColors } from '../ui';
+import type { KoolaLogoAnimation } from '../ui';
 
 interface KoolaHeaderProps {
   searchPlaceholder?: string;
   onSearchPress?: () => void;
   onQrPress?: () => void;
   onAddPress?: () => void;
+  logoAnimation?: KoolaLogoAnimation;
+  logoReplayKey?: number;
 }
 
 const KoolaHeader: React.FC<KoolaHeaderProps> = ({
@@ -15,13 +18,15 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   onSearchPress,
   onQrPress,
   onAddPress,
+  logoAnimation = 'none',
+  logoReplayKey = 0,
 }) => {
   const [searchPressed, setSearchPressed] = React.useState(false);
 
   return (
     <View style={styles.container}>
       <View style={styles.logoRow}>
-        <KoolaLogo showMark={false} />
+        <KoolaLogo key={logoReplayKey} showMark={false} variant="extruded" font="sora" wordmarkSize={24} animation={logoAnimation} />
       </View>
       <View style={styles.actionsRow}>
         <Pressable

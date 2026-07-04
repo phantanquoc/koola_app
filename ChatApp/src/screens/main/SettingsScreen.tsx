@@ -171,6 +171,18 @@ const SettingsScreen: React.FC = () => {
         onPress={logout}
         style={styles.logoutButton}
       />
+
+      {/* __DEV__ only — Logo Lab playground for 3D variant experiments */}
+      {__DEV__ && (
+        <KoolaSurface variant="raised" style={styles.section}>
+          <SettingsRow
+            icon="science"
+            label="[DEV] Logo Lab"
+            onPress={() => (navigation as any).navigate('ChatTab', { screen: 'LogoLab' })}
+            palette={palette}
+          />
+        </KoolaSurface>
+      )}
     </ScrollView>
   );
 };

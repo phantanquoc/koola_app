@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet, InteractionManager } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
@@ -227,8 +227,18 @@ const tabBarStyles = StyleSheet.create({
 // ─── Screen ──────────────────────────────────────────────────────────────────
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
+  const isFocused = useIsFocused();
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
+  const [logoReplayKey, setLogoReplayKey] = useState(0);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      setLogoReplayKey((k) => k + 1);
+    });
+    return () => task.cancel();
+  }, [isFocused]);
 
   const handleQrPress = useCallback(() => setQrVisible(true), []);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
@@ -245,7 +255,7 @@ const ChatHomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} />
+      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} />
       <TopTab.Navigator
         tabBar={(props) => <CustomTabBar {...props} />}
         screenOptions={{

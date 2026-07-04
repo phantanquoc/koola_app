@@ -83,7 +83,19 @@
       "mcp__codebase-retrieval__codebase-retrieval",
       "Bash(node -e ' *)",
       "Bash(npx jest *)",
-      "Bash(echo \"---LINT-EXIT-$?---\")"
+      "Bash(echo \"---LINT-EXIT-$?---\")",
+      "Bash(adb -s emulator-5554 reverse tcp:8081 tcp:8081)",
+      "Bash(adb -s emulator-5554 reverse --list)",
+      "Bash(curl -s -m 3 http://localhost:8081/status)",
+      "Bash(MSYS_NO_PATHCONV=1 adb -s emulator-5554 shell \"run-as com.chatapp cat /data/data/com.chatapp/shared_prefs/com.chatapp_preferences.xml\")",
+      "Bash(MSYS_NO_PATHCONV=1 adb -s emulator-5554 shell pm list packages)",
+      "Bash(adb -s emulator-5554 shell input keyevent 82)",
+      "Bash(adb -s emulator-5554 shell dumpsys activity activities)",
+      "Bash(adb -s emulator-5554 shell pidof com.chatapp)",
+      "Bash(adb -s emulator-5554 logcat -d -t 120)",
+      "Bash(adb -s emulator-5554 logcat -d -t 300)",
+      "Bash(adb -s emulator-5554 logcat -d)",
+      "Bash(adb -s emulator-5554 logcat -d -t 400)"
     ]
   }
 }
