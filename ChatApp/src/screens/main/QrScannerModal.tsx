@@ -14,6 +14,7 @@ import type { AppStateStatus } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
 import QRCode from 'react-native-qrcode-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { usersApi, conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
@@ -264,6 +265,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
   onNavigateChat,
 }) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'myqr'>('scan');
+  const insets = useSafeAreaInsets();
   const suppressTabDock = useTabDockSuppression();
 
   // Suppress the floating tab dock while visible (same pattern as GroupCreateModal).
@@ -289,10 +291,11 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
     <View style={styles.overlayHost}>
       <View style={styles.container}>
         <StatusBar backgroundColor="#fff" barStyle="dark-content" />
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header — safe-area top inset (overlay covers status bar, no native Modal) */}
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.headerSide} />
           <Text style={styles.headerTitle}>Mã QR</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={8}>
             <MaterialIcons name="close" size={26} color="#333" />
           </TouchableOpacity>
         </View>
@@ -337,12 +340,12 @@ const styles = StyleSheet.create({
   },
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 16, paddingVertical: 12, paddingTop: (StatusBar.currentHeight || 0) + 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingBottom: 12,
     borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#333' },
-  closeBtn: { position: 'absolute', right: 16, top: (StatusBar.currentHeight || 0) + 10, padding: 4 },
+  headerSide: { width: 34, alignItems: 'center' },
   tabBar: {
     flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
