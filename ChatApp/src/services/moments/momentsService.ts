@@ -101,7 +101,13 @@ class MomentsService {
   // ─── Feed ───────────────────────────────────────────────────────────────────
 
   async refreshFeed(): Promise<void> {
-    this.setState({ isLoading: true, error: null });
+    const isColdLoad = this.state.feedRing.length === 0;
+    if (isColdLoad) {
+      this.setState({ isLoading: true, error: null });
+    } else {
+      // Already have feed → refresh silently (no isLoading churn → no flash)
+      if (this.state.error !== null) this.setState({ error: null });
+    }
     try {
       const response = await storiesApi.getFeed({ limit: 50 });
 

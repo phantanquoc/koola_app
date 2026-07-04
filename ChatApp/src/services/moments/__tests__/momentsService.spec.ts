@@ -222,4 +222,99 @@ describe('momentsService', () => {
       expect(state.error).toBeNull();
     });
   });
+
+  describe('refreshFeed isLoading sequence', () => {
+    const { storiesApi } = jest.requireMock('../momentsApi') as {
+      storiesApi: { getFeed: jest.Mock };
+    };
+
+    beforeEach(() => {
+      momentsService.reset();
+    });
+
+    it('sets isLoading:true on cold load (empty feed)', async () => {
+      storiesApi.getFeed.mockResolvedValueOnce({ items: [], nextCursor: null, total: 0 });
+
+      const listener = jest.fn();
+      momentsService.subscribe(listener);
+
+      await momentsService.refreshFeed();
+
+      // Listener should have received at least one call with isLoading:true
+      const hadLoading = listener.mock.calls.some(
+        ([s]: [{ isLoading: boolean }]) => s.isLoading === true,
+      );
+      expect(hadLoading).toBe(true);
+
+      // Final state should have isLoading:false
+      const finalState = momentsService.getState();
+      expect(finalState.isLoading).toBe(false);
+    });
+
+    it('does NOT set isLoading:true on warm refresh (feed already has data)', async () => {
+      // Seed with feed data first
+      const feedItems = [
+        {
+          authorId: 'author-warm',
+          lastStoryId: 'story-warm',
+          hasUnviewed: true,
+          authorDisplayName: 'Warm Author',
+          authorAvatar: 'avatar.jpg',
+          stories: [],
+        },
+      ];
+      storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
+      await momentsService.refreshFeed();
+
+      // Verify feed is now populated
+      expect(momentsService.getState().feedRing.length).toBeGreaterThan(0);
+
+      // Now do a second refresh — listener should NOT see isLoading:true
+      storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
+      const listener2 = jest.fn();
+      momentsService.subscribe(listener2);
+
+      await momentsService.refreshFeed();
+
+      // No call should have isLoading:true (silent refresh — anti-flash)
+      const hadLoading = listener2.mock.calls.some(
+        ([s]: [{ isLoading: boolean }]) => s.isLoading === true,
+      );
+      expect(hadLoading).toBe(false);
+    });
+
+    it('clears error on warm refresh without setting isLoading', async () => {
+      // Seed feed
+      const feedItems = [
+        {
+          authorId: 'author-err',
+          lastStoryId: 'story-err',
+          hasUnviewed: false,
+          authorDisplayName: 'Error Test',
+          authorAvatar: null,
+          stories: [],
+        },
+      ];
+      storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
+      await momentsService.refreshFeed();
+
+      // Simulate an error state (via a failing refresh)
+      storiesApi.getFeed.mockRejectedValueOnce(new Error('Network down'));
+      await momentsService.refreshFeed();
+      expect(momentsService.getState().error).toBe('Network down');
+
+      // Now a successful warm refresh should clear error without isLoading
+      storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
+      const listener3 = jest.fn();
+      momentsService.subscribe(listener3);
+
+      await momentsService.refreshFeed();
+
+      const hadLoading = listener3.mock.calls.some(
+        ([s]: [{ isLoading: boolean }]) => s.isLoading === true,
+      );
+      expect(hadLoading).toBe(false);
+      expect(momentsService.getState().error).toBeNull();
+    });
+  });
 });
