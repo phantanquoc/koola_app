@@ -466,6 +466,8 @@ const MainNavigator: React.FC = () => {
         tabBar={(props) => <CustomKoolaTabBar {...props} />}
         screenOptions={{
           headerShown: false,
+          lazy: true,
+          freezeOnBlur: true,
           tabBarStyle: {
             position: 'absolute',
             backgroundColor: 'transparent',

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -26,7 +26,7 @@ import {
 
 const ServicesHeader: React.FC = () => (
   <View style={styles.header}>
-    <KoolaLogo showMark={false} style={styles.logoWrap} />
+    <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm dịch vụ"
@@ -109,7 +109,7 @@ const CategoryRail: React.FC<{
   </ScrollView>
 );
 
-const ServiceCard: React.FC<{ item: ServiceItem }> = ({ item }) => (
+const ServiceCard: React.FC<{ item: ServiceItem }> = React.memo(({ item }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={item.title}
@@ -155,7 +155,7 @@ const ServiceCard: React.FC<{ item: ServiceItem }> = ({ item }) => (
       </View>
     </View>
   </Pressable>
-);
+));
 
 const ProviderRow: React.FC<{ provider: ServiceProvider }> = ({ provider }) => (
   <Pressable
@@ -211,6 +211,11 @@ const ServicesHomeScreen: React.FC = () => {
     [activeCategory],
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: ServiceItem }) => <ServiceCard item={item} />,
+    [],
+  );
+
   const renderHeader = () => (
     <View>
       <ServicesHeader />
@@ -259,7 +264,11 @@ const ServicesHomeScreen: React.FC = () => {
       data={filteredServices}
       numColumns={2}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <ServiceCard item={item} />}
+      renderItem={renderItem}
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      windowSize={7}
+      updateCellsBatchingPeriod={50}
       ListHeaderComponent={renderHeader}
       ListFooterComponent={renderFooter}
       columnWrapperStyle={styles.cardRow}

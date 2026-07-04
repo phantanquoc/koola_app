@@ -186,4 +186,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ConversationListItem;
+export default React.memo(ConversationListItem);

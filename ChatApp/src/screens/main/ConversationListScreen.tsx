@@ -48,6 +48,7 @@ const ConversationListScreen: React.FC = () => {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const fetchingRef = useRef(false);
   const pageRef = useRef(1);
+  const lastFetchAtRef = useRef(0);
 
   // ─── SQLite read path (task 5.4) ──────────────────────────────────────────
   // When LOCAL_FIRST_SQLITE is on: read from conversationRepository + subscribe.
@@ -183,7 +184,10 @@ const ConversationListScreen: React.FC = () => {
   // for live updates from socket events.
   useFocusEffect(
     useCallback(() => {
-      fetchConversations(true);
+      if (Date.now() - lastFetchAtRef.current > 5000) {
+        lastFetchAtRef.current = Date.now();
+        fetchConversations(true);
+      }
     }, [fetchConversations]),
   );
 
@@ -253,7 +257,7 @@ const ConversationListScreen: React.FC = () => {
   const handleRefresh = () => fetchConversations(true);
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
 
-  const handleConversationPress = (conv: Conversation) => {
+  const handleConversationPress = useCallback((conv: Conversation) => {
     // Extract other member's displayName + avatar for instant header render
     let displayName: string | undefined;
     let avatar: string | undefined;
@@ -268,7 +272,17 @@ const ConversationListScreen: React.FC = () => {
       avatar = conv.avatar;
     }
     navigation.navigate('Chat', { conversationId: conv._id, displayName, avatar });
-  };
+  }, [navigation, user?._id]);
+
+  const renderConversation = useCallback(
+    ({ item }: { item: Conversation }) => (
+      <ConversationListItem
+        conversation={item}
+        onPress={() => handleConversationPress(item)}
+      />
+    ),
+    [handleConversationPress],
+  );
 
   const handleGroupCreated = (conv: Conversation) => {
     if (localFirstEnabled) {
@@ -325,14 +339,13 @@ const ConversationListScreen: React.FC = () => {
       <FlatList
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
         data={conversations}
         keyExtractor={(item) => item._id}
-        renderItem={({ item }) => (
-          <ConversationListItem
-            conversation={item}
-            onPress={() => handleConversationPress(item)}
-          />
-        )}
+        renderItem={renderConversation}
         contentContainerStyle={{ paddingBottom: tabBarInset }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
