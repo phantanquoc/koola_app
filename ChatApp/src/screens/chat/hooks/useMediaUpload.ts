@@ -186,6 +186,13 @@ export function useMediaUpload({
       setUploadProgress(0);
 
       let compressedUri = pickResult.uri;
+      // Size actually uploaded to MinIO. Starts as the picked (pre-compression)
+      // size and is corrected to the compressed file's real size below. This
+      // MUST match the bytes we PUT: the backend stores it as media.size, and
+      // if it is larger than the real object the download proxy streams with an
+      // inflated Content-Length → the client reports "Download interrupted" and
+      // the video never plays. See project_chat_scroll_perf media analysis.
+      let uploadSize = pickResult.fileSize;
       try {
         const handle = compressVideo(pickResult.uri, (progress) => {
           setUploadProgress(Math.round(progress * 50));
@@ -199,10 +206,30 @@ export function useMediaUpload({
         compressedUri = pickResult.uri;
       }
 
+      // Measure the real byte size of whatever file we are about to upload
+      // (compressed output on success, original on compression failure). Falls
+      // back to the picked size if stat fails for any reason.
+      try {
+        const BlobUtil = require('react-native-blob-util').default;
+        const statPath = compressedUri.startsWith('file://')
+          ? compressedUri.replace('file://', '')
+          : compressedUri;
+        const stat = await BlobUtil.fs.stat(statPath);
+        const realSize = Number(stat?.size);
+        if (Number.isFinite(realSize) && realSize > 0) {
+          uploadSize = realSize;
+        }
+      } catch (statErr) {
+        console.warn(
+          '[useMediaUpload] Could not stat compressed video, using picked size:',
+          statErr,
+        );
+      }
+
       const tempId = createOptimisticMedia(
         compressedUri,
         pickResult.mimeType,
-        pickResult.fileSize,
+        uploadSize,
         'video',
         undefined,
         pickResult.duration,
@@ -212,7 +239,7 @@ export function useMediaUpload({
         compressedUri,
         pickResult.filename,
         pickResult.mimeType,
-        pickResult.fileSize,
+        uploadSize,
         conversationId,
         (percent) => {
           const overall = 50 + Math.round(percent / 2);

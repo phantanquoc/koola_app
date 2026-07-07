@@ -291,7 +291,26 @@ export class MediaService implements OnModuleInit {
     }
 
     const stream = await minioClient.getObject(BUCKET, mediaKey);
-    return { stream, mimeType: media.mimeType, size: media.size };
+    // Content-Length source of truth: the ACTUAL object bytes in MinIO, not
+    // media.size from Mongo. media.size is whatever the client declared at
+    // upload time — for videos the client sends the PRE-compression size while
+    // uploading the smaller compressed file, so media.size is larger than the
+    // real object. Streaming with an inflated Content-Length makes the response
+    // socket close before the promised byte count, which the client's
+    // downloader (react-native-blob-util) reports as "Download interrupted".
+    // statObject returns the true stored size, self-healing both old and new
+    // videos without a Mongo backfill.
+    let size = media.size;
+    try {
+      const stat = await minioClient.statObject(BUCKET, mediaKey);
+      if (stat && typeof stat.size === 'number' && stat.size > 0) {
+        size = stat.size;
+      }
+    } catch {
+      // statObject failed — fall back to the Mongo value rather than blocking
+      // the download entirely. Worst case reverts to prior behaviour.
+    }
+    return { stream, mimeType: media.mimeType, size };
   }
 
   async deleteMedia(userId: string, mediaKey: string): Promise<void> {

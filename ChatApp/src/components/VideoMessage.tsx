@@ -7,7 +7,6 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
-import Video from 'react-native-video';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Blurhash } from 'react-native-blurhash';
 import { getOrDownload, getFromMemory } from '../services/media/mediaCacheService';
@@ -30,12 +29,6 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(() =>
     thumbnailKey ? getFromMemory(thumbnailKey) : null,
   );
-  // Fallback: when no server-side thumbnail or blurhash, resolve the video
-  // itself to a local URI and let react-native-video render a paused first
-  // frame as a lightweight preview.
-  const [previewVideoUri, setPreviewVideoUri] = useState<string | null>(() =>
-    !thumbnailKey && message.mediaKey ? getFromMemory(message.mediaKey) : null,
-  );
 
   useEffect(() => {
     if (!thumbnailKey) return;
@@ -49,24 +42,10 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
     getOrDownload(thumbnailKey).then((uri) => {
       if (!cancelled && uri) setThumbnailUri(uri);
     }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [thumbnailKey]);
-
-  // Resolve the video itself for a paused-frame preview when no thumbnail.
-  useEffect(() => {
-    if (thumbnailKey || !message.mediaKey) return;
-    // Check memory cache synchronously before starting async fetch
-    const cached = getFromMemory(message.mediaKey);
-    if (cached) {
-      setPreviewVideoUri(cached);
-      return;
-    }
-    let cancelled = false;
-    getOrDownload(message.mediaKey).then((uri) => {
-      if (!cancelled && uri) setPreviewVideoUri(uri);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [thumbnailKey, message.mediaKey]);
 
   const formatDuration = (seconds: number): string => {
     if (seconds <= 0) return '';
@@ -81,7 +60,11 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
       onPress={onPress}
       style={styles.container}
     >
-      {/* Background: server thumbnail > blurhash > paused-frame video preview > dark fallback */}
+      {/* Background: server thumbnail > blurhash > dark fallback.
+          No client-side video-frame preview: pulling the full .mp4 just to
+          show a paused frame wasted bandwidth (and the <Video> preview was
+          disabled anyway due to Fabric "child already has a parent"). A real
+          poster frame needs a server-generated thumbnail (backend ffmpeg). */}
       {thumbnailUri ? (
         <Image
           source={{ uri: thumbnailUri }}
@@ -90,22 +73,6 @@ const VideoMessage: React.FC<VideoMessageProps> = ({ message, onPress }) => {
         />
       ) : blurhash ? (
         <Blurhash pointerEvents="none" blurhash={blurhash} style={StyleSheet.absoluteFillObject} />
-      ) : null}
-      {/* DEBUG: paused-frame <Video> preview disabled — caused Fabric
-          "child already has a parent" crash when previewVideoUri resolved
-          async after ChatScreen mount. Falls back to dark container. */}
-      {/* eslint-disable-next-line no-constant-condition, no-constant-binary-expression -- intentionally disabled block, kept for re-enable */}
-      {false && previewVideoUri ? (
-        <Video
-          pointerEvents="none"
-          source={{ uri: previewVideoUri ?? '' }}
-          style={StyleSheet.absoluteFillObject}
-          paused
-          muted
-          resizeMode="cover"
-          repeat={false}
-          disableFocus
-        />
       ) : null}
 
       {/* Play icon */}

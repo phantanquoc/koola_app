@@ -132,7 +132,11 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
       if (!cancelled && mountedRef.current) setError(true);
     });
 
-    return () => { cancelled = true; };
+    // Detach this cell from the download on unmount/key-change. The download
+    // itself keeps running and caches, so scrolling back is an instant hit.
+    return () => {
+      cancelled = true;
+    };
   }, [activeMediaKey, retryCount, knownDims]);
 
   const handleRetry = useCallback(() => {

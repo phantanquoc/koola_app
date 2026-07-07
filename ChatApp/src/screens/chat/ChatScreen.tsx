@@ -15,7 +15,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
-import { getFromMemory } from '../../services/media/mediaCacheService';
+import { getFromMemory, getOrDownload } from '../../services/media/mediaCacheService';
 import type { Conversation, Message, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
@@ -137,7 +137,7 @@ const ChatScreen: React.FC = () => {
   // (only video messages consume isVisible for autoplay — text/image don't need it)
   const prevVisibleVideoIdsRef = useRef<string>('');
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<{ item: IMessage & Record<string, unknown> }> }) => {
+    ({ viewableItems }: { viewableItems: Array<{ item: IMessage & Record<string, unknown>; index: number | null }> }) => {
       // Filter to video messages only — these are the ones that need isVisible for autoplay
       const videoIds = viewableItems
         .filter((v) => v.item.mediaType === 'video' || v.item.video)
@@ -149,6 +149,42 @@ const ChatScreen: React.FC = () => {
         prevVisibleVideoIdsRef.current = videoIds;
         const ids = new Set(viewableItems.map((v) => String(v.item._id)));
         setVisibleMessageIds(ids);
+      }
+
+      // ─── Media prefetch around viewport ──────────────────────────────────
+      // Fire-and-forget: warm cache for images/thumbnails near visible area.
+      // Uses messagesRef (stable ref) to find ±5 neighbors by index.
+      const allMessages = messagesRef.current;
+      if (!allMessages.length || !viewableItems.length) return;
+
+      const indices = viewableItems
+        .map((v) => v.index)
+        .filter((i): i is number => i !== null);
+      if (!indices.length) return;
+
+      const minIdx = Math.max(0, Math.min(...indices) - 5);
+      const maxIdx = Math.min(allMessages.length - 1, Math.max(...indices) + 5);
+
+      for (let i = minIdx; i <= maxIdx; i++) {
+        const msg = allMessages[i] as IMessage & Record<string, unknown>;
+        if (!msg) continue;
+
+        // Image messages
+        const mediaKey = msg.mediaKey as string | undefined;
+        const mediaType = msg.mediaType as string | undefined;
+        if (mediaKey && (mediaType === 'image' || msg.image === 'media-pending')) {
+          if (!getFromMemory(mediaKey)) {
+            getOrDownload(mediaKey).catch(() => {});
+          }
+        }
+
+        // Video thumbnail
+        const thumbKey = msg.mediaThumbnailKey as string | undefined;
+        if (thumbKey && (mediaType === 'video' || msg.video)) {
+          if (!getFromMemory(thumbKey)) {
+            getOrDownload(thumbKey).catch(() => {});
+          }
+        }
       }
     },
   ).current;
