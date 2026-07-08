@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -10,6 +10,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
   KoolaIconButton,
+  KoolaLogo,
   KoolaText,
   koolaColors,
   koolaShadows,
@@ -25,13 +26,7 @@ import {
 
 const ShoppingHeader: React.FC<{ cartCount: number }> = ({ cartCount }) => (
   <View style={styles.header}>
-    <View style={styles.logoWrap}>
-      <KoolaText variant="heading" weight="800" style={styles.logoBlue}>K</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoGreen}>O</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoWarm}>O</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoBlue}>L</KoolaText>
-      <KoolaText variant="heading" weight="800" style={styles.logoGreen}>A</KoolaText>
-    </View>
+    <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm sản phẩm, cửa hàng"
@@ -120,7 +115,7 @@ const ProductCard: React.FC<{
   favorite: boolean;
   onToggleFavorite: (id: string) => void;
   onAdd: () => void;
-}> = ({ item, favorite, onToggleFavorite, onAdd }) => (
+}> = React.memo(({ item, favorite, onToggleFavorite, onAdd }) => (
   <View style={styles.productCard}>
     <View style={[styles.productMedia, { backgroundColor: `${item.accent}16` }]}>
       <MaterialIcons name={item.icon} size={34} color={item.accent} />
@@ -186,7 +181,7 @@ const ProductCard: React.FC<{
       </View>
     </View>
   </View>
-);
+));
 
 const StoreRow: React.FC<{ store: ShoppingStore }> = ({ store }) => (
   <Pressable
@@ -232,14 +227,18 @@ const ShoppingHomeScreen: React.FC = () => {
     [activeCategory],
   );
 
-  const toggleFavorite = (id: string) => {
+  const toggleFavorite = useCallback((id: string) => {
     setFavoriteIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
+
+  const handleAdd = useCallback(() => {
+    setCartCount((count) => count + 1);
+  }, []);
 
   const renderHeader = () => (
     <View>
@@ -312,6 +311,18 @@ const ShoppingHomeScreen: React.FC = () => {
     </View>
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: ShoppingProduct }) => (
+      <ProductCard
+        item={item}
+        favorite={favoriteIds.has(item.id)}
+        onToggleFavorite={toggleFavorite}
+        onAdd={handleAdd}
+      />
+    ),
+    [favoriteIds, toggleFavorite, handleAdd],
+  );
+
   return (
     <FlatList
       // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
@@ -319,14 +330,11 @@ const ShoppingHomeScreen: React.FC = () => {
       data={products}
       numColumns={2}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <ProductCard
-          item={item}
-          favorite={favoriteIds.has(item.id)}
-          onToggleFavorite={toggleFavorite}
-          onAdd={() => setCartCount((count) => count + 1)}
-        />
-      )}
+      renderItem={renderItem}
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      windowSize={7}
+      updateCellsBatchingPeriod={50}
       ListHeaderComponent={renderHeader}
       ListFooterComponent={renderFooter}
       columnWrapperStyle={styles.productRow}
@@ -355,21 +363,7 @@ const styles = StyleSheet.create({
     borderBottomColor: koolaColors.line,
   },
   logoWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginRight: 2,
-  },
-  logoBlue: {
-    color: koolaColors.primary,
-    letterSpacing: 1.2,
-  },
-  logoGreen: {
-    color: koolaColors.accent,
-    letterSpacing: 1.2,
-  },
-  logoWarm: {
-    color: koolaColors.warm,
-    letterSpacing: 1.2,
   },
   searchBox: {
     flex: 1,

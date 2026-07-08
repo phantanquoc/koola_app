@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -10,6 +10,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
   KoolaIconButton,
+  KoolaLogo,
   KoolaText,
   koolaColors,
   koolaShadows,
@@ -25,14 +26,7 @@ import {
 
 const ServicesHeader: React.FC = () => (
   <View style={styles.header}>
-    <View style={styles.titleBlock}>
-      <KoolaText variant="heading" weight="800">
-        Dịch vụ
-      </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
-        Đặt nhanh các nhu cầu hằng ngày
-      </KoolaText>
-    </View>
+    <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm dịch vụ"
@@ -115,7 +109,7 @@ const CategoryRail: React.FC<{
   </ScrollView>
 );
 
-const ServiceCard: React.FC<{ item: ServiceItem }> = ({ item }) => (
+const ServiceCard: React.FC<{ item: ServiceItem }> = React.memo(({ item }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={item.title}
@@ -161,7 +155,7 @@ const ServiceCard: React.FC<{ item: ServiceItem }> = ({ item }) => (
       </View>
     </View>
   </Pressable>
-);
+));
 
 const ProviderRow: React.FC<{ provider: ServiceProvider }> = ({ provider }) => (
   <Pressable
@@ -217,6 +211,11 @@ const ServicesHomeScreen: React.FC = () => {
     [activeCategory],
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: ServiceItem }) => <ServiceCard item={item} />,
+    [],
+  );
+
   const renderHeader = () => (
     <View>
       <ServicesHeader />
@@ -265,7 +264,11 @@ const ServicesHomeScreen: React.FC = () => {
       data={filteredServices}
       numColumns={2}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <ServiceCard item={item} />}
+      renderItem={renderItem}
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      windowSize={7}
+      updateCellsBatchingPeriod={50}
       ListHeaderComponent={renderHeader}
       ListFooterComponent={renderFooter}
       columnWrapperStyle={styles.cardRow}
@@ -293,8 +296,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
   },
-  titleBlock: {
-    minWidth: 72,
+  logoWrap: {
+    marginRight: 2,
   },
   searchBox: {
     flex: 1,

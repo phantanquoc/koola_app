@@ -21,6 +21,9 @@ export type Palette = {
   success: string;
   successSoft: string;
   skeleton: string;
+  brandRed: string;
+  brandBlue: string;
+  brandGreen: string;
 };
 
 // ─── Light palette (unchanged export — back-compat) ──────────────────────────
@@ -46,6 +49,9 @@ export const koolaColors: Palette = {
   success: '#12B76A',
   successSoft: '#DCFCE7',
   skeleton: '#EEF2F7',
+  brandRed: '#E12D24',
+  brandBlue: '#1E50C8',
+  brandGreen: '#1FA64A',
 };
 
 // ─── Dark palette ────────────────────────────────────────────────────────────
@@ -81,6 +87,9 @@ export const koolaDarkColors: Palette = {
   success: '#3DD68C',
   successSoft: '#10362B',
   skeleton: '#252B33',
+  brandRed: '#F04438',
+  brandBlue: '#5B8DEF',
+  brandGreen: '#34D399',
 };
 
 // ─── Theme mode types + resolution ──────────────────────────────────────────

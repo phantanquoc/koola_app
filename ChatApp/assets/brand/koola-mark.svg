@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <!-- KOOLA brand mark — geometric tri-arc ring. Flat, no gradients/shadows.
+       Source of truth for app icon / favicon export. Colors = brand tokens
+       brandRed #E12D24 / brandBlue #1E50C8 / brandGreen #1FA64A. -->
+  <path d="M24 7 A17 17 0 0 1 41 24" stroke="#E12D24" stroke-width="6" stroke-linecap="round"/>
+  <path d="M38.72 32.5 A17 17 0 0 1 15.5 38.72" stroke="#1E50C8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M9.28 32.5 A17 17 0 0 1 15.5 9.28" stroke="#1FA64A" stroke-width="6" stroke-linecap="round"/>
+</svg>

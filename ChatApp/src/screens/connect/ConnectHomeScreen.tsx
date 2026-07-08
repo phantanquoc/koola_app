@@ -400,6 +400,10 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
           data={items}
           keyExtractor={(item) => item._id}
           renderItem={renderItem}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             loading ? null : (
               <EmptyConnect

@@ -1,20 +1,24 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Alert,
+  AppState,
+  BackHandler,
   Linking,
   StatusBar,
 } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
 import QRCode from 'react-native-qrcode-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { usersApi, conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
+import { useTabDockSuppression } from '../../navigation/MainNavigator';
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
@@ -37,7 +41,10 @@ const ScannerTab: React.FC<{
   const device = useCameraDevice('back');
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [appActive, setAppActive] = useState(true);
+  const isProcessingRef = useRef(false);
 
+  // Check camera permission on mount
   useEffect(() => {
     (async () => {
       const status = await Camera.getCameraPermissionStatus();
@@ -52,31 +59,54 @@ const ScannerTab: React.FC<{
     })();
   }, []);
 
+  // Re-check permission + pause camera when app backgrounds/foregrounds
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        setAppActive(true);
+        // Re-check permission in case user granted it in Settings
+        const status = await Camera.getCameraPermissionStatus();
+        setHasPermission(status === 'granted');
+      } else {
+        setAppActive(false);
+      }
+    };
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, []);
+
+  const release = useCallback(() => {
+    isProcessingRef.current = false;
+    setIsProcessing(false);
+  }, []);
+
   const handleScanned = useCallback(
     async (value: string) => {
-      if (isProcessing) return;
+      // Synchronous re-entrancy guard — prevents multiple frames from entering
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
       setIsProcessing(true);
 
       try {
         if (!OBJECT_ID_REGEX.test(value)) {
           Alert.alert('Mã QR không hợp lệ', '', [
-            { text: 'OK', onPress: () => setIsProcessing(false) },
-          ]);
+            { text: 'OK', onPress: release },
+          ], { cancelable: false });
           return;
         }
 
         if (value === currentUserId) {
           Alert.alert('Bạn không thể quét mã của chính mình', '', [
-            { text: 'OK', onPress: () => setIsProcessing(false) },
-          ]);
+            { text: 'OK', onPress: release },
+          ], { cancelable: false });
           return;
         }
 
         const foundUser = await usersApi.getUserById(value);
         if (!foundUser) {
           Alert.alert('Không tìm thấy người dùng', '', [
-            { text: 'OK', onPress: () => setIsProcessing(false) },
-          ]);
+            { text: 'OK', onPress: release },
+          ], { cancelable: false });
           return;
         }
 
@@ -96,27 +126,29 @@ const ScannerTab: React.FC<{
                 onClose();
                 setTimeout(() => onNavigateChat(conversation._id), 300);
               } catch {
-                Alert.alert('Lỗi', 'Không thể bắt đầu cuộc trò chuyện');
-                setIsProcessing(false);
+                Alert.alert('Lỗi', 'Không thể bắt đầu cuộc trò chuyện', [
+                  { text: 'OK', onPress: release },
+                ], { cancelable: false });
               }
             },
           },
           {
             text: 'Hủy',
             style: 'cancel',
-            onPress: () => setIsProcessing(false),
+            onPress: release,
           },
-        ]);
+        ], { cancelable: false });
       } catch (err: any) {
         const is404 = err?.response?.status === 404;
         Alert.alert(
           is404 ? 'Không tìm thấy người dùng' : 'Lỗi',
           is404 ? '' : 'Đã xảy ra lỗi khi xử lý mã QR',
-          [{ text: 'OK', onPress: () => setIsProcessing(false) }],
+          [{ text: 'OK', onPress: release }],
+          { cancelable: false },
         );
       }
     },
-    [currentUserId, isProcessing, onClose, onNavigateProfile, onNavigateChat],
+    [currentUserId, onClose, onNavigateProfile, onNavigateChat, release],
   );
 
   const codeScanner = useCodeScanner({
@@ -155,7 +187,7 @@ const ScannerTab: React.FC<{
       <Camera
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={!isProcessing}
+        isActive={!isProcessing && appActive}
         codeScanner={codeScanner}
       />
       <View style={scanStyles.overlay}>
@@ -233,19 +265,37 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
   onNavigateChat,
 }) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'myqr'>('scan');
+  const insets = useSafeAreaInsets();
+  const suppressTabDock = useTabDockSuppression();
 
-  // Fabric-safe: do not mount native <Modal> (Dialog Window) until visible.
-  // Eager mount with visible=false races RN's removeViewAt on Android Fabric.
+  // Suppress the floating tab dock while visible (same pattern as GroupCreateModal).
+  useEffect(() => {
+    if (!visible) return undefined;
+    return suppressTabDock();
+  }, [suppressTabDock, visible]);
+
+  // Handle Android hardware back button since we no longer use native <Modal>.
+  useEffect(() => {
+    if (!visible) return undefined;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => handler.remove();
+  }, [visible, onClose]);
+
+  // In-tree overlay: avoid Android Fabric native Dialog mis-measurement.
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <View style={styles.overlayHost}>
       <View style={styles.container}>
         <StatusBar backgroundColor="#fff" barStyle="dark-content" />
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header — safe-area top inset (overlay covers status bar, no native Modal) */}
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.headerSide} />
           <Text style={styles.headerTitle}>Mã QR</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={8}>
             <MaterialIcons name="close" size={26} color="#333" />
           </TouchableOpacity>
         </View>
@@ -277,19 +327,25 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
           <MyQrTab />
         )}
       </View>
-    </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  overlayHost: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    elevation: 1000,
+    backgroundColor: '#fff',
+  },
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 16, paddingVertical: 12, paddingTop: (StatusBar.currentHeight || 0) + 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingBottom: 12,
     borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#333' },
-  closeBtn: { position: 'absolute', right: 16, top: (StatusBar.currentHeight || 0) + 10, padding: 4 },
+  headerSide: { width: 34, alignItems: 'center' },
   tabBar: {
     flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },

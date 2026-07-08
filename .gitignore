@@ -86,6 +86,7 @@ ChatApp/dev-config.json
 
 # Local screenshots / dev artifacts
 .screenshots/
+screenshots/
 koola_screen.png
 ChatApp/koola_screen.png
 ChatApp/ui.xml
@@ -98,3 +99,4 @@ docs/report-assets/
 .mcp.json
 /claude
 
+.claude/settings.local.json

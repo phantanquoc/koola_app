@@ -97,6 +97,9 @@ export function useMessagesFromDb(
   const [hasEarlier, setHasEarlier] = useState(true);
   const mountedRef = useRef(true);
   const loadedKeyRef = useRef(`${conversationId}:${currentUserId}`);
+  // Track how many messages are currently loaded so reload preserves the window
+  // (prevents truncation back to 50 after user scrolled to load earlier messages)
+  const loadedCountRef = useRef(50);
   const currentLoadKey = `${conversationId}:${currentUserId}`;
   const stateMatchesConversation = loadedKeyRef.current === currentLoadKey;
   const visibleMessages = stateMatchesConversation
@@ -115,6 +118,7 @@ export function useMessagesFromDb(
     const key = `${conversationId}:${currentUserId}`;
     if (loadedKeyRef.current !== key) {
       loadedKeyRef.current = key;
+      loadedCountRef.current = 50;
       setInitialLoadError(null);
       setHasEarlier(true);
       setMessages(loadFromDb(conversationId, currentUserId));
@@ -123,10 +127,12 @@ export function useMessagesFromDb(
     const reload = () => {
       if (!mountedRef.current) return;
       const t0 = Date.now();
-      const fresh = loadFromDb(conversationId, currentUserId);
+      const limit = Math.max(50, loadedCountRef.current);
+      const fresh = loadFromDb(conversationId, currentUserId, limit);
       loadedKeyRef.current = key;
+      loadedCountRef.current = fresh.length;
       setMessages(fresh);
-      console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+      console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
     };
 
     const unsub = messageRepository.subscribe(conversationId, reload);
@@ -172,7 +178,9 @@ export function useMessagesFromDb(
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => String(m._id)));
         const newItems = older.filter((m) => !existingIds.has(String(m._id)));
-        return [...prev, ...newItems];
+        const merged = [...prev, ...newItems];
+        loadedCountRef.current = merged.length;
+        return merged;
       });
       setHasEarlier(rows.length === 20);
     } catch (err) {

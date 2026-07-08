@@ -8,10 +8,9 @@
  * with pull-to-refresh and loading/empty/error states.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  ScrollView,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -27,7 +26,8 @@ import type { ChatTabStackParamList } from '../../navigation/types';
 import { momentsService, type FeedRingItem, type MomentsState } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
 import MomentRing from '../../components/moments/MomentRing';
-import { KoolaButton, KoolaText, KoolaState, KoolaSurface, koolaColors, koolaSpacing } from '../../ui';
+import { KoolaButton, KoolaText, KoolaState, KoolaSurface, KoolaSkeleton, koolaColors, koolaSpacing } from '../../ui';
+import { resolveMomentsView } from './momentsView';
 
 type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 
@@ -37,6 +37,7 @@ const MomentsScreen: React.FC = () => {
 
   const [state, setState] = useState<MomentsState>(() => momentsService.getState());
   const [refreshing, setRefreshing] = useState(false);
+  const lastFetchAtRef = useRef(0);
 
   // Subscribe to service state updates (mount once)
   useEffect(() => {
@@ -44,15 +45,19 @@ const MomentsScreen: React.FC = () => {
     return unsub;
   }, []);
 
-  // Refresh feed every time tab gains focus
+  // Refresh feed on focus with 5s throttle to prevent redundant fetches
   useFocusEffect(
     useCallback(() => {
-      momentsService.refreshFeed();
+      if (Date.now() - lastFetchAtRef.current > 5000) {
+        lastFetchAtRef.current = Date.now();
+        momentsService.refreshFeed();
+      }
     }, []),
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    lastFetchAtRef.current = Date.now();
     await momentsService.refreshFeed();
     setRefreshing(false);
   }, []);
@@ -147,58 +152,16 @@ const MomentsScreen: React.FC = () => {
     [user, handleRingPress, handleOwnLongPress, handleAddPress],
   );
 
-  if (state.isLoading && state.feedRing.length === 0) {
-    return (
-      <View style={styles.center}>
-        <KoolaState
-          icon="hourglass-empty"
-          title="Đang tải khoảnh khắc"
-          message="Đang đồng bộ những chia sẻ mới nhất từ bạn bè."
-        />
-      </View>
-    );
-  }
-
-  if (state.error && state.feedRing.length === 0) {
-    return (
-      <View style={styles.center}>
-        <KoolaState
-          icon="wifi-off"
-          title="Không thể tải khoảnh khắc"
-          message={state.error || 'Kiểm tra kết nối rồi thử lại.'}
-          actionLabel="Thử lại"
-          onActionPress={() => momentsService.refreshFeed()}
-        />
-      </View>
-    );
-  }
-
   const rings: FeedRingItem[] = [
     ...(ownRing ? [ownRing] : []),
     ...otherRings,
   ];
 
-  if (!state.isLoading && rings.length === 0) {
-    return (
-      <ScrollView
-        contentContainerStyle={styles.center}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={koolaColors.primary}
-          />
-        }>
-        <KoolaState
-          icon="auto-awesome"
-          title="Chưa có khoảnh khắc"
-          message="Chia sẻ ảnh, video hoặc một bài hát để bạn bè biết hôm nay của bạn thế nào."
-          actionLabel="Tạo khoảnh khắc"
-          onActionPress={handleAddPress}
-        />
-      </ScrollView>
-    );
-  }
+  const viewState = resolveMomentsView({
+    isLoading: state.isLoading,
+    error: state.error,
+    ringsLength: rings.length,
+  });
 
   return (
     <View
@@ -229,26 +192,61 @@ const MomentsScreen: React.FC = () => {
       </View>
 
       <KoolaSurface variant="raised" style={styles.ringCard}>
-        <FlatList
-          data={rings}
-          keyExtractor={(item) => item.authorId}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.ringList}
-          renderItem={renderItem}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={koolaColors.primary}
-            />
-          }
-          accessibilityRole="list"
-          accessibilityLabel="Danh sách người dùng có khoảnh khắc"
-        />
+        {viewState === 'skeleton' ? (
+          <View style={styles.skeletonRow}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.skeletonRingItem}>
+                <KoolaSkeleton width={64} height={64} radius={32} />
+                <KoolaSkeleton width={48} height={10} radius={4} style={styles.skeletonLabel} />
+              </View>
+            ))}
+          </View>
+        ) : (
+          <FlatList
+            data={rings}
+            keyExtractor={(item) => item.authorId}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.ringList}
+            renderItem={renderItem}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={koolaColors.primary}
+              />
+            }
+            accessibilityRole="list"
+            accessibilityLabel="Danh sách người dùng có khoảnh khắc"
+          />
+        )}
       </KoolaSurface>
 
-      {otherRings.length === 0 && (
+      {viewState === 'error' && (
+        <View style={styles.inlineState}>
+          <KoolaState
+            icon="wifi-off"
+            title="Không thể tải khoảnh khắc"
+            message={state.error || 'Kiểm tra kết nối rồi thử lại.'}
+            actionLabel="Thử lại"
+            onActionPress={() => momentsService.refreshFeed()}
+          />
+        </View>
+      )}
+
+      {viewState === 'empty' && (
+        <View style={styles.inlineState}>
+          <KoolaState
+            icon="auto-awesome"
+            title="Chưa có khoảnh khắc"
+            message="Chia sẻ ảnh, video hoặc một bài hát để bạn bè biết hôm nay của bạn thế nào."
+            actionLabel="Tạo khoảnh khắc"
+            onActionPress={handleAddPress}
+          />
+        </View>
+      )}
+
+      {viewState === 'content' && otherRings.length === 0 && (
         <KoolaSurface variant="outline" style={styles.friendsEmpty}>
           <View style={styles.emptyIconWrap}>
             <MaterialIcons name="auto-awesome" size={24} color={koolaColors.primary} />
@@ -278,13 +276,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: koolaColors.canvas,
     paddingTop: koolaSpacing.lg,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: koolaColors.canvas,
   },
   headerWrap: {
     minHeight: 72,
@@ -348,6 +339,23 @@ const styles = StyleSheet.create({
   },
   friendsEmptyAction: {
     marginTop: koolaSpacing.md,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    paddingHorizontal: koolaSpacing.sm,
+  },
+  skeletonRingItem: {
+    width: 78,
+    alignItems: 'center',
+    marginHorizontal: 6,
+  },
+  skeletonLabel: {
+    marginTop: koolaSpacing.xs,
+  },
+  inlineState: {
+    marginHorizontal: koolaSpacing.lg,
+    marginTop: koolaSpacing.lg,
+    alignItems: 'center',
   },
 });
 

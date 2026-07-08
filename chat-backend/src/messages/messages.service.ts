@@ -255,13 +255,43 @@ export class MessagesService {
     this.newMessageEmitCallback = cb;
   }
 
+  /**
+   * Encode a blurhash from raw image buffer using jimp.
+   * Exposed for reuse by backfill scripts.
+   */
+  async encodeBlurhash(
+    buffer: Buffer,
+  ): Promise<{ blurhash: string; width: number; height: number }> {
+    const Jimp = require('jimp');
+    const { encode } = require('blurhash') as typeof import('blurhash');
+
+    const image = await Jimp.read(buffer);
+    const width = image.getWidth();
+    const height = image.getHeight();
+
+    const COMPONENT_X = 4;
+    const COMPONENT_Y = 3;
+    const THUMB_W = 32;
+    const THUMB_H = Math.max(1, Math.round(THUMB_W * (height / (width || 1))));
+
+    image.resize(THUMB_W, THUMB_H);
+
+    const { data, width: bw, height: bh } = image.bitmap;
+    const blurhash = encode(
+      new Uint8ClampedArray(data),
+      bw,
+      bh,
+      COMPONENT_X,
+      COMPONENT_Y,
+    );
+
+    return { blurhash, width, height };
+  }
+
   private async generateBlurhash(
     messageId: string,
     mediaKey: string,
   ): Promise<void> {
-    const sharp = require('sharp');
-    const { encode } = require('blurhash') as typeof import('blurhash');
-
     // Download from MinIO
     const stream = await minioClient.getObject(BUCKET, mediaKey);
     const chunks: Buffer[] = [];
@@ -270,29 +300,7 @@ export class MessagesService {
     }
     const buffer = Buffer.concat(chunks);
 
-    // Get original dimensions and resize to small for blurhash
-    const metadata = await sharp(buffer).metadata();
-    const width = metadata.width || 0;
-    const height = metadata.height || 0;
-
-    const COMPONENT_X = 4;
-    const COMPONENT_Y = 3;
-    const THUMB_W = 32;
-    const THUMB_H = Math.round(THUMB_W * (height / (width || 1)));
-
-    const { data, info } = await sharp(buffer)
-      .resize(THUMB_W, THUMB_H || THUMB_W, { fit: 'inside' })
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const blurhash = encode(
-      new Uint8ClampedArray(data),
-      info.width,
-      info.height,
-      COMPONENT_X,
-      COMPONENT_Y,
-    );
+    const { blurhash, width, height } = await this.encodeBlurhash(buffer);
 
     // Update message in DB
     await this.messageModel.updateOne(

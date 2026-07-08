@@ -102,6 +102,17 @@ export function getDb(): DbHandle {
   if (!_db) {
     _raw = open({ name: 'koola.db' }) as unknown as RawDb;
     _db = wrap(_raw);
+
+    // Enable WAL mode for better read/write concurrency (reads no longer
+    // contend with write transactions). safe fallback: if any pragma throws,
+    // we continue with default journal mode — do not crash boot.
+    try {
+      _raw.executeSync('PRAGMA journal_mode=WAL');
+      _raw.executeSync('PRAGMA synchronous=NORMAL');
+      _raw.executeSync('PRAGMA busy_timeout=5000');
+    } catch (e) {
+      console.warn('[connection] WAL pragma setup failed, continuing with defaults:', e);
+    }
   }
   return _db;
 }

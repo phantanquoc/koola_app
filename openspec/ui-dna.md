@@ -107,6 +107,13 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Soft background + matching text color
 - Caption variant, weight 700
 
+### Brand Logo (KoolaLogo / KoolaMark)
+- **Mark** (the tri-arc ring) stays flat: geometric red/blue/green SVG `<Path>` arcs — never raster, never gradient/shadow. Round caps, stroke scales with size; crisp from 24px (app-icon/favicon ready). The mark's flat rule is non-negotiable.
+- **Wordmark** may be dimensional: the `KoolaLogo` primitive exposes visual `variant`s (`flat` = original default; plus `extruded`, `tilt`, `hero`, `outline`, `bevel`, `longshadow`, `sticker`, `mono`, `underline`), a `font` option, and one-shot entrance `animation`s. Depth/shadow treatments apply to the WORDMARK letters only — never to the mark.
+- Per-letter wordmark color mapping is fixed across every variant: K=brandRed, OOL=brandBlue, A=brandGreen — reference `palette.brand*`, never the semantic primary/accent/danger tokens.
+- Production headers (`KoolaHeader`, `ServicesHomeScreen`, `ShoppingHomeScreen`) render the wordmark with `variant="extruded"` + `font="sora"`. Default (no props) remains `flat`/`system` — identical to the original, so any call site that passes nothing is unchanged.
+- Always render via the `KoolaLogo`/`KoolaMark` primitive — never rebuild the wordmark inline in screens. Source vector lives at `assets/brand/koola-mark.svg`. `LogoLabScreen` (`__DEV__` only) is the playground for previewing variants/fonts/animations.
+
 ### Skeleton Loading (KoolaSkeleton)
 - Match the layout of the real content exactly — prevent layout shift
 - Use skeleton color token (`#EEF2F7`)

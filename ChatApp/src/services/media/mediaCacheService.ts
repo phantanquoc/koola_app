@@ -55,6 +55,40 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ─── Concurrency semaphore ──────────────────────────────────────────────────
+
+/**
+ * On-demand callers (MediaImage, VideoMessage, VideoPlayerModal, avatars) each
+ * fire getOrDownload independently. Opening a conversation with many media
+ * messages used to launch all of them at once — a burst of parallel downloads
+ * whose resolve callbacks each setState on their cell, storming the JS thread
+ * while the list is still mounting/scrolling. Gating the actual network work to
+ * a small concurrency keeps it an orderly trickle. Cache/index hits do NOT
+ * consume a slot — only real downloads do.
+ */
+const MAX_CONCURRENT_DOWNLOADS = 3;
+let activeDownloads = 0;
+const slotWaiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (activeDownloads < MAX_CONCURRENT_DOWNLOADS) {
+    activeDownloads++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    slotWaiters.push(() => {
+      activeDownloads++;
+      resolve();
+    });
+  });
+}
+
+function releaseSlot(): void {
+  activeDownloads = Math.max(0, activeDownloads - 1);
+  const next = slotWaiters.shift();
+  if (next) next();
+}
+
 // ─── In-flight dedupe map ─────────────────────────────────────────────────────
 
 /**
@@ -62,6 +96,12 @@ function delay(ms: number): Promise<void> {
  * When two components request the same uncached key in the same frame,
  * the second caller receives the first caller's promise instead of
  * starting a duplicate network request.
+ *
+ * Downloads are NEVER cancelled on unmount. A cell that scrolls out of view
+ * while its media is still downloading lets the download finish and cache, so
+ * scrolling back is an instant cache hit rather than a white re-download. The
+ * concurrency semaphore alone keeps the request burst orderly; cancelling here
+ * would only re-create the white-flash on scroll-back.
  */
 const inFlight = new Map<string, Promise<string | null>>();
 
@@ -94,7 +134,6 @@ export function getFromMemory(mediaKey: string): string | null {
  * so existing callers (useMessages.ts and any future consumers) do not need
  * to change their imports.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function warmMemoryCache(_keys: string[]): Promise<void> {}
 
 /**
@@ -105,6 +144,10 @@ export async function warmMemoryCache(_keys: string[]): Promise<void> {}
  *
  * Concurrent requests for the same key collapse into a single download via
  * the inFlight dedupe map.
+ *
+ * Concurrency: actual downloads are gated to MAX_CONCURRENT_DOWNLOADS. Cache
+ * and index hits return immediately without consuming a slot. Downloads always
+ * run to completion and cache even if the requesting cell unmounted meanwhile.
  *
  * Retry policy: up to 3 attempts with 1s/2s/4s exponential backoff.
  * 401 triggers a single token refresh and immediate retry.
@@ -118,7 +161,7 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
     return mediaKey;
   }
 
-  // Return existing in-flight promise if one is already running for this key
+  // Return existing in-flight promise if one is already running for this key.
   const existing = inFlight.get(mediaKey);
   if (existing) return existing;
 
@@ -126,7 +169,7 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
   // to inFlight before any await, ensuring concurrent callers always get the
   // same promise object.
   const promise = (async (): Promise<string | null> => {
-    // ── Index hit path ──────────────────────────────────────────────────────
+    // ── Index hit path (no slot consumed) ────────────────────────────────────
     const indexEntry = mediaIndexService.get(mediaKey);
     if (indexEntry) {
       const fileExists = await BlobUtil.fs.exists(indexEntry.path);
@@ -138,91 +181,99 @@ export async function getOrDownload(mediaKey: string): Promise<string | null> {
       mediaIndexService.deleteEntry(mediaKey);
     }
 
-    // ── Download path ───────────────────────────────────────────────────────
+    // ── Download path (gated by semaphore) ───────────────────────────────────
     await ensureCacheDir();
     const diskPath = mediaKeyToDiskPath(mediaKey);
     await ensureParentDir(diskPath);
 
-    let tokenWasRefreshed = false;
+    await acquireSlot();
+    try {
+      let tokenWasRefreshed = false;
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const accessToken = getAccessTokenInMemory();
-      if (!accessToken) return null;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const accessToken = getAccessTokenInMemory();
+        if (!accessToken) return null;
 
-      const encodedMediaKey = mediaKey
-        .split('/')
-        .map((segment) => encodeURIComponent(segment))
-        .join('/');
-      const proxyUrl = `${ENV.API_URL}/media/download/${encodedMediaKey}`;
+        const encodedMediaKey = mediaKey
+          .split('/')
+          .map((segment) => encodeURIComponent(segment))
+          .join('/');
+        const proxyUrl = `${ENV.API_URL}/media/download/${encodedMediaKey}`;
 
-      if (attempt === 0) {
-        console.log('[mediaCacheService] Downloading via proxy for:', mediaKey);
-      }
+        if (attempt === 0) {
+          console.log('[mediaCacheService] Downloading via proxy for:', mediaKey);
+        }
 
-      try {
-        const res = await BlobUtil.config({
-          path: diskPath,
-          timeout: 120000,
-          indicator: false,
-          overwrite: true,
-        }).fetch('GET', proxyUrl, {
-          Authorization: `Bearer ${accessToken}`,
-        });
-        const status = res.info().status;
+        try {
+          const res = await BlobUtil.config({
+            path: diskPath,
+            timeout: 120000,
+            indicator: false,
+            overwrite: true,
+          }).fetch('GET', proxyUrl, {
+            Authorization: `Bearer ${accessToken}`,
+          });
+          const status = res.info().status;
 
-        if (status === 200) {
-          const fileStat = await BlobUtil.fs.stat(res.path());
-          const size = fileStat ? Number(fileStat.size) : 0;
-          if (size > 0) {
-            // Register in persistent index
-            mediaIndexService.set(mediaKey, {
-              path: diskPath,
-              size,
-              addedAt: Date.now(),
-              lastAccess: Date.now(),
-            });
-            // Fire-and-forget LRU eviction check using configurable cap
-            mediaIndexService.evictIfNeeded(mediaIndexService.getCapBytes()).catch(() => {});
-            return `file://${diskPath}`;
+          if (status === 200) {
+            const fileStat = await BlobUtil.fs.stat(res.path());
+            const size = fileStat ? Number(fileStat.size) : 0;
+            if (size > 0) {
+              // Register in persistent index
+              mediaIndexService.set(mediaKey, {
+                path: diskPath,
+                size,
+                addedAt: Date.now(),
+                lastAccess: Date.now(),
+              });
+              // Fire-and-forget LRU eviction check using configurable cap
+              mediaIndexService.evictIfNeeded(mediaIndexService.getCapBytes()).catch(() => {});
+              return `file://${diskPath}`;
+            }
+            // Empty response body — treat as failure
+            await BlobUtil.fs.unlink(diskPath).catch(() => {});
           }
-          // Empty response body — treat as failure
+
+          // Non-200 — remove partial file
+          console.warn(
+            `[mediaCacheService] Non-200 status: ${status} (attempt ${attempt + 1}/${MAX_RETRIES})`,
+          );
+          await BlobUtil.fs.unlink(diskPath).catch(() => {});
+
+          if (status === 401 && !tokenWasRefreshed) {
+            tokenWasRefreshed = true;
+            const refreshedToken = await refreshAccessTokenInMemory();
+            if (!refreshedToken) return null;
+            continue;
+          }
+
+          // Don't retry on 4xx (client errors) — only on 5xx/network issues
+          if (status >= 400 && status < 500) return null;
+        } catch (err: unknown) {
+          console.warn(
+            `[mediaCacheService] Download error (attempt ${attempt + 1}/${MAX_RETRIES}):`,
+            (err as Error)?.message || err,
+          );
           await BlobUtil.fs.unlink(diskPath).catch(() => {});
         }
 
-        // Non-200 — remove partial file
-        console.warn(
-          `[mediaCacheService] Non-200 status: ${status} (attempt ${attempt + 1}/${MAX_RETRIES})`,
-        );
-        await BlobUtil.fs.unlink(diskPath).catch(() => {});
-
-        if (status === 401 && !tokenWasRefreshed) {
-          tokenWasRefreshed = true;
-          const refreshedToken = await refreshAccessTokenInMemory();
-          if (!refreshedToken) return null;
-          continue;
+        // Wait before retry (skip delay on last attempt)
+        if (attempt < MAX_RETRIES - 1) {
+          await delay(RETRY_DELAYS[attempt]);
         }
-
-        // Don't retry on 4xx (client errors) — only on 5xx/network issues
-        if (status >= 400 && status < 500) return null;
-      } catch (err: unknown) {
-        console.warn(
-          `[mediaCacheService] Download error (attempt ${attempt + 1}/${MAX_RETRIES}):`,
-          (err as Error)?.message || err,
-        );
-        await BlobUtil.fs.unlink(diskPath).catch(() => {});
       }
 
-      // Wait before retry (skip delay on last attempt)
-      if (attempt < MAX_RETRIES - 1) {
-        await delay(RETRY_DELAYS[attempt]);
-      }
+      return null;
+    } finally {
+      releaseSlot();
     }
-
-    return null;
   })();
 
   inFlight.set(mediaKey, promise);
-  promise.finally(() => inFlight.delete(mediaKey));
+  promise.finally(() => {
+    // Only clear if this is still the current promise for the key
+    if (inFlight.get(mediaKey) === promise) inFlight.delete(mediaKey);
+  });
 
   return promise;
 }

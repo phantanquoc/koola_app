@@ -62,6 +62,13 @@ const ChatTabStack: React.FC = () => {
           options={{ headerShown: true, title: '[DEV] Outbox Panel' }}
         />
       )}
+      {__DEV__ && (
+        <Stack.Screen
+          name="LogoLab"
+          component={require('../screens/dev/LogoLabScreen').default}
+          options={{ headerShown: true, title: '[DEV] Logo Lab' }}
+        />
+      )}
 
       {/* ── Moments screens ────────────────────────────────────────── */}
       <Stack.Screen

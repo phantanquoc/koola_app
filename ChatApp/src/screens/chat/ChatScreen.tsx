@@ -15,7 +15,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
-import { getFromMemory } from '../../services/media/mediaCacheService';
+import { getFromMemory, getOrDownload } from '../../services/media/mediaCacheService';
 import type { Conversation, Message, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
@@ -133,10 +133,59 @@ const ChatScreen: React.FC = () => {
 
   // ─── Viewability tracking for auto-play ───────────────────────────────────
   const [visibleMessageIds, setVisibleMessageIds] = useState<Set<string>>(new Set());
+  // Keep a ref of visible video IDs to avoid setState on every scroll frame
+  // (only video messages consume isVisible for autoplay — text/image don't need it)
+  const prevVisibleVideoIdsRef = useRef<string>('');
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<{ item: IMessage }> }) => {
-      const ids = new Set(viewableItems.map((v) => String(v.item._id)));
-      setVisibleMessageIds(ids);
+    ({ viewableItems }: { viewableItems: Array<{ item: IMessage & Record<string, unknown>; index: number | null }> }) => {
+      // Filter to video messages only — these are the ones that need isVisible for autoplay
+      const videoIds = viewableItems
+        .filter((v) => v.item.mediaType === 'video' || v.item.video)
+        .map((v) => String(v.item._id))
+        .sort()
+        .join(',');
+      // Only trigger state update when the visible video set actually changed
+      if (videoIds !== prevVisibleVideoIdsRef.current) {
+        prevVisibleVideoIdsRef.current = videoIds;
+        const ids = new Set(viewableItems.map((v) => String(v.item._id)));
+        setVisibleMessageIds(ids);
+      }
+
+      // ─── Media prefetch around viewport ──────────────────────────────────
+      // Fire-and-forget: warm cache for images/thumbnails near visible area.
+      // Uses messagesRef (stable ref) to find ±5 neighbors by index.
+      const allMessages = messagesRef.current;
+      if (!allMessages.length || !viewableItems.length) return;
+
+      const indices = viewableItems
+        .map((v) => v.index)
+        .filter((i): i is number => i !== null);
+      if (!indices.length) return;
+
+      const minIdx = Math.max(0, Math.min(...indices) - 5);
+      const maxIdx = Math.min(allMessages.length - 1, Math.max(...indices) + 5);
+
+      for (let i = minIdx; i <= maxIdx; i++) {
+        const msg = allMessages[i] as IMessage & Record<string, unknown>;
+        if (!msg) continue;
+
+        // Image messages
+        const mediaKey = msg.mediaKey as string | undefined;
+        const mediaType = msg.mediaType as string | undefined;
+        if (mediaKey && (mediaType === 'image' || msg.image === 'media-pending')) {
+          if (!getFromMemory(mediaKey)) {
+            getOrDownload(mediaKey).catch(() => {});
+          }
+        }
+
+        // Video thumbnail
+        const thumbKey = msg.mediaThumbnailKey as string | undefined;
+        if (thumbKey && (mediaType === 'video' || msg.video)) {
+          if (!getFromMemory(thumbKey)) {
+            getOrDownload(thumbKey).catch(() => {});
+          }
+        }
+      }
     },
   ).current;
 
@@ -176,6 +225,11 @@ const ChatScreen: React.FC = () => {
     retryInitialLoad,
     hasEarlier,
   } = useMessages(conversationId, currentUserId);
+
+  // Stable ref to messages for use in callbacks that should NOT re-create on
+  // every messages change (e.g. renderMessageImage gallery builder).
+  const messagesRef = useRef<IMessage[]>(messages);
+  messagesRef.current = messages;
 
   // ─── Context menu state ────────────────────────────────────────────────────
   const [contextMenuVisible, setContextMenuVisible] = useState(false);
@@ -245,6 +299,9 @@ const ChatScreen: React.FC = () => {
   // chatTitle is intentionally excluded from deps — it resolves async via
   // getDetails and would cause a full FlatList re-render on every title change.
   // name is not displayed in bubbles (showUserAvatar=false, showAvatarForEveryMessage=false).
+  // Perf note: when otherAvatarUrl is falsy, returns the messages reference unchanged
+  // (no new objects created). When truthy, .map() is unavoidable — avatar comes from
+  // header state, not DB, so injection at DB-map time is not possible.
   const messagesWithAvatar = React.useMemo(() => {
     if (!otherAvatarUrl) return messages;
     return messages.map((m) =>
@@ -489,11 +546,13 @@ const ChatScreen: React.FC = () => {
           blurhash={msg.blurhash as string | null | undefined}
           onPress={(uri) => {
             // Collect all resolved image URIs from messages for swipe gallery
+            // Read from ref to avoid closing over messages array (stabilizes callback identity)
+            const currentMessages = messagesRef.current;
             // messages is newest-first, so reverse to get chronological order (oldest = 1/X)
             const allImageUris: string[] = [];
             let tappedIndex = 0;
-            for (let i = messages.length - 1; i >= 0; i--) {
-              const m = messages[i];
+            for (let i = currentMessages.length - 1; i >= 0; i--) {
+              const m = currentMessages[i];
               const mRec = m as IMessage & Record<string, unknown>;
               if (mRec.image === 'media-pending' && mRec.mediaKey) {
                 const resolved = getFromMemory(mRec.mediaKey as string);
@@ -521,7 +580,7 @@ const ChatScreen: React.FC = () => {
         />
       );
     },
-    [navigation, messages],
+    [navigation],
   );
 
   const renderMessageVideo = useCallback(
@@ -725,6 +784,10 @@ const ChatScreen: React.FC = () => {
             listViewProps={{
               viewabilityConfig,
               onViewableItemsChanged,
+              // Cap scroll events to ~1/frame (16ms). GiftedChat's internal default
+              // is scrollEventThrottle=1 which fires on every pixel. This prop is
+              // spread AFTER GiftedChat's internals in MessageContainer, so it wins.
+              scrollEventThrottle: 16,
               contentContainerStyle: {
                 paddingTop: composerScrollClearance,
                 paddingBottom: 20,
@@ -736,10 +799,13 @@ const ChatScreen: React.FC = () => {
               // collides with mount items. Disabling clipped-subview recycling
               // forces stable view tree at the cost of slightly more memory.
               removeClippedSubviews: false,
-              initialNumToRender: 12,
-              maxToRenderPerBatch: 8,
+              // Tuned 2026-06-30: smaller batches + longer batching period spread
+              // render work across frames to cut fling jank spikes
+              // (removeClippedSubviews must stay false → keep windowSize modest).
+              initialNumToRender: 10,
+              maxToRenderPerBatch: 5,
               windowSize: 7,
-              updateCellsBatchingPeriod: 50,
+              updateCellsBatchingPeriod: 100,
               // Required by FlatList when scrollToIndex targets an offscreen row
               // without getItemLayout. Average bubble height ~80px is a reasonable
               // estimate; retry after a tick lets layout pass measure the target.
