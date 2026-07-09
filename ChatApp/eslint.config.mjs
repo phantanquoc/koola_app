@@ -52,6 +52,21 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       'no-empty': ['warn', { allowEmptyCatch: true }],
+      // ─── Design-lint: flag raw hex color literals ─────────────────────────
+      // Screens should reference palette tokens (via useTheme()) instead of
+      // hardcoding hex colors. Starts at warn globally; will escalate to error
+      // per directory as clusters are migrated.
+      'no-restricted-syntax': [
+        'warn',
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'Avoid raw hex color literals in styles. Use palette tokens from useTheme() instead (see ui-dna.md).',
+        },
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
+          message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
+        },
+      ],
     },
   },
   {
@@ -74,6 +89,39 @@ export default tseslint.config(
       // Strategy-A hook tests mock React and call hooks directly in Node
       // (no renderer) — see useMessagesFromDb.spec.ts. rules-of-hooks N/A.
       'react-hooks/rules-of-hooks': 'off',
+    },
+  },
+  {
+    // ─── Design-lint ratchet: escalate to error for cleaned directories ──────
+    // These directories have been fully migrated to palette tokens.
+    // No raw hex color literals should appear in new code here.
+    files: [
+      'src/ui/**/*.{ts,tsx}',
+      'src/screens/auth/**/*.{ts,tsx}',
+      'src/screens/connect/**/*.{ts,tsx}',
+      'src/components/moments/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'Avoid raw hex color literals in styles. Use palette tokens from useTheme() instead (see ui-dna.md).',
+        },
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
+          message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint: theme.ts + token files are the definitions ─────────────
+    // Hex literals are intentional here (they ARE the tokens). Suppress.
+    // MUST come after the ratchet escalation so it overrides correctly.
+    files: ['src/ui/theme.ts', 'src/ui/tokens/**'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
 );
