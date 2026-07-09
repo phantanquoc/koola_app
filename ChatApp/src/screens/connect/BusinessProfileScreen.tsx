@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Linking,
   Pressable,
@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
+import UserAvatar from '../../components/UserAvatar';
 import { CATEGORY_LABELS } from './constants';
 import {
   KoolaBadge,
@@ -21,9 +22,11 @@ import {
   KoolaState,
   KoolaSurface,
   KoolaText,
-  koolaColors,
   koolaRadii,
+  koolaShadows,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 type BusinessProfileRouteProp = RouteProp<
   ConnectTabStackParamList,
@@ -32,18 +35,12 @@ type BusinessProfileRouteProp = RouteProp<
 
 type BusinessProfileNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
-const LOGO_COLORS = [
-  koolaColors.primary,
-  koolaColors.accent,
-  koolaColors.warm,
-  '#7C3AED',
-  '#0EA5E9',
-];
-
 const BusinessProfileScreen: React.FC = () => {
   const route = useRoute<BusinessProfileRouteProp>();
   const navigation = useNavigation<BusinessProfileNavProp>();
   const { businessId } = route.params;
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [account, setAccount] = useState<BusinessAccountItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,25 +124,29 @@ const BusinessProfileScreen: React.FC = () => {
     );
   }
 
-  const bgColor = LOGO_COLORS[account.displayName.charCodeAt(0) % LOGO_COLORS.length];
   const categoryLabel =
     (account.businessCategory ? CATEGORY_LABELS[account.businessCategory] : undefined) ||
     account.businessCategory ||
     '';
 
+  // Use avatar or logoKey for real imagery; UserAvatar handles initials fallback
+  const imageKey = account.avatar || account.logoKey;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <KoolaSurface variant="raised" style={styles.hero}>
-        <View style={[styles.logo, { backgroundColor: bgColor }]}>
-          <MaterialIcons name="business" size={36} color="#FFFFFF" />
-        </View>
+        <UserAvatar
+          displayName={account.displayName}
+          avatar={imageKey}
+          size={72}
+        />
         <View style={styles.nameSection}>
           <View style={styles.nameRow}>
             <KoolaText variant="heading" weight="800" numberOfLines={2} style={styles.name}>
               {account.displayName}
             </KoolaText>
             {account.verificationStatus === 'verified' ? (
-              <MaterialIcons name="verified" size={21} color={koolaColors.success} />
+              <MaterialIcons name="verified" size={21} color={palette.success} />
             ) : null}
           </View>
           <View style={styles.badgeRow}>
@@ -160,7 +161,7 @@ const BusinessProfileScreen: React.FC = () => {
           <MaterialIcons
             name={account.relationshipType === 'partner' ? 'handshake' : 'local-shipping'}
             size={17}
-            color={koolaColors.muted}
+            color={palette.muted}
           />
           <KoolaText variant="caption" tone="muted" weight="800">
             {account.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
@@ -169,7 +170,7 @@ const BusinessProfileScreen: React.FC = () => {
       ) : null}
 
       {account.tagline ? (
-        <InfoSection title="Giới thiệu">
+        <InfoSection title="Giới thiệu" palette={palette} styles={styles}>
           <KoolaText variant="body" tone="muted">
             {account.tagline}
           </KoolaText>
@@ -177,11 +178,13 @@ const BusinessProfileScreen: React.FC = () => {
       ) : null}
 
       {account.website || account.contactEmail || account.contactPhone ? (
-        <InfoSection title="Liên hệ">
+        <InfoSection title="Liên hệ" palette={palette} styles={styles}>
           {account.website ? (
             <ContactRow
               icon="language"
               label={account.website}
+              palette={palette}
+              styles={styles}
               onPress={() => Linking.openURL(account.website!)}
             />
           ) : null}
@@ -189,6 +192,8 @@ const BusinessProfileScreen: React.FC = () => {
             <ContactRow
               icon="email"
               label={account.contactEmail}
+              palette={palette}
+              styles={styles}
               onPress={() => Linking.openURL(`mailto:${account.contactEmail}`)}
             />
           ) : null}
@@ -196,6 +201,8 @@ const BusinessProfileScreen: React.FC = () => {
             <ContactRow
               icon="phone"
               label={account.contactPhone}
+              palette={palette}
+              styles={styles}
               onPress={() => Linking.openURL(`tel:${account.contactPhone}`)}
             />
           ) : null}
@@ -203,8 +210,8 @@ const BusinessProfileScreen: React.FC = () => {
       ) : null}
 
       {account.address ? (
-        <InfoSection title="Địa chỉ">
-          <ContactRow icon="place" label={account.address} />
+        <InfoSection title="Địa chỉ" palette={palette} styles={styles}>
+          <ContactRow icon="place" label={account.address} palette={palette} styles={styles} />
         </InfoSection>
       ) : null}
 
@@ -221,29 +228,37 @@ const BusinessProfileScreen: React.FC = () => {
   );
 };
 
+// ─── Sub-components ─────────────────────────────────────────────────────────
+
 interface ContactRowProps {
   icon: string;
   label: string;
+  palette: Palette;
+  styles: ReturnType<typeof makeStyles>;
   onPress?: () => void;
 }
 
-const ContactRow: React.FC<ContactRowProps> = ({ icon, label, onPress }) => (
+const ContactRow: React.FC<ContactRowProps> = ({ icon, label, palette, styles, onPress }) => (
   <Pressable
     style={styles.contactRow}
     onPress={onPress}
     disabled={!onPress}
     accessibilityRole={onPress ? 'button' : undefined}>
-    <MaterialIcons name={icon} size={18} color={koolaColors.primary} />
+    <MaterialIcons name={icon} size={18} color={palette.primary} />
     <KoolaText tone={onPress ? 'primary' : 'muted'} style={styles.contactText}>
       {label}
     </KoolaText>
   </Pressable>
 );
 
-const InfoSection: React.FC<{ title: string; children: React.ReactNode }> = ({
-  title,
-  children,
-}) => (
+interface InfoSectionProps {
+  title: string;
+  children: React.ReactNode;
+  palette: Palette;
+  styles: ReturnType<typeof makeStyles>;
+}
+
+const InfoSection: React.FC<InfoSectionProps> = ({ title, children, palette, styles }) => (
   <KoolaSurface variant="flat" style={styles.section}>
     <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
       {title.toUpperCase()}
@@ -252,81 +267,78 @@ const InfoSection: React.FC<{ title: string; children: React.ReactNode }> = ({
   </KoolaSurface>
 );
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  centerState: {
-    flex: 1,
-  },
-  loadingCard: {
-    margin: 16,
-    padding: 18,
-    gap: 14,
-  },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 16,
-    marginBottom: 12,
-  },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: koolaRadii.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  nameSection: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  name: {
-    flex: 1,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  typeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  section: {
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    marginBottom: 9,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    paddingVertical: 5,
-  },
-  contactText: {
-    flex: 1,
-  },
-  actionBtn: {
-    marginTop: 6,
-  },
-});
+// ─── Styles ─────────────────────────────────────────────────────────────────
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 40,
+    },
+    centerState: {
+      flex: 1,
+    },
+    loadingCard: {
+      margin: 16,
+      padding: 18,
+      gap: 14,
+    },
+    hero: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      padding: 16,
+      marginBottom: 12,
+      ...koolaShadows.sm,
+    },
+    nameSection: {
+      flex: 1,
+      marginLeft: 16,
+    },
+    nameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    name: {
+      flex: 1,
+    },
+    badgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 8,
+    },
+    typeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      marginBottom: 12,
+    },
+    section: {
+      marginBottom: 12,
+    },
+    sectionTitle: {
+      marginBottom: 9,
+    },
+    contactRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      paddingVertical: 5,
+    },
+    contactText: {
+      flex: 1,
+    },
+    actionBtn: {
+      marginTop: 6,
+    },
+  });
 
 export default BusinessProfileScreen;

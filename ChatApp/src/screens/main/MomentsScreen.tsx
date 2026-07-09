@@ -8,7 +8,7 @@
  * with pull-to-refresh and loading/empty/error states.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   FlatList,
@@ -21,12 +21,14 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import { momentsService, type FeedRingItem, type MomentsState } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
 import MomentRing from '../../components/moments/MomentRing';
-import { KoolaButton, KoolaText, KoolaState, KoolaSurface, KoolaSkeleton, koolaColors, koolaSpacing } from '../../ui';
+import { KoolaButton, KoolaText, KoolaState, KoolaSurface, KoolaSkeleton, koolaSpacing, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { resolveMomentsView } from './momentsView';
 
 type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
@@ -34,6 +36,9 @@ type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 const MomentsScreen: React.FC = () => {
   const navigation = useNavigation<MomentsNavProp>();
   const { user } = useAuth();
+  const { palette } = useTheme();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [state, setState] = useState<MomentsState>(() => momentsService.getState());
   const [refreshing, setRefreshing] = useState(false);
@@ -138,7 +143,7 @@ const MomentsScreen: React.FC = () => {
           isOwn={isOwn}
           onPress={() => {
             if (!item.lastStoryId) {
-              // Own ring with no stories → go to composer
+              // Own ring with no stories -> go to composer
               handleAddPress();
               return;
             }
@@ -165,7 +170,7 @@ const MomentsScreen: React.FC = () => {
 
   return (
     <View
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top + koolaSpacing.sm }]}
       accessibilityLabel="Danh sách khoảnh khắc"
       accessibilityRole="list">
       <View style={styles.headerWrap}>
@@ -185,9 +190,9 @@ const MomentsScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Tạo khoảnh khắc mới"
           accessibilityHint="Mở trình tạo khoảnh khắc"
-          android_ripple={{ color: koolaColors.primarySoft, borderless: true }}
+          android_ripple={{ color: palette.primarySoft, borderless: true }}
           style={({ pressed }) => [styles.createButton, pressed && styles.createButtonPressed]}>
-          <MaterialIcons name="add" size={22} color={koolaColors.surface} />
+          <MaterialIcons name="add" size={22} color={palette.surface} />
         </Pressable>
       </View>
 
@@ -213,7 +218,7 @@ const MomentsScreen: React.FC = () => {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                tintColor={koolaColors.primary}
+                tintColor={palette.primary}
               />
             }
             accessibilityRole="list"
@@ -249,7 +254,7 @@ const MomentsScreen: React.FC = () => {
       {viewState === 'content' && otherRings.length === 0 && (
         <KoolaSurface variant="outline" style={styles.friendsEmpty}>
           <View style={styles.emptyIconWrap}>
-            <MaterialIcons name="auto-awesome" size={24} color={koolaColors.primary} />
+            <MaterialIcons name="auto-awesome" size={24} color={palette.primary} />
           </View>
           <KoolaText variant="label" tone="ink" align="center">
             Bạn bè chưa đăng khoảnh khắc mới
@@ -271,92 +276,92 @@ const MomentsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-    paddingTop: koolaSpacing.lg,
-  },
-  headerWrap: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: koolaSpacing.lg,
-    marginBottom: koolaSpacing.md,
-    gap: koolaSpacing.md,
-  },
-  headerCopy: {
-    flex: 1,
-  },
-  eyebrow: {
-    marginBottom: koolaSpacing.xs,
-    letterSpacing: 0.8,
-  },
-  subtitle: {
-    marginTop: koolaSpacing.xs,
-    maxWidth: 280,
-  },
-  createButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: koolaColors.primary,
-  },
-  createButtonPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.98 }],
-  },
-  ringCard: {
-    marginHorizontal: koolaSpacing.lg,
-    paddingVertical: koolaSpacing.md,
-    overflow: 'hidden',
-  },
-  ringList: {
-    paddingHorizontal: koolaSpacing.sm,
-  },
-  friendsEmpty: {
-    marginHorizontal: koolaSpacing.lg,
-    marginTop: koolaSpacing.lg,
-    paddingHorizontal: koolaSpacing.lg,
-    paddingVertical: koolaSpacing.xl,
-    alignItems: 'center',
-    backgroundColor: koolaColors.surface,
-  },
-  emptyIconWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: koolaColors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: koolaSpacing.md,
-  },
-  friendsEmptyHint: {
-    marginTop: koolaSpacing.sm,
-  },
-  friendsEmptyAction: {
-    marginTop: koolaSpacing.md,
-  },
-  skeletonRow: {
-    flexDirection: 'row',
-    paddingHorizontal: koolaSpacing.sm,
-  },
-  skeletonRingItem: {
-    width: 78,
-    alignItems: 'center',
-    marginHorizontal: 6,
-  },
-  skeletonLabel: {
-    marginTop: koolaSpacing.xs,
-  },
-  inlineState: {
-    marginHorizontal: koolaSpacing.lg,
-    marginTop: koolaSpacing.lg,
-    alignItems: 'center',
-  },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+    headerWrap: {
+      minHeight: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: koolaSpacing.lg,
+      marginBottom: koolaSpacing.md,
+      gap: koolaSpacing.md,
+    },
+    headerCopy: {
+      flex: 1,
+    },
+    eyebrow: {
+      marginBottom: koolaSpacing.xs,
+      letterSpacing: 0.8,
+    },
+    subtitle: {
+      marginTop: koolaSpacing.xs,
+      maxWidth: 280,
+    },
+    createButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.primary,
+    },
+    createButtonPressed: {
+      opacity: 0.82,
+      transform: [{ scale: 0.98 }],
+    },
+    ringCard: {
+      marginHorizontal: koolaSpacing.lg,
+      paddingVertical: koolaSpacing.md,
+      overflow: 'hidden',
+    },
+    ringList: {
+      paddingHorizontal: koolaSpacing.sm,
+    },
+    friendsEmpty: {
+      marginHorizontal: koolaSpacing.lg,
+      marginTop: koolaSpacing.lg,
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: koolaSpacing.xl,
+      alignItems: 'center',
+      backgroundColor: palette.surface,
+    },
+    emptyIconWrap: {
+      width: 58,
+      height: 58,
+      borderRadius: 20,
+      backgroundColor: palette.primarySoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: koolaSpacing.md,
+    },
+    friendsEmptyHint: {
+      marginTop: koolaSpacing.sm,
+    },
+    friendsEmptyAction: {
+      marginTop: koolaSpacing.md,
+    },
+    skeletonRow: {
+      flexDirection: 'row',
+      paddingHorizontal: koolaSpacing.sm,
+    },
+    skeletonRingItem: {
+      width: 78,
+      alignItems: 'center',
+      marginHorizontal: 6,
+    },
+    skeletonLabel: {
+      marginTop: koolaSpacing.xs,
+    },
+    inlineState: {
+      marginHorizontal: koolaSpacing.lg,
+      marginTop: koolaSpacing.lg,
+      alignItems: 'center',
+    },
+  });
 
 export default MomentsScreen;

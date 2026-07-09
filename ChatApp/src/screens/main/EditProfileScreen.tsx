@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,11 +22,12 @@ import {
   KoolaIconButton,
   KoolaSurface,
   KoolaText,
-  koolaColors,
   koolaRadii,
   koolaShadows,
   koolaSpacing,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { DisplayNameSheet } from './components/edit-profile/DisplayNameSheet';
 import { BioSheet } from './components/edit-profile/BioSheet';
 import { UsernameSheet } from './components/edit-profile/UsernameSheet';
@@ -56,6 +57,8 @@ const EditProfileScreen: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [activeSheet, setActiveSheet] = useState<SheetType>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -154,11 +157,11 @@ const EditProfileScreen: React.FC = () => {
           <Pressable
             onPress={() => navigation.goBack()}
             hitSlop={12}
-            android_ripple={{ color: koolaColors.line, borderless: true, radius: 22 }}
+            android_ripple={{ color: palette.line, borderless: true, radius: 22 }}
             style={({ pressed }) => [styles.headerBack, pressed && styles.rowPressed]}
             accessibilityRole="button"
             accessibilityLabel="Quay lại">
-            <MaterialIcons name="arrow-back" size={24} color={koolaColors.ink} />
+            <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
           </Pressable>
           <KoolaText variant="heading" weight="700" style={styles.headerTitle} numberOfLines={1}>
             Chỉnh sửa hồ sơ
@@ -181,7 +184,7 @@ const EditProfileScreen: React.FC = () => {
                   resizeMode="cover"
                 />
               ) : (
-                <FakeGradientBand />
+                <FakeGradientBand palette={palette} />
               )}
               <View style={styles.heroBandOverlay} />
               {!coverUri && !uploadingCover ? (
@@ -190,7 +193,7 @@ const EditProfileScreen: React.FC = () => {
                     <MaterialIcons
                       name="add-photo-alternate"
                       size={20}
-                      color={koolaColors.primary}
+                      color={palette.primary}
                     />
                   </View>
                   <KoolaText
@@ -206,13 +209,13 @@ const EditProfileScreen: React.FC = () => {
                 <View
                   style={coverUri ? styles.heroBandLoadingDim : styles.heroBandLoading}
                   pointerEvents="none">
-                  <ActivityIndicator color={coverUri ? koolaColors.surface : koolaColors.primary} />
+                  <ActivityIndicator color={coverUri ? palette.surface : palette.primary} />
                 </View>
               ) : null}
               <Pressable
                 onPress={handlePickCover}
                 disabled={uploadingCover}
-                android_ripple={{ color: koolaColors.primarySoft }}
+                android_ripple={{ color: palette.primarySoft }}
                 style={styles.heroBandTouchable}
                 accessibilityRole="button"
                 accessibilityLabel={coverUri ? 'Đổi ảnh bìa' : 'Thêm ảnh bìa'}
@@ -238,11 +241,11 @@ const EditProfileScreen: React.FC = () => {
               </View>
               {uploadingAvatar ? (
                 <View style={styles.avatarOverlay}>
-                  <ActivityIndicator color={koolaColors.surface} />
+                  <ActivityIndicator color={palette.surface} />
                 </View>
               ) : (
                 <View style={styles.avatarCameraBadge}>
-                  <MaterialIcons name="photo-camera" size={16} color={koolaColors.surface} />
+                  <MaterialIcons name="photo-camera" size={16} color={palette.surface} />
                 </View>
               )}
             </Pressable>
@@ -294,7 +297,7 @@ const EditProfileScreen: React.FC = () => {
                 <MaterialIcons
                   name="verified"
                   size={14}
-                  color={koolaColors.success}
+                  color={palette.success}
                   style={styles.verifiedIcon}
                 />
                 <KoolaText variant="caption" weight="700" tone="success">
@@ -376,36 +379,63 @@ const EditProfileScreen: React.FC = () => {
 };
 
 // ─── FakeGradientBand ───
-// Stacked translucent white bands faking a primarySoft→surface fade.
+// Stacked translucent bands faking a primarySoft→surface fade.
+// In dark mode, bands blend toward the dark surface instead of white.
 // No gradient lib available — 1px overlap prevents seams (ui-dna.md:70).
-const FakeGradientBand: React.FC = () => (
-  <>
-    <View style={StyleSheet.absoluteFillObject as object} />
-    <View style={gradBandStyles.band1} />
-    <View style={gradBandStyles.band2} />
-    <View style={gradBandStyles.band3} />
-    <View style={gradBandStyles.band4} />
-    <View style={gradBandStyles.band5} />
-  </>
-);
+interface FakeGradientBandProps {
+  palette: Palette;
+}
 
-const gradBandStyles = StyleSheet.create({
-  band1: { ...StyleSheet.absoluteFillObject, backgroundColor: koolaColors.primarySoft },
-  band2: { position: 'absolute', left: 0, right: 0, top: '25%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.25)' },
-  band3: { position: 'absolute', left: 0, right: 0, top: '50%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.5)' },
-  band4: { position: 'absolute', left: 0, right: 0, top: '70%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.7)' },
-  band5: { position: 'absolute', left: 0, right: 0, top: '85%', bottom: 0, backgroundColor: 'rgba(255,255,255,0.85)' },
-});
+const FakeGradientBand: React.FC<FakeGradientBandProps> = ({ palette: p }) => {
+  const bandStyles = useMemo(() => makeGradBandStyles(p), [p]);
+  return (
+    <>
+      <View style={StyleSheet.absoluteFillObject as object} />
+      <View style={bandStyles.band1} />
+      <View style={bandStyles.band2} />
+      <View style={bandStyles.band3} />
+      <View style={bandStyles.band4} />
+      <View style={bandStyles.band5} />
+    </>
+  );
+};
+
+const makeGradBandStyles = (p: Palette) => {
+  const fadeTarget = p.surface;
+  return StyleSheet.create({
+    band1: { ...StyleSheet.absoluteFillObject, backgroundColor: p.primarySoft },
+    band2: { position: 'absolute', left: 0, right: 0, top: '25%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.25 },
+    band3: { position: 'absolute', left: 0, right: 0, top: '50%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.5 },
+    band4: { position: 'absolute', left: 0, right: 0, top: '70%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.7 },
+    band5: { position: 'absolute', left: 0, right: 0, top: '85%', bottom: 0, backgroundColor: fadeTarget, opacity: 0.85 },
+  });
+};
 
 // ─── SectionHeader ───
 
-const SectionHeader: React.FC<{ label: string }> = ({ label }) => (
-  <View style={styles.sectionHeader}>
-    <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>
-      {label.toUpperCase()}
-    </KoolaText>
-  </View>
-);
+const SectionHeader: React.FC<{ label: string }> = ({ label }) => {
+  const { palette } = useTheme();
+  const sectionStyles = useMemo(() => makeSectionHeaderStyles(palette), [palette]);
+  return (
+    <View style={sectionStyles.sectionHeader}>
+      <KoolaText variant="caption" weight="700" tone="muted" style={sectionStyles.sectionLabel}>
+        {label.toUpperCase()}
+      </KoolaText>
+    </View>
+  );
+};
+
+const makeSectionHeaderStyles = (_p: Palette) =>
+  StyleSheet.create({
+    sectionHeader: {
+      paddingHorizontal: koolaSpacing.lg + 4,
+      paddingTop: koolaSpacing.xl,
+      paddingBottom: koolaSpacing.sm,
+    },
+    sectionLabel: {
+      letterSpacing: 0.8,
+    },
+  });
 
 // ─── SettingRow ───
 
@@ -430,14 +460,15 @@ const SettingRow: React.FC<SettingRowProps> = ({
   trailing,
   subValue,
 }) => {
+  const { palette: p } = useTheme();
   const interactive = typeof onPress === 'function';
 
   const inner = (pressed: boolean) => (
-    <View style={[styles.row, pressed && styles.rowPressed]}>
-      <View style={styles.iconShell}>
-        <MaterialIcons name={icon} size={20} color={koolaColors.muted} />
+    <View style={[settingRowStyles.row, pressed && settingRowStyles.rowPressed]}>
+      <View style={settingRowStyles.iconShell}>
+        <MaterialIcons name={icon} size={20} color={p.muted} />
       </View>
-      <View style={styles.rowText}>
+      <View style={settingRowStyles.rowText}>
         <KoolaText variant="label" weight="500" tone="muted">
           {label}
         </KoolaText>
@@ -446,16 +477,16 @@ const SettingRow: React.FC<SettingRowProps> = ({
           weight={value ? '500' : '400'}
           tone={value ? 'ink' : 'faint'}
           numberOfLines={1}
-          style={styles.rowValue}>
+          style={settingRowStyles.rowValue}>
           {value || placeholder || ''}
         </KoolaText>
-        {subValue ? <View style={styles.rowSubValue}>{subValue}</View> : null}
+        {subValue ? <View style={settingRowStyles.rowSubValue}>{subValue}</View> : null}
       </View>
-      <View style={styles.rowChevron}>
+      <View style={settingRowStyles.rowChevron}>
         {trailing !== undefined ? (
           trailing
         ) : interactive ? (
-          <MaterialIcons name="chevron-right" size={18} color={koolaColors.faint} />
+          <MaterialIcons name="chevron-right" size={18} color={p.faint} />
         ) : null}
       </View>
     </View>
@@ -466,7 +497,7 @@ const SettingRow: React.FC<SettingRowProps> = ({
       {interactive ? (
         <Pressable
           onPress={onPress}
-          android_ripple={{ color: koolaColors.primarySoft }}
+          android_ripple={{ color: p.primarySoft }}
           accessibilityRole="button"
           accessibilityLabel={`${label}: ${value || placeholder || 'chưa đặt'}`}>
           {({ pressed }) => inner(pressed)}
@@ -474,200 +505,18 @@ const SettingRow: React.FC<SettingRowProps> = ({
       ) : (
         inner(false)
       )}
-      {!last ? <KoolaDivider style={styles.rowDivider} /> : null}
+      {!last ? <KoolaDivider style={settingRowStyles.rowDivider} /> : null}
     </>
   );
 };
 
-export default EditProfileScreen;
-
-const HERO_BAND_HEIGHT = 220;
-const AVATAR_SIZE = 120;
-const AVATAR_RING = 3;
-const AVATAR_TOTAL = AVATAR_SIZE + AVATAR_RING * 2;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-
-  // Header
-  header: {
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  headerRow: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: koolaSpacing.sm,
-  },
-  headerBack: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
-
-  // Scroll
-  scroll: {
-    paddingBottom: koolaSpacing.xxl,
-  },
-
-  // Hero
-  heroWrap: {
-    paddingHorizontal: koolaSpacing.lg,
-    paddingTop: koolaSpacing.lg,
-  },
-  heroBandWrap: {
-    borderTopLeftRadius: koolaRadii.lg,
-    borderTopRightRadius: koolaRadii.lg,
-    overflow: 'hidden',
-  },
-  heroBand: {
-    height: HERO_BAND_HEIGHT,
-    overflow: 'hidden',
-  },
-  heroBandPressed: {
-    opacity: 0.86,
-  },
-  heroBandTouchable: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-  },
-  heroBandImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  heroBandOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(37,99,235,0.06)',
-  },
-  heroBandPrompt: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroBandPromptIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: koolaColors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-    ...koolaShadows.subtle,
-  },
-  heroBandPromptText: {
-    letterSpacing: 0.2,
-  },
-  heroBandLoading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroBandLoadingDim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroInfoCard: {
-    marginTop: -koolaRadii.lg,
-    borderTopLeftRadius: koolaRadii.lg,
-    borderTopRightRadius: koolaRadii.lg,
-    borderBottomLeftRadius: koolaRadii.lg,
-    borderBottomRightRadius: koolaRadii.lg,
-    paddingTop: AVATAR_TOTAL * 0.4 + koolaSpacing.md,
-    paddingBottom: koolaSpacing.lg,
-    paddingHorizontal: koolaSpacing.lg,
-    alignItems: 'center',
-  },
-  avatarPressable: {
-    position: 'absolute',
-    top: -(AVATAR_TOTAL * 0.6),
-    left: '50%',
-    marginLeft: -(AVATAR_TOTAL / 2),
-    width: AVATAR_TOTAL,
-    height: AVATAR_TOTAL,
-    zIndex: 10,
-  },
-  avatarRing: {
-    padding: AVATAR_RING,
-    borderRadius: AVATAR_TOTAL / 2,
-    backgroundColor: koolaColors.surface,
-    ...koolaShadows.soft,
-  },
-  avatarOverlay: {
-    position: 'absolute',
-    top: AVATAR_RING,
-    left: AVATAR_RING,
-    right: AVATAR_RING,
-    bottom: AVATAR_RING,
-    backgroundColor: 'rgba(16,24,40,0.45)',
-    borderRadius: AVATAR_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarCameraBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: koolaColors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2.5,
-    borderColor: koolaColors.surface,
-  },
-  heroName: {
-    marginTop: koolaSpacing.sm,
-    textAlign: 'center',
-  },
-  heroUsername: {
-    marginTop: 2,
-    textAlign: 'center',
-  },
-
-  // Section
-  sectionHeader: {
-    paddingHorizontal: koolaSpacing.lg + 4,
-    paddingTop: koolaSpacing.xl,
-    paddingBottom: koolaSpacing.sm,
-  },
-  sectionLabel: {
-    letterSpacing: 0.8,
-  },
-  sectionCard: {
-    marginHorizontal: koolaSpacing.lg,
-    borderRadius: koolaRadii.md,
-    overflow: 'hidden',
-  },
-
-  // Row
+const settingRowStyles = StyleSheet.create({
   row: {
     minHeight: 60,
     paddingHorizontal: koolaSpacing.lg,
     paddingVertical: koolaSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  rowDivider: {
-    marginLeft: koolaSpacing.lg + 24 + koolaSpacing.md,
   },
   rowPressed: {
     opacity: 0.82,
@@ -697,11 +546,204 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  verifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  verifiedIcon: {
-    marginRight: 4,
+  rowDivider: {
+    marginLeft: koolaSpacing.lg + 24 + koolaSpacing.md,
   },
 });
+
+export default EditProfileScreen;
+
+const HERO_BAND_HEIGHT = 220;
+const AVATAR_SIZE = 120;
+const AVATAR_RING = 3;
+const AVATAR_TOTAL = AVATAR_SIZE + AVATAR_RING * 2;
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+
+    // Header
+    header: {
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    headerRow: {
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.sm,
+    },
+    headerBack: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerTitle: {
+      flex: 1,
+      textAlign: 'center',
+    },
+    headerSpacer: {
+      width: 44,
+    },
+
+    // Scroll
+    scroll: {
+      paddingBottom: koolaSpacing.xxl,
+    },
+
+    // Hero
+    heroWrap: {
+      paddingHorizontal: koolaSpacing.lg,
+      paddingTop: koolaSpacing.lg,
+    },
+    heroBandWrap: {
+      borderTopLeftRadius: koolaRadii.lg,
+      borderTopRightRadius: koolaRadii.lg,
+      overflow: 'hidden',
+    },
+    heroBand: {
+      height: HERO_BAND_HEIGHT,
+      overflow: 'hidden',
+    },
+    heroBandPressed: {
+      opacity: 0.86,
+    },
+    heroBandTouchable: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 10,
+    },
+    heroBandImage: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    heroBandOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(37,99,235,0.06)',
+    },
+    heroBandPrompt: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroBandPromptIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: p.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 6,
+      ...koolaShadows.sm,
+    },
+    heroBandPromptText: {
+      letterSpacing: 0.2,
+    },
+    heroBandLoading: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroBandLoadingDim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.25)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroInfoCard: {
+      marginTop: -koolaRadii.lg,
+      borderTopLeftRadius: koolaRadii.lg,
+      borderTopRightRadius: koolaRadii.lg,
+      borderBottomLeftRadius: koolaRadii.lg,
+      borderBottomRightRadius: koolaRadii.lg,
+      paddingTop: AVATAR_TOTAL * 0.4 + koolaSpacing.md,
+      paddingBottom: koolaSpacing.lg,
+      paddingHorizontal: koolaSpacing.lg,
+      alignItems: 'center',
+    },
+    avatarPressable: {
+      position: 'absolute',
+      top: -(AVATAR_TOTAL * 0.6),
+      left: '50%',
+      marginLeft: -(AVATAR_TOTAL / 2),
+      width: AVATAR_TOTAL,
+      height: AVATAR_TOTAL,
+      zIndex: 10,
+    },
+    avatarRing: {
+      padding: AVATAR_RING,
+      borderRadius: AVATAR_TOTAL / 2,
+      backgroundColor: p.surface,
+      ...koolaShadows.md,
+    },
+    avatarOverlay: {
+      position: 'absolute',
+      top: AVATAR_RING,
+      left: AVATAR_RING,
+      right: AVATAR_RING,
+      bottom: AVATAR_RING,
+      backgroundColor: 'rgba(16,24,40,0.45)',
+      borderRadius: AVATAR_SIZE / 2,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarCameraBadge: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: p.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 2.5,
+      borderColor: p.surface,
+    },
+    heroName: {
+      marginTop: koolaSpacing.sm,
+      textAlign: 'center',
+    },
+    heroUsername: {
+      marginTop: 2,
+      textAlign: 'center',
+    },
+
+    // Section
+    sectionHeader: {
+      paddingHorizontal: koolaSpacing.lg + 4,
+      paddingTop: koolaSpacing.xl,
+      paddingBottom: koolaSpacing.sm,
+    },
+    sectionLabel: {
+      letterSpacing: 0.8,
+    },
+    sectionCard: {
+      marginHorizontal: koolaSpacing.lg,
+      borderRadius: koolaRadii.md,
+      overflow: 'hidden',
+    },
+
+    // Row
+    rowPressed: {
+      opacity: 0.82,
+      transform: [{ scale: 0.99 }],
+    },
+    rowDivider: {
+      marginLeft: koolaSpacing.lg + 24 + koolaSpacing.md,
+    },
+    verifiedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    verifiedIcon: {
+      marginRight: 4,
+    },
+  });

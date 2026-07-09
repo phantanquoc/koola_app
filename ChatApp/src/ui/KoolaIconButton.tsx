@@ -50,6 +50,7 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
   className,
   disabled,
   style,
+  hitSlop,
   accessibilityRole = 'button',
   accessibilityState,
   onPressIn,
@@ -61,9 +62,15 @@ export const KoolaIconButton: React.FC<KoolaIconButtonProps> = ({
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const toneColor = useMemo(() => makeToneColor(palette), [palette]);
 
+  // Ensure minimum 44px touch target via hitSlop when visual size < 44
+  const resolvedHitSlop = hitSlop ?? (size < 44
+    ? { top: (44 - size) / 2, bottom: (44 - size) / 2, left: (44 - size) / 2, right: (44 - size) / 2 }
+    : undefined);
+
   return (
     <Pressable
       {...props}
+      hitSlop={resolvedHitSlop}
       accessibilityRole={accessibilityRole}
       accessibilityState={{
         ...accessibilityState,

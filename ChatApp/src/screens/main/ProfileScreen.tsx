@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { getOrDownload } from '../../services/media/mediaCacheService';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -22,11 +22,12 @@ import {
   KoolaSurface,
   KoolaText,
   KoolaSkeleton,
-  koolaColors,
   koolaRadii,
   koolaShadows,
   koolaSpacing,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
@@ -34,6 +35,8 @@ const ProfileScreen: React.FC = () => {
   const { userId } = route.params;
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarBottomInset();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,11 +112,11 @@ const ProfileScreen: React.FC = () => {
         <Pressable
           onPress={navigation.goBack}
           hitSlop={12}
-          android_ripple={{ color: koolaColors.line, borderless: true, radius: 22 }}
+          android_ripple={{ color: palette.line, borderless: true, radius: 22 }}
           style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
           accessibilityRole="button"
           accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color={koolaColors.ink} />
+          <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
         </Pressable>
         <KoolaText variant="heading" weight="700" style={styles.headerTitle} numberOfLines={1}>
           Hồ sơ
@@ -183,7 +186,7 @@ const ProfileScreen: React.FC = () => {
                 resizeMode="cover"
               />
             ) : (
-              <FakeGradientBand />
+              <FakeGradientBand palette={palette} />
             )}
             <View style={styles.coverScrim} />
           </View>
@@ -197,7 +200,7 @@ const ProfileScreen: React.FC = () => {
           </View>
 
           <View style={styles.identityBlock}>
-            <KoolaText variant="title" align="center" numberOfLines={2} style={styles.name}>
+            <KoolaText variant="title" align="center" numberOfLines={2}>
               {profileUser.displayName}
             </KoolaText>
             {profileUser.username ? (
@@ -242,18 +245,21 @@ const ProfileScreen: React.FC = () => {
             icon="alternate-email"
             label="Email"
             value={profileUser.email}
+            palette={palette}
           />
           <KoolaDivider />
           <InfoRow
             icon="schedule"
             label="Hoạt động"
             value={lastSeenText}
+            palette={palette}
           />
           <KoolaDivider />
           <InfoRow
             icon="verified-user"
             label="Trạng thái"
             value={profileUser.isOnline ? 'Có thể nhắn ngay' : 'Sẽ nhận tin nhắn khi quay lại'}
+            palette={palette}
           />
         </KoolaSurface>
 
@@ -274,39 +280,52 @@ const ProfileScreen: React.FC = () => {
 };
 
 // ─── FakeGradientBand ───
-// Stacked translucent white bands faking a primarySoft→surface fade.
+// Stacked translucent bands faking a primarySoft→surface fade.
+// In dark mode, bands blend toward the dark surface instead of white.
 // No gradient lib available — 1px overlap prevents seams (ui-dna.md:70).
-const FakeGradientBand: React.FC = () => (
-  <>
-    <View style={StyleSheet.absoluteFillObject as object} />
-    <View style={gradBandStyles.band1} />
-    <View style={gradBandStyles.band2} />
-    <View style={gradBandStyles.band3} />
-    <View style={gradBandStyles.band4} />
-    <View style={gradBandStyles.band5} />
-  </>
-);
+interface FakeGradientBandProps {
+  palette: Palette;
+}
 
-const gradBandStyles = StyleSheet.create({
-  band1: { ...StyleSheet.absoluteFillObject, backgroundColor: koolaColors.primarySoft },
-  band2: { position: 'absolute', left: 0, right: 0, top: '25%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.25)' },
-  band3: { position: 'absolute', left: 0, right: 0, top: '50%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.5)' },
-  band4: { position: 'absolute', left: 0, right: 0, top: '70%', bottom: -1, backgroundColor: 'rgba(255,255,255,0.7)' },
-  band5: { position: 'absolute', left: 0, right: 0, top: '85%', bottom: 0, backgroundColor: 'rgba(255,255,255,0.85)' },
-});
+const FakeGradientBand: React.FC<FakeGradientBandProps> = ({ palette }) => {
+  const bandStyles = useMemo(() => makeGradBandStyles(palette), [palette]);
+  return (
+    <>
+      <View style={StyleSheet.absoluteFillObject as object} />
+      <View style={bandStyles.band1} />
+      <View style={bandStyles.band2} />
+      <View style={bandStyles.band3} />
+      <View style={bandStyles.band4} />
+      <View style={bandStyles.band5} />
+    </>
+  );
+};
+
+const makeGradBandStyles = (p: Palette) => {
+  // Use surface color for the fade target — works in both light and dark
+  const fadeTarget = p.surface;
+  return StyleSheet.create({
+    band1: { ...StyleSheet.absoluteFillObject, backgroundColor: p.primarySoft },
+    band2: { position: 'absolute', left: 0, right: 0, top: '25%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.25 },
+    band3: { position: 'absolute', left: 0, right: 0, top: '50%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.5 },
+    band4: { position: 'absolute', left: 0, right: 0, top: '70%', bottom: -1, backgroundColor: fadeTarget, opacity: 0.7 },
+    band5: { position: 'absolute', left: 0, right: 0, top: '85%', bottom: 0, backgroundColor: fadeTarget, opacity: 0.85 },
+  });
+};
 
 interface InfoRowProps {
   icon: string;
   label: string;
   value: string;
+  palette: Palette;
 }
 
-const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value }) => (
-  <View style={styles.infoRow}>
-    <View style={styles.infoIcon}>
-      <MaterialIcons name={icon} size={19} color={koolaColors.primary} />
+const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, palette }) => (
+  <View style={infoRowStyles.infoRow}>
+    <View style={[infoRowStyles.infoIcon, { backgroundColor: palette.primarySoft }]}>
+      <MaterialIcons name={icon} size={19} color={palette.primary} />
     </View>
-    <View style={styles.infoCopy}>
+    <View style={infoRowStyles.infoCopy}>
       <KoolaText variant="caption" tone="muted" numberOfLines={1}>
         {label}
       </KoolaText>
@@ -317,141 +336,7 @@ const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value }) => (
   </View>
 );
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  scroll: {
-    flex: 1,
-  },
-  header: {
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  headerRow: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: koolaSpacing.sm,
-  },
-  headerBack: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBackPressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.98 }],
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
-  content: {
-    paddingHorizontal: koolaSpacing.lg,
-    paddingTop: koolaSpacing.lg,
-  },
-  loadingWrap: {
-    flex: 1,
-    padding: 16,
-    justifyContent: 'center',
-  },
-  loadingCard: {
-    alignItems: 'center',
-    paddingVertical: 28,
-    paddingHorizontal: 18,
-    gap: 14,
-  },
-  stateWrap: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  coverFrame: {
-    width: '100%',
-    height: 164,
-    overflow: 'hidden',
-    borderTopLeftRadius: koolaRadii.lg,
-    borderTopRightRadius: koolaRadii.lg,
-    backgroundColor: koolaColors.primarySoft,
-  },
-  coverImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  coverScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(16,24,40,0.08)',
-  },
-  profileCard: {
-    alignItems: 'center',
-    overflow: 'hidden',
-    borderRadius: koolaRadii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    ...koolaShadows.soft,
-  },
-  avatarFrame: {
-    marginTop: -58,
-    padding: 5,
-    borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    ...koolaShadows.subtle,
-  },
-  identityBlock: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: koolaSpacing.md,
-    paddingHorizontal: koolaSpacing.lg,
-  },
-  name: {
-    color: koolaColors.ink,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: koolaSpacing.sm,
-    marginTop: koolaSpacing.md,
-  },
-  statusDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-  },
-  online: {
-    backgroundColor: koolaColors.success,
-  },
-  offline: {
-    backgroundColor: koolaColors.faint,
-  },
-  bioBox: {
-    marginTop: koolaSpacing.lg,
-    marginHorizontal: koolaSpacing.xl,
-    marginBottom: koolaSpacing.xl,
-    paddingHorizontal: koolaSpacing.lg,
-    paddingVertical: koolaSpacing.md,
-    borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.canvas,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-  infoCard: {
-    marginTop: koolaSpacing.lg,
-    overflow: 'hidden',
-    borderRadius: koolaRadii.lg,
-  },
-  sectionIntro: {
-    paddingHorizontal: koolaSpacing.lg,
-    paddingTop: koolaSpacing.lg,
-    paddingBottom: koolaSpacing.md,
-    gap: koolaSpacing.xs,
-  },
+const infoRowStyles = StyleSheet.create({
   infoRow: {
     minHeight: 74,
     paddingHorizontal: koolaSpacing.lg,
@@ -464,7 +349,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -472,13 +356,148 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: koolaSpacing.xs,
   },
-  actionPanel: {
-    marginTop: koolaSpacing.lg,
-    gap: koolaSpacing.md,
-  },
-  chatButton: {
-    borderRadius: koolaRadii.md,
-  },
 });
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    scroll: {
+      flex: 1,
+    },
+    header: {
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    headerRow: {
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.sm,
+    },
+    headerBack: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerBackPressed: {
+      opacity: 0.78,
+      transform: [{ scale: 0.98 }],
+    },
+    headerTitle: {
+      flex: 1,
+      textAlign: 'center',
+    },
+    headerSpacer: {
+      width: 44,
+    },
+    content: {
+      paddingHorizontal: koolaSpacing.lg,
+      paddingTop: koolaSpacing.lg,
+    },
+    loadingWrap: {
+      flex: 1,
+      padding: 16,
+      justifyContent: 'center',
+    },
+    loadingCard: {
+      alignItems: 'center',
+      paddingVertical: 28,
+      paddingHorizontal: 18,
+      gap: 14,
+    },
+    stateWrap: {
+      flex: 1,
+      justifyContent: 'center',
+    },
+    coverFrame: {
+      width: '100%',
+      height: 164,
+      overflow: 'hidden',
+      borderTopLeftRadius: koolaRadii.lg,
+      borderTopRightRadius: koolaRadii.lg,
+      backgroundColor: p.primarySoft,
+    },
+    coverImage: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    coverScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(16,24,40,0.08)',
+    },
+    profileCard: {
+      alignItems: 'center',
+      overflow: 'hidden',
+      borderRadius: koolaRadii.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      ...koolaShadows.md,
+    },
+    avatarFrame: {
+      marginTop: -58,
+      padding: 5,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: p.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      ...koolaShadows.sm,
+    },
+    identityBlock: {
+      width: '100%',
+      alignItems: 'center',
+      marginTop: koolaSpacing.md,
+      paddingHorizontal: koolaSpacing.lg,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: koolaSpacing.sm,
+      marginTop: koolaSpacing.md,
+    },
+    statusDot: {
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+    },
+    online: {
+      backgroundColor: p.success,
+    },
+    offline: {
+      backgroundColor: p.faint,
+    },
+    bioBox: {
+      marginTop: koolaSpacing.lg,
+      marginHorizontal: koolaSpacing.xl,
+      marginBottom: koolaSpacing.xl,
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: koolaSpacing.md,
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.canvas,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+    infoCard: {
+      marginTop: koolaSpacing.lg,
+      overflow: 'hidden',
+      borderRadius: koolaRadii.lg,
+    },
+    sectionIntro: {
+      paddingHorizontal: koolaSpacing.lg,
+      paddingTop: koolaSpacing.lg,
+      paddingBottom: koolaSpacing.md,
+      gap: koolaSpacing.xs,
+    },
+    actionPanel: {
+      marginTop: koolaSpacing.lg,
+      gap: koolaSpacing.md,
+    },
+    chatButton: {
+      borderRadius: koolaRadii.md,
+    },
+  });
 
 export default ProfileScreen;

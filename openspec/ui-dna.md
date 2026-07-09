@@ -25,11 +25,13 @@ Design essence distilled from the living codebase. Every UI change must respect 
 | warning | `#F59E0B` | Caution states |
 | success | `#12B76A` | Positive confirmations |
 
-All UI must reference `koolaColors.*` tokens — never hardcode hex values.
+All UI must reference palette tokens via `useTheme().palette` — never hardcode hex values, never import `koolaColors` directly in screens. The `koolaColors` object defines the light palette; `koolaDarkColors` defines the dark palette. Screens consume whichever is active through `useTheme()`.
+
+Pattern: `const { palette } = useTheme(); const styles = useMemo(() => makeStyles(palette), [palette]);`
 
 ### Spacing
 
-8px base grid. Scale: 4 / 8 / 12 / 16 / 24 / 32. Use `koolaSpacing.*` (xs/sm/md/lg/xl/xxl).
+8px base grid. Scale: 4 / 8 / 12 / 16 / 24 / 32 / 40 / 48. Use `koolaSpacing.*` (xs/sm/md/lg/xl/xxl/40/48).
 
 - Inline gaps: 4–8px
 - Section padding: 16px horizontal, 12–16px vertical
@@ -40,6 +42,7 @@ All UI must reference `koolaColors.*` tokens — never hardcode hex values.
 
 | Variant | Size/LH | Weight | Use for |
 |---------|---------|--------|---------|
+| display | 32/40 | 800 | Hero text, onboarding |
 | title | 24/30 | 800 | Screen titles, brand |
 | heading | 20/26 | 700 | Section headers, modal titles |
 | body | 15/22 | 400 | Content text |
@@ -48,20 +51,56 @@ All UI must reference `koolaColors.*` tokens — never hardcode hex values.
 
 Always use `KoolaText` with variant/tone/weight props — never raw `<Text>` with inline styles.
 
+Font scaling: `KoolaText` applies variant-aware `maxFontSizeMultiplier` (content variants body/display ≈1.5; chrome variants caption/label ≈1.3; title/heading ≈1.35). Never set `maxFontSizeMultiplier={1.0}` — that blocks accessibility scaling entirely. Per-instance override is available via the `maxFontSizeMultiplier` prop when layout requires it.
+
 ### Radius
 
 | Token | Value | Use for |
 |-------|-------|---------|
+| xs2 | 4px | Tiny rounding, progress bars |
 | xs | 8px | Small inputs, chips |
 | sm | 10px | Buttons, badges |
 | md | 14px | Cards, modals |
 | lg | 20px | Bottom sheets |
+| xl | 24px | Large cards, hero surfaces |
 | pill | 999px | Chips, badges, search bars |
 
-### Shadows
+### Shadows / Depth
 
-- `subtle` — cards, surfaces (offset 3px, opacity 0.08, radius 10)
-- `soft` — elevated modals, floating elements (offset 8px, opacity 0.1, radius 18)
+Shadow scale (`koolaShadows`): `xs` / `sm` / `md` / `lg` / `xl` plus legacy `subtle` and `soft`.
+
+| Level | Offset | Opacity | Use for |
+|-------|--------|---------|---------|
+| xs | 1px | 0.05 | Subtle card lift, headers |
+| sm | 2px | 0.06 | Standard cards |
+| md | 4px | 0.08 | Elevated cards, popovers |
+| lg | 8px | 0.10 | Modals, floating elements |
+| xl | 12px | 0.12 | Toast, highest elevation |
+
+Dark-mode depth (`koolaDarkShadows`): On dark backgrounds, black shadows are invisible. Elevation is expressed via a lighter elevated surface tint + a subtle top hairline (0.5px white at low alpha). Components select shadow variant by scheme:
+
+```ts
+const shadow = resolvedScheme === 'dark' ? koolaDarkShadows.md : koolaShadows.md;
+```
+
+### zIndex
+
+| Token | Value | Use for |
+|-------|-------|---------|
+| hide | -1 | Below-default, background layers |
+| base | 0 | Default stacking |
+| dropdown | 10 | Popovers, FABs |
+| sticky | 20 | Sticky headers, tab bars |
+| overlay | 30 | Scrims, dim backgrounds |
+| modal | 40 | Modals, bottom sheets |
+| toast | 50 | Toasts, snackbars (always on top) |
+
+### Opacity
+
+| Token | Value | Use for |
+|-------|-------|---------|
+| disabled | 0.4 | Disabled controls |
+| pressed | 0.7 | Active press feedback |
 
 ### Translucent Surfaces (Glass)
 
@@ -119,6 +158,13 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Use skeleton color token (`#EEF2F7`)
 - Show 3 skeleton items for initial list loads
 
+### Moments Gradient Ring (MomentRing)
+- Unseen stories: gradient stroke via `react-native-svg` (`Defs` + `LinearGradient` + `Circle` stroke). Multi-stop gradient from warm to primary for visual punch.
+- Seen stories: muted single-color stroke (palette.line or faint).
+- No `react-native-linear-gradient` dependency — SVG-only approach using the already-installed `react-native-svg`.
+- Ring wraps the user avatar; size scales with avatar prop.
+- Never use a flat solid border for unseen state — the gradient ring is the Moments visual signature.
+
 ---
 
 ## Interaction & Motion
@@ -127,8 +173,33 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Pressable pattern: track pressed state, apply opacity + subtle scale transform
 - Android: use `android_ripple` on Pressable elements
 - Modals: bottom sheets use `animationType="fade"`, full-screen pickers use `animationType="slide"`
-- Duration: keep transitions under 200ms for interactive feedback
-- No spring/bounce animations — keep motion functional and quick
+
+### Duration tokens (`koolaDurations`)
+
+| Token | Value | Use for |
+|-------|-------|---------|
+| fast | 120ms | Micro-interactions: button press, icon swap, checkbox |
+| normal | 180ms | Standard transitions: fade, scale, slide |
+| slow | 280ms | Navigation/modal transitions, complex choreography |
+
+- Micro-interactions MUST stay under 200ms (`fast` or `normal`)
+- Navigation/modal transitions may extend to ~300ms (`slow`)
+
+### Spring rules (reconciled)
+
+- Spring animations (`withSpring`) are allowed ONLY for direct-manipulation gestures: image zoom/pan, drag release, pinch snap-back
+- Decorative spring/bounce on chrome elements (tab bars, buttons, headers) is BANNED
+- No perpetual `withRepeat(-1)` reanimated loops — the dead tab-dock loops gated behind `DIAG_STATIC_TABDOCK` remain gated dead
+
+### Easing curves (`koolaEasing`)
+
+- `decelerate` — enter animations (element appearing)
+- `accelerate` — exit animations (element leaving)
+- `standard` — symmetric transitions (toggle, crossfade)
+
+### Reduce motion
+
+Use `prefersReducedMotion()` from `ui/tokens/motion` to skip animations when the user has enabled reduce-motion system setting.
 
 ---
 
@@ -166,7 +237,7 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 ## Anti-Patterns
 
 - Never use raw `<Text>` — always `KoolaText` with semantic variant/tone
-- Never hardcode hex colors — always reference `koolaColors.*`
+- Never hardcode hex colors — always reference palette tokens via `useTheme().palette`; `koolaColors`/`koolaDarkColors` are only for the token definition file
 - Never use `TouchableOpacity` for new components — use `Pressable` with explicit press state
 - Never nest ScrollView inside FlatList
 - Never exceed 2 rows of filter controls above content — collapse into sheet if needed

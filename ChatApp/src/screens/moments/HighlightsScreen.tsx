@@ -2,12 +2,15 @@
  * HighlightsScreen.tsx
  *
  * Grid of Highlight covers for a user's profile.
- * Own profile: long-press cover → "Đổi tên" / "Xóa" / "Sắp xếp lại"
+ * Own profile: long-press cover -> "Đổi tên" / "Xóa" / "Sắp xếp lại"
  * "Tạo Highlight mới" entry at top.
- * Tap highlight → opens MomentViewerScreen in highlight mode.
+ * Tap highlight -> opens MomentViewerScreen in highlight mode.
+ *
+ * Renders coverKey as a thumbnail image when available (via mediaCacheService),
+ * falls back to story count badge when no cover.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   FlatList,
@@ -19,13 +22,16 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, KoolaButton, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, KoolaButton, koolaRadii, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { momentsService } from '../../services/moments/momentsService';
+import { getOrDownload } from '../../services/media/mediaCacheService';
 import type { Highlight } from '../../services/moments/momentsApi';
 
 type NavProp = NativeStackNavigationProp<ChatTabStackParamList>;
@@ -33,10 +39,70 @@ type HighlightsRouteProp = RouteProp<ChatTabStackParamList, 'Highlights'>;
 
 const COLUMN_COUNT = 3;
 
+// ─── Cover Thumbnail ────────────────────────────────────────────────────────
+
+interface CoverThumbnailProps {
+  coverKey: string | null;
+  storyCount: number;
+  palette: Palette;
+}
+
+const CoverThumbnail: React.FC<CoverThumbnailProps> = ({ coverKey, storyCount, palette }) => {
+  const [uri, setUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!coverKey) return;
+    let cancelled = false;
+    getOrDownload(coverKey).then((resolved) => {
+      if (!cancelled && resolved) setUri(resolved);
+    });
+    return () => { cancelled = true; };
+  }, [coverKey]);
+
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          borderWidth: 1,
+          borderColor: palette.line,
+        }}
+        resizeMode="cover"
+        accessibilityLabel="Ảnh bìa Highlight"
+      />
+    );
+  }
+
+  return (
+    <View
+      style={{
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        backgroundColor: palette.skeleton,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: palette.line,
+      }}>
+      <KoolaText variant="caption" tone="muted" align="center">
+        {storyCount} khoảnh khắc
+      </KoolaText>
+    </View>
+  );
+};
+
+// ─── HighlightsScreen ───────────────────────────────────────────────────────
+
 const HighlightsScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<HighlightsRouteProp>();
   const { userId, isOwn } = route.params;
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,7 +209,7 @@ const HighlightsScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={koolaColors.primary} accessibilityLabel="Đang tải Highlights" />
+        <ActivityIndicator size="large" color={palette.primary} accessibilityLabel="Đang tải Highlights" />
       </View>
     );
   }
@@ -185,11 +251,11 @@ const HighlightsScreen: React.FC = () => {
             accessibilityRole="button"
             accessibilityLabel={`Highlight: ${item.title}`}
             accessibilityHint={isOwn ? 'Nhấn giữ để chỉnh sửa hoặc xóa' : undefined}>
-            <View style={styles.highlightCover}>
-              <KoolaText variant="caption" tone="muted" align="center">
-                {item.storyIds.length} khoảnh khắc
-              </KoolaText>
-            </View>
+            <CoverThumbnail
+              coverKey={item.coverKey}
+              storyCount={item.storyIds.length}
+              palette={palette}
+            />
             <KoolaText
               variant="caption"
               tone="ink"
@@ -225,7 +291,7 @@ const HighlightsScreen: React.FC = () => {
               value={newTitle}
               onChangeText={setNewTitle}
               placeholder="Tên Highlight..."
-              placeholderTextColor={koolaColors.faint}
+              placeholderTextColor={palette.faint}
               maxLength={50}
               autoFocus
               accessibilityLabel="Tên Highlight mới"
@@ -252,97 +318,88 @@ const HighlightsScreen: React.FC = () => {
 
 const CELL_SIZE = '33.33%';
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  grid: {
-    padding: 4,
-  },
-  newHighlightEntry: {
-    width: CELL_SIZE,
-    alignItems: 'center',
-    padding: 8,
-    marginBottom: 8,
-  } as unknown as object,
-  newHighlightIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    borderColor: koolaColors.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderStyle: 'dashed',
-  },
-  plusSign: {
-    fontSize: 28,
-    color: koolaColors.muted,
-  },
-  newHighlightLabel: {
-    marginTop: 4,
-  },
-  highlightCell: {
-    width: CELL_SIZE,
-    alignItems: 'center',
-    padding: 8,
-    marginBottom: 8,
-  } as unknown as object,
-  highlightCover: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: koolaColors.skeleton,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: koolaColors.line,
-  },
-  highlightTitle: {
-    marginTop: 4,
-    maxWidth: 80,
-  },
-  empty: {
-    padding: 40,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  renameModal: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    padding: 24,
-    width: 300,
-    gap: 16,
-  },
-  renameTitle: {
-    textAlign: 'center',
-  },
-  renameInput: {
-    borderWidth: 1,
-    borderColor: koolaColors.line,
-    borderRadius: koolaRadii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-    color: koolaColors.ink,
-  },
-  renameActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  renameBtn: {
-    flex: 1,
-  },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+    center: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    grid: {
+      padding: 4,
+    },
+    newHighlightEntry: {
+      width: CELL_SIZE,
+      alignItems: 'center',
+      padding: 8,
+      marginBottom: 8,
+    } as unknown as object,
+    newHighlightIcon: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderWidth: 2,
+      borderColor: palette.line,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderStyle: 'dashed',
+    },
+    plusSign: {
+      fontSize: 28,
+      color: palette.muted,
+    },
+    newHighlightLabel: {
+      marginTop: 4,
+    },
+    highlightCell: {
+      width: CELL_SIZE,
+      alignItems: 'center',
+      padding: 8,
+      marginBottom: 8,
+    } as unknown as object,
+    highlightTitle: {
+      marginTop: 4,
+      maxWidth: 80,
+    },
+    empty: {
+      padding: 40,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    renameModal: {
+      backgroundColor: palette.surface,
+      borderRadius: koolaRadii.md,
+      padding: 24,
+      width: 300,
+      gap: 16,
+    },
+    renameTitle: {
+      textAlign: 'center',
+    },
+    renameInput: {
+      borderWidth: 1,
+      borderColor: palette.line,
+      borderRadius: koolaRadii.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 15,
+      color: palette.ink,
+    },
+    renameActions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    renameBtn: {
+      flex: 1,
+    },
+  });
 
 export default HighlightsScreen;

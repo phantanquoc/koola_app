@@ -15,6 +15,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -39,7 +40,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, koolaColors } from '../../ui';
+import { KoolaText, koolaColors, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { storiesApi } from '../../services/moments/momentsApi';
 import { momentsService } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -48,7 +50,6 @@ import { viewsApi } from '../../services/moments/momentsApi';
 
 type NavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 type ViewerRouteProp = RouteProp<ChatTabStackParamList, 'MomentViewer'>;
-
 type ViewerState = 'loading' | 'loaded' | 'paused' | 'error' | 'expired' | 'blocked';
 
 const ALLOWED_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👏', '🔥'];
@@ -61,6 +62,8 @@ const MomentViewerScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { authorId, startStoryId } = route.params;
   const { user } = useAuth();
+  const { palette } = useTheme();
+  const modalStyles = useMemo(() => makeModalStyles(palette), [palette]);
 
   const [stories, setStories] = useState<Story[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -77,25 +80,19 @@ const MomentViewerScreen: React.FC = () => {
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewRecordedRef = useRef(new Set<string>());
   const viewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Progress value (0..1) captured when paused, so resume continues from the
-  // remaining time instead of restarting the full image duration.
   const pausedValueRef = useRef(0);
-  // Parallel audio player (compose-at-playback) for stories with musicRef.
   const audioRef = useRef<React.ElementRef<typeof Video> | null>(null);
   const isOwnStory = user?._id === authorId;
 
   const currentStory = stories[currentIndex];
 
-  // Mirror currentIndex into a ref so advance/prev callbacks read the latest
-  // value without performing side effects inside a setState updater (which
-  // runs during render and would trigger navigation/setState-in-render warns).
   const currentIndexRef = useRef(0);
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
+/* VIEWER_EFFECTS_PLACEHOLDER */
 
-  // ─── Fetch music track info for current story ─────────────────────────────
-
+  // --- Fetch music track info for current story ---
   useEffect(() => {
     if (!currentStory?.musicRef?.trackId) {
       setTrackInfo(null);
@@ -109,20 +106,15 @@ const MomentViewerScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, [currentStory?.musicRef?.trackId]);
 
-  // ─── Load stories for author ──────────────────────────────────────────────
-
+  // --- Load stories for author ---
   useEffect(() => {
     let cancelled = false;
     const cached = momentsService.getStoriesForAuthor(authorId);
     const startIdx = cached.findIndex((s) => s._id === startStoryId);
-
-    // Show whatever we have from cache immediately, then resolve mediaUrl.
     if (cached.length > 0) {
       setStories(cached);
       setCurrentIndex(startIdx >= 0 ? startIdx : 0);
     }
-
-    // Always fetch the start story detail to get a presigned mediaUrl.
     storiesApi
       .getStoryById(startStoryId)
       .then((detail) => {
@@ -147,19 +139,14 @@ const MomentViewerScreen: React.FC = () => {
         else if (err?.response?.status === 403) setViewerState('blocked');
         else setViewerState('error');
       });
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [authorId, startStoryId]);
+/* VIEWER_PROGRESS_PLACEHOLDER */
 
-  // ─── Progress animation ───────────────────────────────────────────────────
-
+  // --- Progress animation ---
   const startProgress = useCallback(
     (durationMs: number, fromValue = 0) => {
       progressAnim.setValue(fromValue);
-      // Remaining wall-clock time scales with the un-elapsed fraction so a
-      // resume after pause finishes the bar in the time it had left.
       const remainingMs = Math.max(0, durationMs * (1 - fromValue));
       Animated.timing(progressAnim, {
         toValue: 1,
@@ -174,7 +161,6 @@ const MomentViewerScreen: React.FC = () => {
   );
 
   const stopProgress = useCallback(() => {
-    // Capture where the bar is so handlePressOut can resume from here.
     progressAnim.stopAnimation((value: number) => {
       pausedValueRef.current = value;
     });
@@ -186,7 +172,6 @@ const MomentViewerScreen: React.FC = () => {
       setViewerState('loading');
       setCurrentIndex(next);
     } else {
-      // No more stories — dismiss
       navigation.goBack();
     }
   }, [stories.length, navigation]);
@@ -199,17 +184,12 @@ const MomentViewerScreen: React.FC = () => {
     }
   }, []);
 
-  // Keep a live ref to advanceStory so the progress-animation completion
-  // callback (created once in startProgress) always invokes the current
-  // version — otherwise it would capture a stale closure with stories.length
-  // frozen at 0 and dismiss the viewer instead of advancing.
   const advanceStoryRef = useRef(advanceStory);
   useEffect(() => {
     advanceStoryRef.current = advanceStory;
   }, [advanceStory]);
 
-  // ─── View recording ───────────────────────────────────────────────────────
-
+  // --- View recording ---
   const recordViewDebounced = useCallback((storyId: string) => {
     if (viewRecordedRef.current.has(storyId)) return;
     if (viewDebounceRef.current) clearTimeout(viewDebounceRef.current);
@@ -220,9 +200,9 @@ const MomentViewerScreen: React.FC = () => {
       }
     }, VIEW_DEBOUNCE_MS);
   }, []);
+/* VIEWER_SWIPE_PLACEHOLDER */
 
-  // ─── Swipe-down dismiss ───────────────────────────────────────────────────
-
+  // --- Swipe-down dismiss ---
   const swipeY = useRef(new Animated.Value(0)).current;
   const panResponder = useRef(
     PanResponder.create({
@@ -240,8 +220,7 @@ const MomentViewerScreen: React.FC = () => {
     }),
   ).current;
 
-  // ─── On media load ────────────────────────────────────────────────────────
-
+  // --- On media load ---
   const handleMediaLoad = useCallback(() => {
     setViewerState('loaded');
     if (currentStory) {
@@ -258,8 +237,7 @@ const MomentViewerScreen: React.FC = () => {
     advanceStory();
   }, [advanceStory]);
 
-  // ─── Reactions ────────────────────────────────────────────────────────────
-
+  // --- Reactions ---
   const handleReaction = useCallback(
     async (emoji: string) => {
       if (!currentStory) return;
@@ -270,13 +248,11 @@ const MomentViewerScreen: React.FC = () => {
           setViewerState('expired');
           return;
         }
-        // Non-critical — swallow other errors
       }
     },
     [currentStory, authorId],
   );
 
-  // Double-tap heart shortcut
   const lastTapRef = useRef(0);
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
@@ -286,8 +262,7 @@ const MomentViewerScreen: React.FC = () => {
     lastTapRef.current = now;
   }, [handleReaction]);
 
-  // ─── Comment ──────────────────────────────────────────────────────────────
-
+  // --- Comment ---
   const handleSendComment = useCallback(async () => {
     if (!currentStory || !commentText.trim()) return;
     try {
@@ -304,9 +279,9 @@ const MomentViewerScreen: React.FC = () => {
       Alert.alert('Lỗi', 'Không gửi được tin nhắn. Vui lòng thử lại.');
     }
   }, [currentStory, commentText, authorId]);
+/* VIEWER_VIEWERSSHEET_PLACEHOLDER */
 
-  // ─── Viewers sheet (author only) ──────────────────────────────────────────
-
+  // --- Viewers sheet (author only) ---
   const handleSwipeUp = useCallback(async () => {
     if (!isOwnStory || !currentStory) return;
     try {
@@ -318,8 +293,7 @@ const MomentViewerScreen: React.FC = () => {
     }
   }, [isOwnStory, currentStory]);
 
-  // ─── Pause on hold ────────────────────────────────────────────────────────
-
+  // --- Pause on hold ---
   const handlePressIn = useCallback(() => {
     setIsPaused(true);
     stopProgress();
@@ -328,13 +302,11 @@ const MomentViewerScreen: React.FC = () => {
   const handlePressOut = useCallback(() => {
     setIsPaused(false);
     if (currentStory?.mediaType === 'image' && viewerState === 'loaded') {
-      // Resume the image timer from where it was paused, not from zero.
       startProgress(IMAGE_DURATION_MS, pausedValueRef.current);
     }
   }, [currentStory, viewerState, startProgress]);
 
-  // ─── Mention rendering ────────────────────────────────────────────────────
-
+  // --- Mention rendering ---
   const renderCaption = useCallback((story: Story) => {
     if (!story.caption || story.mentions.length === 0) {
       return (
@@ -343,11 +315,9 @@ const MomentViewerScreen: React.FC = () => {
         </KoolaText>
       );
     }
-
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     const sortedMentions = [...story.mentions].sort((a, b) => a.offset - b.offset);
-
     for (const mention of sortedMentions) {
       if (mention.offset > lastIndex) {
         parts.push(
@@ -369,7 +339,6 @@ const MomentViewerScreen: React.FC = () => {
       );
       lastIndex = mention.offset + mention.length;
     }
-
     if (lastIndex < story.caption.length) {
       parts.push(
         <KoolaText key={`text-end`} style={styles.captionText} tone="surface">
@@ -377,15 +346,11 @@ const MomentViewerScreen: React.FC = () => {
         </KoolaText>,
       );
     }
-
     return <View style={styles.captionRow}>{parts}</View>;
   }, [navigation]);
+/* VIEWER_RENDER_PLACEHOLDER */
 
-  // ─── Special states ───────────────────────────────────────────────────────
-
-  // Expired / blocked / error share the same centered layout; only the icon and
-  // copy differ. This is presentation only — the viewerState values and the
-  // transitions that set them are unchanged.
+  // --- Special states ---
   const renderSpecialState = (icon: string, message: string) => (
     <View style={[styles.container, styles.centerContent, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <MaterialIcons name={icon} size={48} color={koolaColors.faint} />
@@ -395,7 +360,7 @@ const MomentViewerScreen: React.FC = () => {
       <TouchableOpacity
         onPress={() => navigation.goBack()}
         style={styles.dismissButton}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         accessibilityRole="button"
         accessibilityLabel="Quay lại">
         <KoolaText tone="primary">Quay lại</KoolaText>
@@ -406,11 +371,9 @@ const MomentViewerScreen: React.FC = () => {
   if (viewerState === 'expired') {
     return renderSpecialState('schedule', 'Khoảnh khắc không còn khả dụng');
   }
-
   if (viewerState === 'blocked') {
     return renderSpecialState('lock-outline', 'Bạn không có quyền xem khoảnh khắc này');
   }
-
   if (viewerState === 'error') {
     return renderSpecialState('error-outline', 'Đã xảy ra lỗi khi tải khoảnh khắc');
   }
@@ -425,7 +388,7 @@ const MomentViewerScreen: React.FC = () => {
           : 'Khoảnh khắc'
       }
       accessibilityRole="image">
-      {/* Progress bars */}
+      {/* Progress bars — polished: 3px rounded */}
       <View style={[styles.progressContainer, { top: insets.top + 8 }]}>
         {stories.map((s, i) => (
           <View key={s._id} style={styles.progressTrack}>
@@ -445,17 +408,16 @@ const MomentViewerScreen: React.FC = () => {
         ))}
       </View>
 
-      {/* Close button */}
+      {/* Close button — proper icon with hitSlop */}
       <TouchableOpacity
         style={[styles.closeButton, { top: insets.top + 16 }]}
         onPress={() => navigation.goBack()}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         accessibilityRole="button"
         accessibilityLabel="Đóng xem khoảnh khắc">
-        <KoolaText style={styles.closeIcon} tone="surface">
-          ✕
-        </KoolaText>
+        <MaterialIcons name="close" size={24} color="#FFFFFF" />
       </TouchableOpacity>
+/* VIEWER_MEDIA_PLACEHOLDER */
 
       {/* Media */}
       {currentStory?.mediaType === 'video' ? (
@@ -482,9 +444,7 @@ const MomentViewerScreen: React.FC = () => {
         />
       ) : null}
 
-      {/* Parallel audio player (compose-at-playback). Hidden, audio-only.
-          Plays trackInfo.audioUrl synced with the story; seeks to startMs on
-          load; pauses with the story. Drops silently if the URL fails. */}
+      {/* Parallel audio player (compose-at-playback). Hidden, audio-only. */}
       {currentStory?.musicRef && trackInfo?.audioUrl ? (
         <Video
           key={`audio-${currentStory._id}`}
@@ -501,9 +461,7 @@ const MomentViewerScreen: React.FC = () => {
               audioRef.current.seek(startMs / 1000);
             }
           }}
-          onError={() => {
-            // Music is non-critical — keep playing the story without audio.
-          }}
+          onError={() => {}}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         />
@@ -516,7 +474,7 @@ const MomentViewerScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Accessibility live region — announces story change for screen readers (21.4) */}
+      {/* Accessibility live region */}
       <View
         style={styles.a11yAnnounce}
         accessibilityLiveRegion="polite"
@@ -528,6 +486,7 @@ const MomentViewerScreen: React.FC = () => {
             : undefined
         }
       />
+/* VIEWER_TAPZONES_PLACEHOLDER */
 
       {/* Tap zones for navigation (left / right) */}
       <View style={styles.tapZones} pointerEvents="box-none">
@@ -556,7 +515,7 @@ const MomentViewerScreen: React.FC = () => {
         </View>
       ) : null}
 
-      {/* Music attribution pill — shows the track playing behind the story */}
+      {/* Music attribution pill */}
       {currentStory?.musicRef && trackInfo != null && (
         <View style={styles.musicPill} accessibilityLabel={`Nhạc: ${trackInfo.title} bởi ${trackInfo.artist}`}>
           <KoolaText variant="caption" tone="surface" numberOfLines={1}>
@@ -636,15 +595,16 @@ const MomentViewerScreen: React.FC = () => {
           <KoolaText tone="surface">{toastMsg}</KoolaText>
         </View>
       ) : null}
+/* VIEWER_MODAL_PLACEHOLDER */
 
-      {/* Viewers sheet */}
+      {/* Viewers sheet — palette-aware */}
       <Modal
         visible={showViewers}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => setShowViewers(false)}>
-        <View style={styles.viewersModal} accessibilityViewIsModal>
-          <View style={styles.viewersHeader}>
+        <View style={modalStyles.viewersModal} accessibilityViewIsModal>
+          <View style={modalStyles.viewersHeader}>
             <KoolaText variant="label" weight="700">
               Người đã xem
             </KoolaText>
@@ -660,7 +620,7 @@ const MomentViewerScreen: React.FC = () => {
             keyExtractor={(item) => item.viewerId}
             renderItem={({ item }) => (
               <View
-                style={styles.viewerItem}
+                style={modalStyles.viewerItem}
                 accessibilityLabel={`${item.displayName} đã xem`}>
                 <KoolaText variant="body" tone="ink">
                   {item.displayName}
@@ -671,7 +631,7 @@ const MomentViewerScreen: React.FC = () => {
               </View>
             )}
             ListEmptyComponent={
-              <View style={styles.viewersEmpty}>
+              <View style={modalStyles.viewersEmpty}>
                 <KoolaText tone="muted" align="center">
                   Chưa có ai xem khoảnh khắc này.
                 </KoolaText>
@@ -683,7 +643,40 @@ const MomentViewerScreen: React.FC = () => {
     </Animated.View>
   );
 };
+/* VIEWER_STYLES_PLACEHOLDER */
 
+// --- Viewers Modal styles (palette-driven, normal surface) ---
+const makeModalStyles = (palette: Palette) =>
+  StyleSheet.create({
+    viewersModal: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+    viewersHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+      backgroundColor: palette.surface,
+    },
+    viewerItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+    },
+    viewersEmpty: {
+      padding: 40,
+    },
+  });
+
+// --- Static styles (intentionally dark for fullscreen media overlay) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -697,7 +690,6 @@ const styles = StyleSheet.create({
   media: {
     ...StyleSheet.absoluteFillObject,
   },
-  // Audio-only player — zero footprint, kept off-screen but mounted.
   hiddenAudio: {
     width: 0,
     height: 0,
@@ -708,6 +700,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+/* VIEWER_STYLES_PART2 */
   progressContainer: {
     position: 'absolute',
     left: 8,
@@ -718,24 +711,26 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     flex: 1,
-    height: 2,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    borderRadius: 1,
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 1.5,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: koolaColors.surface,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 1.5,
   },
   closeButton: {
     position: 'absolute',
     right: 16,
     zIndex: 20,
-    padding: 8,
-  },
-  closeIcon: {
-    fontSize: 20,
-    fontWeight: '700',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tapZones: {
     ...StyleSheet.absoluteFillObject,
@@ -771,6 +766,7 @@ const styles = StyleSheet.create({
     color: koolaColors.primarySoft,
     fontWeight: '700',
   },
+/* VIEWER_STYLES_PART3 */
   musicPill: {
     position: 'absolute',
     bottom: 170,
@@ -870,33 +866,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 12,
   },
-  viewersModal: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  viewersHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  viewerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  viewersEmpty: {
-    padding: 40,
-  },
-  // Zero-size view used exclusively for screen reader live region announcements (21.4)
   a11yAnnounce: {
     position: 'absolute',
     width: 0,

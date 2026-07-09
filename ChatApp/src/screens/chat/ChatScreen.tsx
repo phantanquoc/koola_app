@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -49,7 +49,15 @@ import ChatComposer, {
   CHAT_COMPOSER_TOP_GAP,
   ChatComposerHandle,
 } from './components/ChatComposer';
-import { KoolaText, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
+import {
+  KoolaText,
+  koolaRadii,
+  koolaSpacing,
+  koolaShadows,
+  koolaDarkShadows,
+  useTheme,
+} from '../../ui';
+import type { Palette } from '../../ui/theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +66,122 @@ import { useTabDockSuppression } from '../../navigation/MainNavigator';
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 50,
 };
+
+// ─── Palette-aware style factory ─────────────────────────────────────────────
+function makeScreenStyles(palette: Palette, scheme: 'light' | 'dark') {
+  const bubbleShadow = scheme === 'dark' ? koolaDarkShadows.xs : koolaShadows.xs;
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: palette.surface },
+    initialErrorOverlay: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      justifyContent: 'center', alignItems: 'center', zIndex: 2,
+      paddingHorizontal: 32, gap: koolaSpacing.md,
+    },
+    errorIconShell: {
+      width: 64, height: 64, borderRadius: koolaRadii.lg,
+      backgroundColor: palette.dangerSoft,
+      alignItems: 'center', justifyContent: 'center',
+      marginBottom: koolaSpacing.xs,
+    },
+    initialErrorRetry: {
+      paddingHorizontal: 20, paddingVertical: 10, borderRadius: koolaRadii.sm,
+      backgroundColor: palette.primary, marginTop: koolaSpacing.xs,
+    },
+    emptyOverlay: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      justifyContent: 'center', alignItems: 'center', zIndex: 1,
+      paddingHorizontal: 32, gap: koolaSpacing.sm,
+    },
+    emptyIconShell: {
+      width: 64, height: 64, borderRadius: koolaRadii.lg,
+      backgroundColor: palette.primarySoft,
+      alignItems: 'center', justifyContent: 'center',
+      marginBottom: koolaSpacing.xs,
+    },
+    emptyBody: { paddingHorizontal: 16 },
+    systemMessage: { color: palette.muted, fontSize: 12 },
+    dayContainer: { alignItems: 'center', marginVertical: koolaSpacing.lg },
+    dayText: {
+      backgroundColor: palette.canvas, borderRadius: koolaRadii.pill,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: palette.line,
+      paddingHorizontal: koolaSpacing.md, paddingVertical: 4, overflow: 'hidden',
+    },
+    typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm, gap: koolaSpacing.sm },
+    uploadingBlock: { gap: 6 },
+    uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    uploadingText: { marginLeft: 0 },
+    progressTrack: {
+      height: 3, borderRadius: koolaRadii.pill, backgroundColor: palette.line, overflow: 'hidden',
+    },
+    progressFill: {
+      height: 3, borderRadius: koolaRadii.pill, backgroundColor: palette.primary,
+    },
+    failedBubbleWrapper: {
+      borderLeftWidth: 1,
+      borderLeftColor: palette.danger,
+    },
+    failedLabel: {
+      marginTop: 2,
+      marginLeft: 4,
+      marginBottom: 2,
+    },
+    storyRefCardWrapper: {
+      marginHorizontal: 8,
+      marginBottom: 4,
+      maxWidth: 240,
+    },
+    // Bubble depth — subtle shadow on each bubble wrapper
+    bubbleOuter: {
+      ...bubbleShadow,
+      marginBottom: 2,
+    },
+    // Grouped bubble (not last in a run) — no tail radius
+    bubbleGroupedRight: {
+      backgroundColor: palette.primary,
+      borderRadius: koolaRadii.lg,
+    },
+    bubbleGroupedLeft: {
+      backgroundColor: palette.canvas,
+      borderRadius: koolaRadii.lg,
+    },
+    // Last bubble in a run — tail via asymmetric radius
+    bubbleTailRight: {
+      backgroundColor: palette.primary,
+      borderRadius: koolaRadii.lg,
+      borderBottomRightRadius: koolaRadii.xs2,
+    },
+    bubbleTailLeft: {
+      backgroundColor: palette.canvas,
+      borderRadius: koolaRadii.lg,
+      borderBottomLeftRadius: koolaRadii.xs2,
+    },
+    // Read tick row
+    tickRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      marginTop: 1,
+      marginRight: 4,
+      gap: 1,
+    },
+  });
+}
+
+/**
+ * Determine if a message is the last in a consecutive run from the same sender.
+ * GiftedChat passes previousMessage/nextMessage in BubbleProps — we use
+ * nextMessage (which in the inverted list is the *older* message chronologically)
+ * to check if the NEXT rendered bubble is from a different sender, meaning
+ * the current bubble is the "last" in the visual group (bottom of the run).
+ */
+function isLastInGroup(props: BubbleProps<IMessage>): boolean {
+  const current = props.currentMessage;
+  const next = props.nextMessage;
+  if (!current) return true;
+  if (!next || !next.user) return true;
+  // Different sender → current is the last in its run
+  return next.user._id !== current.user._id;
+}
 
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
@@ -69,6 +193,9 @@ const ChatScreen: React.FC = () => {
   const composerBottomInset = Math.max(insets.bottom, 8);
   const composerScrollClearance =
     CHAT_COMPOSER_DOCK_HEIGHT + CHAT_COMPOSER_TOP_GAP + CHAT_COMPOSER_SCROLL_GAP + composerBottomInset;
+
+  const { palette, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(palette, resolvedScheme), [palette, resolvedScheme]);
 
   const { isConnected } = useNetworkStatus();
   const { sendViaQueue } = useOfflineQueue();
@@ -412,6 +539,17 @@ const ChatScreen: React.FC = () => {
       const reactions = (msg?.reactions as MessageReaction[]) || [];
       const isRight = msg?.user?._id === currentUserId;
       const isFailed = msg?.failed === true;
+      const isPending = msg?.pending === true;
+
+      // Consecutive-message grouping: determine if this is last in a run
+      const lastInRun = isLastInGroup(props);
+
+      // Bubble wrapper style: tail only on last bubble in a run
+      const bubbleWrapStyle = isMedia
+        ? { backgroundColor: 'transparent', padding: 0 }
+        : isRight
+          ? (lastInRun ? styles.bubbleTailRight : styles.bubbleGroupedRight)
+          : (lastInRun ? styles.bubbleTailLeft : styles.bubbleGroupedLeft);
 
       // Detect story reply metadata
       const storyReply = (msg?.metadata as Record<string, unknown> | undefined)?.storyReply as
@@ -419,7 +557,7 @@ const ChatScreen: React.FC = () => {
         | undefined;
 
       return (
-        <View>
+        <View style={styles.bubbleOuter}>
           <TouchableOpacity
             activeOpacity={isFailed ? 0.7 : 1}
             onPress={isFailed ? () => handleRetryFailedMessage(String(msg._id)) : undefined}
@@ -436,16 +574,12 @@ const ChatScreen: React.FC = () => {
               <Bubble
                 {...props}
                 wrapperStyle={{
-                  right: isMedia
-                    ? { backgroundColor: 'transparent', padding: 0 }
-                    : { backgroundColor: koolaColors.primary, borderRadius: koolaRadii.lg, borderBottomRightRadius: koolaRadii.xs },
-                  left: isMedia
-                    ? { backgroundColor: 'transparent', padding: 0 }
-                    : { backgroundColor: koolaColors.canvas, borderRadius: koolaRadii.lg, borderBottomLeftRadius: koolaRadii.xs },
+                  right: bubbleWrapStyle,
+                  left: bubbleWrapStyle,
                 }}
                 textStyle={{
-                  right: { color: koolaColors.surface, fontSize: 15, lineHeight: 22 },
-                  left: { color: koolaColors.ink, fontSize: 15, lineHeight: 22 },
+                  right: { color: palette.surface, fontSize: 15, lineHeight: 22 },
+                  left: { color: palette.ink, fontSize: 15, lineHeight: 22 },
                 }}
               />
             </View>
@@ -453,6 +587,16 @@ const ChatScreen: React.FC = () => {
               <KoolaText variant="caption" tone="danger" style={styles.failedLabel}>Gửi thất bại — nhấn để thử lại</KoolaText>
             )}
           </TouchableOpacity>
+          {/* Delivery/read tick for own messages */}
+          {isRight && !isFailed && !msg?.system && (
+            <View style={styles.tickRow}>
+              {isPending ? (
+                <MaterialIcons name="access-time" size={12} color={palette.muted} />
+              ) : (
+                <MaterialIcons name="done" size={13} color={palette.primary} />
+              )}
+            </View>
+          )}
           {reactions.length > 0 && (
             <ReactionDisplay
               reactions={reactions}
@@ -464,7 +608,7 @@ const ChatScreen: React.FC = () => {
         </View>
       );
     },
-    [currentUserId, reactToMessage, handleRetryFailedMessage],
+    [currentUserId, reactToMessage, handleRetryFailedMessage, styles, palette],
   );
 
   const renderSystemMessage = useCallback(
@@ -510,7 +654,7 @@ const ChatScreen: React.FC = () => {
         {isUploading && (
           <View style={styles.uploadingBlock}>
             <View style={styles.uploadingRow}>
-              <ActivityIndicator size="small" color={koolaColors.primary} />
+              <ActivityIndicator size="small" color={palette.primary} />
               <KoolaText variant="caption" tone="muted" style={styles.uploadingText}>
                 Đang tải lên... {uploadProgress > 0 ? `${uploadProgress}%` : ''}
               </KoolaText>
@@ -529,7 +673,7 @@ const ChatScreen: React.FC = () => {
         )}
       </View>
     );
-  }, [typingUsers, isUploading, uploadProgress]);
+  }, [typingUsers, isUploading, uploadProgress, styles, palette]);
 
   // ─── Media renderers ──────────────────────────────────────────────────────
   const renderMessageImage = useCallback(
@@ -719,7 +863,7 @@ const ChatScreen: React.FC = () => {
         {initialLoadError && messages.length === 0 && !isInitialLoading && (
           <View style={styles.initialErrorOverlay}>
             <View style={styles.errorIconShell}>
-              <MaterialIcons name="cloud-off" size={28} color={koolaColors.danger} />
+              <MaterialIcons name="cloud-off" size={28} color={palette.danger} />
             </View>
             <KoolaText variant="label" tone="danger" weight="600" align="center">
               Không thể tải tin nhắn
@@ -738,7 +882,7 @@ const ChatScreen: React.FC = () => {
         {chatReady && !isInitialLoading && !initialLoadError && messages.length === 0 && (
           <View pointerEvents="none" style={styles.emptyOverlay}>
             <View style={styles.emptyIconShell}>
-              <MaterialIcons name="chat-bubble-outline" size={28} color={koolaColors.primary} />
+              <MaterialIcons name="chat-bubble-outline" size={28} color={palette.primary} />
             </View>
             <KoolaText variant="label" tone="ink" weight="600" align="center">
               Bắt đầu cuộc trò chuyện
@@ -751,7 +895,7 @@ const ChatScreen: React.FC = () => {
         {/* Loading overlay - absolute positioned, doesn't affect layout */}
         {!chatReady && messages.length === 0 && !initialLoadError && (
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
-            <ActivityIndicator size="small" color={koolaColors.primary} />
+            <ActivityIndicator size="small" color={palette.primary} />
           </View>
         )}
         {/* GiftedChat - always rendered (Fabric-safe: no Animated.View wrapper) */}
@@ -863,68 +1007,5 @@ const ChatScreen: React.FC = () => {
     </BottomSheetModalProvider>
   );
 };
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: koolaColors.surface },
-  initialErrorOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center', alignItems: 'center', zIndex: 2,
-    paddingHorizontal: 32, gap: koolaSpacing.md,
-  },
-  errorIconShell: {
-    width: 64, height: 64, borderRadius: koolaRadii.lg,
-    backgroundColor: koolaColors.dangerSoft,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: koolaSpacing.xs,
-  },
-  initialErrorRetry: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: koolaRadii.sm,
-    backgroundColor: koolaColors.primary, marginTop: koolaSpacing.xs,
-  },
-  emptyOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center', alignItems: 'center', zIndex: 1,
-    paddingHorizontal: 32, gap: koolaSpacing.sm,
-  },
-  emptyIconShell: {
-    width: 64, height: 64, borderRadius: koolaRadii.lg,
-    backgroundColor: koolaColors.primarySoft,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: koolaSpacing.xs,
-  },
-  emptyBody: { paddingHorizontal: 16 },
-  systemMessage: { color: koolaColors.muted, fontSize: 12 },
-  dayContainer: { alignItems: 'center', marginVertical: koolaSpacing.lg },
-  dayText: {
-    backgroundColor: koolaColors.canvas, borderRadius: koolaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: koolaColors.line,
-    paddingHorizontal: koolaSpacing.md, paddingVertical: 4, overflow: 'hidden',
-  },
-  typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm, gap: koolaSpacing.sm },
-  uploadingBlock: { gap: 6 },
-  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  uploadingText: { marginLeft: 0 },
-  progressTrack: {
-    height: 3, borderRadius: koolaRadii.pill, backgroundColor: koolaColors.line, overflow: 'hidden',
-  },
-  progressFill: {
-    height: 3, borderRadius: koolaRadii.pill, backgroundColor: koolaColors.primary,
-  },
-  // Dead-letter bubble visual
-  failedBubbleWrapper: {
-    borderLeftWidth: 1,
-    borderLeftColor: koolaColors.danger,
-  },
-  failedLabel: {
-    marginTop: 2,
-    marginLeft: 4,
-    marginBottom: 2,
-  },
-  storyRefCardWrapper: {
-    marginHorizontal: 8,
-    marginBottom: 4,
-    maxWidth: 240,
-  },
-});
 
 export default ChatScreen;

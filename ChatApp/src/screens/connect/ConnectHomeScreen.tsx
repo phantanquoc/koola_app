@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -18,9 +18,11 @@ import KoolaHeader from '../../components/KoolaHeader';
 import EmptyConnect from '../../components/connect/EmptyConnect';
 import ListErrorState from '../../components/connect/ListErrorState';
 import BusinessCardSkeleton from '../../components/connect/BusinessCardSkeleton';
+import BusinessCard from '../../components/connect/BusinessCard';
 import ConnectContextBanner from '../../components/connect/ConnectContextBanner';
 import SortMenu from '../../components/connect/SortMenu';
 import ProvincePicker from '../../components/connect/ProvincePicker';
+import QrScannerModal from '../main/QrScannerModal';
 import { useAccountDiscovery } from '../../hooks/useAccountDiscovery';
 import { conversationsApi } from '../../services/api/apiService';
 import type { BusinessAccountItem } from '../../services/api/apiService';
@@ -30,9 +32,10 @@ import type { BusinessSort } from '../../types';
 import {
   KoolaChip,
   KoolaText,
-  koolaColors,
   koolaRadii,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -62,29 +65,31 @@ function useAccountActions(navigation: ConnectNavProp) {
     [navigateToChat],
   );
 
-  return { handleMessage };
+  return { handleMessage, navigateToChat };
 }
 
 // ─── RelationshipTabBar ───────────────────────────────────────────────────────
-// 3-tab horizontal bar: Tất cả / Đối tác / Nhà cung cấp
 
 interface RelationshipTabBarProps {
   activeRelationship: string;
   onSelectRelationship: (slug: string) => void;
+  palette: Palette;
 }
 
 const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
   activeRelationship,
   onSelectRelationship,
+  palette,
 }) => {
+  const styles = useMemo(() => makeTabBarStyles(palette), [palette]);
   return (
-    <View style={tabBarStyles.container} accessibilityRole="tablist">
+    <View style={styles.container} accessibilityRole="tablist">
       {RELATIONSHIP_FILTERS.map((rel) => {
         const isActive = activeRelationship === rel.slug;
         return (
           <Pressable
             key={rel.slug}
-            style={[tabBarStyles.tab, isActive && tabBarStyles.tabActive]}
+            style={[styles.tab, isActive && styles.tabActive]}
             onPress={() => onSelectRelationship(rel.slug)}
             accessibilityRole="tab"
             accessibilityLabel={rel.label}
@@ -102,30 +107,29 @@ const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
   );
 };
 
-const tabBarStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    paddingHorizontal: 16,
-  },
-  tab: {
-    flex: 1,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-  },
-  tabActive: {
-    borderBottomColor: koolaColors.primary,
-  },
-});
+const makeTabBarStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      paddingHorizontal: 16,
+    },
+    tab: {
+      flex: 1,
+      height: 44,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderBottomWidth: 3,
+      borderBottomColor: 'transparent',
+    },
+    tabActive: {
+      borderBottomColor: p.primary,
+    },
+  });
 
 // ─── FilterBar ──────────────────────────────────────────────────────────────
-// Unified filter row: category chips + province picker + sort menu.
-// Collapses 3 visual layers into 1 scrollable row.
 
 const CATEGORY_ICON_MAP: Record<string, string> = {
   logistics: 'local-shipping',
@@ -150,6 +154,7 @@ interface FilterBarProps {
   onProvinceChange: (province: string) => void;
   activeSort: BusinessSort;
   onSortChange: (sort: BusinessSort) => void;
+  palette: Palette;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -160,7 +165,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onProvinceChange,
   activeSort,
   onSortChange,
+  palette,
 }) => {
+  const styles = useMemo(() => makeFilterBarStyles(palette), [palette]);
   const showCategories = activeRelationship !== 'all';
   const activeFilterCount =
     (activeCategory ? 1 : 0) +
@@ -168,13 +175,12 @@ const FilterBar: React.FC<FilterBarProps> = ({
     (activeSort !== 'latest' ? 1 : 0);
 
   return (
-    <View style={filterBarStyles.wrapper}>
+    <View style={styles.wrapper}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={filterBarStyles.scrollContent}
+        contentContainerStyle={styles.scrollContent}
         accessibilityRole="toolbar">
-        {/* Province + Sort controls — always visible */}
         <ProvincePicker
           value={activeProvince}
           onChange={onProvinceChange}
@@ -182,19 +188,17 @@ const FilterBar: React.FC<FilterBarProps> = ({
         />
         <SortMenu value={activeSort} onChange={onSortChange} />
 
-        {/* Active filter count badge */}
         {activeFilterCount > 0 && (
-          <View style={filterBarStyles.countBadge}>
+          <View style={styles.countBadge}>
             <KoolaText variant="caption" tone="surface" weight="700">
               {activeFilterCount}
             </KoolaText>
           </View>
         )}
 
-        {/* Category chips — only for specific relationship tabs */}
         {showCategories && (
           <>
-            <View style={filterBarStyles.divider} />
+            <View style={styles.divider} />
             <KoolaChip
               label="Tất cả"
               selected={activeCategory === null}
@@ -207,8 +211,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 <Pressable
                   key={cat.slug}
                   style={[
-                    filterBarStyles.iconChip,
-                    isActive && filterBarStyles.iconChipActive,
+                    styles.iconChip,
+                    isActive && styles.iconChipActive,
                   ]}
                   onPress={() => onSelectCategory(isActive ? null : cat.slug)}
                   accessibilityRole="button"
@@ -217,7 +221,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   <MaterialIcons
                     name={CATEGORY_ICON_MAP[cat.slug] || cat.icon}
                     size={14}
-                    color={isActive ? koolaColors.surface : koolaColors.primary}
+                    color={isActive ? palette.surface : palette.primary}
                   />
                   <KoolaText
                     variant="caption"
@@ -235,54 +239,53 @@ const FilterBar: React.FC<FilterBarProps> = ({
   );
 };
 
-const filterBarStyles = StyleSheet.create({
-  wrapper: {
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  scrollContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  divider: {
-    width: StyleSheet.hairlineWidth,
-    height: 24,
-    backgroundColor: koolaColors.line,
-    marginHorizontal: 4,
-  },
-  iconChip: {
-    height: 34,
-    borderRadius: koolaRadii.pill,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: koolaColors.canvas,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-  iconChipActive: {
-    backgroundColor: koolaColors.primary,
-    borderColor: koolaColors.primary,
-  },
-  countBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: koolaColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const makeFilterBarStyles = (p: Palette) =>
+  StyleSheet.create({
+    wrapper: {
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    scrollContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    divider: {
+      width: StyleSheet.hairlineWidth,
+      height: 24,
+      backgroundColor: p.line,
+      marginHorizontal: 4,
+    },
+    iconChip: {
+      height: 34,
+      borderRadius: koolaRadii.pill,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: p.canvas,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+    iconChipActive: {
+      backgroundColor: p.primary,
+      borderColor: p.primary,
+    },
+    countBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: p.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
 
 // ─── AccountListTab ───────────────────────────────────────────────────────────
-// Replaces BusinessListTab — sources from verified business accounts endpoint.
 
-// Built once at module level so renderItem's useCallback doesn't recreate it.
 const ACCOUNT_CATEGORY_LABELS: Record<string, string> = {};
 BUSINESS_CATEGORIES.forEach((c) => { ACCOUNT_CATEGORY_LABELS[c.slug] = c.label; });
 
@@ -293,6 +296,7 @@ interface AccountListTabProps {
   activeSort: BusinessSort;
   activeProvince: string;
   onClearFilters: () => void;
+  palette: Palette;
 }
 
 const AccountListTab: React.FC<AccountListTabProps> = ({
@@ -302,8 +306,10 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
   activeSort,
   activeProvince,
   onClearFilters,
+  palette,
 }) => {
   const tabBarInset = useTabBarBottomInset();
+  const styles = useMemo(() => makeListStyles(palette), [palette]);
   const { items, loading, refreshing, hasMore, error, loadMore, refresh } =
     useAccountDiscovery({
       businessCategory: activeCategory ?? undefined,
@@ -315,79 +321,28 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
   const { handleMessage } = useAccountActions(navigation);
 
   const renderItem = useCallback(
-    ({ item }: { item: BusinessAccountItem }) => {
-      const categoryLabel = item.businessCategory
-        ? ACCOUNT_CATEGORY_LABELS[item.businessCategory] ?? item.businessCategory
-        : '';
-      return (
-        <Pressable
-          style={accountCardStyles.card}
-          onPress={() =>
-            (navigation as any).navigate('BusinessProfile', { businessId: item._id })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
-          <View style={accountCardStyles.logo}>
-            <MaterialIcons name="business" size={22} color={koolaColors.primary} />
-          </View>
-          <View style={accountCardStyles.content}>
-            <View style={accountCardStyles.nameRow}>
-              <KoolaText variant="label" weight="700" numberOfLines={1} style={accountCardStyles.name}>
-                {item.displayName}
-              </KoolaText>
-              {item.verificationStatus === 'verified' && (
-                <MaterialIcons name="verified" size={14} color={koolaColors.success} />
-              )}
-            </View>
-            <View style={accountCardStyles.meta}>
-              {categoryLabel ? (
-                <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
-                  {categoryLabel}
-                </KoolaText>
-              ) : null}
-              {item.province ? (
-                <>
-                  <View style={accountCardStyles.dot} />
-                  <MaterialIcons name="location-on" size={11} color={koolaColors.muted} />
-                  <KoolaText variant="caption" tone="muted" numberOfLines={1}>
-                    {item.province}
-                  </KoolaText>
-                </>
-              ) : null}
-            </View>
-            {item.tagline ? (
-              <KoolaText variant="caption" tone="muted" numberOfLines={2} style={accountCardStyles.tagline}>
-                {item.tagline}
-              </KoolaText>
-            ) : null}
-          </View>
-          <Pressable
-            style={accountCardStyles.cta}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleMessage(item);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Nhắn tin">
-            <MaterialIcons name="chat-bubble-outline" size={16} color={koolaColors.primary} />
-            <KoolaText variant="caption" tone="primary" weight="700">Nhắn tin</KoolaText>
-          </Pressable>
-        </Pressable>
-      );
-    },
+    ({ item }: { item: BusinessAccountItem }) => (
+      <BusinessCard
+        item={item}
+        onPress={() =>
+          (navigation as any).navigate('BusinessProfile', { businessId: item._id })
+        }
+        onMessagePress={() => handleMessage(item)}
+      />
+    ),
     [navigation, handleMessage],
   );
 
   if (error && items.length === 0 && !loading) {
     return (
-      <View style={listStyles.container}>
+      <View style={styles.container}>
         <ListErrorState message={error} onRetry={refresh} />
       </View>
     );
   }
 
   return (
-    <View style={listStyles.container}>
+    <View style={styles.container}>
       {loading && items.length === 0 ? (
         <View>
           <BusinessCardSkeleton />
@@ -416,9 +371,9 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
           ListFooterComponent={
             hasMore ? (
               <ActivityIndicator
-                style={listStyles.footer}
+                style={styles.footer}
                 size="small"
-                color={koolaColors.primary}
+                color={palette.primary}
               />
             ) : null
           }
@@ -428,86 +383,29 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={refresh}
-              tintColor={koolaColors.primary}
+              tintColor={palette.primary}
             />
           }
-          contentContainerStyle={[listStyles.listContent, { paddingBottom: tabBarInset }]}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
         />
       )}
     </View>
   );
 };
 
-const accountCardStyles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: koolaColors.surface,
-    padding: 14,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  logo: {
-    width: 44,
-    height: 44,
-    borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  name: {
-    flex: 1,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    gap: 4,
-  },
-  dot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: koolaColors.faint,
-  },
-  tagline: {
-    marginTop: 2,
-  },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.primarySoft,
-  },
-});
-
-const listStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  loader: {
-    marginTop: 40,
-  },
-  footer: {
-    paddingVertical: 16,
-  },
-  listContent: {
-    paddingTop: 8,
-  },
-});
+const makeListStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    footer: {
+      paddingVertical: 16,
+    },
+    listContent: {
+      paddingTop: 8,
+    },
+  });
 
 // ─── ConnectHomeScreen ────────────────────────────────────────────────────────
 
@@ -515,11 +413,15 @@ const BANNER_DISMISSED_KEY = 'connect_banner_dismissed';
 
 const ConnectHomeScreen: React.FC = () => {
   const navigation = useNavigation<ConnectNavProp>();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(palette), [palette]);
+
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRelationship, setActiveRelationship] = useState('all');
   const [activeSort, setActiveSort] = useState<BusinessSort>('latest');
   const [activeProvince, setActiveProvince] = useState('');
-  const [bannerDismissed, setBannerDismissed] = useState(true); // default hidden until loaded
+  const [bannerDismissed, setBannerDismissed] = useState(true);
+  const [qrVisible, setQrVisible] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(BANNER_DISMISSED_KEY).then((val) => {
@@ -544,12 +446,25 @@ const ConnectHomeScreen: React.FC = () => {
     setActiveCategory(null);
   }, []);
 
+  // QR scanner callbacks
+  const handleQrPress = useCallback(() => setQrVisible(true), []);
+  const handleQrClose = useCallback(() => setQrVisible(false), []);
+  const handleNavigateProfile = useCallback((userId: string) => {
+    (navigation as any).navigate('Profile', { userId });
+  }, [navigation]);
+  const handleNavigateChat = useCallback((conversationId: string) => {
+    (navigation as any).navigate('ChatTab', {
+      screen: 'Chat',
+      params: { conversationId },
+    });
+  }, [navigation]);
+
   return (
     <View style={styles.container}>
       <KoolaHeader
         searchPlaceholder="Tìm doanh nghiệp..."
         onSearchPress={() => navigation.navigate('BusinessSearch')}
-        onQrPress={() => {}}
+        onQrPress={handleQrPress}
         onAddPress={() =>
           (navigation as any).navigate('PersonalTab', { screen: 'AccountList' })
         }
@@ -558,9 +473,9 @@ const ConnectHomeScreen: React.FC = () => {
       <RelationshipTabBar
         activeRelationship={activeRelationship}
         onSelectRelationship={handleSelectRelationship}
+        palette={palette}
       />
 
-      {/* Unified filter bar — categories + province + sort in one row */}
       <FilterBar
         activeCategory={activeCategory}
         onSelectCategory={setActiveCategory}
@@ -569,9 +484,9 @@ const ConnectHomeScreen: React.FC = () => {
         onProvinceChange={setActiveProvince}
         activeSort={activeSort}
         onSortChange={setActiveSort}
+        palette={palette}
       />
 
-      {/* Onboarding banner — shown once for new users, above list */}
       {!bannerDismissed && (
         <ConnectContextBanner
           onCreatePress={() =>
@@ -588,16 +503,25 @@ const ConnectHomeScreen: React.FC = () => {
         activeSort={activeSort}
         activeProvince={activeProvince}
         onClearFilters={handleClearFilters}
+        palette={palette}
+      />
+
+      <QrScannerModal
+        visible={qrVisible}
+        onClose={handleQrClose}
+        onNavigateProfile={handleNavigateProfile}
+        onNavigateChat={handleNavigateChat}
       />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-});
+const makeScreenStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+  });
 
 export default ConnectHomeScreen;

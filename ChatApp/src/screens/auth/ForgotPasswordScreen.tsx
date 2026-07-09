@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -12,23 +12,30 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   KoolaButton,
+  KoolaLogo,
   KoolaSurface,
   KoolaText,
   KoolaTextInput,
-  koolaColors,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
 
 const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
   const { forgotPassword } = useAuth();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   const handleSubmit = async () => {
+    setEmailError('');
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+      setEmailError('Vui lòng nhập email');
       return;
     }
     setLoading(true);
@@ -40,10 +47,14 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         response?: { data?: { message?: string | string[] } };
       };
       const msg = error.response?.data?.message;
-      Alert.alert(
-        'Error',
-        Array.isArray(msg) ? msg.join('\n') : msg || 'Something went wrong',
-      );
+      const text = Array.isArray(msg)
+        ? msg.join('\n')
+        : msg || 'Đã xảy ra lỗi';
+      if (text.toLowerCase().includes('email') || text.toLowerCase().includes('not found')) {
+        setEmailError(text);
+      } else {
+        Alert.alert('Lỗi', text);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,11 +70,12 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <KoolaSurface variant="raised" style={styles.form}>
         <View style={styles.header}>
+          <KoolaLogo markSize={32} showMark showWordmark={false} />
           <KoolaText variant="title" align="center">
-            Quen mat khau
+            Quên mật khẩu
           </KoolaText>
           <KoolaText variant="body" tone="muted" align="center">
-            Nhap email de nhan ma xac thuc dat lai mat khau.
+            Nhập email để nhận mã xác thực đặt lại mật khẩu.
           </KoolaText>
         </View>
 
@@ -74,14 +86,19 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
               icon="mail-outline"
               placeholder="you@example.com"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(t) => { setEmail(t); setEmailError(''); }}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {emailError ? (
+              <KoolaText variant="caption" style={styles.fieldError}>
+                {emailError}
+              </KoolaText>
+            ) : null}
 
             <KoolaButton
-              title="Gui ma xac thuc"
+              title="Gửi mã xác thực"
               icon="send"
               loading={loading}
               onPress={handleSubmit}
@@ -91,12 +108,12 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         ) : (
           <>
             <KoolaText variant="body" align="center">
-              Neu email ton tai, ma xac thuc da duoc gui. Vui long kiem tra hop
-              thu cua ban.
+              Nếu email tồn tại, mã xác thực đã được gửi. Vui lòng kiểm tra hộp
+              thư của bạn.
             </KoolaText>
 
             <KoolaButton
-              title="Nhap ma xac thuc"
+              title="Nhập mã xác thực"
               icon="arrow-forward"
               onPress={handleContinue}
               style={styles.primaryButton}
@@ -107,9 +124,11 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         <Pressable
           style={styles.linkButton}
           onPress={() => navigation.goBack()}
-          accessibilityRole="button">
+          hitSlop={{ top: 4, bottom: 4 }}
+          accessibilityRole="link"
+          accessibilityLabel="Quay lại đăng nhập">
           <KoolaText tone="primary" weight="800" align="center">
-            Quay lai dang nhap
+            Quay lại đăng nhập
           </KoolaText>
         </Pressable>
       </KoolaSurface>
@@ -117,27 +136,35 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  form: {
-    padding: 20,
-    gap: 16,
-  },
-  header: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  primaryButton: {
-    marginTop: 4,
-  },
-  linkButton: {
-    paddingVertical: 8,
-  },
-});
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+      justifyContent: 'center',
+      paddingHorizontal: 20,
+    },
+    form: {
+      padding: 20,
+      gap: 16,
+    },
+    header: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    primaryButton: {
+      marginTop: 4,
+    },
+    linkButton: {
+      paddingVertical: 8,
+    },
+    fieldError: {
+      color: p.danger,
+      marginTop: -8,
+      marginLeft: 4,
+    },
+  });
 
 export default ForgotPasswordScreen;

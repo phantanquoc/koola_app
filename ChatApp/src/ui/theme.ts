@@ -129,6 +129,9 @@ export const koolaRadii = {
   md: 14,
   lg: 20,
   pill: 999,
+  // ─── Additive scale (2026) ────────────────────────────────────────────────
+  xs2: 4,
+  xl: 24,
 } as const;
 
 export const koolaSpacing = {
@@ -138,6 +141,9 @@ export const koolaSpacing = {
   lg: 16,
   xl: 24,
   xxl: 32,
+  // ─── Additive steps (2026, 8px grid) ──────────────────────────────────────
+  '40': 40,
+  '48': 48,
 } as const;
 
 export const koolaTypography = {
@@ -146,6 +152,8 @@ export const koolaTypography = {
   body: { fontSize: 15, lineHeight: 22, fontWeight: '400' as const },
   label: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '500' as const },
+  // ─── Additive variant (2026) ──────────────────────────────────────────────
+  display: { fontSize: 32, lineHeight: 40, fontWeight: '800' as const },
 } as const;
 
 export const koolaShadows = {
@@ -163,4 +171,130 @@ export const koolaShadows = {
     shadowRadius: 10,
     elevation: 2,
   },
+  // ─── Shadow scale (additive — xs through xl) ──────────────────────────────
+  xs: {
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  sm: {
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  lg: {
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 5,
+  },
+  xl: {
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+} as const;
+
+/**
+ * Dark-mode shadow variant.
+ * On dark backgrounds, black shadows are invisible. Elevation is expressed via
+ * a lighter surface tint + a subtle light hairline (top border). Components
+ * apply `koolaDarkShadows[level]` when `resolvedScheme === 'dark'`.
+ *
+ * Usage pattern (in a palette-aware style factory):
+ *   const shadow = resolvedScheme === 'dark' ? koolaDarkShadows.md : koolaShadows.md;
+ */
+export const koolaDarkShadows = {
+  xs: {
+    backgroundColor: '#1F252B',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.04)',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  sm: {
+    backgroundColor: '#222830',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  md: {
+    backgroundColor: '#262D36',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  lg: {
+    backgroundColor: '#2A323C',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.07)',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  xl: {
+    backgroundColor: '#2F3844',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+} as const;
+
+// ─── zIndex tokens ──────────────────────────────────────────────────────────
+
+export const koolaZIndex = {
+  /** Below default — hidden or background layers */
+  hide: -1,
+  /** Default stacking */
+  base: 0,
+  /** Dropdowns, popovers, floating action buttons */
+  dropdown: 10,
+  /** Sticky headers, tab bars */
+  sticky: 20,
+  /** Overlays, scrims */
+  overlay: 30,
+  /** Modals, bottom sheets */
+  modal: 40,
+  /** Toasts, snackbars — always on top */
+  toast: 50,
+} as const;
+
+// ─── Opacity tokens ─────────────────────────────────────────────────────────
+
+export const koolaOpacity = {
+  /** Disabled controls */
+  disabled: 0.4,
+  /** Active press feedback */
+  pressed: 0.7,
 } as const;

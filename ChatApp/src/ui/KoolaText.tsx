@@ -13,12 +13,31 @@ type KoolaTextTone =
   | 'danger'
   | 'surface';
 
+/**
+ * Variant-aware maxFontSizeMultiplier defaults.
+ * Content variants (body, display) scale generously (~1.5) for accessibility.
+ * Chrome variants (caption, label) cap at ~1.3 to protect tight layouts.
+ * Title/heading use ~1.35 as a balanced backstop.
+ * NEVER 1.0 — that blocks font scaling entirely, breaking accessibility.
+ * Per-instance override via the `maxFontSizeMultiplier` prop takes precedence.
+ */
+const VARIANT_MAX_FONT_SCALE: Record<KoolaTextVariant, number> = {
+  display: 1.5,
+  title: 1.35,
+  heading: 1.35,
+  body: 1.5,
+  label: 1.3,
+  caption: 1.3,
+};
+
 interface KoolaTextProps extends TextProps {
   variant?: KoolaTextVariant;
   tone?: KoolaTextTone;
   weight?: '400' | '500' | '600' | '700' | '800';
   align?: 'left' | 'center' | 'right';
   className?: string;
+  /** Override variant default maxFontSizeMultiplier. Never set to 1.0. */
+  maxFontSizeMultiplier?: number;
 }
 
 const makeToneColor = (p: Palette): Record<KoolaTextTone, string> => ({
@@ -39,15 +58,21 @@ export const KoolaText: React.FC<KoolaTextProps> = ({
   className,
   style,
   children,
+  maxFontSizeMultiplier: maxFontSizeMultiplierOverride,
   ...props
 }) => {
   const { palette } = useTheme();
   const toneColor = useMemo(() => makeToneColor(palette), [palette]);
 
+  // Per-instance override takes precedence; otherwise use variant default
+  const resolvedMaxFontScale =
+    maxFontSizeMultiplierOverride ?? VARIANT_MAX_FONT_SCALE[variant];
+
   return (
     <Text
       {...props}
       className={className}
+      maxFontSizeMultiplier={resolvedMaxFontScale}
       style={[
         styles.base,
         koolaTypography[variant],

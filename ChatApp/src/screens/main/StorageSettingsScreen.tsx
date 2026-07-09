@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Alert,
   Pressable,
@@ -17,8 +17,11 @@ import {
   KoolaDivider,
   KoolaSurface,
   KoolaText,
-  koolaColors,
+  koolaRadii,
+  koolaSpacing,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import * as mediaIndexService from '../../services/media/mediaIndexService';
 import { isLocalFirstEnabled } from '../../config/featureFlags';
 import { isDataSaverEnabled, setDataSaver } from '../../services/media/mediaPreloader';
@@ -31,6 +34,8 @@ const StorageSettingsScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
   const navigation =
     useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [usedBytes, setUsedBytes] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
@@ -120,7 +125,7 @@ const StorageSettingsScreen: React.FC = () => {
           style={styles.backBtn}
           accessibilityRole="button"
           accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color={koolaColors.primary} />
+          <MaterialIcons name="arrow-back" size={24} color={palette.primary} />
         </Pressable>
         <KoolaText variant="heading">Bộ nhớ đệm</KoolaText>
       </View>
@@ -128,7 +133,7 @@ const StorageSettingsScreen: React.FC = () => {
       <KoolaSurface variant="raised" style={styles.section}>
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="storage" size={22} color={koolaColors.primary} />
+            <MaterialIcons name="storage" size={22} color={palette.primary} />
             <KoolaText variant="label">Bộ nhớ đệm media</KoolaText>
           </View>
         </View>
@@ -137,6 +142,16 @@ const StorageSettingsScreen: React.FC = () => {
           <KoolaText tone="muted" variant="caption">
             Đã dùng: {formatBytes(usedBytes)} / {formatBytes(capBytes)}
           </KoolaText>
+          {/* Usage meter */}
+          <View style={styles.meterTrack}>
+            <View
+              style={[
+                styles.meterFill,
+                { width: `${Math.min((usedBytes / capBytes) * 100, 100)}%` },
+                usedBytes / capBytes > 0.85 && styles.meterFillWarning,
+              ]}
+            />
+          </View>
         </View>
         <KoolaDivider />
         <Pressable
@@ -145,10 +160,10 @@ const StorageSettingsScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Thay đổi giới hạn bộ nhớ đệm">
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="tune" size={22} color={koolaColors.primary} />
+            <MaterialIcons name="tune" size={22} color={palette.primary} />
             <KoolaText variant="label">Giới hạn: {formatBytes(capBytes)}</KoolaText>
           </View>
-          <MaterialIcons name="chevron-right" size={22} color={koolaColors.faint} />
+          <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
         </Pressable>
         {isLocalFirstEnabled() && (
           <>
@@ -163,14 +178,14 @@ const StorageSettingsScreen: React.FC = () => {
         <KoolaDivider />
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="data-saver-on" size={22} color={koolaColors.primary} />
+            <MaterialIcons name="data-saver-on" size={22} color={palette.primary} />
             <KoolaText variant="label">Tiết kiệm dữ liệu (bỏ qua tải trước media)</KoolaText>
           </View>
           <Switch
             value={dataSaver}
             onValueChange={handleToggleDataSaver}
-            trackColor={{ false: '#D0D5DD', true: '#93C5FD' }}
-            thumbColor={dataSaver ? koolaColors.primary : '#F2F4F7'}
+            trackColor={{ false: palette.line, true: palette.primarySoft }}
+            thumbColor={dataSaver ? palette.primary : palette.faint}
             accessibilityLabel="Tiết kiệm dữ liệu"
           />
         </View>
@@ -189,55 +204,71 @@ const StorageSettingsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  contentContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingTop: 14,
-    paddingBottom: 18,
-  },
-  backBtn: {
-    padding: 4,
-  },
-  section: {
-    overflow: 'hidden',
-  },
-  menuItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  menuLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  storageRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  clearCacheButton: {
-    margin: 12,
-  },
-});
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    contentContainer: {
+      flexGrow: 1,
+      paddingHorizontal: koolaSpacing.lg,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingTop: 14,
+      paddingBottom: 18,
+    },
+    backBtn: {
+      padding: 4,
+    },
+    section: {
+      overflow: 'hidden',
+    },
+    menuItemRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: 13,
+    },
+    menuItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: koolaSpacing.lg,
+    },
+    menuLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      flex: 1,
+    },
+    storageRow: {
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: 10,
+    },
+    meterTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: p.line,
+      marginTop: koolaSpacing.sm,
+      overflow: 'hidden',
+    },
+    meterFill: {
+      height: '100%',
+      borderRadius: 3,
+      backgroundColor: p.primary,
+    },
+    meterFillWarning: {
+      backgroundColor: p.warning,
+    },
+    clearCacheButton: {
+      margin: 12,
+    },
+  });
 
 export default StorageSettingsScreen;

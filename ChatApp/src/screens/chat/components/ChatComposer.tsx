@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
-import { KoolaIconButton, koolaColors, koolaSpacing } from '../../../ui';
+import { KoolaIconButton, koolaSpacing, useTheme } from '../../../ui';
 
 // ─── Liquid-glass dock for the chat composer ────────────────────────────────
 // Static recreation of Apple's iOS 26 "Liquid Glass" material. We can't use
@@ -25,15 +25,57 @@ import { KoolaIconButton, koolaColors, koolaSpacing } from '../../../ui';
 //                           cut-glass thickness illusion.
 //
 // Token values lifted from the WWDC 2025 Liquid Glass spec adapted for KOOLA:
+// Light mode:
 //   fill        rgba(247,249,252,0.96)   ← keeps text legibility (NNG warning)
 //   border      rgba(255,255,255,0.48)   ← visible main rim
 //   topSheen    rgba(255,255,255,0.72) → 0    ← specular highlight
 //   innerEdge   rgba(255,255,255,0.55)   ← cut-glass top edge (1px, top only)
 //   shadow      koolaColors.primary @ 0.18  ← soft blue-tinted lift
+// Dark mode:
+//   fill        rgba(20,26,34,0.92)
+//   border      stays primary
+//   topSheen    rgba(255,255,255,0.12) → 0  (subtler)
+//   innerEdge   rgba(255,255,255,0.10)
+//   tint        rgba(77,141,247,0.08)  (dark-primary glow)
+//   edge shines rgba(255,255,255,0.10)
+//   bottomHair  rgba(77,141,247,0.22)
 //
 // Brand: KOOLA primary #2563EB used for the shadow tint so the dock reads as
 // "ours" rather than a generic Apple clone.
 const DOCK_RADIUS = 26;
+
+// ─── Glass color configs per palette direction ──────────────────────────────
+const GLASS_LIGHT = {
+  fillStops: [
+    { offset: '0', stopColor: '#FFFFFF', stopOpacity: '0.78' },
+    { offset: '0.55', stopColor: '#EEF4FF', stopOpacity: '0.70' },
+    { offset: '1', stopColor: '#DBEAFE', stopOpacity: '0.62' },
+  ],
+  sheenStops: [
+    { offset: '0', stopColor: '#FFFFFF', stopOpacity: '0.85' },
+    { offset: '1', stopColor: '#FFFFFF', stopOpacity: '0' },
+  ],
+  tint: 'rgba(37,99,235,0.04)',
+  edgeShine: 'rgba(255,255,255,0.40)',
+  innerEdge: 'rgba(255,255,255,0.55)',
+  bottomHairline: 'rgba(37,99,235,0.18)',
+} as const;
+
+const GLASS_DARK = {
+  fillStops: [
+    { offset: '0', stopColor: '#1C2026', stopOpacity: '0.94' },
+    { offset: '0.55', stopColor: '#161B22', stopOpacity: '0.90' },
+    { offset: '1', stopColor: '#0F1419', stopOpacity: '0.88' },
+  ],
+  sheenStops: [
+    { offset: '0', stopColor: '#FFFFFF', stopOpacity: '0.12' },
+    { offset: '1', stopColor: '#FFFFFF', stopOpacity: '0' },
+  ],
+  tint: 'rgba(77,141,247,0.08)',
+  edgeShine: 'rgba(255,255,255,0.10)',
+  innerEdge: 'rgba(255,255,255,0.10)',
+  bottomHairline: 'rgba(77,141,247,0.22)',
+} as const;
 
 export const CHAT_COMPOSER_DOCK_HEIGHT = 54;
 export const CHAT_COMPOSER_TOP_GAP = koolaSpacing.sm;
@@ -69,6 +111,8 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
     const insets = useSafeAreaInsets();
     const bottomPad = Math.max(insets.bottom, 8);
     const exitProgress = useSharedValue(exiting ? 1 : 0);
+    const { palette, resolvedScheme } = useTheme();
+    const glass = resolvedScheme === 'dark' ? GLASS_DARK : GLASS_LIGHT;
 
     useEffect(() => {
       exitProgress.value = withTiming(exiting ? 1 : 0, {
@@ -116,7 +160,8 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
             accessibilityState={{ disabled: !!disabled, busy: !!disabled }}
             style={[
               styles.dock,
-              offline ? styles.dockOffline : null,
+              { borderColor: palette.primary },
+              offline ? { borderColor: palette.warning } : null,
               disabled ? styles.dockDisabled : null,
             ]}>
             {/* Layer 1 — base SVG gradient fill: light at top, cool tint at
@@ -126,35 +171,36 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
               <Svg width="100%" height="100%" preserveAspectRatio="none">
                 <Defs>
                   <SvgLinearGradient id="composerFill" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
-                    <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
-                    <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
+                    {glass.fillStops.map((s, i) => (
+                      <Stop key={i} offset={s.offset} stopColor={s.stopColor} stopOpacity={s.stopOpacity} />
+                    ))}
                   </SvgLinearGradient>
                 </Defs>
                 <Rect width="100%" height="100%" fill="url(#composerFill)" />
               </Svg>
             </View>
             {/* Layer 1b — subtle primary-blue glass cast for KOOLA brand. */}
-            <View pointerEvents="none" style={styles.dockTint} />
+            <View pointerEvents="none" style={[styles.dockTint, { backgroundColor: glass.tint }]} />
             {/* Layer 2 — top specular sheen (decays to 0 at lower edge). */}
             <View pointerEvents="none" style={styles.topSheen}>
               <Svg width="100%" height="100%" preserveAspectRatio="none">
                 <Defs>
                   <SvgLinearGradient id="composerSheen" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
-                    <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+                    {glass.sheenStops.map((s, i) => (
+                      <Stop key={i} offset={s.offset} stopColor={s.stopColor} stopOpacity={s.stopOpacity} />
+                    ))}
                   </SvgLinearGradient>
                 </Defs>
                 <Rect width="100%" height="100%" fill="url(#composerSheen)" />
               </Svg>
             </View>
             {/* Layer 3 — side-edge shines (left + right) for refractive feel. */}
-            <View pointerEvents="none" style={styles.edgeShineLeft} />
-            <View pointerEvents="none" style={styles.edgeShineRight} />
+            <View pointerEvents="none" style={[styles.edgeShineLeft, { backgroundColor: glass.edgeShine }]} />
+            <View pointerEvents="none" style={[styles.edgeShineRight, { backgroundColor: glass.edgeShine }]} />
             {/* Layer 4 — 1px white inner top edge for cut-glass thickness. */}
-            <View pointerEvents="none" style={styles.innerEdge} />
+            <View pointerEvents="none" style={[styles.innerEdge, { backgroundColor: glass.innerEdge }]} />
             {/* Layer 5 — cool-tone bottom hairline (subtle inner shadow). */}
-            <View pointerEvents="none" style={styles.bottomHairline} />
+            <View pointerEvents="none" style={[styles.bottomHairline, { backgroundColor: glass.bottomHairline }]} />
             <View style={styles.row}>
               <KoolaIconButton
                 icon="sentiment-satisfied-alt"
@@ -169,9 +215,9 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
               />
               <TextInput
                 ref={inputRef}
-                style={styles.input}
+                style={[styles.input, { color: palette.ink }]}
                 placeholder="Tin nhắn"
-                placeholderTextColor={koolaColors.faint}
+                placeholderTextColor={palette.faint}
                 underlineColorAndroid="transparent"
                 multiline
                 editable={!disabled}
@@ -255,12 +301,11 @@ const styles = StyleSheet.create({
     borderRadius: DOCK_RADIUS,
     backgroundColor: 'transparent',
   },
-  // Surface — fill, border, clip.
+  // Surface — fill, border, clip. borderColor set inline from palette.
   dock: {
     minHeight: CHAT_COMPOSER_DOCK_HEIGHT,
     borderRadius: DOCK_RADIUS,
     borderWidth: 2,
-    borderColor: koolaColors.primary,
     backgroundColor: 'transparent',
     overflow: 'hidden',
     flexDirection: 'row',
@@ -274,11 +319,10 @@ const styles = StyleSheet.create({
     borderRadius: DOCK_RADIUS,
     overflow: 'hidden',
   },
-  // Layer 1b — primary-blue glass cast.
+  // Layer 1b — primary glass cast. backgroundColor set inline.
   dockTint: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: DOCK_RADIUS,
-    backgroundColor: 'rgba(37,99,235,0.04)',
   },
   // Layer 2 — top specular sheen, ~38% of dock height.
   topSheen: {
@@ -291,14 +335,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: DOCK_RADIUS,
     overflow: 'hidden',
   },
-  // Layer 3 — side-edge shines (faux refraction).
+  // Layer 3 — side-edge shines (faux refraction). backgroundColor set inline.
   edgeShineLeft: {
     position: 'absolute',
     top: 4,
     bottom: 4,
     left: 0,
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
   },
   edgeShineRight: {
     position: 'absolute',
@@ -306,28 +349,22 @@ const styles = StyleSheet.create({
     bottom: 4,
     right: 0,
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
   },
-  // Layer 4 — 1px inner top edge.
+  // Layer 4 — 1px inner top edge. backgroundColor set inline.
   innerEdge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.55)',
   },
-  // Layer 5 — cool-tone bottom hairline (mimics blurred shadow underneath).
+  // Layer 5 — cool-tone bottom hairline. backgroundColor set inline.
   bottomHairline: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(37,99,235,0.18)',
-  },
-  dockOffline: {
-    borderColor: koolaColors.warning,
   },
   dockDisabled: {
     opacity: 0.6,
@@ -347,7 +384,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     maxHeight: 100,
-    color: koolaColors.ink,
     // Force transparent — Android TextInput inherits a white background from
     // the theme, which would re-introduce the brighter band across the dock
     // middle when the dock fill is even slightly translucent.
