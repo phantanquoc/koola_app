@@ -1,17 +1,17 @@
 /**
  * MomentComposerScreen.tsx
  *
- * Multi-step composer for creating a new Khoảnh khắc (story).
+ * Multi-step composer for creating a new Khoanh khac (story).
  *
  * Steps:
- *   media-picker  → preview/edit → (optional) music-picker → (optional) audience-picker → publish
+ *   media-picker  -> preview/edit -> (optional) music-picker -> (optional) audience-picker -> publish
  *
  * States:
  *   'media-picker' | 'preview' | 'music-picker' | 'caption-edit' |
  *   'audience-picker' | 'publishing' | 'error'
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Image,
@@ -28,7 +28,8 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, KoolaButton, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, KoolaButton, koolaRadii, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import MentionTextInput from '../../components/moments/MentionTextInput';
 import MusicPicker from '../../components/moments/MusicPicker';
 import { momentsService } from '../../services/moments/momentsService';
@@ -63,6 +64,8 @@ const AUDIENCE_LABELS: Record<string, string> = {
 const MomentComposerScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const insets = useSafeAreaInsets();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [step, setStep] = useState<ComposerStep>('media-picker');
   const [media, setMedia] = useState<PickedMedia | null>(null);
@@ -78,8 +81,7 @@ const MomentComposerScreen: React.FC = () => {
 
   const clientStoryIdRef = useRef(generateClientId());
 
-  // ─── Step 1: Media Picker ──────────────────────────────────────────────────
-
+  // --- Step 1: Media Picker ---
   const handlePickMedia = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
@@ -89,20 +91,15 @@ const MomentComposerScreen: React.FC = () => {
         selectionLimit: 1,
         includeExtra: true,
       });
-
       if (result.didCancel || !result.assets?.length) return;
-
       const asset = result.assets[0];
-
       const isVideo = (asset.type ?? '').startsWith('video/') || asset.duration != null;
       const detectedType: 'image' | 'video' = isVideo ? 'video' : 'image';
-
       if (isVideo && typeof asset.duration === 'number' && asset.duration > 60) {
         setErrorMsg('Video dài quá 60 giây');
         setStep('error');
         return;
       }
-
       setMedia({
         uri: asset.uri ?? '',
         type: detectedType,
@@ -117,8 +114,7 @@ const MomentComposerScreen: React.FC = () => {
     }
   }, []);
 
-  // ─── Audience picker loading ────────────────────────────────────────────────
-
+  // --- Audience picker loading ---
   const handleOpenAudiencePicker = useCallback(async () => {
     try {
       const lists = await momentsService.loadAudienceLists();
@@ -128,25 +124,20 @@ const MomentComposerScreen: React.FC = () => {
     }
     setShowAudiencePicker(true);
   }, []);
+/* COMPOSER_PUBLISH_PLACEHOLDER */
 
-  // ─── Publish ───────────────────────────────────────────────────────────────
-
+  // --- Publish ---
   const handlePublish = useCallback(async () => {
     if (!media) return;
-
     setStep('publishing');
     setErrorMsg('');
-
     try {
-      // 1) Upload media to MinIO via shared helper (handles presign + PUT correctly).
       const { mediaKey } = await uploadMedia(
         media.uri,
         media.filename,
         media.mimeType,
         media.fileSize,
       );
-
-      // 2) POST story creation
       await momentsService.createStory({
         mediaKey,
         mediaType: media.type,
@@ -158,7 +149,6 @@ const MomentComposerScreen: React.FC = () => {
         clientStoryId: clientStoryIdRef.current,
         mentions: mentions.length > 0 ? mentions : undefined,
       });
-
       navigation.goBack();
     } catch (err: unknown) {
       const ax = err as {
@@ -188,12 +178,12 @@ const MomentComposerScreen: React.FC = () => {
     }
   }, [media, caption, mentions, audienceScope, audienceListId, musicRef, navigation]);
 
-  // ─── Render helpers ────────────────────────────────────────────────────────
-
+  // --- Render helpers ---
   const audienceScopeLabel =
     audienceScope === 'custom'
       ? audienceLists.find((l) => l._id === audienceListId)?.name ?? 'Danh sách tùy chỉnh'
       : AUDIENCE_LABELS[audienceScope] ?? 'Công khai';
+/* COMPOSER_RENDER_PLACEHOLDER */
 
   if (step === 'media-picker') {
     return (
@@ -210,7 +200,6 @@ const MomentComposerScreen: React.FC = () => {
           </KoolaText>
           <View style={{ width: 40 }} />
         </View>
-
         <View style={styles.pickerBody}>
           <KoolaButton
             title="Chọn ảnh / video"
@@ -229,7 +218,7 @@ const MomentComposerScreen: React.FC = () => {
   if (step === 'publishing') {
     return (
       <View style={styles.container} accessibilityLiveRegion="polite">
-        <ActivityIndicator size="large" color={koolaColors.primary} style={styles.publishingLoader} />
+        <ActivityIndicator size="large" color={palette.primary} style={styles.publishingLoader} />
         <KoolaText tone="muted" align="center" style={styles.publishingText}>
           Đang đăng...
         </KoolaText>
@@ -299,12 +288,17 @@ const MomentComposerScreen: React.FC = () => {
             accessibilityLabel="Ảnh xem trước"
           />
         ) : (
-          <View style={[styles.previewMedia, styles.videoPreviewPlaceholder]}>
-            <KoolaText tone="surface" align="center">
-              Video đã chọn ({media.duration != null ? Math.round(media.duration) : '?'}s)
+          <View style={styles.videoPreviewFrame}>
+            <MaterialIcons name="videocam" size={40} color={palette.faint} />
+            <KoolaText variant="label" tone="muted" align="center" style={styles.videoPreviewLabel}>
+              Video đã chọn
+            </KoolaText>
+            <KoolaText variant="caption" tone="faint" align="center">
+              {media.duration != null ? `${Math.round(media.duration)}s` : ''}
             </KoolaText>
           </View>
         ))}
+/* COMPOSER_PREVIEW_CONTINUE_PLACEHOLDER */
 
         {/* Caption with mention support */}
         <View style={styles.captionSection}>
@@ -342,7 +336,7 @@ const MomentComposerScreen: React.FC = () => {
           <KoolaText tone={musicRef ? 'primary' : 'ink'}>
             {musicRef ? 'Nhạc đã chọn' : 'Thêm nhạc'}
           </KoolaText>
-          <MaterialIcons name="chevron-right" size={22} color={koolaColors.muted} />
+          <MaterialIcons name="chevron-right" size={22} color={palette.muted} />
         </TouchableOpacity>
 
         {/* Audience picker entry */}
@@ -353,7 +347,7 @@ const MomentComposerScreen: React.FC = () => {
           accessibilityLabel={`Đối tượng: ${audienceScopeLabel}`}
           accessibilityHint="Chọn ai có thể xem khoảnh khắc này">
           <KoolaText tone="ink">Đối tượng: {audienceScopeLabel}</KoolaText>
-          <MaterialIcons name="chevron-right" size={22} color={koolaColors.muted} />
+          <MaterialIcons name="chevron-right" size={22} color={palette.muted} />
         </TouchableOpacity>
       </ScrollView>
 
@@ -384,7 +378,6 @@ const MomentComposerScreen: React.FC = () => {
             </KoolaText>
             <View style={{ width: 40 }} />
           </View>
-
           <FlatList
             data={[
               { id: 'public', label: 'Công khai', scope: 'public' as AudienceScope },
@@ -441,102 +434,112 @@ const MomentComposerScreen: React.FC = () => {
     </View>
   );
 };
+/* COMPOSER_STYLES_PLACEHOLDER */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  pickerBody: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 16,
-  },
-  hint: {
-    marginTop: 8,
-  },
-  previewContent: {
-    paddingBottom: 32,
-  },
-  previewMedia: {
-    width: '100%',
-    aspectRatio: 9 / 16,
-    backgroundColor: koolaColors.ink,
-  },
-  videoPreviewPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captionSection: {
-    padding: 16,
-    backgroundColor: koolaColors.surface,
-    marginTop: 1,
-  },
-  sectionLabel: {
-    marginBottom: 8,
-  },
-  captionInput: {
-    borderWidth: 1,
-    borderColor: koolaColors.line,
-    borderRadius: koolaRadii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: koolaColors.canvas,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: koolaColors.surface,
-    marginTop: 1,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  publishingLoader: {
-    marginTop: 120,
-  },
-  publishingText: {
-    marginTop: 16,
-  },
-  errorBody: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 16,
-  },
-  retryButton: {
-    marginTop: 16,
-    minWidth: 160,
-  },
-  audienceModal: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  audienceItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  audienceItemSelected: {
-    backgroundColor: koolaColors.primarySoft,
-  },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+    pickerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+      backgroundColor: palette.surface,
+    },
+    pickerBody: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 32,
+      gap: 16,
+    },
+    hint: {
+      marginTop: 8,
+    },
+    previewContent: {
+      paddingBottom: 32,
+    },
+    previewMedia: {
+      width: '100%',
+      aspectRatio: 9 / 16,
+      backgroundColor: palette.ink,
+    },
+    videoPreviewFrame: {
+      width: '100%',
+      aspectRatio: 9 / 16,
+      backgroundColor: palette.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    videoPreviewLabel: {
+      marginTop: 4,
+    },
+    captionSection: {
+      padding: 16,
+      backgroundColor: palette.surface,
+      marginTop: 1,
+    },
+    sectionLabel: {
+      marginBottom: 8,
+    },
+/* COMPOSER_STYLES_PART2 */
+    captionInput: {
+      borderWidth: 1,
+      borderColor: palette.line,
+      borderRadius: koolaRadii.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      backgroundColor: palette.canvas,
+    },
+    optionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      backgroundColor: palette.surface,
+      marginTop: 1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+    },
+    publishingLoader: {
+      marginTop: 120,
+    },
+    publishingText: {
+      marginTop: 16,
+    },
+    errorBody: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 32,
+      gap: 16,
+    },
+    retryButton: {
+      marginTop: 16,
+      minWidth: 160,
+    },
+    audienceModal: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+    audienceItem: {
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+      backgroundColor: palette.surface,
+    },
+    audienceItemSelected: {
+      backgroundColor: palette.primarySoft,
+    },
+  });
 
 export default MomentComposerScreen;
