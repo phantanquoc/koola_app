@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Pressable,
@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Text,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,9 +21,11 @@ import {
   KoolaDivider,
   KoolaSurface,
   KoolaText,
-  koolaColors,
   koolaRadii,
+  koolaSpacing,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import type { Account, CreateBusinessAccountPayload } from '../../types';
 import { BUSINESS_CATEGORIES } from '../connect/constants';
 
@@ -36,10 +37,13 @@ const VERIFICATION_LABEL: Record<string, string> = {
   rejected: 'Bị từ chối',
 };
 
-const VERIFICATION_COLOR: Record<string, string> = {
-  pending: koolaColors.warning,
-  verified: koolaColors.success,
-  rejected: koolaColors.danger,
+const getVerificationColor = (status: string, p: Palette): string => {
+  switch (status) {
+    case 'pending': return p.warning;
+    case 'verified': return p.success;
+    case 'rejected': return p.danger;
+    default: return p.muted;
+  }
 };
 
 const RELATIONSHIP_OPTIONS: { value: 'partner' | 'supplier'; label: string }[] = [
@@ -57,6 +61,8 @@ interface CreateFormProps {
 }
 
 const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) => {
+  const { palette } = useTheme();
+  const formStyles = useMemo(() => makeFormStyles(palette), [palette]);
   const [displayName, setDisplayName] = useState('');
   const [relationshipType, setRelationshipType] = useState<'partner' | 'supplier' | ''>('');
   const [businessCategory, setBusinessCategory] = useState('');
@@ -143,108 +149,110 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
 
   return (
     <ScrollView
-      style={styles.formContainer}
-      contentContainerStyle={styles.formContent}
+      style={formStyles.formContainer}
+      contentContainerStyle={formStyles.formContent}
       keyboardShouldPersistTaps="handled">
 
-      <KoolaText variant="heading" style={styles.formTitle}>Thêm tài khoản doanh nghiệp</KoolaText>
+      <KoolaText variant="heading" style={formStyles.formTitle}>Thêm tài khoản doanh nghiệp</KoolaText>
 
-      <Text style={styles.sectionHeader}>Thông tin bắt buộc</Text>
+      <KoolaText variant="caption" weight="700" tone="primary" style={formStyles.sectionHeader}>
+        Thông tin bắt buộc
+      </KoolaText>
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Tên tài khoản *</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">{`Tên tài khoản *`}</KoolaText>
         <TextInput
-          style={[styles.input, errors.displayName && styles.inputError]}
+          style={[formStyles.input, errors.displayName && formStyles.inputError]}
           placeholder="Tên doanh nghiệp"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={palette.faint}
           value={displayName}
           onChangeText={setDisplayName}
         />
-        {!!errors.displayName && <Text style={styles.errorText}>{errors.displayName}</Text>}
+        {!!errors.displayName && <KoolaText variant="caption" tone="danger">{errors.displayName}</KoolaText>}
       </View>
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Loại quan hệ *</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">{`Loại quan hệ *`}</KoolaText>
         <TouchableOpacity
-          style={[styles.pickerButton, errors.relationshipType && styles.inputError]}
+          style={[formStyles.pickerButton, errors.relationshipType && formStyles.inputError]}
           onPress={() => { setRelationshipOpen((v) => !v); setCategoryOpen(false); }}>
-          <Text style={[styles.pickerText, !selectedRelLabel && styles.pickerPlaceholder]}>
+          <KoolaText variant="body" tone={selectedRelLabel ? 'ink' : 'faint'}>
             {selectedRelLabel || 'Chọn loại quan hệ'}
-          </Text>
-          <MaterialIcons name={relationshipOpen ? 'expand-less' : 'expand-more'} size={20} color="#6B7280" />
+          </KoolaText>
+          <MaterialIcons name={relationshipOpen ? 'expand-less' : 'expand-more'} size={20} color={palette.muted} />
         </TouchableOpacity>
         {relationshipOpen && (
-          <View style={styles.optionList}>
+          <View style={formStyles.optionList}>
             {RELATIONSHIP_OPTIONS.map((opt) => (
               <TouchableOpacity
                 key={opt.value}
-                style={[styles.optionItem, relationshipType === opt.value && styles.optionItemSelected]}
+                style={[formStyles.optionItem, relationshipType === opt.value && formStyles.optionItemSelected]}
                 onPress={() => { setRelationshipType(opt.value); setRelationshipOpen(false); }}>
-                <Text style={[styles.optionText, relationshipType === opt.value && styles.optionTextSelected]}>
+                <KoolaText variant="body" tone={relationshipType === opt.value ? 'primary' : 'ink'} weight={relationshipType === opt.value ? '600' : '400'}>
                   {opt.label}
-                </Text>
+                </KoolaText>
               </TouchableOpacity>
             ))}
           </View>
         )}
-        {!!errors.relationshipType && <Text style={styles.errorText}>{errors.relationshipType}</Text>}
+        {!!errors.relationshipType && <KoolaText variant="caption" tone="danger">{errors.relationshipType}</KoolaText>}
       </View>
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Lĩnh vực *</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">{`Lĩnh vực *`}</KoolaText>
         <TouchableOpacity
-          style={[styles.pickerButton, errors.businessCategory && styles.inputError]}
+          style={[formStyles.pickerButton, errors.businessCategory && formStyles.inputError]}
           onPress={() => { setCategoryOpen((v) => !v); setRelationshipOpen(false); }}>
-          <Text style={[styles.pickerText, !selectedCatLabel && styles.pickerPlaceholder]}>
+          <KoolaText variant="body" tone={selectedCatLabel ? 'ink' : 'faint'}>
             {selectedCatLabel || 'Chọn lĩnh vực'}
-          </Text>
-          <MaterialIcons name={categoryOpen ? 'expand-less' : 'expand-more'} size={20} color="#6B7280" />
+          </KoolaText>
+          <MaterialIcons name={categoryOpen ? 'expand-less' : 'expand-more'} size={20} color={palette.muted} />
         </TouchableOpacity>
         {categoryOpen && (
-          <View style={styles.optionList}>
+          <View style={formStyles.optionList}>
             {FORM_CATEGORIES.map((cat) => (
               <TouchableOpacity
                 key={cat.slug}
-                style={[styles.optionItem, businessCategory === cat.slug && styles.optionItemSelected]}
+                style={[formStyles.optionItem, businessCategory === cat.slug && formStyles.optionItemSelected]}
                 onPress={() => { setBusinessCategory(cat.slug); setCategoryOpen(false); }}>
-                <Text style={[styles.optionText, businessCategory === cat.slug && styles.optionTextSelected]}>
+                <KoolaText variant="body" tone={businessCategory === cat.slug ? 'primary' : 'ink'} weight={businessCategory === cat.slug ? '600' : '400'}>
                   {cat.label}
-                </Text>
+                </KoolaText>
               </TouchableOpacity>
             ))}
           </View>
         )}
-        {!!errors.businessCategory && <Text style={styles.errorText}>{errors.businessCategory}</Text>}
+        {!!errors.businessCategory && <KoolaText variant="caption" tone="danger">{errors.businessCategory}</KoolaText>}
       </View>
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Tỉnh/Thành phố *</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">{`Tỉnh/Thành phố *`}</KoolaText>
         <TextInput
-          style={[styles.input, errors.province && styles.inputError]}
+          style={[formStyles.input, errors.province && formStyles.inputError]}
           placeholder="Ví dụ: HCM City, Hà Nội"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={palette.faint}
           value={province}
           onChangeText={setProvince}
         />
-        {!!errors.province && <Text style={styles.errorText}>{errors.province}</Text>}
+        {!!errors.province && <KoolaText variant="caption" tone="danger">{errors.province}</KoolaText>}
       </View>
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Giấy phép kinh doanh *</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">{`Giấy phép kinh doanh *`}</KoolaText>
         <TouchableOpacity
-          style={[styles.uploadButton, errors.licenseImageKey && styles.inputError]}
+          style={[formStyles.uploadButton, errors.licenseImageKey && formStyles.inputError]}
           onPress={handleUploadLicense}>
-          <MaterialIcons name={licenseImageKey ? 'check-circle' : 'upload-file'} size={20} color={licenseImageKey ? koolaColors.success ?? '#10B981' : koolaColors.primary} />
-          <Text style={[styles.uploadText, { color: licenseImageKey ? koolaColors.success ?? '#10B981' : koolaColors.primary }]}>
+          <MaterialIcons name={licenseImageKey ? 'check-circle' : 'upload-file'} size={20} color={licenseImageKey ? palette.success : palette.primary} />
+          <KoolaText variant="body" weight="500" tone={licenseImageKey ? 'success' : 'primary'}>
             {licenseImageKey ? 'Đã tải lên' : 'Tải lên ảnh giấy phép'}
-          </Text>
+          </KoolaText>
         </TouchableOpacity>
-        {!!errors.licenseImageKey && <Text style={styles.errorText}>{errors.licenseImageKey}</Text>}
+        {!!errors.licenseImageKey && <KoolaText variant="caption" tone="danger">{errors.licenseImageKey}</KoolaText>}
       </View>
 
-      <Text style={[styles.sectionHeader, { color: koolaColors.muted, marginTop: 20 }]}>
+      <KoolaText variant="caption" weight="700" tone="muted" style={formStyles.sectionHeaderOptional}>
         Thông tin bổ sung (tuỳ chọn)
-      </Text>
+      </KoolaText>
 
       {[
         { label: 'Slogan', value: tagline, set: setTagline, placeholder: 'Tối đa 200 ký tự', maxLength: 200 },
@@ -253,12 +261,12 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
         { label: 'Email liên hệ', value: contactEmail, set: setContactEmail, placeholder: 'email@company.com' },
         { label: 'Số điện thoại liên hệ', value: contactPhone, set: setContactPhone, placeholder: '028-xxxx-xxxx' },
       ].map(({ label, value, set, placeholder, maxLength }) => (
-        <View key={label} style={styles.fieldGroup}>
-          <Text style={styles.label}>{label}</Text>
+        <View key={label} style={formStyles.fieldGroup}>
+          <KoolaText variant="label" weight="600">{label}</KoolaText>
           <TextInput
-            style={styles.input}
+            style={formStyles.input}
             placeholder={placeholder}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={palette.faint}
             value={value}
             onChangeText={set}
             maxLength={maxLength}
@@ -266,12 +274,12 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
         </View>
       ))}
 
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Giới thiệu</Text>
+      <View style={formStyles.fieldGroup}>
+        <KoolaText variant="label" weight="600">Giới thiệu</KoolaText>
         <TextInput
-          style={[styles.input, { height: 100 }]}
+          style={[formStyles.input, { height: 100 }]}
           placeholder="Mô tả chi tiết (tối đa 2000 ký tự)"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={palette.faint}
           value={description}
           onChangeText={setDescription}
           maxLength={2000}
@@ -282,15 +290,15 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
       </View>
 
       {!!submitError && (
-        <View style={styles.submitErrorContainer}>
-          <MaterialIcons name="error-outline" size={16} color={koolaColors.danger} />
-          <Text style={[styles.errorText, { flex: 1 }]}>{submitError}</Text>
+        <View style={formStyles.submitErrorContainer}>
+          <MaterialIcons name="error-outline" size={16} color={palette.danger} />
+          <KoolaText variant="caption" tone="danger" style={{ flex: 1 }}>{submitError}</KoolaText>
         </View>
       )}
 
-      <View style={styles.formActions}>
-        <KoolaButton title="Huỷ" variant="secondary" onPress={onCancel} style={styles.cancelBtn} disabled={submitting} />
-        <KoolaButton title="Gửi yêu cầu" onPress={handleSubmit} style={styles.submitBtn} loading={submitting} disabled={submitting} />
+      <View style={formStyles.formActions}>
+        <KoolaButton title="Huỷ" variant="secondary" onPress={onCancel} style={formStyles.cancelBtn} disabled={submitting} />
+        <KoolaButton title="Gửi yêu cầu" onPress={handleSubmit} style={formStyles.submitBtn} loading={submitting} disabled={submitting} />
       </View>
     </ScrollView>
   );
@@ -300,6 +308,8 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
 
 const AccountListScreen: React.FC = () => {
   const { accounts, activeAccount, switchAccount } = useAuth();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [localAccounts, setLocalAccounts] = useState<Account[]>(accounts);
   // Set of accountIds that have pending notification badges.
@@ -377,7 +387,7 @@ const AccountListScreen: React.FC = () => {
             ? VERIFICATION_LABEL[account.verificationStatus] ?? account.verificationStatus
             : undefined;
           const statusColor = account.verificationStatus
-            ? VERIFICATION_COLOR[account.verificationStatus] ?? koolaColors.muted
+            ? getVerificationColor(account.verificationStatus, palette)
             : undefined;
           return (
             <React.Fragment key={account._id}>
@@ -412,7 +422,7 @@ const AccountListScreen: React.FC = () => {
                   </View>
                 </View>
                 {isActive && (
-                  <MaterialIcons name="check-circle" size={20} color={koolaColors.primary} />
+                  <MaterialIcons name="check-circle" size={20} color={palette.primary} />
                 )}
               </Pressable>
             </React.Fragment>
@@ -430,174 +440,153 @@ const AccountListScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  pageTitle: {
-    marginBottom: 16,
-  },
-  listCard: {
-    marginBottom: 20,
-  },
-  accountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    gap: 12,
-  },
-  notifBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: koolaColors.danger,
-    borderWidth: 1.5,
-    borderColor: koolaColors.surface,
-  },
-  accountInfo: {
-    flex: 1,
-  },
-  accountMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  addButton: {
-    marginTop: 8,
-  },
-  // Form styles
-  formContainer: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  formContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  formTitle: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: koolaColors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  fieldGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: koolaColors.ink,
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    color: koolaColors.ink,
-  },
-  inputError: {
-    borderColor: koolaColors.danger,
-  },
-  errorText: {
-    fontSize: 12,
-    color: koolaColors.danger,
-    marginTop: 4,
-  },
-  pickerButton: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pickerText: {
-    fontSize: 14,
-    color: koolaColors.ink,
-    flex: 1,
-  },
-  pickerPlaceholder: {
-    color: koolaColors.faint,
-  },
-  optionList: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    marginTop: 4,
-    overflow: 'hidden',
-  },
-  optionItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  optionItemSelected: {
-    backgroundColor: koolaColors.primarySoft,
-  },
-  optionText: {
-    fontSize: 14,
-    color: koolaColors.ink,
-  },
-  optionTextSelected: {
-    color: koolaColors.primary,
-    fontWeight: '600',
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  uploadText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  submitErrorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: koolaColors.dangerSoft,
-    borderRadius: koolaRadii.md,
-    padding: 12,
-    marginBottom: 16,
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelBtn: {
-    flex: 1,
-  },
-  submitBtn: {
-    flex: 1,
-  },
-});
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    listContent: {
+      padding: koolaSpacing.lg,
+      paddingBottom: koolaSpacing['40'],
+    },
+    pageTitle: {
+      marginBottom: koolaSpacing.lg,
+    },
+    listCard: {
+      marginBottom: 20,
+    },
+    accountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 14,
+      gap: 12,
+    },
+    notifBadge: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: p.danger,
+      borderWidth: 1.5,
+      borderColor: p.surface,
+    },
+    accountInfo: {
+      flex: 1,
+    },
+    accountMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 2,
+    },
+    addButton: {
+      marginTop: koolaSpacing.sm,
+    },
+  });
+
+const makeFormStyles = (p: Palette) =>
+  StyleSheet.create({
+    formContainer: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    formContent: {
+      padding: koolaSpacing.lg,
+      paddingBottom: koolaSpacing['40'],
+    },
+    formTitle: {
+      marginBottom: koolaSpacing.lg,
+    },
+    sectionHeader: {
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: koolaSpacing.md,
+      marginTop: koolaSpacing.xs,
+    },
+    sectionHeaderOptional: {
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: koolaSpacing.md,
+      marginTop: 20,
+    },
+    fieldGroup: {
+      marginBottom: koolaSpacing.lg,
+    },
+    input: {
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      fontSize: 14,
+      color: p.ink,
+      marginTop: 6,
+    },
+    inputError: {
+      borderColor: p.danger,
+    },
+    pickerButton: {
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 6,
+    },
+    optionList: {
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      marginTop: 4,
+      overflow: 'hidden',
+    },
+    optionItem: {
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    optionItemSelected: {
+      backgroundColor: p.primarySoft,
+    },
+    uploadButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      marginTop: 6,
+    },
+    submitErrorContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: p.dangerSoft,
+      borderRadius: koolaRadii.md,
+      padding: 12,
+      marginBottom: koolaSpacing.lg,
+    },
+    formActions: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: koolaSpacing.sm,
+    },
+    cancelBtn: {
+      flex: 1,
+    },
+    submitBtn: {
+      flex: 1,
+    },
+  });
 
 export default AccountListScreen;
