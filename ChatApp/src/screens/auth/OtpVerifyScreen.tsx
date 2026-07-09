@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -15,25 +14,33 @@ import { authApi } from '../../services/api/apiService';
 import {
   KoolaBadge,
   KoolaButton,
+  KoolaLogo,
+  KoolaOtpInput,
   KoolaSurface,
   KoolaText,
-  koolaColors,
-  koolaRadii,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerify'>;
 
 const OTP_EXPIRY = 300;
+const RESEND_COOLDOWN = 45;
 const MAX_ATTEMPTS = 5;
 
 const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   const { email } = route.params;
   const { verifyOtp } = useAuth();
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(OTP_EXPIRY);
+  const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN);
   const [attempts, setAttempts] = useState(0);
+  const [otpError, setOtpError] = useState('');
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -43,6 +50,15 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
     return () => clearInterval(timer);
   }, [countdown]);
 
+  // Separate resend cooldown timer (shorter than expiry)
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -50,12 +66,13 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   };
 
   const handleVerify = useCallback(async () => {
+    setOtpError('');
     if (otp.length !== 6) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đủ 6 số');
+      setOtpError('Vui lòng nhập đủ 6 số');
       return;
     }
     if (attempts >= MAX_ATTEMPTS) {
-      Alert.alert('Lỗi', 'Quá số lần thử. Vui lòng gửi lại mã mới.');
+      setOtpError('Quá số lần thử. Vui lòng gửi lại mã mới.');
       return;
     }
     setLoading(true);
@@ -69,10 +86,10 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
         response?: { data?: { message?: string | string[] } };
       };
       const msg = error.response?.data?.message;
-      Alert.alert(
-        'Xác thực thất bại',
-        Array.isArray(msg) ? msg.join('\n') : msg || 'Mã xác thực không đúng',
-      );
+      const text = Array.isArray(msg)
+        ? msg.join('\n')
+        : msg || 'Mã xác thực không đúng';
+      setOtpError(text);
     } finally {
       setLoading(false);
     }
@@ -83,8 +100,10 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
     try {
       await authApi.resendOtp(email);
       setOtp('');
+      setOtpError('');
       setAttempts(0);
       setCountdown(OTP_EXPIRY);
+      setResendCooldown(RESEND_COOLDOWN);
     } catch (err: unknown) {
       const error = err as {
         response?: { data?: { message?: string | string[] } };
@@ -99,12 +118,15 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
     }
   }, [email]);
 
+  const resendDisabled = resending || resendCooldown > 0;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <KoolaSurface variant="raised" style={styles.form}>
         <View style={styles.header}>
+          <KoolaLogo markSize={32} showMark showWordmark={false} />
           <KoolaBadge label="Bảo mật" tone="primary" />
           <KoolaText variant="title" align="center">
             Xác thực OTP
@@ -114,18 +136,11 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
           </KoolaText>
         </View>
 
-        <TextInput
-          style={styles.otpInput}
-          placeholder="000000"
-          placeholderTextColor={koolaColors.faint}
+        <KoolaOtpInput
           value={otp}
-          onChangeText={(text) =>
-            setOtp(text.replace(/[^0-9]/g, '').slice(0, 6))
-          }
-          keyboardType="number-pad"
-          maxLength={6}
-          textAlign="center"
+          onChange={(v) => { setOtp(v); setOtpError(''); }}
           autoFocus
+          error={otpError}
         />
 
         <KoolaText
@@ -138,7 +153,10 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
         </KoolaText>
 
         {attempts > 0 && attempts < MAX_ATTEMPTS ? (
-          <KoolaText align="center" style={styles.warningText} weight="700">
+          <KoolaText
+            align="center"
+            style={styles.warningText}
+            weight="700">
             Còn {MAX_ATTEMPTS - attempts} lần thử
           </KoolaText>
         ) : null}
@@ -154,15 +172,20 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
         <Pressable
           style={styles.resendButton}
           onPress={handleResend}
-          disabled={resending || countdown > 0}
-          accessibilityRole="button">
+          disabled={resendDisabled}
+          hitSlop={{ top: 4, bottom: 4 }}
+          accessibilityRole="button"
+          accessibilityLabel="Gửi lại mã xác thực"
+          accessibilityState={{ disabled: resendDisabled }}>
           <KoolaText
-            tone={countdown > 0 ? 'faint' : 'primary'}
+            tone={resendDisabled ? 'faint' : 'primary'}
             weight="800"
             align="center">
             {resending
               ? 'Đang gửi lại...'
-              : `Gửi lại mã ${countdown > 0 ? `(${formatTime(countdown)})` : ''}`}
+              : resendCooldown > 0
+                ? `Gửi lại mã (${resendCooldown}s)`
+                : 'Gửi lại mã'}
           </KoolaText>
         </Pressable>
       </KoolaSurface>
@@ -170,39 +193,30 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  form: {
-    padding: 20,
-    gap: 16,
-  },
-  header: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  otpInput: {
-    height: 58,
-    borderWidth: 2,
-    borderColor: koolaColors.primary,
-    borderRadius: koolaRadii.md,
-    paddingHorizontal: 16,
-    fontSize: 28,
-    letterSpacing: 10,
-    color: koolaColors.ink,
-    fontWeight: '800',
-    backgroundColor: koolaColors.surface,
-  },
-  warningText: {
-    color: koolaColors.warning,
-  },
-  resendButton: {
-    paddingVertical: 8,
-  },
-});
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+      justifyContent: 'center',
+      paddingHorizontal: 20,
+    },
+    form: {
+      padding: 20,
+      gap: 16,
+    },
+    header: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    warningText: {
+      color: p.warning,
+    },
+    resendButton: {
+      paddingVertical: 8,
+    },
+  });
 
 export default OtpVerifyScreen;
