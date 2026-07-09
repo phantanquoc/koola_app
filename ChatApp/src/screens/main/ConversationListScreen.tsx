@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -22,14 +22,17 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
-import { KoolaState, koolaColors } from '../../ui';
+import { KoolaState, useTheme } from '../../ui';
 import { useLocalFirstFlag } from '../../config/featureFlags';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
 import * as syncStateRepository from '../../services/db/syncStateRepository';
+import type { Palette } from '../../ui/theme';
 
-const Separator = () => <View style={styles.separator} />;
+const Separator = ({ palette: p }: { palette: Palette }) => (
+  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: p.line }} />
+);
 
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation<ConversationListScreenNavigationProp>();
@@ -38,6 +41,9 @@ const ConversationListScreen: React.FC = () => {
   const { sync } = useMessageSync();
   const { isConnected } = useNetworkStatus();
   const localFirstEnabled = useLocalFirstFlag();
+  const { palette } = useTheme();
+
+  const screenStyles = useMemo(() => makeScreenStyles(palette), [palette]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [page, setPage] = useState(1);
@@ -279,9 +285,10 @@ const ConversationListScreen: React.FC = () => {
       <ConversationListItem
         conversation={item}
         onPress={() => handleConversationPress(item)}
+        palette={palette}
       />
     ),
-    [handleConversationPress],
+    [handleConversationPress, palette],
   );
 
   const handleGroupCreated = (conv: Conversation) => {
@@ -318,23 +325,25 @@ const ConversationListScreen: React.FC = () => {
     navigation.getParent()?.navigate('Contacts');
   };
 
+  const SeparatorComponent = useCallback(() => <Separator palette={palette} />, [palette]);
+
   if (error && conversations.length === 0) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={screenStyles.container} edges={['bottom']}>
         <KoolaState
           icon="wifi-off"
           title="Không thể tải hội thoại"
           message={error}
           actionLabel="Thử lại"
           onActionPress={() => fetchConversations(true)}
-          style={styles.errorContainer}
+          style={screenStyles.errorContainer}
         />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={screenStyles.container} edges={['bottom']}>
       <OfflineBanner isVisible={isConnected === false} />
       <FlatList
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
@@ -358,10 +367,10 @@ const ConversationListScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={koolaColors.primary}
+            tintColor={palette.primary}
           />
         }
-        ItemSeparatorComponent={Separator}
+        ItemSeparatorComponent={SeparatorComponent}
       />
 
       <GroupCreateModal
@@ -373,12 +382,12 @@ const ConversationListScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  // Slight off-white (was koolaColors.surface = #FFFFFF) so the floating tab
-  // dock's translucent fill doesn't sit on a pure-white background.
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: koolaColors.line },
-  errorContainer: { flex: 1 },
-});
+// ─── Palette-aware styles ────────────────────────────────────────────────────
+function makeScreenStyles(palette: Palette) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: palette.canvas },
+    errorContainer: { flex: 1 },
+  });
+}
 
 export default ConversationListScreen;

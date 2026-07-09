@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import UserAvatar from '../../../components/UserAvatar';
 import {
   KoolaText,
   KoolaIconButton,
-  koolaColors,
   koolaRadii,
   koolaSpacing,
+  koolaShadows,
+  koolaDarkShadows,
+  useTheme,
 } from '../../../ui';
+import type { Palette } from '../../../ui/theme';
 
 type CallType = 'audio' | 'video';
 
@@ -22,7 +25,7 @@ interface ChatHeaderProps {
 
 /**
  * Presentational chat header: back button, avatar + title + online status
- * (tap → profile/group info), and the audio/video call actions.
+ * (tap -> profile/group info), and the audio/video call actions.
  *
  * Stateless — all data and callbacks are injected. State + behaviour live in
  * useChatHeaderState (title/status/avatar/header tap) and useCallInitiation
@@ -36,6 +39,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onHeaderPress,
   onStartCall,
 }) => {
+  const { palette, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(palette, resolvedScheme), [palette, resolvedScheme]);
+
   return (
     <View style={styles.header}>
       <KoolaIconButton
@@ -47,7 +53,12 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         onPress={onBack}
         accessibilityLabel="Quay lại"
       />
-      <TouchableOpacity style={styles.headerCenter} onPress={onHeaderPress} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.headerCenter}
+        onPress={onHeaderPress}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={`Xem thông tin ${chatTitle}`}>
         <View>
           <UserAvatar displayName={chatTitle} avatar={otherAvatarKey || undefined} size={38} />
           {otherUserStatus === 'Đang hoạt động' && (
@@ -56,13 +67,18 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         </View>
         <View style={{ flex: 1 }}>
           <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>{chatTitle}</KoolaText>
-          <KoolaText
-            variant="caption"
-            tone={otherUserStatus === 'Đang hoạt động' ? 'success' : 'muted'}
-            numberOfLines={1}
-            style={otherUserStatus ? undefined : { opacity: 0 }}>
-            {otherUserStatus || 'placeholder'}
-          </KoolaText>
+          {/* Fixed minHeight replaces old opacity:0 hack — always reserves space
+              for the status line to prevent layout shift on late status arrival */}
+          <View style={styles.statusLine}>
+            {otherUserStatus ? (
+              <KoolaText
+                variant="caption"
+                tone={otherUserStatus === 'Đang hoạt động' ? 'success' : 'muted'}
+                numberOfLines={1}>
+                {otherUserStatus}
+              </KoolaText>
+            ) : null}
+          </View>
         </View>
       </TouchableOpacity>
       <View style={styles.headerRight}>
@@ -91,19 +107,46 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
 export default ChatHeader;
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg,
-    paddingTop: koolaSpacing.sm, paddingBottom: koolaSpacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.sm, marginLeft: koolaSpacing.xs },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.xs },
-  onlineDot: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 11, height: 11, borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.accent,
-    borderWidth: 2, borderColor: koolaColors.surface,
-  },
-});
+function makeStyles(palette: Palette, scheme: 'light' | 'dark') {
+  const shadow = scheme === 'dark' ? koolaDarkShadows.xs : koolaShadows.xs;
+  return StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.lg,
+      paddingTop: koolaSpacing.sm,
+      paddingBottom: koolaSpacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.line,
+      backgroundColor: palette.surface,
+      ...shadow,
+    },
+    headerCenter: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: koolaSpacing.sm,
+      marginLeft: koolaSpacing.xs,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: koolaSpacing.xs,
+    },
+    statusLine: {
+      minHeight: 16,
+      justifyContent: 'center',
+    },
+    onlineDot: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 11,
+      height: 11,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: palette.accent,
+      borderWidth: 2,
+      borderColor: palette.surface,
+    },
+  });
+}

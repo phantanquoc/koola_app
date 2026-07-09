@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, Pressable, StyleSheet, InteractionManager } from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, Pressable, InteractionManager } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,7 +18,8 @@ import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
-import { KoolaText, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
 
@@ -51,9 +52,10 @@ interface TabItemProps {
   isFocused: boolean;
   unread: number;
   onPress: () => void;
+  palette: Palette;
 }
 
-const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress }) => {
+const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, palette }) => {
   const focus = useSharedValue(isFocused ? 1 : 0);
   const press = useSharedValue(0);
 
@@ -90,33 +92,47 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress }) =
     opacity: focus.value,
   }));
 
+  // Active pill background — animates in/out with focus
+  const pillStyle = useAnimatedStyle(() => ({
+    opacity: focus.value,
+    transform: [{ scale: 0.85 + 0.15 * focus.value }],
+  }));
+
   return (
     <Pressable
       style={tabItemStyles.host}
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      android_ripple={{ color: koolaColors.primarySoft, borderless: true, radius: 32 }}
+      android_ripple={{ color: palette.primarySoft, borderless: true, radius: 32 }}
       accessibilityRole="tab"
       accessibilityState={{ selected: isFocused }}
       accessibilityLabel={meta.label}>
       <Animated.View style={[tabItemStyles.inner, wrapperStyle]}>
+        {/* Active indicator pill behind icon */}
+        <Animated.View
+          style={[
+            tabItemStyles.pill,
+            { backgroundColor: palette.primarySoft },
+            pillStyle,
+          ]}
+        />
         <View style={tabItemStyles.iconSlot}>
           <AnimatedIcon
             name={meta.iconIdle}
             size={22}
-            color={koolaColors.muted}
+            color={palette.muted}
             style={iconIdleStyle}
           />
           <AnimatedIcon
             name={meta.iconActive}
             size={22}
-            color={koolaColors.primary}
+            color={palette.primary}
             style={iconActiveStyle}
           />
           {unread > 0 ? (
-            <View style={tabItemStyles.badge}>
-              <KoolaText variant="caption" weight="700" style={tabItemStyles.badgeText}>
+            <View style={[tabItemStyles.badge, { backgroundColor: palette.danger }]}>
+              <KoolaText variant="caption" weight="700" style={[tabItemStyles.badgeText, { color: palette.surface }]}>
                 {unread > 99 ? '99+' : String(unread)}
               </KoolaText>
             </View>
@@ -127,46 +143,51 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress }) =
   );
 };
 
-const tabItemStyles = StyleSheet.create({
+const tabItemStyles = {
   host: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 36,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    minHeight: 44,
     paddingVertical: 2,
     paddingHorizontal: 4,
   },
   inner: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  pill: {
+    position: 'absolute' as const,
+    width: 40,
+    height: 32,
+    borderRadius: koolaRadii.sm,
   },
   iconSlot: {
     width: 26,
     height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   badge: {
-    position: 'absolute',
+    position: 'absolute' as const,
     top: -4,
     right: -8,
     minWidth: 16,
     height: 16,
     paddingHorizontal: 4,
     borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   badgeText: {
-    color: koolaColors.surface,
     fontSize: 10,
     lineHeight: 12,
   },
-});
+};
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
 const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) => {
+  const { palette } = useTheme();
   const messagesUnread = useUnreadCount('Messages');
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
@@ -179,9 +200,23 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
     Shorts: shortsUnread,
   };
 
+  const barStyles = useMemo(() => ({
+    container: {
+      backgroundColor: palette.surface,
+      paddingHorizontal: 4,
+      paddingTop: 0,
+    },
+    row: {
+      flexDirection: 'row' as const,
+      alignItems: 'stretch' as const,
+      justifyContent: 'space-between' as const,
+      position: 'relative' as const,
+    },
+  }), [palette]);
+
   return (
-    <View style={tabBarStyles.container}>
-      <View style={tabBarStyles.row}>
+    <View style={barStyles.container} accessibilityRole="tablist">
+      <View style={barStyles.row}>
         {state.routes.map((route, index) => {
           const meta = SUB_TAB_META[route.name as keyof ChatSubTabParamList];
           if (!meta) return null;
@@ -192,6 +227,7 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
               meta={meta}
               isFocused={isFocused}
               unread={unreadByRoute[route.name] ?? 0}
+              palette={palette}
               onPress={() => {
                 const event = navigation.emit({
                   type: 'tabPress',
@@ -210,27 +246,21 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
   );
 };
 
-const tabBarStyles = StyleSheet.create({
-  container: {
-    backgroundColor: koolaColors.surface,
-    paddingHorizontal: 4,
-    paddingTop: 0,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    justifyContent: 'space-between',
-    position: 'relative',
-  },
-});
-
 // ─── Screen ──────────────────────────────────────────────────────────────────
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const isFocused = useIsFocused();
+  const { palette } = useTheme();
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [logoReplayKey, setLogoReplayKey] = useState(0);
+
+  const screenStyles = useMemo(() => ({
+    container: {
+      flex: 1,
+      backgroundColor: palette.canvas,
+    },
+  }), [palette]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -254,7 +284,7 @@ const ChatHomeScreen: React.FC = () => {
   }, [navigation]);
 
   return (
-    <View style={styles.container}>
+    <View style={screenStyles.container}>
       <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} />
       <TopTab.Navigator
         tabBar={(props) => <CustomTabBar {...props} />}
@@ -284,16 +314,5 @@ const ChatHomeScreen: React.FC = () => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    // Slight off-white so the floating tab dock's translucent fill doesn't
-    // sit on a pure-white surface (which made the empty bottom strip below
-    // the tab labels read as a brighter band). #F8FAFC is one notch cooler
-    // than `koolaColors.surface` (#FFFFFF).
-    backgroundColor: '#F8FAFC',
-  },
-});
 
 export default ChatHomeScreen;

@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
-import { KoolaText, koolaColors, koolaRadii } from '../ui';
+import { KoolaText, koolaRadii } from '../ui';
+import type { Palette } from '../ui/theme';
 
 interface Props {
   conversation: Conversation;
   onPress: () => void;
+  palette: Palette;
 }
 
 // Short Vietnamese timestamp: "5p" / "3g" / "5n" / "2tu" / "1th" / "1n2024"
@@ -15,7 +18,7 @@ function formatShortTimestamp(date: Date): string {
   const now = Date.now();
   const diffMs = now - date.getTime();
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'now';
+  if (diffMin < 1) return 'vừa xong';
   if (diffMin < 60) return `${diffMin}p`;
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `${diffHr}g`;
@@ -64,7 +67,17 @@ export function resolveConversationHeader(
   };
 }
 
-const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
+// ─── Message-type icon for preview line ──────────────────────────────────────
+function getPreviewIcon(preview: string): string | null {
+  const lower = preview.toLowerCase();
+  if (lower.includes('[hình ảnh]') || lower.includes('[ảnh]') || lower.endsWith('.jpg') || lower.endsWith('.png')) return 'image';
+  if (lower.includes('[video]') || lower.endsWith('.mp4')) return 'videocam';
+  if (lower.includes('[tệp]') || lower.includes('[file]')) return 'attach-file';
+  if (lower.includes('[tin nhắn thoại]') || lower.includes('[voice]')) return 'mic';
+  return null;
+}
+
+const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette }) => {
   const { user } = useAuth();
   const { displayName, avatar, isOnline } = resolveConversationHeader(
     conversation,
@@ -76,43 +89,49 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
     ? formatShortTimestamp(new Date(conversation.lastMessageAt))
     : '';
   const unreadCount = conversation.unreadCount || 0;
+  const previewIcon = getPreviewIcon(lastMessagePreview);
+
+  const itemStyles = useMemo(() => makeItemStyles(palette), [palette]);
 
   return (
     <Pressable
-      style={styles.container}
-      android_ripple={{ color: koolaColors.canvas }}
+      style={itemStyles.container}
+      android_ripple={{ color: palette.canvas }}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Trò chuyện với ${displayName}`}>
-      <View style={styles.avatarWrapper}>
-        <UserAvatar displayName={displayName} avatar={avatar} size={44} />
-        {isOnline ? <View style={styles.onlineDot} /> : null}
+      <View style={itemStyles.avatarWrapper}>
+        <UserAvatar displayName={displayName} avatar={avatar} size={48} />
+        {isOnline ? <View style={itemStyles.onlineDot} /> : null}
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.topRow}>
+      <View style={itemStyles.content}>
+        <View style={itemStyles.topRow}>
           <KoolaText
             variant="label"
             weight={unreadCount > 0 ? '800' : '700'}
             numberOfLines={1}
-            style={styles.name}>
+            style={itemStyles.name}>
             {displayName}
           </KoolaText>
-          <KoolaText variant="caption" tone="faint" numberOfLines={1} style={styles.timestamp}>
+          <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
             {timestamp}
           </KoolaText>
         </View>
-        <View style={styles.bottomRow}>
+        <View style={itemStyles.bottomRow}>
+          {previewIcon ? (
+            <Icon name={previewIcon} size={14} color={palette.muted} style={itemStyles.previewIcon} />
+          ) : null}
           <KoolaText
             variant="caption"
             tone={unreadCount > 0 ? 'ink' : 'muted'}
             weight={unreadCount > 0 ? '600' : '400'}
             numberOfLines={1}
-            style={styles.preview}>
+            style={itemStyles.preview}>
             {lastMessagePreview}
           </KoolaText>
           {unreadCount > 0 ? (
-            <View style={styles.badge}>
+            <View style={itemStyles.badge}>
               <KoolaText variant="caption" tone="surface" weight="800">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </KoolaText>
@@ -124,66 +143,69 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: koolaColors.surface,
-  },
-  pressed: {
-    backgroundColor: koolaColors.canvas,
-  },
-  avatarWrapper: {
-    position: 'relative',
-  },
-  content: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  name: {
-    flex: 1,
-  },
-  timestamp: {
-    fontSize: 11,
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-    gap: 8,
-  },
-  preview: {
-    flex: 1,
-  },
-  badge: {
-    backgroundColor: koolaColors.primary,
-    borderRadius: koolaRadii.pill,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  onlineDot: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: koolaColors.success,
-    borderWidth: 2,
-    borderColor: koolaColors.surface,
-  },
-});
+// ─── Palette-aware styles ────────────────────────────────────────────────────
+function makeItemStyles(palette: Palette) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      backgroundColor: palette.surface,
+    },
+    avatarWrapper: {
+      position: 'relative',
+    },
+    content: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    topRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+    },
+    name: {
+      flex: 1,
+    },
+    timestamp: {
+      fontSize: 11,
+    },
+    bottomRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 2,
+      gap: 8,
+    },
+    previewIcon: {
+      marginRight: 4,
+    },
+    preview: {
+      flex: 1,
+    },
+    badge: {
+      backgroundColor: palette.primary,
+      borderRadius: koolaRadii.pill,
+      minWidth: 20,
+      height: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 6,
+    },
+    onlineDot: {
+      position: 'absolute',
+      right: 0,
+      bottom: 0,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: palette.success,
+      borderWidth: 2,
+      borderColor: palette.surface,
+    },
+  });
+}
 
 export default React.memo(ConversationListItem);
