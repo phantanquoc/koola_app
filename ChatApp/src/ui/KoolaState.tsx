@@ -1,34 +1,43 @@
 import React, { useMemo } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleProp,
+  StyleSheet,
+  View,
+  ViewProps,
+  ViewStyle,
+} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaButton } from './KoolaButton';
 import { KoolaText } from './KoolaText';
 import { useTheme } from './ThemeProvider';
-import { koolaRadii, type Palette } from './theme';
+import { koolaRadii, koolaSpacing } from './theme';
+import type { SemanticTokens } from './tokens/semantic';
 
-interface KoolaStateProps {
+export interface KoolaStateProps extends Omit<ViewProps, 'style'> {
   icon?: string;
   title: string;
   message?: string;
   actionLabel?: string;
   onActionPress?: () => void;
+  loading?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
     container: {
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: 24,
-      paddingVertical: 32,
-      gap: 10,
+      paddingHorizontal: koolaSpacing.xl,
+      paddingVertical: koolaSpacing.xxl,
+      gap: koolaSpacing.md,
     },
     iconShell: {
       width: 58,
       height: 58,
       borderRadius: koolaRadii.lg,
-      backgroundColor: p.primarySoft,
+      backgroundColor: semantic.action.primarySoft,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: 4,
@@ -44,15 +53,29 @@ export const KoolaState: React.FC<KoolaStateProps> = ({
   message,
   actionLabel,
   onActionPress,
+  loading = false,
   style,
+  ...viewProps
 }) => {
-  const { palette } = useTheme();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View {...viewProps} style={[styles.container, style]}>
       <View style={styles.iconShell}>
-        <MaterialIcons name={icon} size={28} color={palette.primary} />
+        {loading ? (
+          <ActivityIndicator
+            color={tokens.semantic.action.primary}
+            accessibilityRole="progressbar"
+            accessibilityLabel={title}
+          />
+        ) : (
+          <MaterialIcons
+            name={icon}
+            size={28}
+            color={tokens.semantic.action.primary}
+          />
+        )}
       </View>
       <KoolaText variant="heading" align="center" numberOfLines={2}>
         {title}

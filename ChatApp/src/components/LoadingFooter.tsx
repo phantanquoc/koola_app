@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { KoolaText, koolaColors } from '../ui';
+import { KoolaText, useTheme } from '../ui';
 
 interface Props {
   loading: boolean;
@@ -8,10 +8,12 @@ interface Props {
 }
 
 const LoadingFooter: React.FC<Props> = ({ loading, onLoadMore }) => {
+  const { tokens } = useTheme();
+
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="small" color={koolaColors.primary} />
+        <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
       </View>
     );
   }

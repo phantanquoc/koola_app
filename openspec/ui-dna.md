@@ -1,12 +1,52 @@
-# UI DNA — Koola App
+# UI DNA — Koola App (v2)
 
 Design essence distilled from the living codebase. Every UI change must respect these constraints.
 
 ---
 
+## Token Architecture (v2)
+
+The design system follows a 3-tier token hierarchy:
+
+```
+Primitive → Semantic → Component
+```
+
+- **Primitives** (`theme.ts`): raw values (`koolaColors`, `koolaDarkColors`, `koolaSpacing`, `koolaRadii`, `koolaTypography`, `koolaShadows`, `koolaDarkShadows`, `koolaZIndex`, `koolaOpacity`, `koolaLightSurfaces`, `koolaDarkSurfaces`). These define WHAT colors/sizes exist.
+- **Semantic tokens** (`tokens/semantic.ts`): named roles (`bg.canvas`, `text.primary`, `action.primary`, `surface.level1`). These define WHAT each value MEANS in context.
+- **Component tokens** (`tokens/components.ts`): per-component token bundles (`chatBubble.own.bg`, `tab.dock`, `composer.surface`). These describe HOW a specific component looks.
+
+### Consuming tokens (V2 pattern)
+
+```ts
+const { tokens } = useTheme();
+const styles = useMemo(() => makeStyles(tokens), [tokens]);
+
+function makeStyles(t: { semantic: SemanticTokens; component: ComponentTokens }) {
+  return StyleSheet.create({
+    container: { backgroundColor: t.semantic.bg.canvas },
+    bubble: { backgroundColor: t.component.chatBubble.own.bg },
+  });
+}
+```
+
+**Legacy pattern** (still supported, not for new V2 code):
+```ts
+const { palette } = useTheme();
+const styles = useMemo(() => makeStyles(palette), [palette]);
+```
+
+### Content-first direction
+
+- **Surface-levels replace shadow** for content elevation. Use `surface.level0/level1/level2` instead of stacking shadows on content cards.
+- **Glass is reserved for chrome only**: navigation dock, composer, sheets/modals, viewers. Never on content surfaces (chat bubbles, list rows, cards).
+- **Brand hue is reserved for action/signal**: `action.*`, `signal.*`, `status.*`, `focus.*`, `link`, `brand.*` carry brand color. All `bg.*`, `surface.*`, `text.*` (except `text.onAction`) stay neutral.
+
+---
+
 ## Design Tokens
 
-### Colors
+### Colors (Primitive Layer)
 
 | Role | Value | Usage |
 |------|-------|-------|
@@ -25,9 +65,17 @@ Design essence distilled from the living codebase. Every UI change must respect 
 | warning | `#F59E0B` | Caution states |
 | success | `#12B76A` | Positive confirmations |
 
+**V2 production code** must reference SEMANTIC tokens via `useTheme().tokens.semantic` — never raw palette keys. The primitive palette remains available as `useTheme().palette` for legacy compatibility.
+
 All UI must reference palette tokens via `useTheme().palette` — never hardcode hex values, never import `koolaColors` directly in screens. The `koolaColors` object defines the light palette; `koolaDarkColors` defines the dark palette. Screens consume whichever is active through `useTheme()`.
 
-Pattern: `const { palette } = useTheme(); const styles = useMemo(() => makeStyles(palette), [palette]);`
+Intentional-static exception: per-item accent tints sourced from data (e.g. a product/category's own `accent` hex used as `${accent}18` icon-shell fill) stay literal — they are content, not chrome, and read correctly on both schemes. Everything structural (surface, canvas, line, ink, text) must be palette tokens.
+
+Pattern: `const { palette } = useTheme(); const styles = useMemo(() => makeStyles(palette), [palette]);` (legacy)
+
+**V2 backbone:** `const { tokens } = useTheme(); const styles = useMemo(() => makeStyles(tokens), [tokens]);`
+
+NativeWind (`className`) is installed but NOT used in new production code. Only 4 primitives declare/forward `className`; no screen passes one. Removal is a separate future chore.
 
 ### Spacing
 
@@ -82,6 +130,19 @@ Dark-mode depth (`koolaDarkShadows`): On dark backgrounds, black shadows are inv
 ```ts
 const shadow = resolvedScheme === 'dark' ? koolaDarkShadows.md : koolaShadows.md;
 ```
+
+### Surface Scale (v2 — content-first elevation)
+
+Surface levels replace heavy shadows for content elevation. Use `tokens.semantic.surface.level0/level1/level2` for background depth instead of shadow stacking.
+
+| Level | Light | Dark | Use for |
+|-------|-------|------|---------|
+| level0 | `#F2F4F7` | `#0F1419` | Recessed/base surface |
+| level1 | `#FFFFFF` | `#1C2026` | Standard content surface |
+| level2 | `#FAFBFC` | `#252B33` | Elevated card surface |
+| overlay | `rgba(16,24,40,0.6)` | `rgba(0,0,0,0.7)` | Scrim/backdrop |
+
+Levels are visibly ordered (dark levels get progressively lighter). Shadow is still available for floating chrome (dock, menu, sheet, modal) but is no longer the default for cards/content.
 
 ### zIndex
 
@@ -242,6 +303,7 @@ Use `prefersReducedMotion()` from `ui/tokens/motion` to skip animations when the
 - Never nest ScrollView inside FlatList
 - Never exceed 2 rows of filter controls above content — collapse into sheet if needed
 - Never leave interactive elements without press feedback
+- Never leave a control that looks tappable inert — mock/placeholder surfaces acknowledge taps with a coming-soon toast, never a dead tap
 - Never use `elevation` without matching `shadow*` properties (cross-platform)
 - Never use `gap` in row-direction containers with `flex:1` children — use `marginRight`/`marginLeft` + `flexShrink:0` instead. Hermes on RN 0.76 silently breaks the row, dropping children to new lines.
 - Always set `underlineColorAndroid="transparent"` on `TextInput` — Android's default underline shows as a stray line, especially on translucent/glass surfaces.

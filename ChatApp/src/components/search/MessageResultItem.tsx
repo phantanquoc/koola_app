@@ -1,7 +1,9 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { MessageSearchItem } from '../../types';
 
 interface Props {
@@ -13,7 +15,7 @@ const CONTENT_MAX_CHARS = 80;
 
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + '…';
+  return text.slice(0, maxLen) + '...';
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -25,63 +27,60 @@ function formatRelativeTime(isoDate: string): string {
 }
 
 const MessageResultItem: React.FC<Props> = ({ item, onPress }) => {
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <Pressable
+      style={({ pressed }) => [styles.container, pressed && styles.pressed]}
       onPress={onPress}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Xem tin nhắn của ${item.senderDisplayName}`}>
       <View style={styles.row}>
-        <Text style={styles.sender} numberOfLines={1}>
+        <KoolaText weight="700" numberOfLines={1} style={styles.sender}>
           {item.senderDisplayName}
-        </Text>
-        <Text style={styles.time}>{formatRelativeTime(item.createdAt)}</Text>
+        </KoolaText>
+        <KoolaText variant="caption" tone="muted" style={styles.time}>{formatRelativeTime(item.createdAt)}</KoolaText>
       </View>
-      <Text style={styles.content} numberOfLines={2}>
+      <KoolaText numberOfLines={2} style={styles.content}>
         {truncate(item.content, CONTENT_MAX_CHARS)}
-      </Text>
-      <Text style={styles.conversationName} numberOfLines={1}>
+      </KoolaText>
+      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.conversationName}>
         {item.conversationName}
-      </Text>
-    </TouchableOpacity>
+      </KoolaText>
+    </Pressable>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  sender: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    marginRight: 8,
-  },
-  time: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    flexShrink: 0,
-  },
-  content: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-  },
-  conversationName: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 3,
-  },
-});
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: semantic.surface.level0,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    sender: {
+      flex: 1,
+      marginRight: 8,
+    },
+    time: {
+      flexShrink: 0,
+    },
+    content: {
+      lineHeight: 20,
+    },
+    conversationName: {
+      marginTop: 3,
+    },
+  });
 
 export default MessageResultItem;

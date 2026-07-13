@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import Toast from 'react-native-toast-message';
-import { ThemeProvider, useTheme } from './ui';
+import { koolaToastConfig, ThemeProvider, useTheme } from './ui';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
@@ -187,12 +187,10 @@ const App: React.FC = () => {
             </AuthProvider>
           </KeyboardProvider>
         </SafeAreaProvider>
+        {/* Root singleton stays mounted for the full app lifetime. Custom
+            renderers consume theme tokens without adding screen-local hosts. */}
+        <Toast config={koolaToastConfig} />
       </ThemeProvider>
-      {/* Toast must be a root-level singleton, rendered last so its overlay sits
-          above everything. Rendering it inside a screen (ChatScreen) put the
-          overlay deep in a conditionally-unmounted tree → Fabric double-remove
-          crash on logout. See [[logout_removeviewat_crash]]. */}
-      <Toast />
     </GestureHandlerRootView>
   );
 };

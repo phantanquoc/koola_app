@@ -1,9 +1,8 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   FlatList,
-  Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
   Alert,
@@ -15,6 +14,8 @@ import apiClient from '../../services/api/apiService';
 import { webrtcService } from '../../services/webrtc/WebRTCService';
 import { useAuth } from '../../contexts/AuthContext';
 import UserAvatar from '../../components/UserAvatar';
+import { KoolaText, KoolaEmptyState, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { RootStackParamList } from '../../navigation/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -31,7 +32,6 @@ interface CallLogEntry {
   answeredAt: string | null;
   endedAt: string | null;
   duration: number;
-  // Populated by backend or resolved client-side
   initiatorName?: string;
   initiatorAvatar?: string;
   targetName?: string;
@@ -72,38 +72,39 @@ function formatRelativeTime(dateStr: string): string {
 function getStatusInfo(
   status: CallLogEntry['status'],
   isOutgoing: boolean,
+  semantic: SemanticTokens,
 ): { icon: string; color: string; label: string } {
   switch (status) {
     case 'ended':
       return {
         icon: isOutgoing ? 'call-made' : 'call-received',
-        color: '#4CAF50',
+        color: semantic.status.success,
         label: 'Đã kết thúc',
       };
     case 'missed':
       return {
         icon: 'call-missed',
-        color: '#F44336',
+        color: semantic.status.danger,
         label: isOutgoing ? 'Không trả lời' : 'Cuộc gọi nhỡ',
       };
     case 'declined':
       return {
         icon: 'call-missed',
-        color: '#FF9800',
+        color: semantic.status.warning,
         label: isOutgoing ? 'Bị từ chối' : 'Đã từ chối',
       };
     case 'cancelled':
       return {
         icon: 'call-missed-outgoing',
-        color: '#9E9E9E',
+        color: semantic.text.faint,
         label: isOutgoing ? 'Đã hủy' : 'Đã hủy',
       };
     case 'busy':
-      return { icon: 'phone-missed', color: '#FF9800', label: 'Đang bận' };
+      return { icon: 'phone-missed', color: semantic.status.warning, label: 'Đang bận' };
     case 'failed':
-      return { icon: 'error-outline', color: '#F44336', label: 'Thất bại' };
+      return { icon: 'error-outline', color: semantic.status.danger, label: 'Thất bại' };
     default:
-      return { icon: 'call', color: '#9E9E9E', label: status };
+      return { icon: 'call', color: semantic.text.faint, label: status };
   }
 }
 
@@ -113,8 +114,9 @@ const PAGE_LIMIT = 20;
 
 const CallsScreen: React.FC = () => {
   const { user } = useAuth();
-  const navigation = useNavigation();
   const rootNav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
   const currentUserId = user?._id;
 
   const [logs, setLogs] = useState<CallLogEntry[]>([]);
@@ -156,6 +158,7 @@ const CallsScreen: React.FC = () => {
   );
 
   useFocusEffect(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useCallback(() => {
       fetchCallLogs(true);
     }, []),
@@ -182,7 +185,6 @@ const CallsScreen: React.FC = () => {
         return;
       }
 
-      // Listen for call_initiated to navigate
       let settled = false;
       const cleanup = () => {
         webrtcService.off('call_initiated', onInitiated);
@@ -260,62 +262,62 @@ const CallsScreen: React.FC = () => {
         ? item.targetName || 'User'
         : item.initiatorName || 'User';
       const remoteAvatar = isOutgoing ? item.targetAvatar : item.initiatorAvatar;
-      const statusInfo = getStatusInfo(item.status, isOutgoing);
+      const statusInfo = getStatusInfo(item.status, isOutgoing, tokens.semantic);
       const duration = formatDuration(item.duration);
       const timeAgo = formatRelativeTime(item.startedAt);
       const isMissedIncoming = !isOutgoing && (item.status === 'missed' || item.status === 'cancelled');
 
       return (
-        <TouchableOpacity
-          style={styles.logItem}
+        <Pressable
+          style={({ pressed }) => [styles.logItem, pressed && styles.logItemPressed]}
           onPress={() => handleCallBack(item)}
-          activeOpacity={0.7}>
+          accessibilityRole="button"
+          accessibilityLabel={`${remoteName}, ${statusInfo.label}, ${timeAgo}. Nhấn để gọi lại.`}>
           <UserAvatar displayName={remoteName} avatar={remoteAvatar} size={48} />
           <View style={styles.logContent}>
-            <Text
-              style={[styles.logName, isMissedIncoming && styles.missedName]}
-              numberOfLines={1}>
+            <KoolaText
+              weight="500"
+              numberOfLines={1}
+              style={isMissedIncoming ? { color: tokens.semantic.status.danger } : undefined}>
               {remoteName}
-            </Text>
+            </KoolaText>
             <View style={styles.logMeta}>
               <MaterialIcons
                 name={statusInfo.icon}
                 size={16}
                 color={statusInfo.color}
               />
-              <Text style={[styles.logStatus, { color: statusInfo.color }]}>
+              <KoolaText variant="caption" style={{ color: statusInfo.color }}>
                 {statusInfo.label}
-              </Text>
+              </KoolaText>
               {!!duration && (
-                <Text style={styles.logDuration}> · {duration}</Text>
+                <KoolaText variant="caption" tone="muted"> · {duration}</KoolaText>
               )}
             </View>
           </View>
           <View style={styles.logRight}>
-            <Text style={styles.logTime}>{timeAgo}</Text>
+            <KoolaText variant="caption" tone="muted">{timeAgo}</KoolaText>
             <MaterialIcons
               name={item.callType === 'video' ? 'videocam' : 'call'}
               size={20}
-              color="#1565C0"
+              color={tokens.semantic.action.primary}
               style={styles.callTypeIcon}
             />
           </View>
-        </TouchableOpacity>
+        </Pressable>
       );
     },
-    [currentUserId, handleCallBack],
+    [currentUserId, handleCallBack, tokens.semantic, styles],
   );
 
   const renderEmpty = useCallback(() => {
     if (loading || refreshing) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <MaterialIcons name="phone-missed" size={64} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>Chưa có cuộc gọi nào</Text>
-        <Text style={styles.emptySubtitle}>
-          Lịch sử cuộc gọi sẽ xuất hiện ở đây
-        </Text>
-      </View>
+      <KoolaEmptyState
+        icon="phone-missed"
+        title="Chưa có cuộc gọi nào"
+        message="Lịch sử cuộc gọi sẽ xuất hiện ở đây"
+      />
     );
   }, [loading, refreshing]);
 
@@ -323,10 +325,10 @@ const CallsScreen: React.FC = () => {
     if (!loading || refreshing) return null;
     return (
       <View style={styles.footerLoader}>
-        <ActivityIndicator size="small" color="#1565C0" />
+        <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
       </View>
     );
-  }, [loading, refreshing]);
+  }, [loading, refreshing, tokens.semantic.action.primary, styles.footerLoader]);
 
   return (
     <View style={styles.container}>
@@ -350,81 +352,47 @@ const CallsScreen: React.FC = () => {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  logItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
-  },
-  logContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  logName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1F2937',
-    marginBottom: 2,
-  },
-  missedName: {
-    color: '#F44336',
-  },
-  logMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  logStatus: {
-    fontSize: 13,
-  },
-  logDuration: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  logRight: {
-    alignItems: 'flex-end',
-    marginLeft: 8,
-  },
-  logTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginBottom: 4,
-  },
-  callTypeIcon: {
-    marginTop: 2,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyList: {
-    flexGrow: 1,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  footerLoader: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-});
+const makeScreenStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: semantic.bg.canvas,
+    },
+    logItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    logItemPressed: {
+      opacity: 0.7,
+    },
+    logContent: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    logMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 2,
+      gap: 4,
+    },
+    logRight: {
+      alignItems: 'flex-end',
+      marginLeft: 8,
+    },
+    callTypeIcon: {
+      marginTop: 2,
+    },
+    emptyList: {
+      flexGrow: 1,
+    },
+    footerLoader: {
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+  });
 
 export default CallsScreen;

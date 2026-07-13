@@ -14,7 +14,6 @@ import { socketService } from '../../services/socket/SocketService';
 import { warmMemoryCache } from '../../services/media/mediaCacheService';
 import { useAuth } from '../../contexts/AuthContext';
 import ConversationListItem from '../../components/ConversationListItem';
-import EmptyConversations from '../../components/EmptyConversations';
 import LoadingFooter from '../../components/LoadingFooter';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { useMessageSync } from '../../hooks/useMessageSync';
@@ -22,16 +21,22 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
-import { KoolaState, useTheme } from '../../ui';
+import {
+  KoolaEmptyState,
+  KoolaErrorState,
+  KoolaLoadingState,
+  KoolaOfflineState,
+  useTheme,
+} from '../../ui';
 import { useLocalFirstFlag } from '../../config/featureFlags';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
 import * as syncStateRepository from '../../services/db/syncStateRepository';
-import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
-const Separator = ({ palette: p }: { palette: Palette }) => (
-  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: p.line }} />
+const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
+  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
 );
 
 const ConversationListScreen: React.FC = () => {
@@ -41,12 +46,12 @@ const ConversationListScreen: React.FC = () => {
   const { sync } = useMessageSync();
   const { isConnected } = useNetworkStatus();
   const localFirstEnabled = useLocalFirstFlag();
-  const { palette } = useTheme();
+  const { tokens } = useTheme();
 
-  const screenStyles = useMemo(() => makeScreenStyles(palette), [palette]);
+  const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [page, setPage] = useState(1);
+  const [, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -171,7 +176,7 @@ const ConversationListScreen: React.FC = () => {
         setHasMore(data.hasMore);
         setError(null);
       } catch {
-        setError('Failed to load conversations');
+        setError('Không thể kết nối đến máy chủ.');
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -285,10 +290,9 @@ const ConversationListScreen: React.FC = () => {
       <ConversationListItem
         conversation={item}
         onPress={() => handleConversationPress(item)}
-        palette={palette}
       />
     ),
-    [handleConversationPress, palette],
+    [handleConversationPress],
   );
 
   const handleGroupCreated = (conv: Conversation) => {
@@ -325,17 +329,17 @@ const ConversationListScreen: React.FC = () => {
     navigation.getParent()?.navigate('Contacts');
   };
 
-  const SeparatorComponent = useCallback(() => <Separator palette={palette} />, [palette]);
+  const SeparatorComponent = useCallback(() => <Separator tokens={tokens.semantic} />, [tokens.semantic]);
 
-  if (error && conversations.length === 0) {
+  if (error && conversations.length === 0 && isConnected !== false) {
     return (
       <SafeAreaView style={screenStyles.container} edges={['bottom']}>
-        <KoolaState
+        <KoolaErrorState
           icon="wifi-off"
           title="Không thể tải hội thoại"
           message={error}
           actionLabel="Thử lại"
-          onActionPress={() => fetchConversations(true)}
+          onRetry={() => fetchConversations(true)}
           style={screenStyles.errorContainer}
         />
       </SafeAreaView>
@@ -344,7 +348,9 @@ const ConversationListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={screenStyles.container} edges={['bottom']}>
-      <OfflineBanner isVisible={isConnected === false} />
+      <OfflineBanner
+        isVisible={isConnected === false && conversations.length > 0}
+      />
       <FlatList
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
@@ -355,10 +361,32 @@ const ConversationListScreen: React.FC = () => {
         data={conversations}
         keyExtractor={(item) => item._id}
         renderItem={renderConversation}
-        contentContainerStyle={{ paddingBottom: tabBarInset }}
+        contentContainerStyle={[
+          screenStyles.listContent,
+          { paddingBottom: tabBarInset },
+        ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          !loading && !refreshing ? <EmptyConversations onStartChat={handleStartChat} /> : null
+          loading || refreshing ? (
+            <KoolaLoadingState
+              title="Đang tải hội thoại"
+              style={screenStyles.stateContainer}
+            />
+          ) : isConnected === false ? (
+            <KoolaOfflineState
+              onRetry={handleRefresh}
+              style={screenStyles.stateContainer}
+            />
+          ) : (
+            <KoolaEmptyState
+              title="Chưa có cuộc trò chuyện"
+              message="Bắt đầu một cuộc trò chuyện mới từ danh bạ của bạn."
+              icon="forum"
+              actionLabel="Bắt đầu trò chuyện"
+              onActionPress={handleStartChat}
+              style={screenStyles.stateContainer}
+            />
+          )
         }
         ListFooterComponent={
           hasMore ? <LoadingFooter loading={loading} onLoadMore={handleLoadMore} /> : null
@@ -367,7 +395,7 @@ const ConversationListScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={palette.primary}
+            tintColor={tokens.semantic.action.primary}
           />
         }
         ItemSeparatorComponent={SeparatorComponent}
@@ -382,11 +410,13 @@ const ConversationListScreen: React.FC = () => {
   );
 };
 
-// ─── Palette-aware styles ────────────────────────────────────────────────────
-function makeScreenStyles(palette: Palette) {
+// ─── Token-aware styles ─────────────────────────────────────────────────────
+function makeScreenStyles(semantic: SemanticTokens) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: palette.canvas },
+    container: { flex: 1, backgroundColor: semantic.bg.canvas },
     errorContainer: { flex: 1 },
+    listContent: { flexGrow: 1 },
+    stateContainer: { flex: 1 },
   });
 }
 

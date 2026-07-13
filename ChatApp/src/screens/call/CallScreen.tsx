@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,8 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import UserAvatar from '../../components/UserAvatar';
 import { callAudioService } from '../../services/audio/callAudioService';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 type CallScreenRouteProp = RouteProp<RootStackParamList, 'CallModal'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -17,6 +19,8 @@ const CallScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const route = useRoute<CallScreenRouteProp>();
   const { sessionId, callType, isInitiator, iceServers, remoteUser } = route.params;
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
   // Stabilize the ICE list reference — useWebRTC's setup effect depends on it,
   // and an inline `?? []` would create a new array each render → effect churn
@@ -55,12 +59,12 @@ const CallScreen: React.FC = () => {
   // Task 9.3: Status text based on call state
   const statusText = (): string => {
     switch (callState) {
-      case 'initiating': return 'Connecting...';
-      case 'connecting': return 'Connecting...';
-      case 'ringing': return isInitiator ? 'Ringing...' : 'Incoming call...';
+      case 'initiating': return 'Đang kết nối...';
+      case 'connecting': return 'Đang kết nối...';
+      case 'ringing': return isInitiator ? 'Đang đổ chuông...' : 'Cuộc gọi đến...';
       case 'active': return formattedDuration;
-      case 'failed': return 'Call Failed';
-      case 'ended': return 'Call Ended';
+      case 'failed': return 'Cuộc gọi thất bại';
+      case 'ended': return 'Cuộc gọi đã kết thúc';
       default: return '';
     }
   };
@@ -101,11 +105,6 @@ const CallScreen: React.FC = () => {
             style={styles.localVideo}
             objectFit="cover"
             mirror
-            // Android renders RTCView as a SurfaceView. Two overlapping
-            // SurfaceViews at the same z-order let the full-screen remote video
-            // (drawn after) cover the small local preview — so the local box
-            // showed nothing. zOrderMediaOverlay (zOrder=1) lifts this surface
-            // above the remote one so the self-preview is actually visible.
             zOrder={1}
           />
         </View>
@@ -122,143 +121,156 @@ const CallScreen: React.FC = () => {
                 avatar={remoteUser.avatar}
                 size={64}
               />
-              <Text style={styles.remoteUserName}>{remoteUser.displayName}</Text>
+              <KoolaText style={styles.remoteUserName}>{remoteUser.displayName}</KoolaText>
             </>
           )}
-          <Text style={styles.title}>
-            {callType === 'video' ? 'Video Call' : 'Audio Call'}
-          </Text>
+          <KoolaText style={styles.title}>
+            {callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+          </KoolaText>
           {/* Task 9.3: Connection status label */}
-          <Text style={styles.statusText}>{statusText()}</Text>
+          <KoolaText style={styles.statusText}>{statusText()}</KoolaText>
         </View>
 
         {/* Task 9.6: Failed state retry affordance */}
         {callState === 'failed' && (
           <View style={styles.failedSection}>
-            <Text style={styles.failedText}>Connection failed</Text>
-            <TouchableOpacity
+            <KoolaText style={styles.failedText}>Kết nối thất bại</KoolaText>
+            <Pressable
               style={styles.retryButton}
               onPress={() => {
-                // Navigate back — user can redial
                 if (navigation.canGoBack()) navigation.goBack();
-              }}>
-              <Text style={styles.retryButtonText}>Close and Redial</Text>
-            </TouchableOpacity>
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Đóng và gọi lại">
+              <KoolaText style={styles.retryButtonText}>Đóng và gọi lại</KoolaText>
+            </Pressable>
           </View>
         )}
 
         {/* Controls */}
         {callState !== 'ended' && callState !== 'failed' && (
           <View style={styles.controls}>
-            <TouchableOpacity
+            <Pressable
               style={[styles.controlButton, isMuted && styles.controlActive]}
-              onPress={toggleMute}>
+              onPress={toggleMute}
+              accessibilityRole="button"
+              accessibilityLabel={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}>
               <MaterialIcons
                 name={isMuted ? 'mic-off' : 'mic'}
                 size={28}
                 color="#fff"
               />
-              <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
-            </TouchableOpacity>
+              <KoolaText style={styles.controlLabel}>{isMuted ? 'Bật tiếng' : 'Tắt tiếng'}</KoolaText>
+            </Pressable>
 
             {/* Task 9.5: Speaker toggle */}
-            <TouchableOpacity
+            <Pressable
               style={[styles.controlButton, isSpeakerOn && styles.controlActive]}
-              onPress={handleSpeakerToggle}>
+              onPress={handleSpeakerToggle}
+              accessibilityRole="button"
+              accessibilityLabel={isSpeakerOn ? 'Chuyển tai nghe' : 'Bật loa ngoài'}>
               <MaterialIcons
                 name={isSpeakerOn ? 'volume-up' : 'volume-off'}
                 size={28}
                 color="#fff"
               />
-              <Text style={styles.controlLabel}>{isSpeakerOn ? 'Earpiece' : 'Speaker'}</Text>
-            </TouchableOpacity>
+              <KoolaText style={styles.controlLabel}>{isSpeakerOn ? 'Tai nghe' : 'Loa ngoài'}</KoolaText>
+            </Pressable>
 
-            <TouchableOpacity
+            <Pressable
               style={[styles.controlButton, styles.endButton]}
-              onPress={handleEndOrCancel}>
+              onPress={handleEndOrCancel}
+              accessibilityRole="button"
+              accessibilityLabel={callState === 'initiating' || callState === 'ringing' ? 'Hủy cuộc gọi' : 'Kết thúc cuộc gọi'}>
               <MaterialIcons name="call-end" size={28} color="#fff" />
-              <Text style={styles.controlLabel}>
-                {callState === 'initiating' || callState === 'ringing' ? 'Cancel' : 'End'}
-              </Text>
-            </TouchableOpacity>
+              <KoolaText style={styles.controlLabel}>
+                {callState === 'initiating' || callState === 'ringing' ? 'Hủy' : 'Kết thúc'}
+              </KoolaText>
+            </Pressable>
 
             {/* Task 9.4: Switch camera (video only) */}
             {callType === 'video' && callState === 'active' && (
-              <TouchableOpacity
+              <Pressable
                 style={styles.controlButton}
-                onPress={switchCamera}>
+                onPress={switchCamera}
+                accessibilityRole="button"
+                accessibilityLabel="Lật camera">
                 <MaterialIcons
                   name="flip-camera-android"
                   size={28}
                   color="#fff"
                 />
-                <Text style={styles.controlLabel}>Flip</Text>
-              </TouchableOpacity>
+                <KoolaText style={styles.controlLabel}>Lật</KoolaText>
+              </Pressable>
             )}
 
             {callType === 'video' && (
-              <TouchableOpacity
+              <Pressable
                 style={[styles.controlButton, isCameraOff && styles.controlActive]}
-                onPress={toggleCamera}>
+                onPress={toggleCamera}
+                accessibilityRole="button"
+                accessibilityLabel={isCameraOff ? 'Bật camera' : 'Tắt camera'}>
                 <MaterialIcons
                   name={isCameraOff ? 'videocam-off' : 'videocam'}
                   size={28}
                   color="#fff"
                 />
-                <Text style={styles.controlLabel}>{isCameraOff ? 'Show' : 'Hide'}</Text>
-              </TouchableOpacity>
+                <KoolaText style={styles.controlLabel}>{isCameraOff ? 'Hiện' : 'Ẩn'}</KoolaText>
+              </Pressable>
             )}
           </View>
         )}
 
         {callState === 'ended' && (
-          <TouchableOpacity
+          <Pressable
             style={styles.backButton}
-            onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại">
+            <KoolaText style={styles.backText}>Quay lại</KoolaText>
+          </Pressable>
         )}
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e' },
-  remoteVideo: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  localVideoContainer: {
-    position: 'absolute', top: 60, right: 16, width: 120, height: 160,
-    borderRadius: 12, overflow: 'hidden', zIndex: 10,
-    borderWidth: 2, borderColor: '#fff',
-  },
-  localVideo: { flex: 1 },
-  overlay: {
-    flex: 1, justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 60, paddingBottom: 60,
-  },
-  headerSection: { alignItems: 'center', gap: 8 },
-  remoteUserName: { fontSize: 22, fontWeight: 'bold', color: '#fff', marginTop: 8 },
-  title: { fontSize: 16, color: '#aaa' },
-  statusText: { fontSize: 18, color: '#ccc' },
-  failedSection: { alignItems: 'center', gap: 12 },
-  failedText: { fontSize: 18, color: '#ff6b6b', fontWeight: '600' },
-  retryButton: {
-    paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#333', borderRadius: 8,
-  },
-  retryButtonText: { color: '#fff', fontSize: 16 },
-  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 24, justifyContent: 'center' },
-  controlButton: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  controlActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
-  endButton: { backgroundColor: '#ff4444' },
-  controlIcon: { fontSize: 14, color: '#fff', fontWeight: 'bold' },
-  controlLabel: { color: '#fff', fontSize: 10, marginTop: 4 },
-  backButton: {
-    paddingHorizontal: 32, paddingVertical: 14, backgroundColor: '#333', borderRadius: 8,
-  },
-  backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-});
+const makeScreenStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#1a1a2e' },
+    remoteVideo: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    localVideoContainer: {
+      position: 'absolute', top: 60, right: 16, width: 120, height: 160,
+      borderRadius: 12, overflow: 'hidden', zIndex: 10,
+      borderWidth: 2, borderColor: '#fff',
+    },
+    localVideo: { flex: 1 },
+    overlay: {
+      flex: 1, justifyContent: 'space-between', alignItems: 'center',
+      paddingTop: 60, paddingBottom: 60,
+    },
+    headerSection: { alignItems: 'center', gap: 8 },
+    remoteUserName: { fontSize: 22, fontWeight: 'bold', color: '#fff', marginTop: 8 },
+    title: { fontSize: 16, color: '#aaa' },
+    statusText: { fontSize: 18, color: '#ccc' },
+    failedSection: { alignItems: 'center', gap: 12 },
+    failedText: { fontSize: 18, color: semantic.status.danger, fontWeight: '600' },
+    retryButton: {
+      paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#333', borderRadius: 8,
+    },
+    retryButtonText: { color: '#fff', fontSize: 16 },
+    controls: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 24 },
+    controlButton: {
+      width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)',
+      justifyContent: 'center', alignItems: 'center',
+    },
+    controlActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
+    endButton: { backgroundColor: semantic.status.danger },
+    controlLabel: { color: '#fff', fontSize: 10, marginTop: 4 },
+    backButton: {
+      paddingHorizontal: 32, paddingVertical: 14, backgroundColor: '#333', borderRadius: 8,
+    },
+    backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  });
 
 export default CallScreen;

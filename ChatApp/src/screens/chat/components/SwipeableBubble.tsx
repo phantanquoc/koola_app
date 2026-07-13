@@ -3,6 +3,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { IMessage } from 'react-native-gifted-chat';
+import { useTheme } from '../../../ui';
 
 const SWIPE_THRESHOLD = 60;
 
@@ -21,6 +22,7 @@ interface Props {
  * Threshold: 60px. Animates content translate + arrow icon fade-in.
  */
 const SwipeableBubble: React.FC<Props> = ({ message, isOwn, onReply, children }) => {
+  const { tokens } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const arrowOpacity = useRef(new Animated.Value(0)).current;
   const triggered = useRef(false);
@@ -53,7 +55,7 @@ const SwipeableBubble: React.FC<Props> = ({ message, isOwn, onReply, children })
     })
     .runOnJS(true);
 
-  const arrowName = isOwn ? 'reply' : 'reply';
+  const arrowColor = tokens.semantic.action.primary;
 
   return (
     <GestureDetector gesture={panGesture}>
@@ -61,11 +63,11 @@ const SwipeableBubble: React.FC<Props> = ({ message, isOwn, onReply, children })
         {/* Arrow icon shown on the opposite side of swipe direction */}
         {isOwn ? (
           <Animated.View style={[styles.arrowLeft, { opacity: arrowOpacity }]}>
-            <MaterialIcons name={arrowName} size={20} color="#2196F3" />
+            <MaterialIcons name="reply" size={20} color={arrowColor} />
           </Animated.View>
         ) : (
           <Animated.View style={[styles.arrowRight, { opacity: arrowOpacity }]}>
-            <MaterialIcons name={arrowName} size={20} color="#2196F3" style={styles.arrowFlipped} />
+            <MaterialIcons name="reply" size={20} color={arrowColor} style={styles.arrowFlipped} />
           </Animated.View>
         )}
         <Animated.View style={{ transform: [{ translateX }] }}>

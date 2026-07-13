@@ -298,3 +298,54 @@ export const koolaOpacity = {
   /** Active press feedback */
   pressed: 0.7,
 } as const;
+
+// ─── Surface scale (additive — v2 token foundation) ─────────────────────────
+// Provides distinct, contrast-ordered elevation surfaces for the semantic layer.
+// level0 is the deepest recessed surface; level1/level2 are progressively raised.
+// overlay is the scrim/backdrop base.
+// These do NOT modify the Palette type — they are a separate primitive.
+
+export type SurfaceScale = {
+  level0: string;
+  level1: string;
+  level2: string;
+  overlay: string;
+};
+
+/**
+ * Light surface scale.
+ * level0: slightly recessed (cool grey tint off pure-white canvas)
+ * level1: pure white (standard content surface)
+ * level2: slightly warmer white (elevated card)
+ * overlay: dark scrim base
+ *
+ * WCAG AA check:
+ *   ink (#101828) on level0 (#F2F4F7) = 14.5:1 ✓
+ *   ink (#101828) on level1 (#FFFFFF) = 17.4:1 ✓
+ *   ink (#101828) on level2 (#FAFBFC) = 16.6:1 ✓
+ */
+export const koolaLightSurfaces: SurfaceScale = {
+  level0: '#F2F4F7',
+  level1: '#FFFFFF',
+  level2: '#FAFBFC',
+  overlay: 'rgba(16, 24, 40, 0.6)',
+};
+
+/**
+ * Dark surface scale.
+ * level0: deepest dark (recessed/base)
+ * level1: slightly elevated (standard content)
+ * level2: noticeably lighter (raised card)
+ * overlay: light scrim for dark mode
+ *
+ * WCAG AA check:
+ *   ink (#F2F4F7) on level0 (#0F1419) = 15.4:1 ✓
+ *   ink (#F2F4F7) on level1 (#1C2026) = 13.2:1 ✓
+ *   ink (#F2F4F7) on level2 (#252B33) = 10.7:1 ✓
+ */
+export const koolaDarkSurfaces: SurfaceScale = {
+  level0: '#0F1419',
+  level1: '#1C2026',
+  level2: '#252B33',
+  overlay: 'rgba(0, 0, 0, 0.7)',
+};

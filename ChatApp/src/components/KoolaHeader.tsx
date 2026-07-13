@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { KoolaIconButton, KoolaLogo, KoolaText, koolaColors } from '../ui';
+import { KoolaIconButton, KoolaLogo, KoolaText, useTheme } from '../ui';
 import type { KoolaLogoAnimation } from '../ui';
+import type { SemanticTokens } from '../ui/tokens/semantic';
 
 interface KoolaHeaderProps {
   searchPlaceholder?: string;
@@ -21,6 +22,8 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   logoAnimation = 'none',
   logoReplayKey = 0,
 }) => {
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const [searchPressed, setSearchPressed] = React.useState(false);
 
   return (
@@ -32,7 +35,7 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={searchPlaceholder}
-          android_ripple={{ color: koolaColors.line }}
+          android_ripple={{ color: tokens.semantic.border.subtle }}
           onPress={onSearchPress}
           onPressIn={() => setSearchPressed(true)}
           onPressOut={() => setSearchPressed(false)}
@@ -40,7 +43,7 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
             styles.searchBar,
             searchPressed ? styles.searchBarPressed : null,
           ]}>
-          <MaterialIcons name="search" size={16} color={koolaColors.muted} />
+          <MaterialIcons name="search" size={16} color={tokens.semantic.text.faint} />
           <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
             {searchPlaceholder}
           </KoolaText>
@@ -68,43 +71,44 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: koolaColors.surface,
-    paddingHorizontal: 12,
-    paddingTop: 6,
-    paddingBottom: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  logoRow: {
-    minHeight: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  searchBar: {
-    flex: 1,
-    minHeight: 32,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 16,
-    backgroundColor: koolaColors.canvas,
-  },
-  searchBarPressed: {
-    opacity: 0.78,
-  },
-  searchText: {
-    flex: 1,
-    fontSize: 12,
-  },
-});
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      backgroundColor: semantic.surface.level0,
+      paddingHorizontal: 12,
+      paddingTop: 6,
+      paddingBottom: 6,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    logoRow: {
+      minHeight: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    searchBar: {
+      flex: 1,
+      minHeight: 32,
+      paddingHorizontal: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderRadius: 16,
+      backgroundColor: semantic.bg.canvas,
+    },
+    searchBarPressed: {
+      opacity: 0.78,
+    },
+    searchText: {
+      flex: 1,
+      fontSize: 12,
+    },
+  });
 
 export default KoolaHeader;

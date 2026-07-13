@@ -1,8 +1,7 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Alert,
   AppState,
@@ -19,6 +18,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usersApi, conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
@@ -37,6 +38,8 @@ const ScannerTab: React.FC<{
   onNavigateChat: (conversationId: string) => void;
 }> = ({ onClose, onNavigateProfile, onNavigateChat }) => {
   const { user } = useAuth();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeScanStyles(tokens.semantic), [tokens.semantic]);
   const currentUserId = user?._id || '';
   const device = useCameraDevice('back');
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -44,7 +47,6 @@ const ScannerTab: React.FC<{
   const [appActive, setAppActive] = useState(true);
   const isProcessingRef = useRef(false);
 
-  // Check camera permission on mount
   useEffect(() => {
     (async () => {
       const status = await Camera.getCameraPermissionStatus();
@@ -59,12 +61,10 @@ const ScannerTab: React.FC<{
     })();
   }, []);
 
-  // Re-check permission + pause camera when app backgrounds/foregrounds
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       if (nextState === 'active') {
         setAppActive(true);
-        // Re-check permission in case user granted it in Settings
         const status = await Camera.getCameraPermissionStatus();
         setHasPermission(status === 'granted');
       } else {
@@ -82,7 +82,6 @@ const ScannerTab: React.FC<{
 
   const handleScanned = useCallback(
     async (value: string) => {
-      // Synchronous re-entrancy guard — prevents multiple frames from entering
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
       setIsProcessing(true);
@@ -162,99 +161,104 @@ const ScannerTab: React.FC<{
 
   if (hasPermission === false) {
     return (
-      <View style={scanStyles.centered}>
-        <MaterialIcons name="no-photography" size={64} color="#ccc" />
-        <Text style={scanStyles.permText}>Cần quyền camera để quét mã QR</Text>
-        <TouchableOpacity
-          style={scanStyles.settingsBtn}
-          onPress={() => Linking.openSettings()}>
-          <Text style={scanStyles.settingsBtnText}>Mở Cài đặt</Text>
-        </TouchableOpacity>
+      <View style={styles.centered}>
+        <MaterialIcons name="no-photography" size={64} color={tokens.semantic.border.subtle} />
+        <KoolaText tone="muted" style={styles.permText}>Cần quyền camera để quét mã QR</KoolaText>
+        <Pressable
+          style={styles.settingsBtn}
+          onPress={() => Linking.openSettings()}
+          accessibilityRole="button"
+          accessibilityLabel="Mở cài đặt">
+          <KoolaText weight="600" style={styles.settingsBtnText}>Mở Cài đặt</KoolaText>
+        </Pressable>
       </View>
     );
   }
 
   if (hasPermission === null || !device) {
     return (
-      <View style={scanStyles.centered}>
-        <Text style={scanStyles.permText}>Đang khởi tạo camera...</Text>
+      <View style={styles.centered}>
+        <KoolaText tone="muted">Đang khởi tạo camera...</KoolaText>
       </View>
     );
   }
 
   return (
-    <View style={scanStyles.container}>
+    <View style={styles.container}>
       <Camera
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={!isProcessing && appActive}
         codeScanner={codeScanner}
       />
-      <View style={scanStyles.overlay}>
-        <View style={scanStyles.frame} />
-        <Text style={scanStyles.hint}>Đưa mã QR vào khung hình</Text>
+      <View style={styles.overlay}>
+        <View style={styles.frame} />
+        <KoolaText style={styles.hint}>Đưa mã QR vào khung hình</KoolaText>
       </View>
     </View>
   );
 };
 
-const scanStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 24 },
-  permText: { fontSize: 16, color: '#666', textAlign: 'center', marginTop: 16 },
-  settingsBtn: {
-    marginTop: 20, paddingHorizontal: 24, paddingVertical: 12,
-    backgroundColor: '#2196F3', borderRadius: 8,
-  },
-  settingsBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  frame: {
-    width: 250, height: 250, borderWidth: 2, borderColor: '#fff',
-    borderRadius: 16, backgroundColor: 'transparent',
-  },
-  hint: { color: '#fff', fontSize: 14, marginTop: 16 },
-});
+const makeScanStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#000' },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: semantic.bg.canvas, padding: 24 },
+    permText: { textAlign: 'center', marginTop: 16 },
+    settingsBtn: {
+      marginTop: 20, paddingHorizontal: 24, paddingVertical: 12,
+      backgroundColor: semantic.action.primary, borderRadius: 8,
+    },
+    settingsBtnText: { color: semantic.text.onAction },
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    frame: {
+      width: 250, height: 250, borderWidth: 2, borderColor: '#fff',
+      borderRadius: 16, backgroundColor: 'transparent',
+    },
+    hint: { color: '#fff', marginTop: 16 },
+  });
 
 // ─── My QR Code Tab ─────────────────────────────────────────────────────────
 
 const MyQrTab: React.FC = () => {
   const { user } = useAuth();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeQrStyles(tokens.semantic), [tokens.semantic]);
 
   if (!user) {
     return (
-      <View style={qrStyles.centered}>
-        <Text style={qrStyles.fallback}>Không thể tải mã QR</Text>
+      <View style={styles.centered}>
+        <KoolaText tone="muted">Không thể tải mã QR</KoolaText>
       </View>
     );
   }
 
   return (
-    <View style={qrStyles.centered}>
+    <View style={styles.centered}>
       <UserAvatar displayName={user.displayName} avatar={user.avatar || undefined} size={80} />
-      <Text style={qrStyles.name}>{user.displayName}</Text>
-      <View style={qrStyles.qrContainer}>
+      <KoolaText variant="heading" style={styles.name}>{user.displayName}</KoolaText>
+      <View style={styles.qrContainer}>
         <QRCode value={user._id} size={200} backgroundColor="#fff" color="#000" />
       </View>
-      <Text style={qrStyles.hint}>Để người khác quét mã này để kết nối</Text>
+      <KoolaText variant="caption" tone="muted" style={styles.hint}>Để người khác quét mã này để kết nối</KoolaText>
     </View>
   );
 };
 
-const qrStyles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 24 },
-  fallback: { fontSize: 16, color: '#999' },
-  name: { fontSize: 20, fontWeight: '600', color: '#333', marginTop: 12 },
-  qrContainer: {
-    marginTop: 24, padding: 20, backgroundColor: '#fff', borderRadius: 16,
-    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1, shadowRadius: 8,
-  },
-  hint: { fontSize: 13, color: '#999', marginTop: 16 },
-});
+const makeQrStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: semantic.bg.canvas, padding: 24 },
+    name: { marginTop: 12 },
+    qrContainer: {
+      marginTop: 24, padding: 20, backgroundColor: '#fff', borderRadius: 16,
+      elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1, shadowRadius: 8,
+    },
+    hint: { marginTop: 16 },
+  });
 
 // ─── Modal ──────────────────────────────────────────────────────────────────
 
@@ -266,15 +270,15 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'myqr'>('scan');
   const insets = useSafeAreaInsets();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeModalStyles(tokens.semantic), [tokens.semantic]);
   const suppressTabDock = useTabDockSuppression();
 
-  // Suppress the floating tab dock while visible (same pattern as GroupCreateModal).
   useEffect(() => {
     if (!visible) return undefined;
     return suppressTabDock();
   }, [suppressTabDock, visible]);
 
-  // Handle Android hardware back button since we no longer use native <Modal>.
   useEffect(() => {
     if (!visible) return undefined;
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -284,37 +288,51 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
     return () => handler.remove();
   }, [visible, onClose]);
 
-  // In-tree overlay: avoid Android Fabric native Dialog mis-measurement.
   if (!visible) return null;
 
   return (
     <View style={styles.overlayHost}>
       <View style={styles.container}>
-        <StatusBar backgroundColor="#fff" barStyle="dark-content" />
-        {/* Header — safe-area top inset (overlay covers status bar, no native Modal) */}
+        <StatusBar backgroundColor={tokens.semantic.surface.level0} barStyle="dark-content" />
+        {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerSide} />
-          <Text style={styles.headerTitle}>Mã QR</Text>
-          <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={8}>
-            <MaterialIcons name="close" size={26} color="#333" />
-          </TouchableOpacity>
+          <KoolaText variant="heading" weight="600">Mã QR</KoolaText>
+          <Pressable
+            onPress={onClose}
+            style={styles.headerSide}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Đóng">
+            <MaterialIcons name="close" size={26} color={tokens.semantic.text.primary} />
+          </Pressable>
         </View>
         {/* Tab Bar */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
+        <View style={styles.tabBar} accessibilityRole="tablist">
+          <Pressable
             style={[styles.tab, activeTab === 'scan' && styles.tabActive]}
-            onPress={() => setActiveTab('scan')}>
-            <Text style={[styles.tabText, activeTab === 'scan' && styles.tabTextActive]}>
+            onPress={() => setActiveTab('scan')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'scan' }}
+            accessibilityLabel="Quét QR">
+            <KoolaText
+              weight="600"
+              style={activeTab === 'scan' ? styles.tabTextActive : styles.tabTextInactive}>
               Quét QR
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+            </KoolaText>
+          </Pressable>
+          <Pressable
             style={[styles.tab, activeTab === 'myqr' && styles.tabActive]}
-            onPress={() => setActiveTab('myqr')}>
-            <Text style={[styles.tabText, activeTab === 'myqr' && styles.tabTextActive]}>
+            onPress={() => setActiveTab('myqr')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'myqr' }}
+            accessibilityLabel="Mã QR của tôi">
+            <KoolaText
+              weight="600"
+              style={activeTab === 'myqr' ? styles.tabTextActive : styles.tabTextInactive}>
               Mã QR của tôi
-            </Text>
-          </TouchableOpacity>
+            </KoolaText>
+          </Pressable>
         </View>
         {/* Content */}
         {activeTab === 'scan' ? (
@@ -331,31 +349,31 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  overlayHost: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
-    elevation: 1000,
-    backgroundColor: '#fff',
-  },
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-  },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#333' },
-  headerSide: { width: 34, alignItems: 'center' },
-  tabBar: {
-    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-  },
-  tab: {
-    flex: 1, paddingVertical: 12, alignItems: 'center',
-    borderBottomWidth: 2, borderBottomColor: 'transparent',
-  },
-  tabActive: { borderBottomColor: '#2196F3' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#999' },
-  tabTextActive: { color: '#2196F3' },
-});
+const makeModalStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    overlayHost: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 1000,
+      elevation: 1000,
+      backgroundColor: semantic.bg.canvas,
+    },
+    container: { flex: 1, backgroundColor: semantic.bg.canvas },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 16, paddingBottom: 12,
+      borderBottomWidth: 1, borderBottomColor: semantic.border.subtle,
+    },
+    headerSide: { width: 34, alignItems: 'center' },
+    tabBar: {
+      flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: semantic.border.subtle,
+    },
+    tab: {
+      flex: 1, paddingVertical: 12, alignItems: 'center',
+      borderBottomWidth: 2, borderBottomColor: 'transparent',
+    },
+    tabActive: { borderBottomColor: semantic.action.primary },
+    tabTextActive: { color: semantic.action.primary },
+    tabTextInactive: { color: semantic.text.muted },
+  });
 
 export default QrScannerModal;

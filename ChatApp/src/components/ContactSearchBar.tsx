@@ -1,5 +1,6 @@
 import React, { useRef, useCallback } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { KoolaSearchField } from '../ui';
 
 interface Props {
   onSearch: (query: string) => void;
@@ -34,35 +35,23 @@ const ContactSearchBar: React.FC<Props> = ({ onSearch }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.icon}>🔍</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Search by name or email"
-        placeholderTextColor="#999"
+    <View style={styles.wrapper}>
+      <KoolaSearchField
         value={text}
         onChangeText={handleChange}
+        onClear={handleClear}
+        placeholder="Tìm theo tên hoặc email"
         autoCapitalize="none"
         autoCorrect={false}
       />
-      {text.length > 0 && (
-        <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
-          <Text style={styles.clearText}>✕</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row', alignItems: 'center', margin: 12,
-    backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 12, height: 44,
+  wrapper: {
+    margin: 12,
   },
-  icon: { fontSize: 16, marginRight: 8 },
-  input: { flex: 1, fontSize: 16, color: '#333' },
-  clearButton: { padding: 4 },
-  clearText: { fontSize: 16, color: '#999' },
 });
 
 export default ContactSearchBar;

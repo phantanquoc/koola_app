@@ -50,14 +50,16 @@ import ChatComposer, {
   ChatComposerHandle,
 } from './components/ChatComposer';
 import {
+  KoolaEmptyState,
+  KoolaErrorState,
+  KoolaLoadingState,
   KoolaText,
   koolaRadii,
   koolaSpacing,
-  koolaShadows,
-  koolaDarkShadows,
   useTheme,
 } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
+import type { ComponentTokens } from '../../ui/tokens/components';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,42 +70,19 @@ const viewabilityConfig = {
 };
 
 // ─── Palette-aware style factory ─────────────────────────────────────────────
-function makeScreenStyles(palette: Palette, scheme: 'light' | 'dark') {
-  const bubbleShadow = scheme === 'dark' ? koolaDarkShadows.xs : koolaShadows.xs;
+function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: palette.surface },
-    initialErrorOverlay: {
+    container: { flex: 1, backgroundColor: semantic.surface.level1 },
+    stateOverlay: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-      justifyContent: 'center', alignItems: 'center', zIndex: 2,
-      paddingHorizontal: 32, gap: koolaSpacing.md,
+      justifyContent: 'center', zIndex: 2,
     },
-    errorIconShell: {
-      width: 64, height: 64, borderRadius: koolaRadii.lg,
-      backgroundColor: palette.dangerSoft,
-      alignItems: 'center', justifyContent: 'center',
-      marginBottom: koolaSpacing.xs,
-    },
-    initialErrorRetry: {
-      paddingHorizontal: 20, paddingVertical: 10, borderRadius: koolaRadii.sm,
-      backgroundColor: palette.primary, marginTop: koolaSpacing.xs,
-    },
-    emptyOverlay: {
-      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-      justifyContent: 'center', alignItems: 'center', zIndex: 1,
-      paddingHorizontal: 32, gap: koolaSpacing.sm,
-    },
-    emptyIconShell: {
-      width: 64, height: 64, borderRadius: koolaRadii.lg,
-      backgroundColor: palette.primarySoft,
-      alignItems: 'center', justifyContent: 'center',
-      marginBottom: koolaSpacing.xs,
-    },
-    emptyBody: { paddingHorizontal: 16 },
-    systemMessage: { color: palette.muted, fontSize: 12 },
+    stateContent: { flex: 1 },
+    systemMessage: { color: semantic.text.muted, fontSize: 12 },
     dayContainer: { alignItems: 'center', marginVertical: koolaSpacing.lg },
     dayText: {
-      backgroundColor: palette.canvas, borderRadius: koolaRadii.pill,
-      borderWidth: StyleSheet.hairlineWidth, borderColor: palette.line,
+      backgroundColor: semantic.bg.canvas, borderRadius: koolaRadii.pill,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle,
       paddingHorizontal: koolaSpacing.md, paddingVertical: 4, overflow: 'hidden',
     },
     typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm, gap: koolaSpacing.sm },
@@ -111,14 +90,14 @@ function makeScreenStyles(palette: Palette, scheme: 'light' | 'dark') {
     uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     uploadingText: { marginLeft: 0 },
     progressTrack: {
-      height: 3, borderRadius: koolaRadii.pill, backgroundColor: palette.line, overflow: 'hidden',
+      height: 3, borderRadius: koolaRadii.pill, backgroundColor: semantic.border.subtle, overflow: 'hidden',
     },
     progressFill: {
-      height: 3, borderRadius: koolaRadii.pill, backgroundColor: palette.primary,
+      height: 3, borderRadius: koolaRadii.pill, backgroundColor: semantic.action.primary,
     },
     failedBubbleWrapper: {
       borderLeftWidth: 1,
-      borderLeftColor: palette.danger,
+      borderLeftColor: semantic.status.danger,
     },
     failedLabel: {
       marginTop: 2,
@@ -130,28 +109,26 @@ function makeScreenStyles(palette: Palette, scheme: 'light' | 'dark') {
       marginBottom: 4,
       maxWidth: 240,
     },
-    // Bubble depth — subtle shadow on each bubble wrapper
     bubbleOuter: {
-      ...bubbleShadow,
       marginBottom: 2,
     },
     // Grouped bubble (not last in a run) — no tail radius
     bubbleGroupedRight: {
-      backgroundColor: palette.primary,
+      backgroundColor: compTokens.chatBubble.own.bg,
       borderRadius: koolaRadii.lg,
     },
     bubbleGroupedLeft: {
-      backgroundColor: palette.canvas,
+      backgroundColor: compTokens.chatBubble.other.bg,
       borderRadius: koolaRadii.lg,
     },
     // Last bubble in a run — tail via asymmetric radius
     bubbleTailRight: {
-      backgroundColor: palette.primary,
+      backgroundColor: compTokens.chatBubble.own.bg,
       borderRadius: koolaRadii.lg,
       borderBottomRightRadius: koolaRadii.xs2,
     },
     bubbleTailLeft: {
-      backgroundColor: palette.canvas,
+      backgroundColor: compTokens.chatBubble.other.bg,
       borderRadius: koolaRadii.lg,
       borderBottomLeftRadius: koolaRadii.xs2,
     },
@@ -194,8 +171,11 @@ const ChatScreen: React.FC = () => {
   const composerScrollClearance =
     CHAT_COMPOSER_DOCK_HEIGHT + CHAT_COMPOSER_TOP_GAP + CHAT_COMPOSER_SCROLL_GAP + composerBottomInset;
 
-  const { palette, resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeScreenStyles(palette, resolvedScheme), [palette, resolvedScheme]);
+  const { tokens } = useTheme();
+  const styles = useMemo(
+    () => makeScreenStyles(tokens.component, tokens.semantic),
+    [tokens],
+  );
 
   const { isConnected } = useNetworkStatus();
   const { sendViaQueue } = useOfflineQueue();
@@ -578,8 +558,8 @@ const ChatScreen: React.FC = () => {
                   left: bubbleWrapStyle,
                 }}
                 textStyle={{
-                  right: { color: palette.surface, fontSize: 15, lineHeight: 22 },
-                  left: { color: palette.ink, fontSize: 15, lineHeight: 22 },
+                  right: { color: tokens.component.chatBubble.own.text, fontSize: 15, lineHeight: 22 },
+                  left: { color: tokens.component.chatBubble.other.text, fontSize: 15, lineHeight: 22 },
                 }}
               />
             </View>
@@ -591,9 +571,9 @@ const ChatScreen: React.FC = () => {
           {isRight && !isFailed && !msg?.system && (
             <View style={styles.tickRow}>
               {isPending ? (
-                <MaterialIcons name="access-time" size={12} color={palette.muted} />
+                <MaterialIcons name="access-time" size={12} color={tokens.semantic.text.muted} />
               ) : (
-                <MaterialIcons name="done" size={13} color={palette.primary} />
+                <MaterialIcons name="done" size={13} color={tokens.semantic.action.primary} />
               )}
             </View>
           )}
@@ -608,7 +588,7 @@ const ChatScreen: React.FC = () => {
         </View>
       );
     },
-    [currentUserId, reactToMessage, handleRetryFailedMessage, styles, palette],
+    [currentUserId, reactToMessage, handleRetryFailedMessage, styles, tokens],
   );
 
   const renderSystemMessage = useCallback(
@@ -654,7 +634,7 @@ const ChatScreen: React.FC = () => {
         {isUploading && (
           <View style={styles.uploadingBlock}>
             <View style={styles.uploadingRow}>
-              <ActivityIndicator size="small" color={palette.primary} />
+              <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
               <KoolaText variant="caption" tone="muted" style={styles.uploadingText}>
                 Đang tải lên... {uploadProgress > 0 ? `${uploadProgress}%` : ''}
               </KoolaText>
@@ -673,7 +653,7 @@ const ChatScreen: React.FC = () => {
         )}
       </View>
     );
-  }, [typingUsers, isUploading, uploadProgress, styles, palette]);
+  }, [typingUsers, isUploading, uploadProgress, styles, tokens]);
 
   // ─── Media renderers ──────────────────────────────────────────────────────
   const renderMessageImage = useCallback(
@@ -861,41 +841,36 @@ const ChatScreen: React.FC = () => {
       <View style={{ flex: 1 }}>
         {/* Initial-load error overlay */}
         {initialLoadError && messages.length === 0 && !isInitialLoading && (
-          <View style={styles.initialErrorOverlay}>
-            <View style={styles.errorIconShell}>
-              <MaterialIcons name="cloud-off" size={28} color={palette.danger} />
-            </View>
-            <KoolaText variant="label" tone="danger" weight="600" align="center">
-              Không thể tải tin nhắn
-            </KoolaText>
-            <KoolaText variant="body" tone="muted" align="center">
-              Kiểm tra kết nối và thử lại
-            </KoolaText>
-            <TouchableOpacity style={styles.initialErrorRetry} onPress={retryInitialLoad} activeOpacity={0.82}>
-              <KoolaText variant="label" tone="surface" weight="600">Thử lại</KoolaText>
-            </TouchableOpacity>
+          <View style={styles.stateOverlay}>
+            <KoolaErrorState
+              icon="cloud-off"
+              title="Không thể tải tin nhắn"
+              message="Kiểm tra kết nối và thử lại."
+              onRetry={retryInitialLoad}
+              style={styles.stateContent}
+            />
           </View>
         )}
         {/* Empty state — conversation has no messages yet.
             pointerEvents="none" so the overlay does not swallow taps targeting
             the absolute-positioned ChatComposer that sits visually below it. */}
         {chatReady && !isInitialLoading && !initialLoadError && messages.length === 0 && (
-          <View pointerEvents="none" style={styles.emptyOverlay}>
-            <View style={styles.emptyIconShell}>
-              <MaterialIcons name="chat-bubble-outline" size={28} color={palette.primary} />
-            </View>
-            <KoolaText variant="label" tone="ink" weight="600" align="center">
-              Bắt đầu cuộc trò chuyện
-            </KoolaText>
-            <KoolaText variant="body" tone="muted" align="center" style={styles.emptyBody}>
-              Gửi tin nhắn đầu tiên đến {chatTitle}
-            </KoolaText>
+          <View pointerEvents="none" style={styles.stateOverlay}>
+            <KoolaEmptyState
+              icon="chat-bubble-outline"
+              title="Bắt đầu cuộc trò chuyện"
+              message={`Gửi tin nhắn đầu tiên đến ${chatTitle}.`}
+              style={styles.stateContent}
+            />
           </View>
         )}
         {/* Loading overlay - absolute positioned, doesn't affect layout */}
         {!chatReady && messages.length === 0 && !initialLoadError && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
-            <ActivityIndicator size="small" color={palette.primary} />
+          <View style={styles.stateOverlay}>
+            <KoolaLoadingState
+              title="Đang tải tin nhắn"
+              style={styles.stateContent}
+            />
           </View>
         )}
         {/* GiftedChat - always rendered (Fabric-safe: no Animated.View wrapper) */}

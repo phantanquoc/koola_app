@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "tsc": "tsc --noEmit",
     "postinstall": "node scripts/postinstall.mjs",
-    "check:bundle": "node scripts/check-prod-bundle.mjs"
+    "check:bundle": "node scripts/check-prod-bundle.mjs",
+    "ui:audit": "node scripts/ui-design-audit.mjs"
   },
   "dependencies": {
     "@gorhom/bottom-sheet": "^5.2.14",

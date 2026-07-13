@@ -1,9 +1,7 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   FlatList,
-  Text,
-  TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
   SafeAreaView,
@@ -15,10 +13,14 @@ import { conversationsApi } from '../../services/api/apiService';
 import { useContactsSearch } from '../../hooks/useContactsSearch';
 import ContactSearchBar from '../../components/ContactSearchBar';
 import ContactItem from '../../components/ContactItem';
+import { KoolaEmptyState, KoolaErrorState, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { UserSearchResult } from '../../types';
 
 const ContactsScreen: React.FC = () => {
   const navigation = useNavigation<ContactsScreenNavigationProp>();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const { results, isLoading, error, search, loadMore, hasMore } =
     useContactsSearch();
 
@@ -33,7 +35,6 @@ const ContactsScreen: React.FC = () => {
     async (user: UserSearchResult) => {
       try {
         const { conversation } = await conversationsApi.startDirectChat(user._id);
-        // Navigate to ChatsTab then to Chat screen
         const parent = navigation.getParent();
         parent?.navigate('ChatTab', {
           screen: 'Chat',
@@ -41,7 +42,7 @@ const ContactsScreen: React.FC = () => {
         } as never);
       } catch (err: unknown) {
         const error = err as { response?: { data?: { message?: string } } };
-        Alert.alert('Error', error.response?.data?.message || 'Failed to start chat');
+        Alert.alert('Lỗi', error.response?.data?.message || 'Không thể bắt đầu cuộc trò chuyện');
       }
     },
     [navigation],
@@ -51,28 +52,29 @@ const ContactsScreen: React.FC = () => {
     if (isLoading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#2196F3" />
+          <ActivityIndicator size="large" color={tokens.semantic.action.primary} />
         </View>
       );
     }
 
     if (error) {
       return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => search('')}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <KoolaErrorState
+          message={error}
+          onRetry={() => search('')}
+          style={styles.emptyContainer}
+        />
       );
     }
 
     if (results.length === 0) {
       return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>👥</Text>
-          <Text style={styles.emptyText}>Search for people by name or email</Text>
-        </View>
+        <KoolaEmptyState
+          icon="people"
+          title="Tìm kiếm liên hệ"
+          message="Tìm kiếm mọi người theo tên hoặc email"
+          style={styles.emptyContainer}
+        />
       );
     }
 
@@ -100,17 +102,11 @@ const ContactsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  separator: { height: 1, backgroundColor: '#f0f0f0' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 120 },
-  emptyIcon: { fontSize: 48, marginBottom: 16 },
-  emptyText: { fontSize: 16, color: '#999', textAlign: 'center' },
-  errorText: { fontSize: 14, color: '#ff4444', marginBottom: 12, textAlign: 'center' },
-  retryButton: {
-    paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#2196F3', borderRadius: 8,
-  },
-  retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-});
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: semantic.bg.canvas },
+    separator: { height: 1, backgroundColor: semantic.border.subtle },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 120 },
+  });
 
 export default ContactsScreen;

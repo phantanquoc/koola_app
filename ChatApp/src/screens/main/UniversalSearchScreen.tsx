@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
-  Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
   StyleSheet,
@@ -22,51 +21,34 @@ import ContactResultItem from '../../components/search/ContactResultItem';
 import MessageResultItem from '../../components/search/MessageResultItem';
 import { useAuth } from '../../contexts/AuthContext';
 import { asyncStorage } from '../../services/storage/asyncStorage';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const COLLAPSED_MAX = 3;
 const EXPANDED_MAX = 20;
 
-/**
- * Resolve the display name + avatar to show for a conversation in a universal
- * search list. Mirrors the logic inside ConversationListItem so rows here match
- * the chat list exactly.
- */
 function resolveConversationHeader(
   conv: Conversation,
   currentUserId?: string,
 ): { displayName: string; avatar?: string } {
   if (conv.type === 'group') {
     return {
-      displayName: conv.name || 'Group',
+      displayName: conv.name || 'Nhóm',
       avatar: conv.avatar || undefined,
     };
   }
   const other = conv.members.find((m) => m.userId !== currentUserId);
   return {
-    displayName: other?.user?.displayName || 'Unknown User',
+    displayName: other?.user?.displayName || 'Người dùng',
     avatar: other?.user?.avatar || undefined,
   };
 }
 
-const Divider = () => <View style={styles.divider} />;
-
-const SectionLabel: React.FC<{ label: string }> = ({ label }) => (
-  <Text style={styles.sectionLabel}>{label}</Text>
-);
-
-const EmptySection: React.FC = () => (
-  <Text style={styles.emptyText}>Không tìm thấy kết quả</Text>
-);
-
-const SeeMoreButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
-  <TouchableOpacity style={styles.seeMoreButton} onPress={onPress} activeOpacity={0.7}>
-    <Text style={styles.seeMoreText}>Xem thêm</Text>
-  </TouchableOpacity>
-);
-
 const UniversalSearchScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { user } = useAuth();
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
 
@@ -77,16 +59,12 @@ const UniversalSearchScreen: React.FC = () => {
   const [expandedMessages, setExpandedMessages] = useState(false);
   const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
 
-  // Fetch the first page of conversations once on mount for client-side filtering
   useEffect(() => {
     conversationsApi.list(1, 50).then((res) => {
       setConversations(res.conversations);
-    }).catch(() => {
-      // Non-critical — conversation section will show empty
-    });
+    }).catch(() => {});
   }, []);
 
-  // Load recent searches on mount
   useEffect(() => {
     asyncStorage.getRecentSearches().then(setRecentSearches).catch(() => {});
   }, []);
@@ -149,7 +127,6 @@ const UniversalSearchScreen: React.FC = () => {
 
   const isQueryShort = query.length < 2;
 
-  // Sliced result lists based on expand state
   const visibleConvs = expandedConversations
     ? convResults.slice(0, EXPANDED_MAX)
     : convResults.slice(0, COLLAPSED_MAX);
@@ -165,22 +142,22 @@ const UniversalSearchScreen: React.FC = () => {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 4 }]}>
-        <TouchableOpacity
+        <Pressable
           style={styles.backButton}
           onPress={handleBack}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color="#374151" />
-        </TouchableOpacity>
+          <MaterialIcons name="arrow-back" size={24} color={tokens.semantic.text.primary} />
+        </Pressable>
 
         <View style={styles.inputWrapper}>
-          <MaterialIcons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+          <MaterialIcons name="search" size={20} color={tokens.semantic.text.faint} style={styles.searchIcon} />
           <TextInput
             ref={inputRef}
             style={styles.input}
             placeholder="Tìm kiếm"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={tokens.semantic.text.faint}
+            underlineColorAndroid="transparent"
             value={query}
             onChangeText={setQuery}
             autoFocus
@@ -188,15 +165,15 @@ const UniversalSearchScreen: React.FC = () => {
             onSubmitEditing={Keyboard.dismiss}
             autoCapitalize="none"
             autoCorrect={false}
+            accessibilityLabel="Tìm kiếm"
           />
           {query.length > 0 && (
-            <TouchableOpacity
+            <Pressable
               onPress={handleClear}
-              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Xóa từ khóa">
-              <MaterialIcons name="close" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
+              <MaterialIcons name="close" size={20} color={tokens.semantic.text.faint} />
+            </Pressable>
           )}
         </View>
       </View>
@@ -211,56 +188,53 @@ const UniversalSearchScreen: React.FC = () => {
           recentSearches.length > 0 ? (
             <View>
               <View style={styles.recentHeader}>
-                <Text style={styles.recentTitle}>Tìm kiếm gần đây</Text>
-                <TouchableOpacity
+                <KoolaText weight="600" style={styles.recentTitle}>Tìm kiếm gần đây</KoolaText>
+                <Pressable
                   onPress={handleClearAllRecent}
-                  activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel="Xóa tất cả lịch sử tìm kiếm">
-                  <Text style={styles.clearAllText}>Xóa tất cả</Text>
-                </TouchableOpacity>
+                  <KoolaText tone="primary" weight="500" variant="caption">Xóa tất cả</KoolaText>
+                </Pressable>
               </View>
               {recentSearches.map((item) => {
                 const term = item.query;
                 return (
                 <View key={term} style={styles.recentItem}>
-                  <TouchableOpacity
+                  <Pressable
                     style={styles.recentItemContent}
                     onPress={() => handleRecentPress(term)}
-                    activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={`Tìm kiếm ${term}`}>
-                    <MaterialIcons name="history" size={20} color="#9CA3AF" />
-                    <Text style={styles.recentItemText} numberOfLines={1}>{term}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                    <MaterialIcons name="history" size={20} color={tokens.semantic.text.faint} />
+                    <KoolaText numberOfLines={1} style={styles.recentItemText}>{term}</KoolaText>
+                  </Pressable>
+                  <Pressable
                     onPress={() => handleRemoveRecent(term)}
                     style={styles.recentRemoveButton}
-                    activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={`Xóa ${term} khỏi lịch sử`}>
-                    <MaterialIcons name="close" size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
+                    <MaterialIcons name="close" size={18} color={tokens.semantic.text.faint} />
+                  </Pressable>
                 </View>
                 );
               })}
             </View>
           ) : (
             <View style={styles.emptyState}>
-              <MaterialIcons name="search" size={36} color="#D1D5DB" />
-              <Text style={styles.emptyStateText}>Tìm cuộc trò chuyện, liên hệ, tin nhắn</Text>
+              <MaterialIcons name="search" size={36} color={tokens.semantic.border.subtle} />
+              <KoolaText tone="muted" style={styles.emptyStateText}>Tìm cuộc trò chuyện, liên hệ, tin nhắn</KoolaText>
               <View style={styles.suggestRow}>
                 <View style={styles.suggestChip}>
-                  <MaterialIcons name="chat-bubble-outline" size={14} color="#6B7280" />
-                  <Text style={styles.suggestChipText}>Cuộc trò chuyện</Text>
+                  <MaterialIcons name="chat-bubble-outline" size={14} color={tokens.semantic.text.muted} />
+                  <KoolaText variant="caption" tone="muted" weight="500">Cuộc trò chuyện</KoolaText>
                 </View>
                 <View style={styles.suggestChip}>
-                  <MaterialIcons name="person-outline" size={14} color="#6B7280" />
-                  <Text style={styles.suggestChipText}>Liên hệ</Text>
+                  <MaterialIcons name="person-outline" size={14} color={tokens.semantic.text.muted} />
+                  <KoolaText variant="caption" tone="muted" weight="500">Liên hệ</KoolaText>
                 </View>
                 <View style={styles.suggestChip}>
-                  <MaterialIcons name="message" size={14} color="#6B7280" />
-                  <Text style={styles.suggestChipText}>Tin nhắn</Text>
+                  <MaterialIcons name="message" size={14} color={tokens.semantic.text.muted} />
+                  <KoolaText variant="caption" tone="muted" weight="500">Tin nhắn</KoolaText>
                 </View>
               </View>
             </View>
@@ -270,9 +244,9 @@ const UniversalSearchScreen: React.FC = () => {
         {!isQueryShort && (
           <>
             {/* Conversations section */}
-            <SectionLabel label="Cuộc trò chuyện" />
+            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Cuộc trò chuyện</KoolaText>
             {visibleConvs.length === 0 ? (
-              <EmptySection />
+              <KoolaText tone="muted" style={styles.emptyText}>Không tìm thấy kết quả</KoolaText>
             ) : (
               visibleConvs.map((conv) => {
                 const { displayName, avatar } = resolveConversationHeader(conv, user?._id);
@@ -288,17 +262,19 @@ const UniversalSearchScreen: React.FC = () => {
               })
             )}
             {convResults.length > COLLAPSED_MAX && !expandedConversations && (
-              <SeeMoreButton onPress={() => setExpandedConversations(true)} />
+              <Pressable style={styles.seeMoreButton} onPress={() => setExpandedConversations(true)} accessibilityRole="button">
+                <KoolaText tone="primary" weight="600">Xem thêm</KoolaText>
+              </Pressable>
             )}
 
-            <Divider />
+            <View style={styles.divider} />
 
             {/* Contacts section */}
-            <SectionLabel label="Liên hệ" />
+            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Liên hệ</KoolaText>
             {loadingContacts ? (
-              <ActivityIndicator style={styles.loader} size="small" color="#1565C0" />
+              <ActivityIndicator style={styles.loader} size="small" color={tokens.semantic.action.primary} />
             ) : visibleContacts.length === 0 ? (
-              <EmptySection />
+              <KoolaText tone="muted" style={styles.emptyText}>Không tìm thấy kết quả</KoolaText>
             ) : (
               visibleContacts.map((contact) => (
                 <ContactResultItem
@@ -309,17 +285,19 @@ const UniversalSearchScreen: React.FC = () => {
               ))
             )}
             {!loadingContacts && contacts.length > COLLAPSED_MAX && !expandedContacts && (
-              <SeeMoreButton onPress={() => setExpandedContacts(true)} />
+              <Pressable style={styles.seeMoreButton} onPress={() => setExpandedContacts(true)} accessibilityRole="button">
+                <KoolaText tone="primary" weight="600">Xem thêm</KoolaText>
+              </Pressable>
             )}
 
-            <Divider />
+            <View style={styles.divider} />
 
             {/* Messages section */}
-            <SectionLabel label="Tin nhắn" />
+            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Tin nhắn</KoolaText>
             {loadingMessages ? (
-              <ActivityIndicator style={styles.loader} size="small" color="#1565C0" />
+              <ActivityIndicator style={styles.loader} size="small" color={tokens.semantic.action.primary} />
             ) : visibleMessages.length === 0 ? (
-              <EmptySection />
+              <KoolaText tone="muted" style={styles.emptyText}>Không tìm thấy kết quả</KoolaText>
             ) : (
               visibleMessages.map((msg) => (
                 <MessageResultItem
@@ -330,7 +308,9 @@ const UniversalSearchScreen: React.FC = () => {
               ))
             )}
             {!loadingMessages && messages.length > COLLAPSED_MAX && !expandedMessages && (
-              <SeeMoreButton onPress={() => setExpandedMessages(true)} />
+              <Pressable style={styles.seeMoreButton} onPress={() => setExpandedMessages(true)} accessibilityRole="button">
+                <KoolaText tone="primary" weight="600">Xem thêm</KoolaText>
+              </Pressable>
             )}
           </>
         )}
@@ -339,151 +319,126 @@ const UniversalSearchScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 4,
-  },
-  inputWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    height: 40,
-    gap: 8,
-  },
-  searchIcon: {
-    flexShrink: 0,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    padding: 0,
-  },
-  scroll: {
-    flex: 1,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 40,
-    paddingBottom: 24,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 10,
-  },
-  suggestRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 16,
-    paddingHorizontal: 24,
-  },
-  suggestChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  suggestChipText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 6,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  divider: {
-    height: 8,
-    backgroundColor: '#F9FAFB',
-    marginTop: 8,
-  },
-  loader: {
-    paddingVertical: 16,
-  },
-  seeMoreButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  seeMoreText: {
-    fontSize: 14,
-    color: '#1565C0',
-    fontWeight: '600',
-  },
-  recentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  recentTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  clearAllText: {
-    fontSize: 13,
-    color: '#1565C0',
-    fontWeight: '500',
-  },
-  recentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  recentItemContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  recentItemText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-  },
-  recentRemoveButton: {
-    padding: 6,
-    marginLeft: 8,
-  },
-});
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: semantic.bg.canvas,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingBottom: 10,
+      backgroundColor: semantic.surface.level0,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    backButton: {
+      padding: 8,
+      marginRight: 4,
+    },
+    inputWrapper: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: semantic.surface.level1,
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      height: 40,
+      gap: 8,
+    },
+    searchIcon: {
+      flexShrink: 0,
+    },
+    input: {
+      flex: 1,
+      fontSize: 15,
+      color: semantic.text.primary,
+      padding: 0,
+    },
+    scroll: {
+      flex: 1,
+    },
+    emptyState: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 40,
+      paddingBottom: 24,
+    },
+    emptyStateText: {
+      marginTop: 10,
+    },
+    suggestRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 16,
+      paddingHorizontal: 24,
+    },
+    suggestChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: semantic.surface.level1,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+    },
+    sectionLabel: {
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 6,
+    },
+    emptyText: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    divider: {
+      height: 8,
+      backgroundColor: semantic.surface.level1,
+      marginTop: 8,
+    },
+    loader: {
+      paddingVertical: 16,
+    },
+    seeMoreButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    recentHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    recentTitle: {
+      fontSize: 14,
+    },
+    recentItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+    },
+    recentItemContent: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    recentItemText: {
+      flex: 1,
+    },
+    recentRemoveButton: {
+      padding: 6,
+      marginLeft: 8,
+    },
+  });
 
 export default UniversalSearchScreen;

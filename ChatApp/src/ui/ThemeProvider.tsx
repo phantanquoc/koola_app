@@ -11,10 +11,17 @@ import { asyncStorage } from '../services/storage/asyncStorage';
 import {
   koolaColors,
   koolaDarkColors,
+  koolaLightSurfaces,
+  koolaDarkSurfaces,
   resolveMode,
   type Palette,
   type ThemeMode,
 } from './theme';
+import { makeSemanticTokens, type SemanticTokens } from './tokens/semantic';
+import {
+  makeComponentTokens,
+  type ComponentTokens,
+} from './tokens/components';
 
 // ─── Context shape ───────────────────────────────────────────────────────────
 
@@ -23,6 +30,7 @@ interface ThemeContextValue {
   mode: ThemeMode;
   resolvedScheme: 'light' | 'dark';
   setMode: (mode: ThemeMode) => void;
+  tokens: { semantic: SemanticTokens; component: ComponentTokens };
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -30,6 +38,10 @@ const ThemeContext = createContext<ThemeContextValue>({
   mode: 'system',
   resolvedScheme: 'light',
   setMode: () => {},
+  tokens: (() => {
+    const semantic = makeSemanticTokens(koolaColors, koolaLightSurfaces);
+    return { semantic, component: makeComponentTokens(semantic) };
+  })(),
 });
 
 // ─── Provider ────────────────────────────────────────────────────────────────
@@ -62,10 +74,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const resolved = resolveMode(mode, systemScheme);
   const palette = resolved === 'dark' ? koolaDarkColors : koolaColors;
+  const surfaces =
+    resolved === 'dark' ? koolaDarkSurfaces : koolaLightSurfaces;
+
+  const tokens = useMemo(() => {
+    const semantic = makeSemanticTokens(palette, surfaces);
+    const component = makeComponentTokens(semantic);
+    return { semantic, component };
+  }, [palette, surfaces]);
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ palette, mode, resolvedScheme: resolved, setMode }),
-    [palette, mode, resolved, setMode],
+    () => ({ palette, mode, resolvedScheme: resolved, setMode, tokens }),
+    [palette, mode, resolved, setMode, tokens],
   );
 
   return (

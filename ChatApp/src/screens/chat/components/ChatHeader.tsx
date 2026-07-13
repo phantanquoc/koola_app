@@ -10,7 +10,7 @@ import {
   koolaDarkShadows,
   useTheme,
 } from '../../../ui';
-import type { Palette } from '../../../ui/theme';
+import type { SemanticTokens } from '../../../ui/tokens/semantic';
 
 type CallType = 'audio' | 'video';
 
@@ -39,8 +39,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onHeaderPress,
   onStartCall,
 }) => {
-  const { palette, resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeStyles(palette, resolvedScheme), [palette, resolvedScheme]);
+  const { tokens, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
 
   return (
     <View style={styles.header}>
@@ -65,7 +65,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             <View style={styles.onlineDot} accessibilityElementsHidden importantForAccessibility="no" />
           )}
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, marginLeft: koolaSpacing.sm }}>
           <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>{chatTitle}</KoolaText>
           {/* Fixed minHeight replaces old opacity:0 hack — always reserves space
               for the status line to prevent layout shift on late status arrival */}
@@ -107,7 +107,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
 export default ChatHeader;
 
-function makeStyles(palette: Palette, scheme: 'light' | 'dark') {
+function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
   const shadow = scheme === 'dark' ? koolaDarkShadows.xs : koolaShadows.xs;
   return StyleSheet.create({
     header: {
@@ -117,21 +117,20 @@ function makeStyles(palette: Palette, scheme: 'light' | 'dark') {
       paddingTop: koolaSpacing.sm,
       paddingBottom: koolaSpacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: palette.line,
-      backgroundColor: palette.surface,
+      borderBottomColor: semantic.border.subtle,
+      backgroundColor: semantic.surface.level1,
       ...shadow,
     },
     headerCenter: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: koolaSpacing.sm,
       marginLeft: koolaSpacing.xs,
     },
     headerRight: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: koolaSpacing.xs,
+      marginLeft: koolaSpacing.xs,
     },
     statusLine: {
       minHeight: 16,
@@ -144,9 +143,9 @@ function makeStyles(palette: Palette, scheme: 'light' | 'dark') {
       width: 11,
       height: 11,
       borderRadius: koolaRadii.pill,
-      backgroundColor: palette.accent,
+      backgroundColor: semantic.status.success,
       borderWidth: 2,
-      borderColor: palette.surface,
+      borderColor: semantic.surface.level1,
     },
   });
 }

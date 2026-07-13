@@ -66,6 +66,61 @@ export default tseslint.config(
           selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
           message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
         },
+        // ─── Design-lint v2: raw <Text> JSX ───────────────────────────────
+        // Use KoolaText with semantic variant/tone — never raw <Text>.
+        {
+          selector: 'JSXOpeningElement[name.name="Text"]',
+          message: 'Use <KoolaText> instead of raw <Text>. See ui-dna.md.',
+        },
+        // ─── Design-lint v2: Touchable* usage ─────────────────────────────
+        // Use Pressable with explicit press state — never Touchable*.
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+        // ─── Design-lint v2: magic-number spacing/radius ──────────────────
+        // Style keys for padding/margin/gap/radius should use koolaSpacing/koolaRadii tokens.
+        {
+          selector: 'Property[key.name=/^(padding|paddingHorizontal|paddingVertical|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginHorizontal|marginVertical|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap|borderRadius|borderTopLeftRadius|borderTopRightRadius|borderBottomLeftRadius|borderBottomRightRadius)$/] > Literal[value=/^[0-9]+$/]',
+          message: 'Avoid magic-number spacing/radius. Use koolaSpacing.* or koolaRadii.* tokens (see ui-dna.md).',
+        },
+      ],
+      // ─── Design-lint v2: koolaColors direct import in screens/components ─
+      // Screens/components must not import koolaColors/koolaDarkColors directly.
+      // Use useTheme().palette instead.
+      'no-restricted-imports': [
+        'warn',
+        {
+          paths: [
+            {
+              name: '../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
       ],
     },
   },
@@ -92,15 +147,106 @@ export default tseslint.config(
     },
   },
   {
-    // ─── Design-lint ratchet: escalate to error for cleaned directories ──────
-    // These directories have been fully migrated to palette tokens.
-    // No raw hex color literals should appear in new code here.
-    files: [
-      'src/ui/**/*.{ts,tsx}',
-      'src/screens/auth/**/*.{ts,tsx}',
-      'src/screens/connect/**/*.{ts,tsx}',
-      'src/components/moments/**/*.{ts,tsx}',
-    ],
+    // ─── Design-lint ratchet: src/screens/auth ───────────────────────────────
+    // Clean for: hex, rawText, Touchable. NOT clean for: magic-number.
+    // This block replaces the global no-restricted-syntax for this directory.
+    files: ['src/screens/auth/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'Avoid raw hex color literals in styles. Use palette tokens from useTheme() instead (see ui-dna.md).',
+        },
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
+          message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
+        },
+        {
+          selector: 'JSXOpeningElement[name.name="Text"]',
+          message: 'Use <KoolaText> instead of raw <Text>. See ui-dna.md.',
+        },
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/screens/connect ────────────────────────────
+    // Clean for: hex, Touchable, koolaColors. NOT clean for: rawText, magic-number.
+    files: ['src/screens/connect/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'Avoid raw hex color literals in styles. Use palette tokens from useTheme() instead (see ui-dna.md).',
+        },
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
+          message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
+        },
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/components/moments ─────────────────────────
+    // Clean for: hex only. NOT clean for: rawText, Touchable, magic-number.
+    files: ['src/components/moments/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -113,6 +259,164 @@ export default tseslint.config(
           message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
         },
       ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/screens/services + src/screens/shopping ────
+    // Clean for: rawText, Touchable, koolaColors.
+    files: [
+      'src/screens/services/**/*.{ts,tsx}',
+      'src/screens/shopping/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement[name.name="Text"]',
+          message: 'Use <KoolaText> instead of raw <Text>. See ui-dna.md.',
+        },
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/screens/placeholder ────────────────────────
+    // Clean for: Touchable, koolaColors.
+    files: ['src/screens/placeholder/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/components/connect ─────────────────────────
+    // Clean for: Touchable.
+    files: ['src/components/connect/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/screens/call, src/components/search ────────
+    // Clean for: koolaColors, rawText, Touchable.
+    files: [
+      'src/screens/call/**/*.{ts,tsx}',
+      'src/components/search/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement[name.name="Text"]',
+          message: 'Use <KoolaText> instead of raw <Text>. See ui-dna.md.',
+        },
+        {
+          selector: 'JSXOpeningElement[name.name=/^Touchable/]',
+          message: 'Use <Pressable> instead of Touchable* components. See ui-dna.md.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+            {
+              name: '../../../ui/theme',
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/ui/theme'],
+              importNames: ['koolaColors', 'koolaDarkColors'],
+              message: 'Import palette via useTheme().palette instead of koolaColors directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ─── Design-lint ratchet: src/ui/** ──────────────────────────────────────
+    // Clean for: hex. (Token definitions exempted further below.)
+    files: ['src/ui/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'Avoid raw hex color literals in styles. Use palette tokens from useTheme() instead (see ui-dna.md).',
+        },
+        {
+          selector: 'Property[key.name=/color|Color|background|Background|tint|border/i] > TemplateLiteral',
+          message: 'Avoid template-literal colors in styles. Use palette tokens from useTheme() instead.',
+        },
+      ],
+    },
+  },
+  {
+    // ─── Exempt KoolaText.tsx from raw <Text> rule ───────────────────────────
+    // KoolaText is the primitive that wraps raw RN <Text>; it MUST use <Text>.
+    files: ['src/ui/KoolaText.tsx'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
   {

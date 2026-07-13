@@ -4,13 +4,12 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
-import { KoolaText, koolaRadii } from '../ui';
-import type { Palette } from '../ui/theme';
+import { KoolaText, koolaRadii, useTheme } from '../ui';
+import type { SemanticTokens } from '../ui/tokens/semantic';
 
 interface Props {
   conversation: Conversation;
   onPress: () => void;
-  palette: Palette;
 }
 
 // Short Vietnamese timestamp: "5p" / "3g" / "5n" / "2tu" / "1th" / "1n2024"
@@ -77,8 +76,9 @@ function getPreviewIcon(preview: string): string | null {
   return null;
 }
 
-const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette }) => {
+const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   const { user } = useAuth();
+  const { tokens } = useTheme();
   const { displayName, avatar, isOnline } = resolveConversationHeader(
     conversation,
     user?._id,
@@ -90,20 +90,28 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette 
     : '';
   const unreadCount = conversation.unreadCount || 0;
   const previewIcon = getPreviewIcon(lastMessagePreview);
+  const [isPressed, setIsPressed] = React.useState(false);
 
-  const itemStyles = useMemo(() => makeItemStyles(palette), [palette]);
+  const itemStyles = useMemo(() => makeItemStyles(tokens.semantic), [tokens.semantic]);
 
   return (
     <Pressable
-      style={itemStyles.container}
-      android_ripple={{ color: palette.canvas }}
+      style={[
+        itemStyles.container,
+        isPressed && itemStyles.pressed,
+      ]}
+      onPressIn={() => setIsPressed(true)}
+      onPressOut={() => setIsPressed(false)}
+      android_ripple={{ color: tokens.semantic.surface.level0 }}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Trò chuyện với ${displayName}`}>
-      <View style={itemStyles.avatarWrapper}>
-        <UserAvatar displayName={displayName} avatar={avatar} size={48} />
-        {isOnline ? <View style={itemStyles.onlineDot} /> : null}
-      </View>
+      <UserAvatar
+        displayName={displayName}
+        avatar={avatar}
+        size={48}
+        showOnline={isOnline}
+      />
 
       <View style={itemStyles.content}>
         <View style={itemStyles.topRow}>
@@ -120,7 +128,7 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette 
         </View>
         <View style={itemStyles.bottomRow}>
           {previewIcon ? (
-            <Icon name={previewIcon} size={14} color={palette.muted} style={itemStyles.previewIcon} />
+            <Icon name={previewIcon} size={14} color={tokens.semantic.text.muted} style={itemStyles.previewIcon} />
           ) : null}
           <KoolaText
             variant="caption"
@@ -132,7 +140,10 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette 
           </KoolaText>
           {unreadCount > 0 ? (
             <View style={itemStyles.badge}>
-              <KoolaText variant="caption" tone="surface" weight="800">
+              <KoolaText
+                variant="caption"
+                weight="800"
+                style={itemStyles.badgeText}>
                 {unreadCount > 99 ? '99+' : unreadCount}
               </KoolaText>
             </View>
@@ -143,18 +154,19 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, palette 
   );
 };
 
-// ─── Palette-aware styles ────────────────────────────────────────────────────
-function makeItemStyles(palette: Palette) {
+// ─── Token-aware styles ─────────────────────────────────────────────────────
+function makeItemStyles(semantic: SemanticTokens) {
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
       alignItems: 'center',
+      minHeight: 72,
       paddingVertical: 10,
       paddingHorizontal: 16,
-      backgroundColor: palette.surface,
+      backgroundColor: semantic.surface.level1,
     },
-    avatarWrapper: {
-      position: 'relative',
+    pressed: {
+      backgroundColor: semantic.surface.level0,
     },
     content: {
       flex: 1,
@@ -164,46 +176,42 @@ function makeItemStyles(palette: Palette) {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      gap: 8,
     },
     name: {
-      flex: 1,
+      flexShrink: 1,
+      marginRight: 8,
     },
     timestamp: {
       fontSize: 11,
+      flexShrink: 0,
     },
     bottomRow: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
       marginTop: 2,
-      gap: 8,
     },
     previewIcon: {
       marginRight: 4,
+      flexShrink: 0,
     },
     preview: {
       flex: 1,
+      marginRight: 8,
     },
     badge: {
-      backgroundColor: palette.primary,
+      backgroundColor: semantic.surface.level0,
+      borderWidth: 1,
+      borderColor: semantic.signal.unread,
       borderRadius: koolaRadii.pill,
       minWidth: 20,
       height: 20,
       justifyContent: 'center',
       alignItems: 'center',
       paddingHorizontal: 6,
+      flexShrink: 0,
     },
-    onlineDot: {
-      position: 'absolute',
-      right: 0,
-      bottom: 0,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: palette.success,
-      borderWidth: 2,
-      borderColor: palette.surface,
+    badgeText: {
+      color: semantic.text.primary,
     },
   });
 }

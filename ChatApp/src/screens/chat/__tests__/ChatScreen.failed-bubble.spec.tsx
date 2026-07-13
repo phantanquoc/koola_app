@@ -48,6 +48,11 @@ jest.mock('@react-native-community/netinfo', () => ({
   addEventListener: jest.fn(() => jest.fn()),
 }));
 
+jest.mock('../../../services/sync/outboxProcessor', () => ({
+  scheduleTick: jest.fn(),
+  ensurePeriodicInterval: jest.fn(),
+}));
+
 import { useDeadLetterActions } from '../hooks/useDeadLetterActions';
 
 // ─── Setup ────────────────────────────────────────────────────────────────────

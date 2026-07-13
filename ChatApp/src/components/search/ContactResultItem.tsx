@@ -1,6 +1,8 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import UserAvatar from '../UserAvatar';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { UserSearchResult } from '../../types';
 
 interface Props {
@@ -9,48 +11,47 @@ interface Props {
 }
 
 const ContactResultItem: React.FC<Props> = ({ contact, onPress }) => {
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+
   return (
-    <TouchableOpacity
-      style={styles.container}
+    <Pressable
+      style={({ pressed }) => [styles.container, pressed && styles.pressed]}
       onPress={onPress}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Xem hồ sơ ${contact.displayName}`}>
       <UserAvatar displayName={contact.displayName} avatar={contact.avatar} size={44} />
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
+        <KoolaText weight="600" numberOfLines={1}>
           {contact.displayName}
-        </Text>
-        <Text style={styles.phone} numberOfLines={1}>
+        </KoolaText>
+        <KoolaText tone="muted" variant="caption" numberOfLines={1} style={styles.phone}>
           {contact.phone}
-        </Text>
+        </KoolaText>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  info: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  name: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  phone: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-});
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: semantic.surface.level0,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+    info: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    phone: {
+      marginTop: 2,
+    },
+  });
 
 export default ContactResultItem;

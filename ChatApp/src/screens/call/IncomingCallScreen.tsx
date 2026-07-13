@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   SafeAreaView,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -13,6 +12,8 @@ import type { RootStackParamList } from '../../navigation/types';
 import UserAvatar from '../../components/UserAvatar';
 import { callAudioService } from '../../services/audio/callAudioService';
 import { webrtcService } from '../../services/webrtc/WebRTCService';
+import { KoolaText, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 type IncomingCallRouteProp = RouteProp<RootStackParamList, 'IncomingCallModal'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -22,6 +23,8 @@ const IncomingCallScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const route = useRoute<IncomingCallRouteProp>();
   const { sessionId, callType, remoteUser, iceServers } = route.params;
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
   // Task 8.4: On mount — start ringtone and emit call_ringing
   useEffect(() => {
@@ -82,7 +85,7 @@ const IncomingCallScreen: React.FC = () => {
     }
   }, [navigation, sessionId]);
 
-  const callTypeLabel = callType === 'video' ? 'Video Call' : 'Audio Call';
+  const callTypeLabel = callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại';
 
   // Task 8.2: Render full-screen layout
   return (
@@ -95,36 +98,36 @@ const IncomingCallScreen: React.FC = () => {
             avatar={remoteUser.avatar}
             size={96}
           />
-          <Text style={styles.callerName}>{remoteUser.displayName}</Text>
-          <Text style={styles.callTypeLabel}>{callTypeLabel}</Text>
+          <KoolaText style={styles.callerName}>{remoteUser.displayName}</KoolaText>
+          <KoolaText style={styles.callTypeLabel}>{callTypeLabel}</KoolaText>
         </View>
 
         {/* Task 8.3: Accept and Decline buttons */}
         <View style={styles.buttonsRow}>
           <View style={styles.buttonWrapper}>
-            <TouchableOpacity
+            <Pressable
               style={[styles.callButton, styles.declineButton]}
               onPress={handleDecline}
               accessibilityRole="button"
-              accessibilityLabel="Decline call">
+              accessibilityLabel="Từ chối cuộc gọi">
               <MaterialIcons name="call-end" size={32} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.buttonLabel}>Decline</Text>
+            </Pressable>
+            <KoolaText style={styles.buttonLabel}>Từ chối</KoolaText>
           </View>
 
           <View style={styles.buttonWrapper}>
-            <TouchableOpacity
+            <Pressable
               style={[styles.callButton, styles.acceptButton]}
               onPress={handleAccept}
               accessibilityRole="button"
-              accessibilityLabel="Accept call">
+              accessibilityLabel="Chấp nhận cuộc gọi">
               <MaterialIcons
                 name={callType === 'video' ? 'videocam' : 'call'}
                 size={32}
                 color="#fff"
               />
-            </TouchableOpacity>
-            <Text style={styles.buttonLabel}>Accept</Text>
+            </Pressable>
+            <KoolaText style={styles.buttonLabel}>Chấp nhận</KoolaText>
           </View>
         </View>
       </View>
@@ -132,64 +135,60 @@ const IncomingCallScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 60,
-    paddingHorizontal: 24,
-  },
-  callerSection: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  callerName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 16,
-  },
-  callTypeLabel: {
-    fontSize: 16,
-    color: '#aaa',
-  },
-  buttonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-  },
-  buttonWrapper: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  callButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  declineButton: {
-    backgroundColor: '#e53935',
-  },
-  acceptButton: {
-    backgroundColor: '#43a047',
-  },
-  buttonIcon: {
-    fontSize: 28,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  buttonLabel: {
-    fontSize: 14,
-    color: '#fff',
-  },
-});
+const makeScreenStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#1a1a2e',
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingTop: 80,
+      paddingBottom: 60,
+      paddingHorizontal: 24,
+    },
+    callerSection: {
+      alignItems: 'center',
+      gap: 16,
+    },
+    callerName: {
+      fontSize: 28,
+      fontWeight: 'bold',
+      color: '#fff',
+      marginTop: 16,
+    },
+    callTypeLabel: {
+      fontSize: 16,
+      color: '#aaa',
+    },
+    buttonsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      width: '100%',
+    },
+    buttonWrapper: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    callButton: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    declineButton: {
+      backgroundColor: semantic.status.danger,
+    },
+    acceptButton: {
+      backgroundColor: semantic.status.success,
+    },
+    buttonLabel: {
+      fontSize: 14,
+      color: '#fff',
+    },
+  });
 
 export default IncomingCallScreen;
