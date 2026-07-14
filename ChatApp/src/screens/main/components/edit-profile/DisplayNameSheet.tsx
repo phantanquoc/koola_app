@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { usersApi } from '../../../../services/api/apiService';
-import { KoolaTextInput, KoolaText, koolaColors } from '../../../../ui';
+import { KoolaTextInput, KoolaText } from '../../../../ui';
 import { EditProfileSheet } from './EditProfileSheet';
 
 interface Props {

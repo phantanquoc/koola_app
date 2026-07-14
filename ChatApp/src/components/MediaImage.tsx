@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Image, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
 import { Blurhash } from 'react-native-blurhash';
 import { getOrDownload, getFromMemory } from '../services/media/mediaCacheService';
+import { useTheme } from '../ui';
+import type { SemanticTokens } from '../ui/tokens/semantic';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_MAX_WIDTH = SCREEN_WIDTH * 0.6;
@@ -54,6 +56,8 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const mountedRef = useRef(true);
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
 
   // Dimensions: backend props > dimension cache > null (unknown)
   const knownDims = React.useMemo(() => {
@@ -217,52 +221,57 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    margin: 4,
-    backgroundColor: '#f0f0f0',
-  },
-  placeholder: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    margin: 4,
-    overflow: 'hidden',
-  },
-  fallbackBg: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-  },
-  loadingText: { fontSize: 12, color: '#999' },
-  errorIcon: { fontSize: 32 },
-  errorText: { fontSize: 12, color: '#999', marginTop: 4 },
-  progressOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  progressBarBg: {
-    width: '70%',
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 3,
-  },
-  progressBarFill: {
-    height: 6,
-    backgroundColor: '#fff',
-    borderRadius: 3,
-  },
-  progressText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-});
+// Neutral placeholder/loading surfaces come from the theme so they don't stay a
+// bright grey band in dark mode. The upload-progress overlay stays fixed
+// light-on-dark: it renders ON the media/blurhash (a dark scrim + white bar),
+// which is theme-independent by design.
+const makeStyles = (semantic: SemanticTokens) =>
+  StyleSheet.create({
+    container: {
+      borderRadius: 8,
+      overflow: 'hidden',
+      margin: 4,
+      backgroundColor: semantic.surface.level0,
+    },
+    placeholder: {
+      backgroundColor: semantic.surface.level0,
+      borderRadius: 8,
+      justifyContent: 'center',
+      alignItems: 'center',
+      margin: 4,
+      overflow: 'hidden',
+    },
+    fallbackBg: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: semantic.surface.level0,
+    },
+    loadingText: { fontSize: 12, color: semantic.text.muted },
+    errorIcon: { fontSize: 32 },
+    errorText: { fontSize: 12, color: semantic.text.muted, marginTop: 4 },
+    progressOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0,0,0,0.3)',
+    },
+    progressBarBg: {
+      width: '70%',
+      height: 6,
+      backgroundColor: 'rgba(255,255,255,0.3)',
+      borderRadius: 3,
+    },
+    progressBarFill: {
+      height: 6,
+      backgroundColor: '#fff',
+      borderRadius: 3,
+    },
+    progressText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '600',
+      marginTop: 6,
+    },
+  });
 
 export default MediaImage;

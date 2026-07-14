@@ -12,10 +12,14 @@ import {
   KoolaIconButton,
   KoolaLogo,
   KoolaText,
-  koolaColors,
+  koolaRadii,
   koolaShadows,
+  koolaDarkShadows,
+  useTheme,
 } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import {
   shoppingCategories,
   shoppingProducts,
@@ -24,20 +28,28 @@ import {
   type ShoppingStore,
 } from './shoppingMockData';
 
-const ShoppingHeader: React.FC<{ cartCount: number }> = ({ cartCount }) => (
+type Styles = ReturnType<typeof makeStyles>;
+
+const ShoppingHeader: React.FC<{
+  cartCount: number;
+  palette: Palette;
+  styles: Styles;
+  onComingSoon: () => void;
+}> = ({ cartCount, palette, styles, onComingSoon }) => (
   <View style={styles.header}>
     <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
     <Pressable
       accessibilityRole="search"
       accessibilityLabel="Tìm sản phẩm, cửa hàng"
-      android_ripple={{ color: koolaColors.line }}
+      android_ripple={{ color: palette.line }}
+      onPress={onComingSoon}
       style={styles.searchBox}>
-      <MaterialIcons name="search" size={18} color={koolaColors.muted} />
+      <MaterialIcons name="search" size={18} color={palette.muted} />
       <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
         Tìm sản phẩm, cửa hàng...
       </KoolaText>
     </Pressable>
-    <View>
+    <View style={styles.cartWrap}>
       <KoolaIconButton
         icon="shopping-cart"
         variant="solid"
@@ -45,6 +57,7 @@ const ShoppingHeader: React.FC<{ cartCount: number }> = ({ cartCount }) => (
         size={38}
         iconSize={20}
         accessibilityLabel="Giỏ hàng"
+        onPress={onComingSoon}
       />
       {cartCount > 0 && (
         <View style={styles.cartBadge}>
@@ -57,10 +70,13 @@ const ShoppingHeader: React.FC<{ cartCount: number }> = ({ cartCount }) => (
   </View>
 );
 
-const PromoBand: React.FC = () => (
+const PromoBand: React.FC<{ palette: Palette; styles: Styles }> = ({
+  palette,
+  styles,
+}) => (
   <View style={styles.promoBand}>
     <View style={styles.promoIcon}>
-      <MaterialIcons name="bolt" size={24} color={koolaColors.warm} />
+      <MaterialIcons name="bolt" size={24} color={palette.warm} />
     </View>
     <View style={styles.promoCopy}>
       <KoolaText variant="label" weight="800" numberOfLines={1}>
@@ -81,12 +97,16 @@ const PromoBand: React.FC = () => (
   </View>
 );
 
-const QuickActions: React.FC = () => {
+const QuickActions: React.FC<{
+  palette: Palette;
+  styles: Styles;
+  onComingSoon: () => void;
+}> = ({ palette, styles, onComingSoon }) => {
   const actions = [
-    { label: 'Siêu thị', icon: 'local-grocery-store', color: koolaColors.accent },
-    { label: 'Ăn uống', icon: 'restaurant', color: koolaColors.warm },
-    { label: 'Freeship', icon: 'local-shipping', color: koolaColors.primary },
-    { label: 'Deal sốc', icon: 'local-offer', color: koolaColors.danger },
+    { label: 'Siêu thị', icon: 'local-grocery-store', color: palette.accent },
+    { label: 'Ăn uống', icon: 'restaurant', color: palette.warm },
+    { label: 'Freeship', icon: 'local-shipping', color: palette.primary },
+    { label: 'Deal sốc', icon: 'local-offer', color: palette.danger },
   ];
 
   return (
@@ -96,7 +116,8 @@ const QuickActions: React.FC = () => {
           key={action.label}
           accessibilityRole="button"
           accessibilityLabel={action.label}
-          android_ripple={{ color: koolaColors.line }}
+          android_ripple={{ color: palette.line }}
+          onPress={onComingSoon}
           style={styles.quickAction}>
           <View style={[styles.quickIcon, { backgroundColor: `${action.color}18` }]}>
             <MaterialIcons name={action.icon} size={22} color={action.color} />
@@ -115,8 +136,15 @@ const ProductCard: React.FC<{
   favorite: boolean;
   onToggleFavorite: (id: string) => void;
   onAdd: () => void;
-}> = React.memo(({ item, favorite, onToggleFavorite, onAdd }) => (
-  <View style={styles.productCard}>
+  onOpen: () => void;
+  palette: Palette;
+  styles: Styles;
+}> = React.memo(({ item, favorite, onToggleFavorite, onAdd, onOpen, palette, styles }) => (
+  <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={item.title}
+    onPress={onOpen}
+    style={styles.productCard}>
     <View style={[styles.productMedia, { backgroundColor: `${item.accent}16` }]}>
       <MaterialIcons name={item.icon} size={34} color={item.accent} />
       {item.badge && (
@@ -134,7 +162,7 @@ const ProductCard: React.FC<{
         <MaterialIcons
           name={favorite ? 'favorite' : 'favorite-border'}
           size={18}
-          color={favorite ? koolaColors.danger : koolaColors.muted}
+          color={favorite ? palette.danger : palette.muted}
         />
       </Pressable>
     </View>
@@ -146,7 +174,7 @@ const ProductCard: React.FC<{
         {item.shop}
       </KoolaText>
       <View style={styles.metaRow}>
-        <MaterialIcons name="star" size={14} color={koolaColors.warning} />
+        <MaterialIcons name="star" size={14} color={palette.warning} />
         <KoolaText variant="caption" weight="700">
           {item.rating.toFixed(1)}
         </KoolaText>
@@ -170,24 +198,30 @@ const ProductCard: React.FC<{
           accessibilityLabel={`Thêm ${item.title}`}
           onPress={onAdd}
           style={styles.addButton}>
-          <MaterialIcons name="add" size={18} color={koolaColors.surface} />
+          <MaterialIcons name="add" size={18} color={palette.surface} />
         </Pressable>
       </View>
       <View style={styles.deliveryPill}>
-        <MaterialIcons name="schedule" size={13} color={koolaColors.primary} />
+        <MaterialIcons name="schedule" size={13} color={palette.primary} />
         <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
           {item.delivery}
         </KoolaText>
       </View>
     </View>
-  </View>
+  </Pressable>
 ));
 
-const StoreRow: React.FC<{ store: ShoppingStore }> = ({ store }) => (
+const StoreRow: React.FC<{
+  store: ShoppingStore;
+  palette: Palette;
+  styles: Styles;
+  onOpen: () => void;
+}> = ({ store, palette, styles, onOpen }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={store.name}
-    android_ripple={{ color: koolaColors.line }}
+    android_ripple={{ color: palette.line }}
+    onPress={onOpen}
     style={styles.storeRow}>
     <View style={[styles.storeIcon, { backgroundColor: `${store.accent}18` }]}>
       <MaterialIcons name={store.icon} size={22} color={store.accent} />
@@ -200,7 +234,7 @@ const StoreRow: React.FC<{ store: ShoppingStore }> = ({ store }) => (
         {store.category}
       </KoolaText>
       <View style={styles.metaRow}>
-        <MaterialIcons name="star" size={14} color={koolaColors.warning} />
+        <MaterialIcons name="star" size={14} color={palette.warning} />
         <KoolaText variant="caption" weight="700">
           {store.rating.toFixed(1)}
         </KoolaText>
@@ -209,15 +243,23 @@ const StoreRow: React.FC<{ store: ShoppingStore }> = ({ store }) => (
         </KoolaText>
       </View>
     </View>
-    <MaterialIcons name="chevron-right" size={22} color={koolaColors.faint} />
+    <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
   </Pressable>
 );
 
 const ShoppingHomeScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
+  const { palette, resolvedScheme } = useTheme();
+  const { notify, toast } = useComingSoonToast();
+  const styles = useMemo(
+    () => makeStyles(palette, resolvedScheme),
+    [palette, resolvedScheme],
+  );
   const [activeCategory, setActiveCategory] = useState('all');
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(0);
+
+  const handleComingSoon = useCallback(() => notify(), [notify]);
 
   const products = useMemo(
     () =>
@@ -242,10 +284,15 @@ const ShoppingHomeScreen: React.FC = () => {
 
   const renderHeader = () => (
     <View>
-      <ShoppingHeader cartCount={cartCount} />
+      <ShoppingHeader
+        cartCount={cartCount}
+        palette={palette}
+        styles={styles}
+        onComingSoon={handleComingSoon}
+      />
       <View style={styles.contentInset}>
-        <PromoBand />
-        <QuickActions />
+        <PromoBand palette={palette} styles={styles} />
+        <QuickActions palette={palette} styles={styles} onComingSoon={handleComingSoon} />
         <View style={styles.sectionHeader}>
           <View>
             <KoolaText variant="heading" weight="800">
@@ -261,31 +308,31 @@ const ShoppingHomeScreen: React.FC = () => {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryRow}>
-          {shoppingCategories.map((category) => (
-            <Pressable
-              key={category.id}
-              accessibilityRole="button"
-              accessibilityLabel={category.label}
-              accessibilityState={{ selected: activeCategory === category.id }}
-              onPress={() => setActiveCategory(category.id)}
-              style={[
-                styles.categoryButton,
-                activeCategory === category.id && styles.categoryButtonActive,
-              ]}>
-              <MaterialIcons
-                name={category.icon}
-                size={16}
-                color={activeCategory === category.id ? koolaColors.surface : koolaColors.primary}
-              />
-              <KoolaText
-                variant="caption"
-                weight="800"
-                tone={activeCategory === category.id ? 'surface' : 'muted'}
-                numberOfLines={1}>
-                {category.label}
-              </KoolaText>
-            </Pressable>
-          ))}
+          {shoppingCategories.map((category) => {
+            const selected = activeCategory === category.id;
+            return (
+              <Pressable
+                key={category.id}
+                accessibilityRole="button"
+                accessibilityLabel={category.label}
+                accessibilityState={{ selected }}
+                onPress={() => setActiveCategory(category.id)}
+                style={[styles.categoryButton, selected && styles.categoryButtonActive]}>
+                <MaterialIcons
+                  name={category.icon}
+                  size={16}
+                  color={selected ? palette.surface : palette.primary}
+                />
+                <KoolaText
+                  variant="caption"
+                  weight="800"
+                  tone={selected ? 'surface' : 'muted'}
+                  numberOfLines={1}>
+                  {category.label}
+                </KoolaText>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </View>
     </View>
@@ -305,7 +352,13 @@ const ShoppingHomeScreen: React.FC = () => {
       </View>
       <View style={styles.storeList}>
         {shoppingStores.map((store) => (
-          <StoreRow key={store.id} store={store} />
+          <StoreRow
+            key={store.id}
+            store={store}
+            palette={palette}
+            styles={styles}
+            onOpen={handleComingSoon}
+          />
         ))}
       </View>
     </View>
@@ -318,282 +371,297 @@ const ShoppingHomeScreen: React.FC = () => {
         favorite={favoriteIds.has(item.id)}
         onToggleFavorite={toggleFavorite}
         onAdd={handleAdd}
+        onOpen={handleComingSoon}
+        palette={palette}
+        styles={styles}
       />
     ),
-    [favoriteIds, toggleFavorite, handleAdd],
+    [favoriteIds, toggleFavorite, handleAdd, handleComingSoon, palette, styles],
   );
 
   return (
-    <FlatList
-      // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
-      removeClippedSubviews={false}
-      data={products}
-      numColumns={2}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      initialNumToRender={8}
-      maxToRenderPerBatch={8}
-      windowSize={7}
-      updateCellsBatchingPeriod={50}
-      ListHeaderComponent={renderHeader}
-      ListFooterComponent={renderFooter}
-      columnWrapperStyle={styles.productRow}
-      contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
-      showsVerticalScrollIndicator={false}
-      style={styles.screen}
-    />
+    <View style={styles.screen}>
+      <FlatList
+        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+        removeClippedSubviews={false}
+        data={products}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        columnWrapperStyle={styles.productRow}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
+        showsVerticalScrollIndicator={false}
+        style={styles.screen}
+      />
+      {toast}
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  listContent: {},
-  header: {
-    backgroundColor: koolaColors.surface,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  logoWrap: {
-    marginRight: 2,
-  },
-  searchBox: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: 19,
-    backgroundColor: koolaColors.canvas,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    overflow: 'hidden',
-  },
-  searchText: {
-    flex: 1,
-    fontSize: 13,
-  },
-  cartBadge: {
-    position: 'absolute',
-    right: -2,
-    top: -3,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: koolaColors.danger,
-    borderWidth: 2,
-    borderColor: koolaColors.surface,
-  },
-  contentInset: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  promoBand: {
-    minHeight: 86,
-    borderRadius: 8,
-    backgroundColor: koolaColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 12,
-    ...koolaShadows.subtle,
-  },
-  promoIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 8,
-    backgroundColor: koolaColors.warningSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  promoCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  promoMetric: {
-    minWidth: 62,
-    alignItems: 'flex-end',
-  },
-  warmText: {
-    color: koolaColors.warm,
-  },
-  quickGrid: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  quickAction: {
-    flex: 1,
-    minHeight: 78,
-    borderRadius: 8,
-    backgroundColor: koolaColors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    overflow: 'hidden',
-  },
-  quickIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionHeader: {
-    marginTop: 18,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  categoryRow: {
-    gap: 8,
-    paddingRight: 12,
-    paddingBottom: 6,
-  },
-  categoryButton: {
-    minHeight: 36,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: koolaColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-  categoryButtonActive: {
-    backgroundColor: koolaColors.primary,
-    borderColor: koolaColors.primary,
-  },
-  productRow: {
-    gap: 10,
-    paddingHorizontal: 12,
-  },
-  productCard: {
-    flex: 1,
-    minHeight: 276,
-    marginBottom: 10,
-    borderRadius: 8,
-    backgroundColor: koolaColors.surface,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-  },
-  productMedia: {
-    height: 104,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  productBadge: {
-    position: 'absolute',
-    left: 8,
-    top: 8,
-    maxWidth: 86,
-    borderRadius: 6,
-    backgroundColor: koolaColors.ink,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  favoriteButton: {
-    position: 'absolute',
-    right: 8,
-    top: 8,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: koolaColors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  productBody: {
-    padding: 10,
-    gap: 6,
-  },
-  productTitle: {
-    minHeight: 40,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  priceTextWrap: {
-    flex: 1,
-  },
-  priceText: {
-    color: koolaColors.danger,
-  },
-  strikeText: {
-    textDecorationLine: 'line-through',
-  },
-  addButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: koolaColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deliveryPill: {
-    minHeight: 26,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: koolaColors.primarySoft,
-  },
-  footer: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-  },
-  storeList: {
-    gap: 8,
-  },
-  storeRow: {
-    minHeight: 78,
-    borderRadius: 8,
-    backgroundColor: koolaColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    overflow: 'hidden',
-  },
-  storeIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  storeCopy: {
-    flex: 1,
-    gap: 3,
-  },
-});
+const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
+  const bandShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    listContent: {},
+    header: {
+      backgroundColor: p.surface,
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      paddingBottom: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    // gap removed from this row (Hermes RN0.76 drops flex:1 children to new
+    // lines with gap in a row) — spacing via marginRight + flexShrink:0.
+    logoWrap: {
+      marginRight: 8,
+      flexShrink: 0,
+    },
+    searchBox: {
+      flex: 1,
+      minHeight: 38,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: p.canvas,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      marginRight: 8,
+      overflow: 'hidden',
+    },
+    searchText: {
+      flex: 1,
+      fontSize: 13,
+    },
+    cartWrap: {
+      flexShrink: 0,
+    },
+    cartBadge: {
+      position: 'absolute',
+      right: -2,
+      top: -3,
+      minWidth: 18,
+      height: 18,
+      borderRadius: koolaRadii.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: p.danger,
+      borderWidth: 2,
+      borderColor: p.surface,
+    },
+    contentInset: {
+      paddingHorizontal: 12,
+      paddingTop: 12,
+    },
+    promoBand: {
+      minHeight: 86,
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+      gap: 12,
+      ...bandShadow,
+    },
+    promoIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: koolaRadii.sm,
+      backgroundColor: p.warningSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    promoCopy: {
+      flex: 1,
+      gap: 2,
+    },
+    promoMetric: {
+      minWidth: 62,
+      alignItems: 'flex-end',
+    },
+    warmText: {
+      color: p.warm,
+    },
+    quickGrid: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    quickAction: {
+      flex: 1,
+      minHeight: 78,
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      overflow: 'hidden',
+    },
+    quickIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: koolaRadii.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionHeader: {
+      marginTop: 18,
+      marginBottom: 10,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    categoryRow: {
+      gap: 8,
+      paddingRight: 12,
+      paddingBottom: 6,
+    },
+    categoryButton: {
+      minHeight: 36,
+      borderRadius: koolaRadii.pill,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: p.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+    categoryButtonActive: {
+      backgroundColor: p.primary,
+      borderColor: p.primary,
+    },
+    productRow: {
+      gap: 10,
+      paddingHorizontal: 12,
+    },
+    productCard: {
+      flex: 1,
+      minHeight: 276,
+      marginBottom: 10,
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.surface,
+      overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+    },
+    productMedia: {
+      height: 104,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    productBadge: {
+      position: 'absolute',
+      left: 8,
+      top: 8,
+      maxWidth: 86,
+      borderRadius: koolaRadii.xs,
+      backgroundColor: p.ink,
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+    },
+    favoriteButton: {
+      position: 'absolute',
+      right: 8,
+      top: 8,
+      width: 30,
+      height: 30,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: p.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    productBody: {
+      padding: 10,
+      gap: 6,
+    },
+    productTitle: {
+      minHeight: 40,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    priceRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    priceTextWrap: {
+      flex: 1,
+    },
+    priceText: {
+      color: p.danger,
+    },
+    strikeText: {
+      textDecorationLine: 'line-through',
+    },
+    addButton: {
+      width: 34,
+      height: 34,
+      borderRadius: koolaRadii.sm,
+      backgroundColor: p.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deliveryPill: {
+      minHeight: 26,
+      borderRadius: koolaRadii.sm,
+      paddingHorizontal: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: p.primarySoft,
+    },
+    footer: {
+      paddingHorizontal: 12,
+      paddingBottom: 12,
+    },
+    storeList: {
+      gap: 8,
+    },
+    storeRow: {
+      minHeight: 78,
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      padding: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      overflow: 'hidden',
+    },
+    storeIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: koolaRadii.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    storeCopy: {
+      flex: 1,
+      gap: 3,
+    },
+  });
+};
 
 export default ShoppingHomeScreen;

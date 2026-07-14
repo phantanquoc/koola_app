@@ -58,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  _resetStateForTesting();
   _setDbForTesting(null);
   try { (db as any).close?.(); } catch {}
 });

@@ -6,6 +6,14 @@
  * partial unique, watchdog reset, error classifier, backfill, cleanup.
  */
 
+// Repository tests verify persistence only. Worker scheduling is covered by
+// outboxProcessor.spec.ts; running it here leaks InteractionManager work past
+// SQLite mock teardown.
+jest.mock('../../sync/outboxProcessor', () => ({
+  scheduleTick: jest.fn(),
+  ensurePeriodicInterval: jest.fn(),
+}));
+
 import { open } from '@op-engineering/op-sqlite';
 import { _setDbForTesting } from '../connection';
 import { runMigrations } from '../migrations';

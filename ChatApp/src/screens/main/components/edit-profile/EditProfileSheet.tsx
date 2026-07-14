@@ -11,9 +11,10 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaButton,
   KoolaText,
-  koolaColors,
   koolaRadii,
+  useTheme,
 } from '../../../../ui';
+import type { Palette } from '../../../../ui/theme';
 
 interface EditProfileSheetProps {
   visible: boolean;
@@ -38,6 +39,9 @@ export const EditProfileSheet: React.FC<EditProfileSheetProps> = ({
   onSave,
   children,
 }) => {
+  const { palette } = useTheme();
+  const styles = React.useMemo(() => makeStyles(palette), [palette]);
+
   const handleClose = useCallback(() => {
     if (dirty) {
       Alert.alert('Bỏ thay đổi?', 'Bạn có thay đổi chưa lưu.', [
@@ -70,7 +74,7 @@ export const EditProfileSheet: React.FC<EditProfileSheetProps> = ({
             <MaterialIcons
               name="close"
               size={24}
-              color={koolaColors.ink}
+              color={palette.ink}
             />
           </Pressable>
           <KoolaText variant="heading" weight="700" numberOfLines={1}>
@@ -98,43 +102,44 @@ export const EditProfileSheet: React.FC<EditProfileSheetProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.surface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    gap: 12,
-  },
-  closeBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: koolaRadii.xs,
-  },
-  pressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
-  },
-  headerSpacer: {
-    width: 44,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-  actionBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: koolaColors.line,
-  },
-});
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.surface,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      gap: 12,
+    },
+    closeBtn: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: koolaRadii.xs,
+    },
+    pressed: {
+      opacity: 0.82,
+      transform: [{ scale: 0.99 }],
+    },
+    headerSpacer: {
+      width: 44,
+    },
+    content: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 20,
+    },
+    actionBar: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: p.line,
+    },
+  });

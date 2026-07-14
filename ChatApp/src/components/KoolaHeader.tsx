@@ -74,7 +74,11 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
 const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
     container: {
-      backgroundColor: semantic.surface.level0,
+      // Header sits directly above the white top-tab bar (palette.surface) and
+      // white conversation rows (surface.level1). It must be the SAME white to
+      // read seamless — the greyish canvas/level0 tokens made it a mismatched
+      // grey band. This restores the original white header (koolaColors.surface).
+      backgroundColor: semantic.surface.level1,
       paddingHorizontal: 12,
       paddingTop: 6,
       paddingBottom: 6,
@@ -100,7 +104,9 @@ const makeStyles = (semantic: SemanticTokens) =>
       alignItems: 'center',
       gap: 6,
       borderRadius: 16,
-      backgroundColor: semantic.bg.canvas,
+      // Search field sits ON the header canvas, so it needs a slightly-recessed
+      // fill to read as an input — surface.level0 gives that subtle contrast.
+      backgroundColor: semantic.surface.level0,
     },
     searchBarPressed: {
       opacity: 0.78,

@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Pla
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { mediaApi } from '../services/api/apiService';
 import Toast from 'react-native-toast-message';
+import { useTheme } from '../ui';
 
 interface Props {
   mediaKey: string;
@@ -19,8 +20,9 @@ function formatFileSize(bytes: number): string {
   return `${value.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-const FileAttachment: React.FC<Props> = ({ mediaKey, filename, size, isRight }) => {
+const FileAttachment: React.FC<Props> = ({ mediaKey, filename, size }) => {
   const [downloading, setDownloading] = useState(false);
+  const { tokens } = useTheme();
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -64,9 +66,13 @@ const FileAttachment: React.FC<Props> = ({ mediaKey, filename, size, isRight }) 
     }
   };
 
-  const textColor = isRight ? '#fff' : '#333';
-  const subColor = isRight ? 'rgba(255,255,255,0.7)' : '#999';
-  const btnBg = isRight ? 'rgba(255,255,255,0.2)' : '#f0f0f0';
+  // Bubble text sits on chatBubble surfaces (own = primarySoft, other = level1),
+  // both of which use semantic.text.primary for legible content in either theme.
+  // The old isRight/white split rendered white text on the light-blue own bubble
+  // (unreadable in light mode) — token-driven colors fix that and give dark mode.
+  const textColor = tokens.semantic.text.primary;
+  const subColor = tokens.semantic.text.muted;
+  const btnBg = tokens.semantic.surface.level0;
 
   return (
     <View style={styles.container}>

@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { KoolaState, koolaColors } from '../../ui';
+import { KoolaState, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 
 const ShortsScreen: React.FC = () => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   return (
     <View style={styles.container}>
       <KoolaState
@@ -14,13 +18,14 @@ const ShortsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
 
 export default ShortsScreen;

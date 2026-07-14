@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, View, StyleSheet } from 'react-native';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { usersApi } from '../../../../services/api/apiService';
-import { KoolaTextInput, KoolaText, koolaColors } from '../../../../ui';
+import { KoolaTextInput, KoolaText } from '../../../../ui';
 import { EditProfileSheet } from './EditProfileSheet';
 
 interface Props {
@@ -106,7 +106,7 @@ export const UsernameSheet: React.FC<Props> = ({ visible, onClose }) => {
     }
     if (availability?.available) {
       return (
-        <KoolaText variant="caption" style={[styles.feedback, { color: koolaColors.success }]}>
+        <KoolaText variant="caption" tone="success" style={styles.feedback}>
           Tên người dùng khả dụng
         </KoolaText>
       );

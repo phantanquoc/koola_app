@@ -20,7 +20,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, KoolaButton, KoolaState, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, KoolaButton, KoolaState, koolaRadii, useTheme } from '../../ui';
+import type { Palette } from '../../ui/theme';
 import { momentsService } from '../../services/moments/momentsService';
 import { usersApi } from '../../services/api/apiService';
 import type { AudienceList } from '../../services/moments/momentsApi';
@@ -33,6 +34,8 @@ const AudienceListEditorScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<EditorRouteProp>();
   const { listId } = route.params;
+  const { palette } = useTheme();
+  const styles = React.useMemo(() => makeStyles(palette), [palette]);
 
   const [lists, setLists] = useState<AudienceList[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,7 +177,7 @@ const AudienceListEditorScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={koolaColors.primary} accessibilityLabel="Đang tải danh sách" />
+        <ActivityIndicator size="large" color={palette.primary} accessibilityLabel="Đang tải danh sách" />
       </View>
     );
   }
@@ -286,7 +289,7 @@ const AudienceListEditorScreen: React.FC = () => {
               value={listName}
               onChangeText={setListName}
               placeholder="Tên danh sách (vd: Bạn thân)"
-              placeholderTextColor={koolaColors.faint}
+              placeholderTextColor={palette.faint}
               maxLength={50}
               autoFocus
               accessibilityLabel="Nhập tên danh sách"
@@ -342,7 +345,7 @@ const AudienceListEditorScreen: React.FC = () => {
               value={memberQuery}
               onChangeText={handleMemberSearch}
               placeholder="Tìm người dùng..."
-              placeholderTextColor={koolaColors.faint}
+              placeholderTextColor={palette.faint}
               accessibilityLabel="Tìm kiếm người dùng"
             />
           </View>
@@ -395,125 +398,126 @@ const AudienceListEditorScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  listItemInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  listItemActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    padding: 4,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createModal: {
-    backgroundColor: koolaColors.surface,
-    borderRadius: koolaRadii.md,
-    padding: 24,
-    width: 300,
-    gap: 16,
-  },
-  nameInput: {
-    borderWidth: 1,
-    borderColor: koolaColors.line,
-    borderRadius: koolaRadii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-    color: koolaColors.ink,
-  },
-  createActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionBtn: {
-    flex: 1,
-  },
-  memberPickerContainer: {
-    flex: 1,
-    backgroundColor: koolaColors.canvas,
-  },
-  memberPickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  memberSearchBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  memberSearchInput: {
-    backgroundColor: koolaColors.canvas,
-    borderRadius: koolaRadii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-    color: koolaColors.ink,
-    borderWidth: 1,
-    borderColor: koolaColors.line,
-  },
-  memberItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-    backgroundColor: koolaColors.surface,
-  },
-  memberItemSelected: {
-    backgroundColor: koolaColors.primarySoft,
-  },
-  checkMark: {
-    fontSize: 16,
-  },
-  memberEmpty: {
-    padding: 40,
-  },
-});
+const makeStyles = (p: Palette) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    center: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      backgroundColor: p.surface,
+    },
+    listItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      backgroundColor: p.surface,
+    },
+    listItemInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    listItemActions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    actionButton: {
+      padding: 4,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    createModal: {
+      backgroundColor: p.surface,
+      borderRadius: koolaRadii.md,
+      padding: 24,
+      width: 300,
+      gap: 16,
+    },
+    nameInput: {
+      borderWidth: 1,
+      borderColor: p.line,
+      borderRadius: koolaRadii.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 15,
+      color: p.ink,
+    },
+    createActions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    actionBtn: {
+      flex: 1,
+    },
+    memberPickerContainer: {
+      flex: 1,
+      backgroundColor: p.canvas,
+    },
+    memberPickerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      backgroundColor: p.surface,
+    },
+    memberSearchBar: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    memberSearchInput: {
+      backgroundColor: p.canvas,
+      borderRadius: koolaRadii.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 15,
+      color: p.ink,
+      borderWidth: 1,
+      borderColor: p.line,
+    },
+    memberItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+      backgroundColor: p.surface,
+    },
+    memberItemSelected: {
+      backgroundColor: p.primarySoft,
+    },
+    checkMark: {
+      fontSize: 16,
+    },
+    memberEmpty: {
+      padding: 40,
+    },
+  });
 
 export default AudienceListEditorScreen;

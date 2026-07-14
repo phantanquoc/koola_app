@@ -7,6 +7,11 @@
  * Uses console.log spy to capture log calls.
  */
 
+jest.mock('../outboxProcessor', () => ({
+  scheduleTick: jest.fn(),
+  ensurePeriodicInterval: jest.fn(),
+}));
+
 import { open } from '@op-engineering/op-sqlite';
 import { _setDbForTesting } from '../../db/connection';
 import { runMigrations } from '../../db/migrations';
