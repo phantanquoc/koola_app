@@ -1,4 +1,5 @@
 import React from 'react';
+// @ts-expect-error react-test-renderer has no type declarations in this project
 import { create as render, act } from 'react-test-renderer';
 import { useDocumentUpload } from '../useDocumentUpload';
 import type { UseDocumentUploadReturn } from '../useDocumentUpload';
