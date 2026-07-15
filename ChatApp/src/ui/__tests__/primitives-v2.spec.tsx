@@ -54,6 +54,8 @@ jest.mock('react-native-reanimated', () => {
 });
 
 import { ThemeProvider } from '../ThemeProvider';
+import { KoolaText } from '../KoolaText';
+import { KoolaButton } from '../KoolaButton';
 import { KoolaChip } from '../KoolaChip';
 import { KoolaSurface } from '../KoolaSurface';
 import { KoolaAvatar } from '../KoolaAvatar';
@@ -480,5 +482,58 @@ describe('KoolaToast', () => {
     if (root) {
       expect(root.props.accessibilityLiveRegion).toBe('polite');
     }
+  });
+});
+
+// ─── KoolaText maxFontSizeMultiplier (font-scale-cap) ───────────────────────
+
+describe('KoolaText font scale cap', () => {
+  it('content variants (body, heading) resolve maxFontSizeMultiplier = 2.0', () => {
+    let tree: any;
+    act(() => {
+      tree = render(wrap(React.createElement(KoolaText, { variant: 'body' }, 'Hello')));
+    });
+    const root = tree.toJSON();
+    expect(root.props.maxFontSizeMultiplier).toBe(2.0);
+
+    let tree2: any;
+    act(() => {
+      tree2 = render(wrap(React.createElement(KoolaText, { variant: 'heading' }, 'Hi')));
+    });
+    expect(tree2.toJSON().props.maxFontSizeMultiplier).toBe(2.0);
+  });
+
+  it('chrome variants (label, caption) resolve maxFontSizeMultiplier = 1.6', () => {
+    let tree: any;
+    act(() => {
+      tree = render(wrap(React.createElement(KoolaText, { variant: 'label' }, 'Lbl')));
+    });
+    expect(tree.toJSON().props.maxFontSizeMultiplier).toBe(1.6);
+
+    let tree2: any;
+    act(() => {
+      tree2 = render(wrap(React.createElement(KoolaText, { variant: 'caption' }, 'Cap')));
+    });
+    expect(tree2.toJSON().props.maxFontSizeMultiplier).toBe(1.6);
+  });
+
+  it('per-instance override wins over variant default', () => {
+    let tree: any;
+    act(() => {
+      tree = render(wrap(React.createElement(KoolaText, { variant: 'body', maxFontSizeMultiplier: 1.2 }, 'X')));
+    });
+    expect(tree.toJSON().props.maxFontSizeMultiplier).toBe(1.2);
+  });
+
+  it('KoolaButton label renders KoolaText with maxFontSizeMultiplier > 1', () => {
+    let tree: any;
+    act(() => {
+      tree = render(wrap(React.createElement(KoolaButton, { title: 'Submit' })));
+    });
+    const root = tree.toJSON();
+    const textNode = findByProps(root, (p: any) =>
+      typeof p.maxFontSizeMultiplier === 'number' && p.maxFontSizeMultiplier > 1,
+    );
+    expect(textNode).not.toBeNull();
   });
 });

@@ -15,19 +15,20 @@ type KoolaTextTone =
 
 /**
  * Variant-aware maxFontSizeMultiplier defaults.
- * Content variants (body, display) scale generously (~1.5) for accessibility.
- * Chrome variants (caption, label) cap at ~1.3 to protect tight layouts.
- * Title/heading use ~1.35 as a balanced backstop.
+ * Content variants (display, title, heading, body) scale to 2.0 for WCAG 2.1 AA
+ * 200% text scaling — text wraps freely, no layout risk.
+ * Chrome variants (label, caption) cap at 1.6 to protect single-line hard layouts
+ * (KoolaBadge/KoolaChip ép numberOfLines={1}; cap 2.0 gây cắt cụt nội dung).
  * NEVER 1.0 — that blocks font scaling entirely, breaking accessibility.
  * Per-instance override via the `maxFontSizeMultiplier` prop takes precedence.
  */
 const VARIANT_MAX_FONT_SCALE: Record<KoolaTextVariant, number> = {
-  display: 1.5,
-  title: 1.35,
-  heading: 1.35,
-  body: 1.5,
-  label: 1.3,
-  caption: 1.3,
+  display: 2.0,
+  title: 2.0,
+  heading: 2.0,
+  body: 2.0,
+  label: 1.6,
+  caption: 1.6,
 };
 
 interface KoolaTextProps extends TextProps {
