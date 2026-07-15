@@ -451,21 +451,20 @@ const styles = StyleSheet.create({
   emptyState: {
     padding: 40,
     alignItems: 'center',
-    gap: koolaSpacing.sm,
   },
   emptyText: {
-    marginTop: koolaSpacing.xs,
+    marginTop: koolaSpacing.sm,
   },
   selectedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: koolaSpacing.sm,
     paddingHorizontal: koolaSpacing.lg,
     paddingVertical: koolaSpacing.sm,
     backgroundColor: koolaColors.primarySoft,
   },
   selectedBannerText: {
     flex: 1,
+    marginHorizontal: koolaSpacing.sm,
   },
   removeButton: {
     padding: 16,

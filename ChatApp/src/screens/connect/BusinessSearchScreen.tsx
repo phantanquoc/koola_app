@@ -14,7 +14,7 @@ import type { BusinessAccountItem } from '../../services/api/apiService';
 import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
 import EmptyConnect from '../../components/connect/EmptyConnect';
 import BusinessCard from '../../components/connect/BusinessCard';
-import { KoolaIconButton, KoolaState, KoolaText, useTheme } from '../../ui';
+import { KoolaIconButton, KoolaState, KoolaText, useKoolaToast, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 
 type BusinessSearchNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
@@ -24,6 +24,7 @@ const BusinessSearchScreen: React.FC = () => {
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const inputRef = useRef<TextInput>(null);
+  const toast = useKoolaToast();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<BusinessAccountItem[]>([]);
@@ -68,12 +69,13 @@ const BusinessSearchScreen: React.FC = () => {
         const { conversation } = await conversationsApi.startDirectChat(account._id);
         navigateToChat(conversation._id);
       } catch (err) {
-        console.warn('Start direct chat failed:', err);
+        if (__DEV__) console.warn('Start direct chat failed:', err);
+        toast.show('Không thể bắt đầu trò chuyện. Bạn thử lại nhé.', 'danger');
       } finally {
         setMessagingId(null);
       }
     },
-    [navigateToChat],
+    [navigateToChat, toast],
   );
 
   const renderItem = useCallback(
@@ -164,7 +166,6 @@ const makeStyles = (p: Palette) =>
       paddingTop: (StatusBar.currentHeight || 0) + 8,
       paddingHorizontal: 12,
       paddingBottom: 12,
-      gap: 8,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: p.line,
     },
@@ -176,9 +177,10 @@ const makeStyles = (p: Palette) =>
       paddingHorizontal: 16,
       fontSize: 14,
       color: p.ink,
+      marginLeft: 8,
     },
     inputLoader: {
-      marginLeft: 4,
+      marginLeft: 8,
     },
     listContent: {
       paddingTop: 8,
@@ -191,7 +193,6 @@ const makeStyles = (p: Palette) =>
       alignItems: 'center',
       paddingTop: 80,
       paddingHorizontal: 32,
-      gap: 12,
     },
   });
 

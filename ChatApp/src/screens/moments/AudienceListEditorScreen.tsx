@@ -228,7 +228,7 @@ const AudienceListEditorScreen: React.FC = () => {
           renderItem={({ item }) => (
             <View style={styles.listItem}>
               <View style={styles.listItemInfo}>
-                <KoolaText variant="body" tone="ink" weight="600">
+                <KoolaText variant="body" tone="ink" weight="600" style={{ marginBottom: 2 }}>
                   {item.name}
                 </KoolaText>
                 <KoolaText variant="caption" tone="muted">
@@ -299,7 +299,7 @@ const AudienceListEditorScreen: React.FC = () => {
                 title="Hủy"
                 variant="secondary"
                 onPress={() => setShowCreateModal(false)}
-                style={styles.actionBtn}
+                style={[styles.actionBtn, styles.actionBtnFirst]}
               />
               <KoolaButton
                 title={editingList ? 'Lưu' : 'Tạo'}
@@ -430,14 +430,13 @@ const makeStyles = (p: Palette) =>
     },
     listItemInfo: {
       flex: 1,
-      gap: 2,
     },
     listItemActions: {
       flexDirection: 'row',
-      gap: 12,
     },
     actionButton: {
       padding: 4,
+      marginLeft: 12,
     },
     modalBackdrop: {
       flex: 1,
@@ -450,7 +449,6 @@ const makeStyles = (p: Palette) =>
       borderRadius: koolaRadii.md,
       padding: 24,
       width: 300,
-      gap: 16,
     },
     nameInput: {
       borderWidth: 1,
@@ -460,13 +458,16 @@ const makeStyles = (p: Palette) =>
       paddingVertical: 8,
       fontSize: 15,
       color: p.ink,
+      marginVertical: 16,
     },
     createActions: {
       flexDirection: 'row',
-      gap: 12,
     },
     actionBtn: {
       flex: 1,
+    },
+    actionBtnFirst: {
+      marginRight: 12,
     },
     memberPickerContainer: {
       flex: 1,

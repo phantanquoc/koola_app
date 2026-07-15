@@ -31,7 +31,7 @@ export function useContactsSearch() {
       setHasMore(data.hasMore);
       cursorRef.current = data.nextCursor;
     } catch {
-      setError('Search failed. Tap to retry.');
+      setError('Tìm kiếm thất bại. Nhấn để thử lại.');
       setResults([]);
     } finally {
       setIsLoading(false);

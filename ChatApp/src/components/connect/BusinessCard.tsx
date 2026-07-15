@@ -62,7 +62,7 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
         </View>
         <View style={styles.meta}>
           {categoryLabel ? (
-            <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
+            <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1} style={styles.metaLabel}>
               {categoryLabel}
             </KoolaText>
           ) : null}
@@ -70,7 +70,7 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
             <>
               <View style={styles.dot} />
               <MaterialIcons name="location-on" size={11} color={palette.muted} />
-              <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+              <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.metaLabel}>
                 {item.province}
               </KoolaText>
             </>
@@ -92,7 +92,7 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
         accessibilityRole="button"
         accessibilityLabel="Nhắn tin">
         <MaterialIcons name="chat-bubble-outline" size={16} color={palette.primary} />
-        <KoolaText variant="caption" tone="primary" weight="700">Nhắn tin</KoolaText>
+        <KoolaText variant="caption" tone="primary" weight="700" style={{ marginLeft: 4 }}>Nhắn tin</KoolaText>
       </Pressable>
     </Pressable>
   );
@@ -105,7 +105,6 @@ const makeStyles = (p: Palette) =>
       alignItems: 'center',
       backgroundColor: p.surface,
       padding: 14,
-      gap: 12,
       marginHorizontal: 12,
       marginBottom: 8,
       borderRadius: koolaRadii.md,
@@ -113,26 +112,33 @@ const makeStyles = (p: Palette) =>
     },
     content: {
       flex: 1,
+      marginLeft: 12,
     },
     nameRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
     },
     name: {
       flex: 1,
+      marginRight: 4,
     },
     meta: {
       flexDirection: 'row',
       alignItems: 'center',
       marginTop: 2,
-      gap: 4,
+      flexWrap: 'wrap',
+      flex: 1,
+    },
+    metaLabel: {
+      flexShrink: 1,
+      marginRight: 4,
     },
     dot: {
       width: 3,
       height: 3,
       borderRadius: 1.5,
       backgroundColor: p.faint,
+      marginHorizontal: 2,
     },
     tagline: {
       marginTop: 2,
@@ -140,11 +146,11 @@ const makeStyles = (p: Palette) =>
     cta: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
       paddingHorizontal: 10,
       paddingVertical: 7,
       borderRadius: koolaRadii.pill,
       backgroundColor: p.primarySoft,
+      marginLeft: 12,
     },
   });
 

@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import apiClient, { conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
+import AddMemberModal from '../../components/AddMemberModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { KoolaText, koolaColors } from '../../ui';
 import type { ChatTabStackParamList } from '../../navigation/types';
@@ -30,7 +31,6 @@ const GroupInfoScreen: React.FC = () => {
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [addingMember, setAddingMember] = useState(false);
-  const [newMemberId, setNewMemberId] = useState('');
 
   const isAdmin = conversation?.members.some(
     (m) => memberUserId(m) === currentUser?._id && m.role === 'admin',
@@ -59,16 +59,26 @@ const GroupInfoScreen: React.FC = () => {
     } catch { Alert.alert('Lỗi', 'Không thể cập nhật tên nhóm'); }
   };
 
-  const handleAddMember = async () => {
-    if (!newMemberId.trim()) return;
-    try {
-      await apiClient.post(`/conversations/${conversationId}/members`, { userId: newMemberId.trim() });
-      setAddingMember(false); setNewMemberId(''); fetchDetails();
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } };
-      Alert.alert('Lỗi', err.response?.data?.message || 'Không thể thêm thành viên');
+  const handleAddMembers = useCallback(async (userIds: string[]) => {
+    const results: { userId: string; ok: boolean; error?: string }[] = [];
+    for (const userId of userIds) {
+      try {
+        await apiClient.post(`/conversations/${conversationId}/members`, { userId });
+        results.push({ userId, ok: true });
+      } catch (err: unknown) {
+        const e = err as { response?: { data?: { message?: string } } };
+        results.push({ userId, ok: false, error: e.response?.data?.message || 'Unknown error' });
+      }
     }
-  };
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length > 0 && failed.length < userIds.length) {
+      Alert.alert('Cảnh báo', `Đã thêm ${results.length - failed.length} thành viên. ${failed.length} thất bại.`);
+    } else if (failed.length === userIds.length) {
+      Alert.alert('Lỗi', 'Không thể thêm thành viên. Vui lòng thử lại.');
+    }
+    setAddingMember(false);
+    fetchDetails();
+  }, [conversationId, fetchDetails]);
 
   const handleRemoveMember = (userId: string, name: string) => {
     Alert.alert('Xóa thành viên', `Xóa ${name} khỏi nhóm?`, [
@@ -156,11 +166,13 @@ const GroupInfoScreen: React.FC = () => {
         {isAdmin && <TouchableOpacity onPress={() => setAddingMember(true)}><Text style={s.addBtn}>+ Thêm</Text></TouchableOpacity>}
       </View>
       {addingMember && (
-        <View style={s.addRow}>
-          <TextInput style={s.addIn} value={newMemberId} onChangeText={setNewMemberId} placeholder="ID người dùng" placeholderTextColor="#999" autoCapitalize="none" />
-          <TouchableOpacity onPress={handleAddMember} style={s.addGo}><Text style={s.addGoT}>Thêm</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => { setAddingMember(false); setNewMemberId(''); }}><Text style={s.cancel}>✕</Text></TouchableOpacity>
-        </View>
+        <AddMemberModal
+          visible={addingMember}
+          existingMemberIds={conversation.members.map((m) => memberUserId(m))}
+          currentUserId={currentUser?._id || ''}
+          onClose={() => setAddingMember(false)}
+          onAdd={handleAddMembers}
+        />
       )}
       {/* Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount */}
       <FlatList data={conversation.members} keyExtractor={(i) => memberUserId(i)} removeClippedSubviews={false}
@@ -231,10 +243,6 @@ const s = StyleSheet.create({
   secHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   secT: { fontSize: 16, fontWeight: '600', color: '#333' },
   addBtn: { fontSize: 14, color: '#2196F3', fontWeight: '600' },
-  addRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 8 },
-  addIn: { flex: 1, height: 40, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, fontSize: 14, color: '#333' },
-  addGo: { marginLeft: 8, backgroundColor: '#2196F3', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
-  addGoT: { color: '#fff', fontWeight: '600', fontSize: 13 },
   mi: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
   miProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 44 },
   miProfilePressed: { opacity: 0.72 },

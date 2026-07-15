@@ -297,19 +297,31 @@ describe('CallSessionService — updateSessionState index cleanup', () => {
       'state',
       'declined',
     );
-    expect(mockClient.srem).toHaveBeenCalledWith('active_calls:user-A', 'sess-1');
-    expect(mockClient.srem).toHaveBeenCalledWith('active_calls:user-B', 'sess-1');
+    expect(mockClient.srem).toHaveBeenCalledWith(
+      'active_calls:user-A',
+      'sess-1',
+    );
+    expect(mockClient.srem).toHaveBeenCalledWith(
+      'active_calls:user-B',
+      'sess-1',
+    );
   });
 
   it('removes the active_calls index on missed and ended', async () => {
     mockClient.hgetall.mockResolvedValue(hashFor('initiated'));
 
     await service.updateSessionState('sess-1', 'missed');
-    expect(mockClient.srem).toHaveBeenCalledWith('active_calls:user-A', 'sess-1');
+    expect(mockClient.srem).toHaveBeenCalledWith(
+      'active_calls:user-A',
+      'sess-1',
+    );
 
     mockClient.srem.mockClear();
     await service.updateSessionState('sess-1', 'ended');
-    expect(mockClient.srem).toHaveBeenCalledWith('active_calls:user-B', 'sess-1');
+    expect(mockClient.srem).toHaveBeenCalledWith(
+      'active_calls:user-B',
+      'sess-1',
+    );
   });
 
   it('does NOT touch the active_calls index for non-terminal active state', async () => {

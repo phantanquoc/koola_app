@@ -197,7 +197,8 @@ export class ConversationsService {
       (m) => m.userId.toString() === memberId,
     );
     if (alreadyMember) {
-      throw new BadRequestException('User is already a member');
+      // Idempotent: skip if already a member (no error, no duplicate event)
+      return conv;
     }
 
     conv.members.push({

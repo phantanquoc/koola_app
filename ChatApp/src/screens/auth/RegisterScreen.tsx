@@ -1,16 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  AuthFormShell,
   KoolaButton,
   KoolaLogo,
   KoolaSurface,
@@ -35,6 +36,10 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  const nameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
   const validate = (): boolean => {
     let valid = true;
     setNameError('');
@@ -58,8 +63,36 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     return valid;
   };
 
+  const focusFirstInvalid = () => {
+    if (!displayName.trim()) {
+      nameRef.current?.focus();
+    } else if (!email.trim()) {
+      emailRef.current?.focus();
+    } else if (!password.trim() || password.length < 8) {
+      passwordRef.current?.focus();
+    }
+  };
+
+  const announceErrors = () => {
+    const errors: string[] = [];
+    if (!displayName.trim()) errors.push('Vui lòng nhập tên hiển thị');
+    if (!email.trim()) errors.push('Vui lòng nhập email');
+    if (!password.trim()) {
+      errors.push('Vui lòng nhập mật khẩu');
+    } else if (password.length < 8) {
+      errors.push('Mật khẩu phải có ít nhất 8 ký tự');
+    }
+    if (errors.length > 0) {
+      AccessibilityInfo.announceForAccessibility(errors.join('. '));
+    }
+  };
+
   const handleRegister = async () => {
-    if (!validate()) return;
+    if (!validate()) {
+      focusFirstInvalid();
+      announceErrors();
+      return;
+    }
     setLoading(true);
     try {
       await registerInit({
@@ -75,21 +108,21 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       const msg = error.response?.data?.message;
       const text = Array.isArray(msg)
         ? msg.join('\n')
-        : msg || 'Đã xảy ra lỗi';
+        : msg || 'Da xay ra loi';
       if (text.toLowerCase().includes('email')) {
         setEmailError(text);
+        emailRef.current?.focus();
       } else {
         Alert.alert('Đăng ký thất bại', text);
       }
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthFormShell>
       <View style={styles.hero}>
         <KoolaLogo
           markSize={36}
@@ -107,20 +140,22 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
       <KoolaSurface variant="raised" style={styles.form}>
         <KoolaTextInput
+          ref={nameRef}
           label="Tên hiển thị"
           icon="person-outline"
           placeholder="Nguyễn Văn A"
           value={displayName}
           onChangeText={(t) => { setDisplayName(t); setNameError(''); }}
           autoCapitalize="words"
+          error={nameError}
+          accessibilityLabel="Ten hien thi"
+          returnKeyType="next"
+          onSubmitEditing={() => emailRef.current?.focus()}
+          blurOnSubmit={false}
         />
-        {nameError ? (
-          <KoolaText variant="caption" style={styles.fieldError}>
-            {nameError}
-          </KoolaText>
-        ) : null}
 
         <KoolaTextInput
+          ref={emailRef}
           label="Email"
           icon="mail-outline"
           placeholder="you@example.com"
@@ -129,26 +164,26 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          error={emailError}
+          accessibilityLabel="Email"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
         />
-        {emailError ? (
-          <KoolaText variant="caption" style={styles.fieldError}>
-            {emailError}
-          </KoolaText>
-        ) : null}
 
         <KoolaTextInput
+          ref={passwordRef}
           label="Mật khẩu"
           icon="lock-outline"
           placeholder="Ít nhất 8 ký tự"
           value={password}
           onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
           secureTextEntry
+          error={passwordError}
+          accessibilityLabel="Mat khau"
+          returnKeyType="go"
+          onSubmitEditing={handleRegister}
         />
-        {passwordError ? (
-          <KoolaText variant="caption" style={styles.fieldError}>
-            {passwordError}
-          </KoolaText>
-        ) : null}
 
         <KoolaButton
           title="Tạo tài khoản"
@@ -163,29 +198,23 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="link"
-          accessibilityLabel="Đăng nhập tài khoản đã có">
+          accessibilityLabel="Dang nhap tai khoan da co">
           <KoolaText tone="muted" align="center">
-            Đã có tài khoản?{' '}
+            Da co tai khoan?{' '}
             <KoolaText tone="primary" weight="800">
-              Đăng nhập
+              Dang nhap
             </KoolaText>
           </KoolaText>
         </Pressable>
       </KoolaSurface>
-    </KeyboardAvoidingView>
+    </AuthFormShell>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// --- Styles ---
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (_p: Palette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: p.canvas,
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
     hero: {
       alignItems: 'center',
       gap: 8,
@@ -204,11 +233,6 @@ const makeStyles = (p: Palette) =>
     },
     linkButton: {
       paddingVertical: 8,
-    },
-    fieldError: {
-      color: p.danger,
-      marginTop: -8,
-      marginLeft: 4,
     },
   });
 

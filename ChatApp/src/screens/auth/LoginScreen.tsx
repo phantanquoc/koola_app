@@ -1,16 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  AuthFormShell,
   KoolaButton,
   KoolaLogo,
   KoolaSurface,
@@ -33,6 +34,9 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
   const validate = (): boolean => {
     let valid = true;
     setEmailError('');
@@ -48,8 +52,29 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     return valid;
   };
 
+  const focusFirstInvalid = () => {
+    if (!email.trim()) {
+      emailRef.current?.focus();
+    } else if (!password.trim()) {
+      passwordRef.current?.focus();
+    }
+  };
+
+  const announceErrors = () => {
+    const errors: string[] = [];
+    if (!email.trim()) errors.push('Vui lòng nhập email');
+    if (!password.trim()) errors.push('Vui lòng nhập mật khẩu');
+    if (errors.length > 0) {
+      AccessibilityInfo.announceForAccessibility(errors.join('. '));
+    }
+  };
+
   const handleLogin = async () => {
-    if (!validate()) return;
+    if (!validate()) {
+      focusFirstInvalid();
+      announceErrors();
+      return;
+    }
     setLoading(true);
     try {
       await login(email.trim().toLowerCase(), password);
@@ -64,13 +89,16 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           ? msg.join('\n')
           : msg || 'Thông tin đăng nhập không đúng';
         setPasswordError(text);
+        passwordRef.current?.focus();
+        AccessibilityInfo.announceForAccessibility(text);
       } else if (error.request) {
-        Alert.alert(
-          'Lỗi kết nối',
-          'Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.',
-        );
+        const text = 'Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.';
+        Alert.alert('Lỗi kết nối', text);
+        AccessibilityInfo.announceForAccessibility(text);
       } else {
-        Alert.alert('Lỗi', 'Đã xảy ra lỗi. Vui lòng thử lại.');
+        const text = 'Đã xảy ra lỗi. Vui lòng thử lại.';
+        Alert.alert('Loi', text);
+        AccessibilityInfo.announceForAccessibility(text);
       }
     } finally {
       setLoading(false);
@@ -78,9 +106,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthFormShell>
       <View style={styles.hero}>
         <KoolaLogo
           markSize={40}
@@ -103,6 +129,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         </KoolaText>
 
         <KoolaTextInput
+          ref={emailRef}
           label="Email"
           icon="mail-outline"
           placeholder="you@example.com"
@@ -111,26 +138,26 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          error={emailError}
+          accessibilityLabel="Email"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
         />
-        {emailError ? (
-          <KoolaText variant="caption" style={styles.fieldError}>
-            {emailError}
-          </KoolaText>
-        ) : null}
 
         <KoolaTextInput
+          ref={passwordRef}
           label="Mật khẩu"
           icon="lock-outline"
           placeholder="Nhập mật khẩu"
           value={password}
           onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
           secureTextEntry
+          error={passwordError}
+          accessibilityLabel="Mat khau"
+          returnKeyType="go"
+          onSubmitEditing={handleLogin}
         />
-        {passwordError ? (
-          <KoolaText variant="caption" style={styles.fieldError}>
-            {passwordError}
-          </KoolaText>
-        ) : null}
 
         <KoolaButton
           title="Đăng nhập"
@@ -145,7 +172,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => navigation.navigate('ForgotPassword')}
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="link"
-          accessibilityLabel="Quên mật khẩu?">
+          accessibilityLabel="Quen mat khau?">
           <KoolaText tone="primary" weight="800" align="center">
             Quên mật khẩu?
           </KoolaText>
@@ -156,7 +183,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => navigation.navigate('Register')}
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="link"
-          accessibilityLabel="Tạo tài khoản mới">
+          accessibilityLabel="Tao tai khoan moi">
           <KoolaText tone="muted" align="center">
             Chưa có tài khoản?{' '}
             <KoolaText tone="primary" weight="800">
@@ -165,20 +192,14 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </KoolaText>
         </Pressable>
       </KoolaSurface>
-    </KeyboardAvoidingView>
+    </AuthFormShell>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// --- Styles ---
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (_p: Palette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: p.canvas,
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
     hero: {
       alignItems: 'center',
       marginBottom: 22,
@@ -200,11 +221,6 @@ const makeStyles = (p: Palette) =>
     },
     linkButton: {
       paddingVertical: 8,
-    },
-    fieldError: {
-      color: p.danger,
-      marginTop: -8,
-      marginLeft: 4,
     },
   });
 

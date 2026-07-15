@@ -3,7 +3,6 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { socketService } from '../../services/socket/SocketService';
 import { getFromMemory, getOrDownload } from '../../services/media/mediaCacheService';
 import type { Conversation, Message, MessageReaction } from '../../types';
 import { useMessages } from './hooks/useMessages';
+import { useTargetMessage } from './hooks/useTargetMessage';
 import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReadReceipts } from './hooks/useReadReceipts';
@@ -85,10 +85,10 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
       borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle,
       paddingHorizontal: koolaSpacing.md, paddingVertical: 4, overflow: 'hidden',
     },
-    typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm, gap: koolaSpacing.sm },
-    uploadingBlock: { gap: 6 },
-    uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    uploadingText: { marginLeft: 0 },
+    typingContainer: { paddingHorizontal: koolaSpacing.lg, paddingVertical: koolaSpacing.sm },
+    uploadingBlock: { marginBottom: koolaSpacing.sm },
+    uploadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+    uploadingText: { marginLeft: 6 },
     progressTrack: {
       height: 3, borderRadius: koolaRadii.pill, backgroundColor: semantic.border.subtle, overflow: 'hidden',
     },
@@ -112,6 +112,10 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
     bubbleOuter: {
       marginBottom: 2,
     },
+    bubbleHighlight: {
+      backgroundColor: 'rgba(33, 150, 243, 0.12)',
+      borderRadius: koolaRadii.md,
+    },
     // Grouped bubble (not last in a run) — no tail radius
     bubbleGroupedRight: {
       backgroundColor: compTokens.chatBubble.own.bg,
@@ -120,6 +124,8 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
     bubbleGroupedLeft: {
       backgroundColor: compTokens.chatBubble.other.bg,
       borderRadius: koolaRadii.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: compTokens.chatBubble.other.border,
     },
     // Last bubble in a run — tail via asymmetric radius
     bubbleTailRight: {
@@ -131,6 +137,8 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
       backgroundColor: compTokens.chatBubble.other.bg,
       borderRadius: koolaRadii.lg,
       borderBottomLeftRadius: koolaRadii.xs2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: compTokens.chatBubble.other.border,
     },
     // Read tick row
     tickRow: {
@@ -139,7 +147,29 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
       alignItems: 'center',
       marginTop: 1,
       marginRight: 4,
-      gap: 1,
+    },
+    // Media message time scrim — semi-opaque backing for legibility over images
+    mediaTimeScrim: {
+      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+      borderRadius: koolaRadii.xs2,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      alignSelf: 'flex-end',
+      marginRight: 6,
+      marginBottom: 4,
+    },
+    mediaTimeText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+    },
+    // Text message time row
+    textTimeRow: {
+      paddingHorizontal: koolaSpacing.sm,
+      paddingBottom: 4,
+      alignItems: 'flex-end',
+    },
+    textTimeLabel: {
+      fontSize: 11,
     },
   });
 }
@@ -163,7 +193,7 @@ function isLastInGroup(props: BubbleProps<IMessage>): boolean {
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
-  const { conversationId, displayName: initialDisplayName, avatar: initialAvatar } = route.params;
+  const { conversationId, displayName: initialDisplayName, avatar: initialAvatar, targetMessageId } = route.params;
   const { user } = useAuth();
   const currentUserId = user?._id || '';
   const insets = useSafeAreaInsets();
@@ -338,6 +368,65 @@ const ChatScreen: React.FC = () => {
   const messagesRef = useRef<IMessage[]>(messages);
   messagesRef.current = messages;
 
+  // ─── Target message: scroll-to + highlight from search navigation ─────────
+  const {
+    contextMessages: targetContextMessages,
+    highlightId: targetHighlightId,
+    isLoading: targetLoading,
+    error: targetError,
+    clearHighlight: clearTargetHighlight,
+    clearContextMessages,
+  } = useTargetMessage(conversationId, currentUserId, targetMessageId);
+
+  // Track which message ID should be highlighted (brief flash)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // When target context is loaded, scroll to it
+  useEffect(() => {
+    if (!targetHighlightId || !targetContextMessages || targetContextMessages.length === 0) return;
+
+    // Set highlight for temporary visual feedback
+    setHighlightedMessageId(targetHighlightId);
+
+    // Find target index in the current messages array
+    // GiftedChat inverts the list (newest first), so we need to find the index
+    const allMessages = targetContextMessages.length > 0 ? targetContextMessages : messages;
+    const idx = allMessages.findIndex((m) => String(m._id) === targetHighlightId);
+    if (idx >= 0 && messageContainerRef.current) {
+      // Small delay to let GiftedChat render the messages
+      setTimeout(() => {
+        try {
+          messageContainerRef.current?.scrollToIndex({
+            index: idx,
+            animated: true,
+            viewPosition: 0.3,
+          });
+        } catch {
+          // onScrollToIndexFailed handler will retry
+        }
+      }, 300);
+    }
+
+    // Clear highlight after 2 seconds, then exit snapshot to restore live list
+    const timer = setTimeout(() => {
+      setHighlightedMessageId(null);
+      clearTargetHighlight();
+      clearContextMessages();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [targetHighlightId, targetContextMessages, messages, clearTargetHighlight, clearContextMessages]);
+
+  // Show non-blocking notice if target message was unavailable
+  useEffect(() => {
+    if (targetError && targetMessageId) {
+      // We just let the normal conversation load proceed — the user sees
+      // the conversation with a brief toast-like notice (handled via the
+      // chatReady guard below, or could be a Toast — for now we log it).
+      console.warn('[ChatScreen] Target message unavailable:', targetError);
+    }
+  }, [targetError, targetMessageId]);
+
   // ─── Context menu state ────────────────────────────────────────────────────
   const [contextMenuVisible, setContextMenuVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<(IMessage & Record<string, unknown>) | null>(null);
@@ -410,13 +499,17 @@ const ChatScreen: React.FC = () => {
   // (no new objects created). When truthy, .map() is unavoidable — avatar comes from
   // header state, not DB, so injection at DB-map time is not possible.
   const messagesWithAvatar = React.useMemo(() => {
-    if (!otherAvatarUrl) return messages;
-    return messages.map((m) =>
+    // When a target message context window is loaded, prefer it over normal messages
+    const baseMessages = (targetContextMessages && targetContextMessages.length > 0)
+      ? targetContextMessages
+      : messages;
+    if (!otherAvatarUrl) return baseMessages;
+    return baseMessages.map((m) =>
       m.user._id !== currentUserId
         ? { ...m, user: { ...m.user, avatar: otherAvatarUrl } }
         : m,
     );
-  }, [messages, otherAvatarUrl, currentUserId]);
+  }, [messages, targetContextMessages, otherAvatarUrl, currentUserId]);
 
   const { typingUsers, emitTyping } = useTypingIndicator(conversationId);
   useReadReceipts(conversationId, messages, currentUserId);
@@ -466,13 +559,8 @@ const ChatScreen: React.FC = () => {
     setAttachmentSheetVisible(true);
   }, []);
 
-  const handleEmojiPress = useCallback(() => {
-    Alert.alert('Tính năng đang phát triển', 'Bảng biểu tượng cảm xúc sẽ sớm có mặt.');
-  }, []);
-
-  const handleVoicePress = useCallback(() => {
-    Alert.alert('Tính năng đang phát triển', 'Tin nhắn thoại sẽ sớm có mặt.');
-  }, []);
+  // Emoji picker and voice message are unavailable — handlers removed.
+  // ChatComposer hides buttons when onPressEmoji / onPressVoice are not provided.
 
   // Emit typing indicator without interfering with IME composition
   const typingTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -536,8 +624,10 @@ const ChatScreen: React.FC = () => {
         | { storyId: string; mediaKeyPreview?: string; captionSnippet?: string; authorId?: string }
         | undefined;
 
+      const isHighlighted = highlightedMessageId != null && String(msg?._id) === highlightedMessageId;
+
       return (
-        <View style={styles.bubbleOuter}>
+        <View style={[styles.bubbleOuter, isHighlighted && styles.bubbleHighlight]}>
           <TouchableOpacity
             activeOpacity={isFailed ? 0.7 : 1}
             onPress={isFailed ? () => handleRetryFailedMessage(String(msg._id)) : undefined}
@@ -561,6 +651,22 @@ const ChatScreen: React.FC = () => {
                   right: { color: tokens.component.chatBubble.own.text, fontSize: 15, lineHeight: 22 },
                   left: { color: tokens.component.chatBubble.other.text, fontSize: 15, lineHeight: 22 },
                 }}
+                renderTicks={() => null}
+                renderTime={(timeProps) => {
+                  const timeText = dayjs(timeProps.currentMessage?.createdAt).format('HH:mm');
+                  if (isMedia) {
+                    return (
+                      <View style={styles.mediaTimeScrim}>
+                        <KoolaText variant="caption" style={styles.mediaTimeText}>{timeText}</KoolaText>
+                      </View>
+                    );
+                  }
+                  return (
+                    <View style={styles.textTimeRow}>
+                      <KoolaText variant="caption" tone="muted" style={styles.textTimeLabel}>{timeText}</KoolaText>
+                    </View>
+                  );
+                }}
               />
             </View>
             {isFailed && (
@@ -572,8 +678,11 @@ const ChatScreen: React.FC = () => {
             <View style={styles.tickRow}>
               {isPending ? (
                 <MaterialIcons name="access-time" size={12} color={tokens.semantic.text.muted} />
+              ) : ((msg as IMessage & Record<string, unknown>).messageStatus === 'read' ||
+                    ((msg as IMessage & Record<string, unknown>).readBy as string[] | undefined)?.length) ? (
+                <MaterialIcons name="done-all" size={13} color={tokens.semantic.action.primary} />
               ) : (
-                <MaterialIcons name="done" size={13} color={tokens.semantic.action.primary} />
+                <MaterialIcons name="done" size={13} color={tokens.semantic.text.muted} />
               )}
             </View>
           )}
@@ -588,7 +697,7 @@ const ChatScreen: React.FC = () => {
         </View>
       );
     },
-    [currentUserId, reactToMessage, handleRetryFailedMessage, styles, tokens],
+    [currentUserId, reactToMessage, handleRetryFailedMessage, highlightedMessageId, styles, tokens],
   );
 
   const renderSystemMessage = useCallback(
@@ -770,8 +879,6 @@ const ChatScreen: React.FC = () => {
         ref={composerRef}
         onSend={handleSend}
         onChangeText={onInputTextChanged}
-        onPressEmoji={handleEmojiPress}
-        onPressVoice={handleVoicePress}
         onPressImage={handlePickImage}
         onPressAttach={handleAttachment}
         disabled={isUploading}
@@ -782,8 +889,6 @@ const ChatScreen: React.FC = () => {
     [
       handleSend,
       onInputTextChanged,
-      handleEmojiPress,
-      handleVoicePress,
       handlePickImage,
       handleAttachment,
       isUploading,

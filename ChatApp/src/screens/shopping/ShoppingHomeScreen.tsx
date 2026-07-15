@@ -20,6 +20,8 @@ import {
 import type { Palette } from '../../ui/theme';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
+import { PreviewBanner } from '../../components/PreviewBanner';
+import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
 import {
   shoppingCategories,
   shoppingProducts,
@@ -31,11 +33,10 @@ import {
 type Styles = ReturnType<typeof makeStyles>;
 
 const ShoppingHeader: React.FC<{
-  cartCount: number;
   palette: Palette;
   styles: Styles;
   onComingSoon: () => void;
-}> = ({ cartCount, palette, styles, onComingSoon }) => (
+}> = ({ palette, styles, onComingSoon }) => (
   <View style={styles.header}>
     <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
     <Pressable
@@ -59,13 +60,6 @@ const ShoppingHeader: React.FC<{
         accessibilityLabel="Giỏ hàng"
         onPress={onComingSoon}
       />
-      {cartCount > 0 && (
-        <View style={styles.cartBadge}>
-          <KoolaText variant="caption" tone="surface" weight="800">
-            {cartCount}
-          </KoolaText>
-        </View>
-      )}
     </View>
   </View>
 );
@@ -79,21 +73,14 @@ const PromoBand: React.FC<{ palette: Palette; styles: Styles }> = ({
       <MaterialIcons name="bolt" size={24} color={palette.warm} />
     </View>
     <View style={styles.promoCopy}>
-      <KoolaText variant="label" weight="800" numberOfLines={1}>
+      <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 2 }}>
         Deal nhanh quanh bạn
       </KoolaText>
       <KoolaText variant="caption" tone="muted" numberOfLines={2}>
         Mua tạp hóa, đồ ăn và vật dụng giao trong ngày
       </KoolaText>
     </View>
-    <View style={styles.promoMetric}>
-      <KoolaText variant="label" weight="800" style={styles.warmText}>
-        -25%
-      </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
-        hôm nay
-      </KoolaText>
-    </View>
+    <KoolaBadge label="Xem trước" tone="warning" />
   </View>
 );
 
@@ -170,16 +157,13 @@ const ProductCard: React.FC<{
       <KoolaText variant="label" weight="800" numberOfLines={2} style={styles.productTitle}>
         {item.title}
       </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 6 }}>
         {item.shop}
       </KoolaText>
       <View style={styles.metaRow}>
-        <MaterialIcons name="star" size={14} color={palette.warning} />
-        <KoolaText variant="caption" weight="700">
-          {item.rating.toFixed(1)}
-        </KoolaText>
+        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaRowIcon} />
         <KoolaText variant="caption" tone="faint" numberOfLines={1}>
-          Đã bán {item.sold}
+          Dữ liệu mẫu
         </KoolaText>
       </View>
       <View style={styles.priceRow}>
@@ -202,7 +186,7 @@ const ProductCard: React.FC<{
         </Pressable>
       </View>
       <View style={styles.deliveryPill}>
-        <MaterialIcons name="schedule" size={13} color={palette.primary} />
+        <MaterialIcons name="schedule" size={13} color={palette.primary} style={styles.deliveryPillIcon} />
         <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
           {item.delivery}
         </KoolaText>
@@ -227,19 +211,16 @@ const StoreRow: React.FC<{
       <MaterialIcons name={store.icon} size={22} color={store.accent} />
     </View>
     <View style={styles.storeCopy}>
-      <KoolaText variant="label" weight="800" numberOfLines={1}>
+      <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 3 }}>
         {store.name}
       </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 3 }}>
         {store.category}
       </KoolaText>
       <View style={styles.metaRow}>
-        <MaterialIcons name="star" size={14} color={palette.warning} />
-        <KoolaText variant="caption" weight="700">
-          {store.rating.toFixed(1)}
-        </KoolaText>
+        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaRowIcon} />
         <KoolaText variant="caption" tone="faint" numberOfLines={1}>
-          {store.distance} · {store.eta}
+          Dữ liệu mẫu · {store.distance}
         </KoolaText>
       </View>
     </View>
@@ -256,10 +237,20 @@ const ShoppingHomeScreen: React.FC = () => {
     [palette, resolvedScheme],
   );
   const [activeCategory, setActiveCategory] = useState('all');
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
-  const [cartCount, setCartCount] = useState(0);
+  const [favoriteIds] = useState<Set<string>>(new Set());
 
-  const handleComingSoon = useCallback(() => notify(), [notify]);
+  const shoppingIsPreview = isPreview('shopping');
+
+  const handleComingSoon = useCallback(
+    () => notify(`${AVAILABILITY_LABELS[shoppingIsPreview ? 'preview' : 'unavailable']} — Tính năng đang được phát triển`),
+    [notify, shoppingIsPreview],
+  );
+
+  /** Preview-aware add-to-cart: explains preview state, does NOT increment a counter. */
+  const handlePreviewAdd = useCallback(
+    () => notify(`${AVAILABILITY_LABELS.preview} — không thể thêm vào giỏ hàng thật`),
+    [notify],
+  );
 
   const products = useMemo(
     () =>
@@ -269,28 +260,24 @@ const ShoppingHomeScreen: React.FC = () => {
     [activeCategory],
   );
 
-  const toggleFavorite = useCallback((id: string) => {
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleAdd = useCallback(() => {
-    setCartCount((count) => count + 1);
-  }, []);
+  const toggleFavorite = useCallback((_id: string) => {
+    // Shopping is in preview mode — favorite toggle must not fabricate state
+    if (shoppingIsPreview) {
+      notify(`${AVAILABILITY_LABELS.preview} — không thể lưu yêu thích thật`);
+    }
+  }, [notify, shoppingIsPreview]);
 
   const renderHeader = () => (
     <View>
       <ShoppingHeader
-        cartCount={cartCount}
         palette={palette}
         styles={styles}
         onComingSoon={handleComingSoon}
       />
       <View style={styles.contentInset}>
+        {shoppingIsPreview && (
+          <PreviewBanner message="Mua sắm đang ở chế độ xem trước. Sản phẩm và cửa hàng là dữ liệu mẫu." />
+        )}
         <PromoBand palette={palette} styles={styles} />
         <QuickActions palette={palette} styles={styles} onComingSoon={handleComingSoon} />
         <View style={styles.sectionHeader}>
@@ -322,6 +309,7 @@ const ShoppingHomeScreen: React.FC = () => {
                   name={category.icon}
                   size={16}
                   color={selected ? palette.surface : palette.primary}
+                  style={{ marginRight: 6 }}
                 />
                 <KoolaText
                   variant="caption"
@@ -370,13 +358,13 @@ const ShoppingHomeScreen: React.FC = () => {
         item={item}
         favorite={favoriteIds.has(item.id)}
         onToggleFavorite={toggleFavorite}
-        onAdd={handleAdd}
+        onAdd={handlePreviewAdd}
         onOpen={handleComingSoon}
         palette={palette}
         styles={styles}
       />
     ),
-    [favoriteIds, toggleFavorite, handleAdd, handleComingSoon, palette, styles],
+    [favoriteIds, toggleFavorite, handlePreviewAdd, handleComingSoon, palette, styles],
   );
 
   return (
@@ -435,7 +423,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.canvas,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
       paddingHorizontal: 12,
       marginRight: 8,
       overflow: 'hidden',
@@ -443,22 +430,10 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     searchText: {
       flex: 1,
       fontSize: 13,
+      marginLeft: 8,
     },
     cartWrap: {
       flexShrink: 0,
-    },
-    cartBadge: {
-      position: 'absolute',
-      right: -2,
-      top: -3,
-      minWidth: 18,
-      height: 18,
-      borderRadius: koolaRadii.pill,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: p.danger,
-      borderWidth: 2,
-      borderColor: p.surface,
     },
     contentInset: {
       paddingHorizontal: 12,
@@ -473,7 +448,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'center',
       padding: 12,
-      gap: 12,
       ...bandShadow,
     },
     promoIcon: {
@@ -483,22 +457,16 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.warningSoft,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 12,
     },
     promoCopy: {
       flex: 1,
-      gap: 2,
-    },
-    promoMetric: {
-      minWidth: 62,
-      alignItems: 'flex-end',
-    },
-    warmText: {
-      color: p.warm,
+      marginRight: 12,
     },
     quickGrid: {
       flexDirection: 'row',
-      gap: 8,
       marginTop: 12,
+      marginRight: -8,
     },
     quickAction: {
       flex: 1,
@@ -507,10 +475,10 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.surface,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 7,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
       overflow: 'hidden',
+      marginRight: 8,
     },
     quickIcon: {
       width: 36,
@@ -518,6 +486,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       borderRadius: koolaRadii.sm,
       alignItems: 'center',
       justifyContent: 'center',
+      marginBottom: 7,
     },
     sectionHeader: {
       marginTop: 18,
@@ -525,10 +494,8 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'flex-end',
       justifyContent: 'space-between',
-      gap: 12,
     },
     categoryRow: {
-      gap: 8,
       paddingRight: 12,
       paddingBottom: 6,
     },
@@ -538,23 +505,23 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
       backgroundColor: p.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
+      marginRight: 8,
     },
     categoryButtonActive: {
       backgroundColor: p.primary,
       borderColor: p.primary,
     },
     productRow: {
-      gap: 10,
-      paddingHorizontal: 12,
+      paddingHorizontal: 7,
     },
     productCard: {
       flex: 1,
       minHeight: 276,
       marginBottom: 10,
+      marginHorizontal: 5,
       borderRadius: koolaRadii.md,
       backgroundColor: p.surface,
       overflow: 'hidden',
@@ -589,24 +556,28 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     },
     productBody: {
       padding: 10,
-      gap: 6,
     },
     productTitle: {
       minHeight: 40,
+      marginBottom: 6,
     },
     metaRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      marginBottom: 6,
+    },
+    metaRowIcon: {
+      marginRight: 4,
     },
     priceRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 8,
+      marginBottom: 6,
     },
     priceTextWrap: {
       flex: 1,
+      marginRight: 8,
     },
     priceText: {
       color: p.danger,
@@ -628,16 +599,16 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       paddingHorizontal: 8,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
       backgroundColor: p.primarySoft,
+    },
+    deliveryPillIcon: {
+      marginRight: 4,
     },
     footer: {
       paddingHorizontal: 12,
       paddingBottom: 12,
     },
-    storeList: {
-      gap: 8,
-    },
+    storeList: {},
     storeRow: {
       minHeight: 78,
       borderRadius: koolaRadii.md,
@@ -647,7 +618,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       padding: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
+      marginBottom: 8,
       overflow: 'hidden',
     },
     storeIcon: {
@@ -656,10 +627,11 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       borderRadius: koolaRadii.sm,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 10,
     },
     storeCopy: {
       flex: 1,
-      gap: 3,
+      marginRight: 10,
     },
   });
 };

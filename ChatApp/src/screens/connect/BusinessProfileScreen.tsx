@@ -24,6 +24,7 @@ import {
   KoolaText,
   koolaRadii,
   koolaShadows,
+  useKoolaToast,
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
@@ -41,6 +42,7 @@ const BusinessProfileScreen: React.FC = () => {
   const { businessId } = route.params;
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const toast = useKoolaToast();
 
   const [account, setAccount] = useState<BusinessAccountItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,10 +56,8 @@ const BusinessProfileScreen: React.FC = () => {
       const data = await accountDiscoveryApi.getById(businessId);
       setAccount(data);
     } catch (err) {
-      console.warn('Failed to load business account:', err);
-      setFetchError(
-        (err as Error)?.message || 'Không thể tải thông tin doanh nghiệp',
-      );
+      if (__DEV__) console.warn('Failed to load business account:', err);
+      setFetchError('Không thể tải thông tin doanh nghiệp');
     } finally {
       setLoading(false);
     }
@@ -77,19 +77,20 @@ const BusinessProfileScreen: React.FC = () => {
         params: { conversationId: conversation._id },
       });
     } catch (err) {
-      console.warn('Start direct chat failed:', err);
+      if (__DEV__) console.warn('Start direct chat failed:', err);
+      toast.show('Không thể bắt đầu trò chuyện. Bạn thử lại nhé.', 'danger');
     } finally {
       setMessaging(false);
     }
-  }, [account, navigation]);
+  }, [account, navigation, toast]);
 
   if (loading) {
     return (
       <View style={styles.container}>
         <KoolaSurface variant="raised" style={styles.loadingCard}>
-          <KoolaSkeleton width={72} height={72} radius={16} />
-          <KoolaSkeleton width="62%" height={22} />
-          <KoolaSkeleton width="44%" height={14} />
+          <KoolaSkeleton width={72} height={72} radius={16} style={styles.loadingCardItem} />
+          <KoolaSkeleton width="62%" height={22} style={styles.loadingCardItem} />
+          <KoolaSkeleton width="44%" height={14} style={styles.loadingCardItem} />
           <KoolaSkeleton width="100%" height={90} />
         </KoolaSurface>
       </View>
@@ -150,8 +151,8 @@ const BusinessProfileScreen: React.FC = () => {
             ) : null}
           </View>
           <View style={styles.badgeRow}>
-            {categoryLabel ? <KoolaBadge label={categoryLabel} tone="primary" /> : null}
-            {account.province ? <KoolaBadge label={account.province} tone="muted" /> : null}
+            {categoryLabel ? <View style={styles.badgeItem}><KoolaBadge label={categoryLabel} tone="primary" /></View> : null}
+            {account.province ? <View style={styles.badgeItem}><KoolaBadge label={account.province} tone="muted" /></View> : null}
           </View>
         </View>
       </KoolaSurface>
@@ -163,7 +164,7 @@ const BusinessProfileScreen: React.FC = () => {
             size={17}
             color={palette.muted}
           />
-          <KoolaText variant="caption" tone="muted" weight="800">
+          <KoolaText variant="caption" tone="muted" weight="800" style={styles.typeRowLabel}>
             {account.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
           </KoolaText>
         </KoolaSurface>
@@ -285,7 +286,9 @@ const makeStyles = (p: Palette) =>
     loadingCard: {
       margin: 16,
       padding: 18,
-      gap: 14,
+    },
+    loadingCardItem: {
+      marginBottom: 14,
     },
     hero: {
       flexDirection: 'row',
@@ -301,25 +304,30 @@ const makeStyles = (p: Palette) =>
     nameRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
     },
     name: {
       flex: 1,
+      marginRight: 6,
     },
     badgeRow: {
       flexDirection: 'row',
       alignItems: 'center',
       flexWrap: 'wrap',
-      gap: 8,
       marginTop: 8,
+    },
+    badgeItem: {
+      marginRight: 8,
+      marginBottom: 8,
     },
     typeRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
       paddingVertical: 10,
       paddingHorizontal: 12,
       marginBottom: 12,
+    },
+    typeRowLabel: {
+      marginLeft: 8,
     },
     section: {
       marginBottom: 12,
@@ -330,11 +338,11 @@ const makeStyles = (p: Palette) =>
     contactRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 9,
       paddingVertical: 5,
     },
     contactText: {
       flex: 1,
+      marginLeft: 9,
     },
     actionBtn: {
       marginTop: 6,

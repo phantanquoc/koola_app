@@ -46,6 +46,9 @@ function dbMsgToGifted(
     pending: msg.status === 'pending',
     sent: msg.status !== 'failed',
     failed: msg.status === 'failed',
+    // Delivery state — consumed by presentation layer for tick icons
+    readBy: (msg.readBy as string[]) ?? [],
+    messageStatus: msg.status ?? 'sent',
   };
 
   if (

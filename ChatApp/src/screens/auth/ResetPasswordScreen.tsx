@@ -1,15 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  AuthFormShell,
   KoolaBadge,
   KoolaButton,
   KoolaLogo,
@@ -41,10 +42,15 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
   const [passwordError, setPasswordError] = useState('');
   const [confirmError, setConfirmError] = useState('');
 
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
+
   const handleVerifyOtp = async () => {
     setOtpError('');
     if (otp.length !== 6) {
-      setOtpError('Vui lòng nhập đủ mã 6 số');
+      const errMsg = 'Vui long nhap du ma 6 so';
+      setOtpError(errMsg);
+      AccessibilityInfo.announceForAccessibility(errMsg);
       return;
     }
     setLoading(true);
@@ -61,6 +67,7 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
         ? msg.join('\n')
         : msg || 'Mã xác thực không đúng';
       setOtpError(text);
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setLoading(false);
     }
@@ -70,15 +77,29 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
     setPasswordError('');
     setConfirmError('');
     let valid = true;
+    const errors: string[] = [];
     if (newPassword.length < 8) {
-      setPasswordError('Mật khẩu phải có ít nhất 8 ký tự');
+      const errMsg = 'Mật khẩu phải có ít nhất 8 ký tự';
+      setPasswordError(errMsg);
+      errors.push(errMsg);
       valid = false;
     }
     if (newPassword !== confirmPassword) {
-      setConfirmError('Mật khẩu xác nhận không khớp');
+      const errMsg = 'Mật khẩu xác nhận không khớp';
+      setConfirmError(errMsg);
+      errors.push(errMsg);
       valid = false;
     }
-    if (!valid) return;
+    if (!valid) {
+      // Focus first invalid
+      if (newPassword.length < 8) {
+        passwordRef.current?.focus();
+      } else {
+        confirmRef.current?.focus();
+      }
+      AccessibilityInfo.announceForAccessibility(errors.join('. '));
+      return;
+    }
     setLoading(true);
     try {
       await resetPassword(resetToken, newPassword);
@@ -96,19 +117,18 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
         ? msg.join('\n')
         : msg || 'Đã xảy ra lỗi';
       Alert.alert('Lỗi', text);
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthFormShell>
       <KoolaSurface variant="raised" style={styles.form}>
         <View style={styles.header}>
           <KoolaLogo markSize={32} showMark showWordmark={false} />
-          <KoolaBadge label="Bảo mật" tone="primary" />
+          <KoolaBadge label="Bao mat" tone="primary" />
           <KoolaText variant="title" align="center">
             {step === 'otp' ? 'Nhập mã xác thực' : 'Đặt mật khẩu mới'}
           </KoolaText>
@@ -138,32 +158,33 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
         ) : (
           <>
             <KoolaTextInput
+              ref={passwordRef}
               label="Mật khẩu mới"
               icon="lock-outline"
               placeholder="Ít nhất 8 ký tự"
               value={newPassword}
               onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
               secureTextEntry
+              error={passwordError}
+              accessibilityLabel="Mat khau moi"
+              returnKeyType="next"
+              onSubmitEditing={() => confirmRef.current?.focus()}
+              blurOnSubmit={false}
             />
-            {passwordError ? (
-              <KoolaText variant="caption" style={styles.fieldError}>
-                {passwordError}
-              </KoolaText>
-            ) : null}
 
             <KoolaTextInput
+              ref={confirmRef}
               label="Xác nhận mật khẩu"
               icon="lock-outline"
               placeholder="Nhập lại mật khẩu"
               value={confirmPassword}
               onChangeText={(t) => { setConfirmPassword(t); setConfirmError(''); }}
               secureTextEntry
+              error={confirmError}
+              accessibilityLabel="Xac nhan mat khau"
+              returnKeyType="go"
+              onSubmitEditing={handleResetPassword}
             />
-            {confirmError ? (
-              <KoolaText variant="caption" style={styles.fieldError}>
-                {confirmError}
-              </KoolaText>
-            ) : null}
 
             <KoolaButton
               title="Đặt lại mật khẩu"
@@ -174,20 +195,14 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
           </>
         )}
       </KoolaSurface>
-    </KeyboardAvoidingView>
+    </AuthFormShell>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// --- Styles ---
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (_p: Palette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: p.canvas,
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
     form: {
       padding: 20,
       gap: 16,
@@ -195,11 +210,6 @@ const makeStyles = (p: Palette) =>
     header: {
       alignItems: 'center',
       gap: 8,
-    },
-    fieldError: {
-      color: p.danger,
-      marginTop: -8,
-      marginLeft: 4,
     },
   });
 

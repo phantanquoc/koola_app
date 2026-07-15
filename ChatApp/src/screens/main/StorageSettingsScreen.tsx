@@ -133,7 +133,7 @@ const StorageSettingsScreen: React.FC = () => {
       <KoolaSurface variant="raised" style={styles.section}>
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="storage" size={22} color={palette.primary} />
+            <MaterialIcons name="storage" size={22} color={palette.primary} style={styles.menuLabelIcon} />
             <KoolaText variant="label">Bộ nhớ đệm media</KoolaText>
           </View>
         </View>
@@ -160,7 +160,7 @@ const StorageSettingsScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Thay đổi giới hạn bộ nhớ đệm">
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="tune" size={22} color={palette.primary} />
+            <MaterialIcons name="tune" size={22} color={palette.primary} style={styles.menuLabelIcon} />
             <KoolaText variant="label">Giới hạn: {formatBytes(capBytes)}</KoolaText>
           </View>
           <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
@@ -178,7 +178,7 @@ const StorageSettingsScreen: React.FC = () => {
         <KoolaDivider />
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>
-            <MaterialIcons name="data-saver-on" size={22} color={palette.primary} />
+            <MaterialIcons name="data-saver-on" size={22} color={palette.primary} style={styles.menuLabelIcon} />
             <KoolaText variant="label">Tiết kiệm dữ liệu (bỏ qua tải trước media)</KoolaText>
           </View>
           <Switch
@@ -217,12 +217,12 @@ const makeStyles = (p: Palette) =>
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
       paddingTop: 14,
       paddingBottom: 18,
     },
     backBtn: {
       padding: 4,
+      marginRight: 12,
     },
     section: {
       overflow: 'hidden',
@@ -244,8 +244,10 @@ const makeStyles = (p: Palette) =>
     menuLabelRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
       flex: 1,
+    },
+    menuLabelIcon: {
+      marginRight: 12,
     },
     storageRow: {
       paddingHorizontal: koolaSpacing.lg,

@@ -100,6 +100,12 @@ export interface MessageListResponse {
   nextCursor: string | null;
 }
 
+export interface MessageAroundResponse {
+  messages: Message[];
+  hasBefore: boolean;
+  hasAfter: boolean;
+}
+
 export interface SyncMessagesResponse {
   items: Message[];
   hasMore: boolean;

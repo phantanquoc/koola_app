@@ -354,12 +354,12 @@ const MomentViewerScreen: React.FC = () => {
   const renderSpecialState = (icon: string, message: string) => (
     <View style={[styles.container, styles.centerContent, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <MaterialIcons name={icon} size={48} color={koolaColors.faint} />
-      <KoolaText tone="surface" align="center" variant="body">
+      <KoolaText tone="surface" align="center" variant="body" style={{ marginTop: 16 }}>
         {message}
       </KoolaText>
       <TouchableOpacity
         onPress={() => navigation.goBack()}
-        style={styles.dismissButton}
+        style={[styles.dismissButton, { marginTop: 16 }]}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         accessibilityRole="button"
         accessibilityLabel="Quay lại">
@@ -685,7 +685,6 @@ const styles = StyleSheet.create({
   centerContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
   },
   media: {
     ...StyleSheet.absoluteFillObject,
@@ -706,7 +705,6 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     flexDirection: 'row',
-    gap: 4,
     zIndex: 10,
   },
   progressTrack: {
@@ -715,6 +713,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
     borderRadius: 1.5,
     overflow: 'hidden',
+    marginHorizontal: 2,
   },
   progressFill: {
     height: '100%',
@@ -785,7 +784,6 @@ const styles = StyleSheet.create({
     right: 8,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
     zIndex: 10,
   },
   reactionButton: {
@@ -795,6 +793,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginHorizontal: 3,
   },
   reactionSelected: {
     backgroundColor: koolaColors.primary,

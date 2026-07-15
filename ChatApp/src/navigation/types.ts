@@ -17,13 +17,14 @@ export type ChatSubTabParamList = {
   Messages: undefined;
   Contacts: undefined;
   Moments: undefined;
+  Calls: undefined;
   Shorts: undefined;
 };
 
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────
 export type ChatTabStackParamList = {
-  ChatHome: undefined;
-  Chat: { conversationId: string; displayName?: string; avatar?: string };
+  ChatHome: { resetToMessages?: boolean } | undefined;
+  Chat: { conversationId: string; displayName?: string; avatar?: string; targetMessageId?: string };
   GroupInfo: { conversationId: string };
   Profile: { userId: string };
   UniversalSearch: undefined;

@@ -1,16 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  AuthFormShell,
   KoolaButton,
   KoolaLogo,
   KoolaSurface,
@@ -32,10 +33,14 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
   const [sent, setSent] = useState(false);
   const [emailError, setEmailError] = useState('');
 
+  const emailRef = useRef<TextInput>(null);
+
   const handleSubmit = async () => {
     setEmailError('');
     if (!email.trim()) {
       setEmailError('Vui lòng nhập email');
+      emailRef.current?.focus();
+      AccessibilityInfo.announceForAccessibility('Vui long nhap email');
       return;
     }
     setLoading(true);
@@ -52,9 +57,11 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         : msg || 'Đã xảy ra lỗi';
       if (text.toLowerCase().includes('email') || text.toLowerCase().includes('not found')) {
         setEmailError(text);
+        emailRef.current?.focus();
       } else {
         Alert.alert('Lỗi', text);
       }
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setLoading(false);
     }
@@ -65,9 +72,7 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthFormShell>
       <KoolaSurface variant="raised" style={styles.form}>
         <View style={styles.header}>
           <KoolaLogo markSize={32} showMark showWordmark={false} />
@@ -82,6 +87,7 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         {!sent ? (
           <>
             <KoolaTextInput
+              ref={emailRef}
               label="Email"
               icon="mail-outline"
               placeholder="you@example.com"
@@ -90,12 +96,11 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              error={emailError}
+              accessibilityLabel="Email"
+              returnKeyType="go"
+              onSubmitEditing={handleSubmit}
             />
-            {emailError ? (
-              <KoolaText variant="caption" style={styles.fieldError}>
-                {emailError}
-              </KoolaText>
-            ) : null}
 
             <KoolaButton
               title="Gửi mã xác thực"
@@ -108,12 +113,12 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         ) : (
           <>
             <KoolaText variant="body" align="center">
-              Nếu email tồn tại, mã xác thực đã được gửi. Vui lòng kiểm tra hộp
-              thư của bạn.
+              Neu email ton tai, ma xac thuc da duoc gui. Vui long kiem tra hop
+              thu cua ban.
             </KoolaText>
 
             <KoolaButton
-              title="Nhập mã xác thực"
+              title="Nhap ma xac thuc"
               icon="arrow-forward"
               onPress={handleContinue}
               style={styles.primaryButton}
@@ -126,26 +131,20 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="link"
-          accessibilityLabel="Quay lại đăng nhập">
+          accessibilityLabel="Quay lai dang nhap">
           <KoolaText tone="primary" weight="800" align="center">
-            Quay lại đăng nhập
+            Quay lai dang nhap
           </KoolaText>
         </Pressable>
       </KoolaSurface>
-    </KeyboardAvoidingView>
+    </AuthFormShell>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// --- Styles ---
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (_p: Palette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: p.canvas,
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
     form: {
       padding: 20,
       gap: 16,
@@ -159,11 +158,6 @@ const makeStyles = (p: Palette) =>
     },
     linkButton: {
       paddingVertical: 8,
-    },
-    fieldError: {
-      color: p.danger,
-      marginTop: -8,
-      marginLeft: 4,
     },
   });
 

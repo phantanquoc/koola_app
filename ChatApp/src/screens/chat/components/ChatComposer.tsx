@@ -124,17 +124,19 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
               style={[styles.bottomHairline, { backgroundColor: glass.bottomLine }]}
             />
             <View style={styles.row}>
-              <KoolaIconButton
-                icon="sentiment-satisfied-alt"
-                tone="primary"
-                variant="ghost"
-                size={36}
-                iconSize={22}
-                disabled={disabled}
-                hitSlop={8}
-                onPress={onPressEmoji}
-                accessibilityLabel="Mở bảng biểu tượng cảm xúc"
-              />
+              {onPressEmoji && (
+                <KoolaIconButton
+                  icon="sentiment-satisfied-alt"
+                  tone="primary"
+                  variant="ghost"
+                  size={36}
+                  iconSize={22}
+                  disabled={disabled}
+                  hitSlop={8}
+                  onPress={onPressEmoji}
+                  accessibilityLabel="Mở bảng biểu tượng cảm xúc"
+                />
+              )}
               <TextInput
                 ref={inputRef}
                 style={[styles.input, { color: tokens.semantic.text.primary }]}
@@ -172,17 +174,19 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
                     onPress={onPressAttach}
                     accessibilityLabel="Đính kèm tệp"
                   />
-                  <KoolaIconButton
-                    icon="mic-none"
-                    tone="primary"
-                    variant="ghost"
-                    size={36}
-                    iconSize={22}
-                    disabled={disabled}
-                    hitSlop={8}
-                    onPress={onPressVoice}
-                    accessibilityLabel="Ghi âm tin nhắn thoại"
-                  />
+                  {onPressVoice && (
+                    <KoolaIconButton
+                      icon="mic-none"
+                      tone="primary"
+                      variant="ghost"
+                      size={36}
+                      iconSize={22}
+                      disabled={disabled}
+                      hitSlop={8}
+                      onPress={onPressVoice}
+                      accessibilityLabel="Ghi âm tin nhắn thoại"
+                    />
+                  )}
                   <KoolaIconButton
                     icon="crop-original"
                     tone="primary"

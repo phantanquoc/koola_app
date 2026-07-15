@@ -33,6 +33,7 @@ import {
   KoolaChip,
   KoolaText,
   koolaRadii,
+  useKoolaToast,
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
@@ -43,6 +44,7 @@ type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 // "Nhắn tin" opens a DM with the business account id directly (D7).
 
 function useAccountActions(navigation: ConnectNavProp) {
+  const toast = useKoolaToast();
   const navigateToChat = useCallback(
     (conversationId: string) => {
       (navigation as any).navigate('ChatTab', {
@@ -59,10 +61,11 @@ function useAccountActions(navigation: ConnectNavProp) {
         const { conversation } = await conversationsApi.startDirectChat(account._id);
         navigateToChat(conversation._id);
       } catch (err) {
-        console.warn('Start direct chat failed:', err);
+        if (__DEV__) console.warn('Start direct chat failed:', err);
+        toast.show('Không thể bắt đầu trò chuyện. Bạn thử lại nhé.', 'danger');
       }
     },
-    [navigateToChat],
+    [navigateToChat, toast],
   );
 
   return { handleMessage, navigateToChat };
@@ -226,7 +229,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   <KoolaText
                     variant="caption"
                     weight="700"
-                    tone={isActive ? 'surface' : 'muted'}>
+                    tone={isActive ? 'surface' : 'muted'}
+                    style={styles.iconChipLabel}>
                     {cat.label}
                   </KoolaText>
                 </Pressable>
@@ -251,7 +255,6 @@ const makeFilterBarStyles = (p: Palette) =>
       alignItems: 'center',
       paddingHorizontal: 12,
       paddingVertical: 8,
-      gap: 8,
     },
     divider: {
       width: StyleSheet.hairlineWidth,
@@ -265,14 +268,17 @@ const makeFilterBarStyles = (p: Palette) =>
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
       backgroundColor: p.canvas,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
+      marginRight: 8,
     },
     iconChipActive: {
       backgroundColor: p.primary,
       borderColor: p.primary,
+    },
+    iconChipLabel: {
+      marginLeft: 4,
     },
     countBadge: {
       width: 22,
@@ -281,6 +287,7 @@ const makeFilterBarStyles = (p: Palette) =>
       backgroundColor: p.primary,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 8,
     },
   });
 
@@ -364,6 +371,8 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
               <EmptyConnect
                 activeCategory={activeCategory ?? undefined}
                 activeRelationship={activeRelationship === 'all' ? undefined : activeRelationship}
+                activeProvince={activeProvince || undefined}
+                activeSort={activeSort}
                 onClearFilters={onClearFilters}
               />
             )

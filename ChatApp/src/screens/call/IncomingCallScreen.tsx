@@ -151,13 +151,13 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
     },
     callerSection: {
       alignItems: 'center',
-      gap: 16,
     },
     callerName: {
       fontSize: 28,
       fontWeight: 'bold',
       color: '#fff',
-      marginTop: 16,
+      marginTop: 32,
+      marginBottom: 16,
     },
     callTypeLabel: {
       fontSize: 16,
@@ -170,7 +170,6 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
     },
     buttonWrapper: {
       alignItems: 'center',
-      gap: 8,
     },
     callButton: {
       width: 72,
@@ -178,6 +177,7 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
       borderRadius: 36,
       justifyContent: 'center',
       alignItems: 'center',
+      marginBottom: 8,
     },
     declineButton: {
       backgroundColor: semantic.status.danger,

@@ -1,5 +1,7 @@
+import { useState, useCallback } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { initials } from './components/formatters';
 
 interface NavItem {
   to: string;
@@ -29,13 +31,35 @@ const routeTitles: Record<string, string> = {
 };
 
 export default function AppLayout() {
-  const { logout } = useAuth();
+  const { logout, identity } = useAuth();
   const location = useLocation();
   const currentTitle = routeTitles[location.pathname] ?? 'Koola Admin';
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+
+  const adminName = identity?.name ?? 'Admin';
+  const adminInitial = initials(adminName, 'A');
+  const adminRole = identity?.role ?? 'admin';
 
   return (
     <div className="admin-shell">
-      <aside className="admin-sidebar" aria-label="Điều hướng quản trị">
+      {/* Mobile nav overlay */}
+      {mobileNavOpen && (
+        <div
+          className="mobile-nav-backdrop"
+          onClick={closeMobileNav}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeMobileNav();
+          }}
+          role="presentation"
+        />
+      )}
+
+      <aside
+        className={`admin-sidebar ${mobileNavOpen ? 'admin-sidebar--open' : ''}`}
+        aria-label="Admin navigation"
+      >
         <div className="admin-brand">
           <div className="admin-brand-mark" aria-hidden="true">
             K
@@ -56,6 +80,7 @@ export default function AppLayout() {
                   end={item.end}
                   key={item.to}
                   to={item.to}
+                  onClick={closeMobileNav}
                 >
                   <span className="admin-nav-icon" aria-hidden="true">
                     {item.icon}
@@ -71,11 +96,11 @@ export default function AppLayout() {
           <div className="admin-profile-card">
             <div className="admin-profile-row">
               <div className="admin-avatar" aria-hidden="true">
-                A
+                {adminInitial}
               </div>
               <div>
-                <div className="cell-title">Admin</div>
-                <div className="cell-meta">Phiên quản trị an toàn</div>
+                <div className="cell-title">{adminName}</div>
+                <div className="cell-meta">{adminRole}</div>
               </div>
             </div>
             <button className="btn btn-secondary" onClick={logout} type="button">
@@ -87,16 +112,27 @@ export default function AppLayout() {
 
       <div className="admin-main">
         <header className="admin-topbar">
-          <div>
-            <div className="admin-breadcrumb">Koola / Admin</div>
-            <strong>{currentTitle}</strong>
+          <div className="admin-topbar-left">
+            <button
+              className="btn btn-ghost mobile-nav-toggle"
+              onClick={() => setMobileNavOpen((v) => !v)}
+              type="button"
+              aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
+              aria-expanded={mobileNavOpen}
+            >
+              <span aria-hidden="true">{mobileNavOpen ? '✕' : '☰'}</span>
+            </button>
+            <div>
+              <div className="admin-breadcrumb">Koola / Admin</div>
+              <strong>{currentTitle}</strong>
+            </div>
           </div>
           <div className="admin-topbar-actions">
-            <div className="admin-command" aria-label="Tìm nhanh trong admin">
-              <span>Search users, businesses...</span>
-              <kbd>⌘K</kbd>
-            </div>
-            <span className="badge badge-success">Live</span>
+            {/* Command affordance rendered as non-interactive info —
+                no shortcut claim since search is not yet functional */}
+            <span className="admin-command-info" aria-hidden="true">
+              Search users, businesses...
+            </span>
           </div>
         </header>
 

@@ -22,7 +22,7 @@ export type GlassSurface = {
 export type ComponentTokens = {
   chatBubble: {
     own: { bg: string; text: string };
-    other: { bg: string; text: string };
+    other: { bg: string; text: string; border: string };
   };
   tab: { active: string; inactive: string; dock: GlassSurface };
   composer: { surface: GlassSurface };
@@ -48,8 +48,9 @@ export function makeComponentTokens(semantic: SemanticTokens): ComponentTokens {
         text: semantic.text.primary,
       },
       other: {
-        bg: semantic.surface.level1,
+        bg: semantic.surface.level2,
         text: semantic.text.primary,
+        border: semantic.border.subtle,
       },
     },
     tab: {

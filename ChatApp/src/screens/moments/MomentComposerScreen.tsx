@@ -457,10 +457,9 @@ const makeStyles = (palette: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
       padding: 32,
-      gap: 16,
     },
     hint: {
-      marginTop: 8,
+      marginTop: 24,
     },
     previewContent: {
       paddingBottom: 32,
@@ -476,10 +475,10 @@ const makeStyles = (palette: Palette) =>
       backgroundColor: palette.ink,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
     },
     videoPreviewLabel: {
-      marginTop: 4,
+      marginTop: 12,
+      marginBottom: 8,
     },
     captionSection: {
       padding: 16,
@@ -520,10 +519,9 @@ const makeStyles = (palette: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
       padding: 32,
-      gap: 16,
     },
     retryButton: {
-      marginTop: 16,
+      marginTop: 32,
       minWidth: 160,
     },
     audienceModal: {

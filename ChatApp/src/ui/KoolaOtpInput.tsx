@@ -62,7 +62,8 @@ export const KoolaOtpInput: React.FC<KoolaOtpInputProps> = ({
       <Pressable
         style={styles.boxRow}
         onPress={handlePress}
-        accessibilityRole="none">
+        accessibilityRole="none"
+        importantForAccessibility="no-hide-descendants">
         {Array.from({ length }, (_, i) => {
           const digit = value[i] || '';
           const isCursor = focused && i === value.length;
@@ -101,6 +102,9 @@ export const KoolaOtpInput: React.FC<KoolaOtpInputProps> = ({
         style={styles.hiddenInput}
         caretHidden
         autoComplete="one-time-code"
+        accessibilityLabel={`Ma xac thuc, ${length} chu so`}
+        accessibilityHint={`Da nhap ${value.length} tren ${length} chu so`}
+        importantForAccessibility="yes"
       />
 
       {error ? (
@@ -155,8 +159,10 @@ const makeStyles = (p: Palette) =>
     hiddenInput: {
       position: 'absolute',
       opacity: 0,
-      height: 1,
-      width: 1,
+      height: 48,
+      width: '100%',
+      top: 0,
+      left: 0,
     },
     errorText: {
       marginTop: 8,

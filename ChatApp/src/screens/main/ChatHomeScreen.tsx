@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Pressable, InteractionManager } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useIsFocused, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
@@ -16,6 +16,7 @@ import ConversationListScreen from './ConversationListScreen';
 import ContactsScreen from './ContactsScreen';
 import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
+import CallsScreen from './CallsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, koolaRadii, useTheme } from '../../ui';
@@ -34,9 +35,10 @@ type TabMeta = {
 
 const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
   Messages: { iconIdle: 'chat-bubble-outline', iconActive: 'chat-bubble', label: 'Tin nhắn' },
-  Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Danh bạ' },
+  Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Tìm người' },
   Moments: { iconIdle: 'auto-awesome', iconActive: 'auto-awesome', label: 'Khoảnh khắc' },
-  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Video ngắn' },
+  Calls: { iconIdle: 'call', iconActive: 'call', label: 'Cuộc gọi' },
+  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
 };
 
 // Hook for unread counts. Returns 0 for now — wire to store/api when available.
@@ -120,13 +122,13 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, pal
         <View style={tabItemStyles.iconSlot}>
           <AnimatedIcon
             name={meta.iconIdle}
-            size={22}
+            size={20}
             color={palette.muted}
             style={iconIdleStyle}
           />
           <AnimatedIcon
             name={meta.iconActive}
-            size={22}
+            size={20}
             color={palette.primary}
             style={iconActiveStyle}
           />
@@ -138,6 +140,16 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, pal
             </View>
           ) : null}
         </View>
+        <KoolaText
+          variant="caption"
+          weight={isFocused ? '700' : '500'}
+          numberOfLines={1}
+          style={[
+            tabItemStyles.label,
+            { color: isFocused ? palette.primary : palette.muted },
+          ]}>
+          {meta.label}
+        </KoolaText>
       </Animated.View>
     </Pressable>
   );
@@ -150,7 +162,7 @@ const tabItemStyles = {
     justifyContent: 'center' as const,
     minHeight: 44,
     paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   inner: {
     alignItems: 'center' as const,
@@ -163,10 +175,17 @@ const tabItemStyles = {
     borderRadius: koolaRadii.sm,
   },
   iconSlot: {
-    width: 26,
-    height: 24,
+    width: 24,
+    height: 22,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  label: {
+    fontSize: 9,
+    lineHeight: 12,
+    textAlign: 'center' as const,
+    maxWidth: 60,
+    marginTop: 2,
   },
   badge: {
     position: 'absolute' as const,
@@ -191,12 +210,14 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
   const messagesUnread = useUnreadCount('Messages');
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
+  const callsUnread = useUnreadCount('Calls');
   const shortsUnread = useUnreadCount('Shorts');
 
   const unreadByRoute: Record<string, number> = {
     Messages: messagesUnread,
     Contacts: contactsUnread,
     Moments: momentsUnread,
+    Calls: callsUnread,
     Shorts: shortsUnread,
   };
 
@@ -249,11 +270,24 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
 // ─── Screen ──────────────────────────────────────────────────────────────────
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
+  const route = useRoute<any>();
   const isFocused = useIsFocused();
   const { palette } = useTheme();
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [logoReplayKey, setLogoReplayKey] = useState(0);
+  const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
+
+  // Deterministic Chat entry: when resetToMessages param arrives, navigate the
+  // nested TopTab to Messages. This receives the reset from MainNavigator's
+  // tabPress handler (both cross-tab navigation and reselect).
+  useEffect(() => {
+    if (route.params?.resetToMessages && topTabNavRef.current) {
+      topTabNavRef.current.navigate('Messages');
+      // Clear the param so subsequent focuses don't re-trigger
+      navigation.setParams({ resetToMessages: undefined } as any);
+    }
+  }, [route.params?.resetToMessages, navigation]);
 
   const screenStyles = useMemo(() => ({
     container: {
@@ -287,7 +321,11 @@ const ChatHomeScreen: React.FC = () => {
     <View style={screenStyles.container}>
       <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} />
       <TopTab.Navigator
-        tabBar={(props) => <CustomTabBar {...props} />}
+        tabBar={(props) => {
+          // Capture the top-tab navigation for reset-to-Messages
+          topTabNavRef.current = props.navigation;
+          return <CustomTabBar {...props} />;
+        }}
         screenOptions={{
           lazy: true,
           swipeEnabled: true,
@@ -295,6 +333,7 @@ const ChatHomeScreen: React.FC = () => {
         <TopTab.Screen name="Messages" component={ConversationListScreen} />
         <TopTab.Screen name="Contacts" component={ContactsScreen} />
         <TopTab.Screen name="Moments" component={MomentsScreen} />
+        <TopTab.Screen name="Calls" component={CallsScreen} />
         <TopTab.Screen name="Shorts" component={ShortsScreen} />
       </TopTab.Navigator>
       <QrScannerModal

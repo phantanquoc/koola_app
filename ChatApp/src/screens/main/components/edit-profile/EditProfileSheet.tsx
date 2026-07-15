@@ -115,7 +115,6 @@ const makeStyles = (p: Palette) =>
       paddingVertical: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: p.line,
-      gap: 12,
     },
     closeBtn: {
       width: 44,
@@ -123,6 +122,7 @@ const makeStyles = (p: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: koolaRadii.xs,
+      marginRight: 12,
     },
     pressed: {
       opacity: 0.82,

@@ -1,3 +1,4 @@
+export * from './AuthFormShell';
 export * from './KoolaAvatar';
 export * from './KoolaBadge';
 export * from './KoolaButton';

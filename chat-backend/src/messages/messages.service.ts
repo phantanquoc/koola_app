@@ -411,6 +411,141 @@ export class MessagesService {
     return { messages: normalized as MessageDocument[], nextCursor };
   }
 
+  // ─── Around (bidirectional context window) ──────────────────────────────────
+
+  /**
+   * Fetch a bounded context window of messages centered on a target message.
+   * Returns up to limit/2 before + target + limit/2 after, ordered by
+   * createdAt ascending. Includes hasBefore/hasAfter for client pagination.
+   */
+  async getMessagesAround(
+    conversationId: string,
+    userId: string,
+    targetMessageId: string,
+    limit = 20,
+  ): Promise<{
+    messages: MessageDocument[];
+    hasBefore: boolean;
+    hasAfter: boolean;
+  }> {
+    // Verify caller is a member
+    await this.verifyMember(conversationId, userId);
+
+    // Find target message (must not be deleted or deleted-for-user)
+    const target = await this.messageModel
+      .findOne({
+        _id: targetMessageId,
+        conversationId,
+        deleted: false,
+        deletedFor: { $ne: userId },
+      })
+      .lean();
+
+    if (!target) {
+      throw new NotFoundException(
+        'Target message not found in this conversation',
+      );
+    }
+
+    const half = Math.floor(limit / 2);
+
+    // Query messages BEFORE target (older), sorted descending
+    const beforeQuery: Record<string, unknown> = {
+      conversationId,
+      createdAt: { $lt: (target as any).createdAt },
+      deleted: false,
+      deletedFor: { $ne: userId },
+    };
+    const beforeMessages = await this.messageModel
+      .find(beforeQuery)
+      .sort({ createdAt: -1 })
+      .limit(half + 1)
+      .populate('senderId', '_id phone email displayName avatar')
+      .lean();
+
+    const hasBefore = beforeMessages.length > half;
+    const beforeSlice = hasBefore
+      ? beforeMessages.slice(0, half)
+      : beforeMessages;
+
+    // Query messages AFTER target (newer), sorted ascending
+    const afterQuery: Record<string, unknown> = {
+      conversationId,
+      createdAt: { $gt: (target as any).createdAt },
+      deleted: false,
+      deletedFor: { $ne: userId },
+    };
+
+    // 2-way backfill: if one side has fewer than half, extend the other side
+    const beforeDeficit = half - beforeSlice.length;
+    const afterLimit = half + beforeDeficit;
+
+    const afterMessages = await this.messageModel
+      .find(afterQuery)
+      .sort({ createdAt: 1 })
+      .limit(afterLimit + 1)
+      .populate('senderId', '_id phone email displayName avatar')
+      .lean();
+
+    const hasAfter = afterMessages.length > afterLimit;
+    const afterSlice = hasAfter
+      ? afterMessages.slice(0, afterLimit)
+      : afterMessages;
+
+    // Symmetrical backfill: if after side was short, extend before side
+    const afterDeficit = half - Math.min(afterSlice.length, half);
+    let finalBeforeSlice = beforeSlice;
+    let finalHasBefore = hasBefore;
+    if (afterDeficit > 0 && !hasBefore) {
+      // Need more before messages — already fetched all available
+      finalBeforeSlice = beforeSlice;
+    } else if (afterDeficit > 0 && hasBefore) {
+      // Fetch additional before messages to fill the deficit
+      const extraBefore = await this.messageModel
+        .find({
+          ...beforeQuery,
+          createdAt: { $lt: (beforeSlice[beforeSlice.length - 1] as any).createdAt },
+        })
+        .sort({ createdAt: -1 })
+        .limit(afterDeficit + 1)
+        .populate('senderId', '_id phone email displayName avatar')
+        .lean();
+      finalHasBefore = extraBefore.length > afterDeficit;
+      const extraSlice = finalHasBefore
+        ? extraBefore.slice(0, afterDeficit)
+        : extraBefore;
+      finalBeforeSlice = [...beforeSlice, ...extraSlice];
+    }
+
+    // Populate target for consistent output
+    const populatedTarget = await this.messageModel
+      .findById(targetMessageId)
+      .populate('senderId', '_id phone email displayName avatar')
+      .lean();
+
+    // Assemble: before (ascending) + target + after (ascending)
+    const messages = [
+      ...finalBeforeSlice.reverse(),
+      populatedTarget,
+      ...afterSlice,
+    ].filter(Boolean) as MessageDocument[];
+
+    // Normalize readBy
+    const normalized = messages.map((msg) => {
+      const m = msg as any;
+      if (!Array.isArray(m.readBy)) {
+        m.readBy = [];
+      }
+      return m;
+    });
+
+    return {
+      messages: normalized as MessageDocument[],
+      hasBefore: finalHasBefore,
+      hasAfter,
+    };
+  }
+
   // ─── Delete ─────────────────────────────────────────────────────────────────
 
   async deleteMessage(

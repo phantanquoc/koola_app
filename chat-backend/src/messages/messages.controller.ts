@@ -84,15 +84,31 @@ export class MessagesController {
 
   @Get()
   @ApiOperation({
-    summary: 'List messages in a conversation (cursor pagination)',
+    summary:
+      'List messages in a conversation (cursor pagination or around context)',
   })
-  @ApiResponse({ status: 200, description: 'Paginated message list' })
+  @ApiResponse({ status: 200, description: 'Paginated message list or context window' })
   @ApiResponse({ status: 403, description: 'Not a member' })
+  @ApiResponse({
+    status: 404,
+    description: 'Target message not found (around mode)',
+  })
   async listMessages(
     @Param('conversationId') convId: string,
     @Query() query: ListMessagesDto,
     @CurrentUser('id') userId: string,
   ) {
+    // Around mode: bidirectional context window (cursor is ignored when around is present)
+    if (query.around) {
+      return this.messagesService.getMessagesAround(
+        convId,
+        userId,
+        query.around,
+        query.limit ?? 20,
+      );
+    }
+
+    // Default: backward cursor pagination
     return this.messagesService.listMessages(
       convId,
       userId,

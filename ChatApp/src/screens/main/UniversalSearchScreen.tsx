@@ -21,7 +21,7 @@ import ContactResultItem from '../../components/search/ContactResultItem';
 import MessageResultItem from '../../components/search/MessageResultItem';
 import { useAuth } from '../../contexts/AuthContext';
 import { asyncStorage } from '../../services/storage/asyncStorage';
-import { KoolaText, useTheme } from '../../ui';
+import { KoolaText, KoolaErrorState, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const COLLAPSED_MAX = 3;
@@ -69,8 +69,15 @@ const UniversalSearchScreen: React.FC = () => {
     asyncStorage.getRecentSearches().then(setRecentSearches).catch(() => {});
   }, []);
 
-  const { conversations: convResults, contacts, messages, loadingContacts, loadingMessages } =
-    useUniversalSearch(query, conversations);
+  const {
+    conversations: convResults,
+    contacts,
+    messages,
+    loadingContacts,
+    loadingMessages,
+    retryContacts,
+    retryMessages,
+  } = useUniversalSearch(query, conversations);
 
   const handleBack = useCallback(() => {
     navigation.goBack();
@@ -104,9 +111,9 @@ const UniversalSearchScreen: React.FC = () => {
   );
 
   const handleMessagePress = useCallback(
-    (conversationId: string) => {
+    (conversationId: string, messageId: string) => {
       void saveSearch(query);
-      navigation.navigate('Chat', { conversationId });
+      navigation.navigate('Chat', { conversationId, targetMessageId: messageId });
     },
     [navigation, query, saveSearch],
   );
@@ -131,11 +138,11 @@ const UniversalSearchScreen: React.FC = () => {
     ? convResults.slice(0, EXPANDED_MAX)
     : convResults.slice(0, COLLAPSED_MAX);
   const visibleContacts = expandedContacts
-    ? contacts.slice(0, EXPANDED_MAX)
-    : contacts.slice(0, COLLAPSED_MAX);
+    ? contacts.data.slice(0, EXPANDED_MAX)
+    : contacts.data.slice(0, COLLAPSED_MAX);
   const visibleMessages = expandedMessages
-    ? messages.slice(0, EXPANDED_MAX)
-    : messages.slice(0, COLLAPSED_MAX);
+    ? messages.data.slice(0, EXPANDED_MAX)
+    : messages.data.slice(0, COLLAPSED_MAX);
 
   return (
     <View style={styles.container}>
@@ -226,15 +233,15 @@ const UniversalSearchScreen: React.FC = () => {
               <View style={styles.suggestRow}>
                 <View style={styles.suggestChip}>
                   <MaterialIcons name="chat-bubble-outline" size={14} color={tokens.semantic.text.muted} />
-                  <KoolaText variant="caption" tone="muted" weight="500">Cuộc trò chuyện</KoolaText>
+                  <KoolaText variant="caption" tone="muted" weight="500" style={styles.suggestChipLabel}>Cuộc trò chuyện</KoolaText>
                 </View>
                 <View style={styles.suggestChip}>
                   <MaterialIcons name="person-outline" size={14} color={tokens.semantic.text.muted} />
-                  <KoolaText variant="caption" tone="muted" weight="500">Liên hệ</KoolaText>
+                  <KoolaText variant="caption" tone="muted" weight="500" style={styles.suggestChipLabel}>Liên hệ</KoolaText>
                 </View>
                 <View style={styles.suggestChip}>
                   <MaterialIcons name="message" size={14} color={tokens.semantic.text.muted} />
-                  <KoolaText variant="caption" tone="muted" weight="500">Tin nhắn</KoolaText>
+                  <KoolaText variant="caption" tone="muted" weight="500" style={styles.suggestChipLabel}>Tin nhắn</KoolaText>
                 </View>
               </View>
             </View>
@@ -270,9 +277,15 @@ const UniversalSearchScreen: React.FC = () => {
             <View style={styles.divider} />
 
             {/* Contacts section */}
-            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Liên hệ</KoolaText>
+            <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Tìm người</KoolaText>
             {loadingContacts ? (
               <ActivityIndicator style={styles.loader} size="small" color={tokens.semantic.action.primary} />
+            ) : contacts.error ? (
+              <KoolaErrorState
+                message={contacts.error}
+                onRetry={retryContacts}
+                style={styles.sectionError}
+              />
             ) : visibleContacts.length === 0 ? (
               <KoolaText tone="muted" style={styles.emptyText}>Không tìm thấy kết quả</KoolaText>
             ) : (
@@ -284,7 +297,7 @@ const UniversalSearchScreen: React.FC = () => {
                 />
               ))
             )}
-            {!loadingContacts && contacts.length > COLLAPSED_MAX && !expandedContacts && (
+            {!loadingContacts && contacts.data.length > COLLAPSED_MAX && !expandedContacts && (
               <Pressable style={styles.seeMoreButton} onPress={() => setExpandedContacts(true)} accessibilityRole="button">
                 <KoolaText tone="primary" weight="600">Xem thêm</KoolaText>
               </Pressable>
@@ -296,6 +309,12 @@ const UniversalSearchScreen: React.FC = () => {
             <KoolaText variant="caption" weight="700" tone="muted" style={styles.sectionLabel}>Tin nhắn</KoolaText>
             {loadingMessages ? (
               <ActivityIndicator style={styles.loader} size="small" color={tokens.semantic.action.primary} />
+            ) : messages.error ? (
+              <KoolaErrorState
+                message={messages.error}
+                onRetry={retryMessages}
+                style={styles.sectionError}
+              />
             ) : visibleMessages.length === 0 ? (
               <KoolaText tone="muted" style={styles.emptyText}>Không tìm thấy kết quả</KoolaText>
             ) : (
@@ -303,11 +322,11 @@ const UniversalSearchScreen: React.FC = () => {
                 <MessageResultItem
                   key={msg._id}
                   item={msg}
-                  onPress={() => handleMessagePress(msg.conversationId)}
+                  onPress={() => handleMessagePress(msg.conversationId, msg._id)}
                 />
               ))
             )}
-            {!loadingMessages && messages.length > COLLAPSED_MAX && !expandedMessages && (
+            {!loadingMessages && messages.data.length > COLLAPSED_MAX && !expandedMessages && (
               <Pressable style={styles.seeMoreButton} onPress={() => setExpandedMessages(true)} accessibilityRole="button">
                 <KoolaText tone="primary" weight="600">Xem thêm</KoolaText>
               </Pressable>
@@ -346,10 +365,10 @@ const makeStyles = (semantic: SemanticTokens) =>
       borderRadius: 20,
       paddingHorizontal: 12,
       height: 40,
-      gap: 8,
     },
     searchIcon: {
       flexShrink: 0,
+      marginRight: 8,
     },
     input: {
       flex: 1,
@@ -373,18 +392,21 @@ const makeStyles = (semantic: SemanticTokens) =>
       flexDirection: 'row',
       flexWrap: 'wrap',
       justifyContent: 'center',
-      gap: 8,
       marginTop: 16,
       paddingHorizontal: 24,
     },
     suggestChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
       backgroundColor: semantic.surface.level1,
       paddingHorizontal: 12,
       paddingVertical: 6,
       borderRadius: 16,
+      marginRight: 8,
+      marginBottom: 8,
+    },
+    suggestChipLabel: {
+      marginLeft: 4,
     },
     sectionLabel: {
       textTransform: 'uppercase',
@@ -396,6 +418,10 @@ const makeStyles = (semantic: SemanticTokens) =>
     emptyText: {
       paddingHorizontal: 16,
       paddingVertical: 10,
+    },
+    sectionError: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
     },
     divider: {
       height: 8,
@@ -430,10 +456,10 @@ const makeStyles = (semantic: SemanticTokens) =>
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
     },
     recentItemText: {
       flex: 1,
+      marginLeft: 12,
     },
     recentRemoveButton: {
       padding: 6,

@@ -28,6 +28,7 @@ import { momentsService, type FeedRingItem, type MomentsState } from '../../serv
 import { useAuth } from '../../contexts/AuthContext';
 import MomentRing from '../../components/moments/MomentRing';
 import { KoolaButton, KoolaText, KoolaState, KoolaSurface, KoolaSkeleton, koolaSpacing, useTheme } from '../../ui';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { Palette } from '../../ui/theme';
 import { resolveMomentsView } from './momentsView';
 
@@ -38,6 +39,7 @@ const MomentsScreen: React.FC = () => {
   const { user } = useAuth();
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarBottomInset();
   const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const [state, setState] = useState<MomentsState>(() => momentsService.getState());
@@ -78,7 +80,7 @@ const MomentsScreen: React.FC = () => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Xem khoảnh khắc của tôi', 'Quản lý Highlights', 'Hủy'],
+          options: ['Xem khoảnh khắc của tôi', 'Quản lý nổi bật', 'Hủy'],
           cancelButtonIndex: 2,
         },
         (index) => {
@@ -105,7 +107,7 @@ const MomentsScreen: React.FC = () => {
           },
         },
         {
-          text: 'Quản lý Highlights',
+          text: 'Quản lý nổi bật',
           onPress: () => user && navigation.push('Highlights', { userId: user._id, isOwn: true }),
         },
         { text: 'Hủy', style: 'cancel' },
@@ -170,13 +172,13 @@ const MomentsScreen: React.FC = () => {
 
   return (
     <View
-      style={[styles.container, { paddingTop: insets.top + koolaSpacing.sm }]}
+      style={[styles.container, { paddingTop: insets.top + koolaSpacing.sm, paddingBottom: tabBarInset }]}
       accessibilityLabel="Danh sách khoảnh khắc"
       accessibilityRole="list">
       <View style={styles.headerWrap}>
         <View style={styles.headerCopy}>
           <KoolaText variant="caption" tone="primary" weight="800" style={styles.eyebrow}>
-            STORY HUB
+            KHOẢNH KHẮC
           </KoolaText>
           <KoolaText variant="title">Khoảnh khắc</KoolaText>
           <KoolaText variant="body" tone="muted" style={styles.subtitle}>
@@ -289,10 +291,10 @@ const makeStyles = (palette: Palette) =>
       justifyContent: 'space-between',
       paddingHorizontal: koolaSpacing.lg,
       marginBottom: koolaSpacing.md,
-      gap: koolaSpacing.md,
     },
     headerCopy: {
       flex: 1,
+      marginRight: koolaSpacing.md,
     },
     eyebrow: {
       marginBottom: koolaSpacing.xs,

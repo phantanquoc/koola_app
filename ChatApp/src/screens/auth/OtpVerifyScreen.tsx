@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -12,6 +11,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../services/api/apiService';
 import {
+  AuthFormShell,
   KoolaBadge,
   KoolaButton,
   KoolaLogo,
@@ -68,11 +68,15 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   const handleVerify = useCallback(async () => {
     setOtpError('');
     if (otp.length !== 6) {
-      setOtpError('Vui lòng nhập đủ 6 số');
+      const errMsg = 'Vui long nhap du 6 so';
+      setOtpError(errMsg);
+      AccessibilityInfo.announceForAccessibility(errMsg);
       return;
     }
     if (attempts >= MAX_ATTEMPTS) {
-      setOtpError('Quá số lần thử. Vui lòng gửi lại mã mới.');
+      const errMsg = 'Qua so lan thu. Vui long gui lai ma moi.';
+      setOtpError(errMsg);
+      AccessibilityInfo.announceForAccessibility(errMsg);
       return;
     }
     setLoading(true);
@@ -88,8 +92,9 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
       const msg = error.response?.data?.message;
       const text = Array.isArray(msg)
         ? msg.join('\n')
-        : msg || 'Mã xác thực không đúng';
+        : msg || 'Ma xac thuc khong dung';
       setOtpError(text);
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setLoading(false);
     }
@@ -109,10 +114,9 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
         response?: { data?: { message?: string | string[] } };
       };
       const msg = error.response?.data?.message;
-      Alert.alert(
-        'Gửi lại thất bại',
-        Array.isArray(msg) ? msg.join('\n') : msg || 'Không thể gửi lại mã',
-      );
+      const text = Array.isArray(msg) ? msg.join('\n') : msg || 'Khong the gui lai ma';
+      Alert.alert('Gui lai that bai', text);
+      AccessibilityInfo.announceForAccessibility(text);
     } finally {
       setResending(false);
     }
@@ -121,13 +125,11 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   const resendDisabled = resending || resendCooldown > 0;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthFormShell>
       <KoolaSurface variant="raised" style={styles.form}>
         <View style={styles.header}>
           <KoolaLogo markSize={32} showMark showWordmark={false} />
-          <KoolaBadge label="Bảo mật" tone="primary" />
+          <KoolaBadge label="Bao mat" tone="primary" />
           <KoolaText variant="title" align="center">
             Xác thực OTP
           </KoolaText>
@@ -175,34 +177,28 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
           disabled={resendDisabled}
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="button"
-          accessibilityLabel="Gửi lại mã xác thực"
+          accessibilityLabel="Gui lai ma xac thuc"
           accessibilityState={{ disabled: resendDisabled }}>
           <KoolaText
             tone={resendDisabled ? 'faint' : 'primary'}
             weight="800"
             align="center">
             {resending
-              ? 'Đang gửi lại...'
+              ? 'Dang gui lai...'
               : resendCooldown > 0
-                ? `Gửi lại mã (${resendCooldown}s)`
-                : 'Gửi lại mã'}
+                ? `Gui lai ma (${resendCooldown}s)`
+                : 'Gui lai ma'}
           </KoolaText>
         </Pressable>
       </KoolaSurface>
-    </KeyboardAvoidingView>
+    </AuthFormShell>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// --- Styles ---
 
 const makeStyles = (p: Palette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: p.canvas,
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
     form: {
       padding: 20,
       gap: 16,

@@ -34,7 +34,7 @@ const ConnectContextBanner: React.FC<ConnectContextBannerProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Đăng ký doanh nghiệp của bạn">
           <MaterialIcons name="add-business" size={16} color={koolaColors.surface} />
-          <KoolaText variant="caption" weight="700" tone="surface">
+          <KoolaText variant="caption" weight="700" tone="surface" style={{ marginLeft: 4 }}>
             Đăng ký doanh nghiệp
           </KoolaText>
         </Pressable>
@@ -54,7 +54,6 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
     backgroundColor: koolaColors.primarySoft,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: koolaColors.line,
@@ -71,22 +70,23 @@ const styles = StyleSheet.create({
     backgroundColor: koolaColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
   },
   textCol: {
     flex: 1,
-    gap: 4,
   },
   title: {
     color: koolaColors.primaryDark,
+    marginBottom: 4,
   },
   subtitle: {
     lineHeight: 18,
+    marginBottom: 4,
   },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
     alignSelf: 'flex-start',
     backgroundColor: koolaColors.primary,
     borderRadius: koolaRadii.xs,

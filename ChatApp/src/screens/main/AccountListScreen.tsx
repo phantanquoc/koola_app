@@ -7,8 +7,10 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { accountsApi } from '../../services/api/apiService';
 import {
@@ -28,6 +30,8 @@ import {
 import type { Palette } from '../../ui/theme';
 import type { Account, CreateBusinessAccountPayload } from '../../types';
 import { BUSINESS_CATEGORIES } from '../connect/constants';
+import { useDocumentUpload } from './hooks/useDocumentUpload';
+import type { DocumentUploadStatus } from './hooks/useDocumentUpload';
 
 // ─── Account List Screen ──────────────────────────────────────────────────────
 
@@ -53,6 +57,104 @@ const RELATIONSHIP_OPTIONS: { value: 'partner' | 'supplier'; label: string }[] =
 
 const FORM_CATEGORIES = BUSINESS_CATEGORIES.filter((c) => c.slug !== 'all');
 
+// ─── Upload Field UI Helper ──────────────────────────────────────────────────
+
+interface UploadFieldProps {
+  label: string;
+  required?: boolean;
+  status: DocumentUploadStatus;
+  progress: number;
+  error: string | null;
+  onPress: () => void;
+  palette: Palette;
+  formStyles: ReturnType<typeof makeFormStyles>;
+  errorMessage?: string;
+  disabled?: boolean;
+}
+
+const getUploadIcon = (status: DocumentUploadStatus): string => {
+  switch (status) {
+    case 'uploaded': return 'check-circle';
+    case 'failed': return 'error-outline';
+    case 'uploading':
+    case 'replacing':
+    case 'selecting': return 'hourglass-empty';
+    default: return 'upload-file';
+  }
+};
+
+const getUploadLabel = (status: DocumentUploadStatus, label: string): string => {
+  switch (status) {
+    case 'selecting': return 'Đang chọn ảnh...';
+    case 'uploading': return 'Đang tải lên...';
+    case 'replacing': return 'Đang thay thế...';
+    case 'uploaded': return 'Đã tải lên';
+    case 'failed': return 'Tải lên thất bại — Nhấn để thử lại';
+    default: return `Tải lên ${label}`;
+  }
+};
+
+const getUploadTone = (status: DocumentUploadStatus): 'primary' | 'success' | 'danger' => {
+  switch (status) {
+    case 'uploaded': return 'success';
+    case 'failed': return 'danger';
+    default: return 'primary';
+  }
+};
+
+const UploadField: React.FC<UploadFieldProps> = ({
+  label,
+  required,
+  status,
+  progress,
+  error,
+  onPress,
+  palette,
+  formStyles,
+  errorMessage,
+  disabled,
+}) => {
+  const isActive = status === 'uploading' || status === 'replacing' || status === 'selecting';
+  const tone = getUploadTone(status);
+  const iconColor = tone === 'success' ? palette.success : tone === 'danger' ? palette.danger : palette.primary;
+
+  return (
+    <View style={formStyles.fieldGroup}>
+      <KoolaText variant="label" weight="600">{`${label}${required ? ' *' : ''}`}</KoolaText>
+      <Pressable
+        style={[formStyles.uploadButton, errorMessage && formStyles.inputError]}
+        onPress={onPress}
+        disabled={disabled || isActive}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${getUploadLabel(status, label)}`}
+        accessibilityState={{ disabled: disabled || isActive }}>
+        {isActive ? (
+          <ActivityIndicator size="small" color={palette.primary} />
+        ) : (
+          <MaterialIcons name={getUploadIcon(status)} size={20} color={iconColor} />
+        )}
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <KoolaText variant="body" weight="500" tone={tone}>
+            {getUploadLabel(status, label)}
+          </KoolaText>
+          {isActive && progress > 0 && (
+            <KoolaText variant="caption" tone="muted">{`${progress}%`}</KoolaText>
+          )}
+        </View>
+        {status === 'uploaded' && (
+          <KoolaText variant="caption" tone="primary">Thay thế</KoolaText>
+        )}
+      </Pressable>
+      {!!error && (
+        <KoolaText variant="caption" tone="danger">{error}</KoolaText>
+      )}
+      {!!errorMessage && (
+        <KoolaText variant="caption" tone="danger">{errorMessage}</KoolaText>
+      )}
+    </View>
+  );
+};
+
 // ─── Create Business Form (embedded modal) ────────────────────────────────────
 
 interface CreateFormProps {
@@ -67,7 +169,6 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
   const [relationshipType, setRelationshipType] = useState<'partner' | 'supplier' | ''>('');
   const [businessCategory, setBusinessCategory] = useState('');
   const [province, setProvince] = useState('');
-  const [licenseImageKey, setLicenseImageKey] = useState('');
   const [tagline, setTagline] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
@@ -75,11 +176,26 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
 
+  // Real upload state machines for license and logo
+  const licenseUpload = useDocumentUpload();
+  const logoUpload = useDocumentUpload();
+
   const [relationshipOpen, setRelationshipOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Submit disabled: no confirmed license key OR any upload active
+  const isUploadActive =
+    licenseUpload.state.status === 'uploading' ||
+    licenseUpload.state.status === 'replacing' ||
+    licenseUpload.state.status === 'selecting' ||
+    logoUpload.state.status === 'uploading' ||
+    logoUpload.state.status === 'replacing' ||
+    logoUpload.state.status === 'selecting';
+
+  const canSubmit = !submitting && !isUploadActive && !!licenseUpload.state.confirmedKey;
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
@@ -89,32 +205,15 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
     if (!relationshipType) e.relationshipType = 'Vui lòng chọn loại quan hệ';
     if (!businessCategory) e.businessCategory = 'Vui lòng chọn lĩnh vực';
     if (!province.trim()) e.province = 'Vui lòng nhập tỉnh/thành phố';
-    if (!licenseImageKey) e.licenseImageKey = 'Vui lòng tải lên giấy phép kinh doanh';
+    if (!licenseUpload.state.confirmedKey) {
+      e.licenseImageKey = 'Vui lòng tải lên giấy phép kinh doanh';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleUploadLicense = async () => {
-    // Placeholder: in production this opens an image picker. Here we simulate
-    // by accepting a typed key. Real image picking uses react-native-image-picker
-    // + mediaApi.requestUploadUrl. We set a simulated key so the field validates.
-    Alert.alert(
-      'Tải ảnh giấy phép',
-      'Nhập đường dẫn hoặc tên file ảnh (demo):',
-      [
-        { text: 'Huỷ', style: 'cancel' },
-        {
-          text: 'Xác nhận (demo key)',
-          onPress: () => {
-            setLicenseImageKey(`license/${Date.now()}.jpg`);
-            setErrors((e) => ({ ...e, licenseImageKey: '' }));
-          },
-        },
-      ],
-    );
-  };
-
   const handleSubmit = async () => {
+    if (!canSubmit) return;
     if (!validate()) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -124,7 +223,8 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
         businessCategory,
         province: province.trim(),
         relationshipType: relationshipType as 'partner' | 'supplier',
-        licenseImageKey,
+        licenseImageKey: licenseUpload.state.confirmedKey,
+        ...(logoUpload.state.confirmedKey && { logoKey: logoUpload.state.confirmedKey }),
         ...(tagline.trim() && { tagline: tagline.trim() }),
         ...(description.trim() && { description: description.trim() }),
         ...(address.trim() && { address: address.trim() }),
@@ -237,18 +337,29 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
         {!!errors.province && <KoolaText variant="caption" tone="danger">{errors.province}</KoolaText>}
       </View>
 
-      <View style={formStyles.fieldGroup}>
-        <KoolaText variant="label" weight="600">{`Giấy phép kinh doanh *`}</KoolaText>
-        <TouchableOpacity
-          style={[formStyles.uploadButton, errors.licenseImageKey && formStyles.inputError]}
-          onPress={handleUploadLicense}>
-          <MaterialIcons name={licenseImageKey ? 'check-circle' : 'upload-file'} size={20} color={licenseImageKey ? palette.success : palette.primary} />
-          <KoolaText variant="body" weight="500" tone={licenseImageKey ? 'success' : 'primary'}>
-            {licenseImageKey ? 'Đã tải lên' : 'Tải lên ảnh giấy phép'}
-          </KoolaText>
-        </TouchableOpacity>
-        {!!errors.licenseImageKey && <KoolaText variant="caption" tone="danger">{errors.licenseImageKey}</KoolaText>}
-      </View>
+      <UploadField
+        label="ảnh giấy phép"
+        required
+        status={licenseUpload.state.status}
+        progress={licenseUpload.state.progress}
+        error={licenseUpload.state.error}
+        onPress={licenseUpload.pickAndUpload}
+        palette={palette}
+        formStyles={formStyles}
+        errorMessage={errors.licenseImageKey}
+        disabled={submitting}
+      />
+
+      <UploadField
+        label="logo doanh nghiệp"
+        status={logoUpload.state.status}
+        progress={logoUpload.state.progress}
+        error={logoUpload.state.error}
+        onPress={logoUpload.pickAndUpload}
+        palette={palette}
+        formStyles={formStyles}
+        disabled={submitting}
+      />
 
       <KoolaText variant="caption" weight="700" tone="muted" style={formStyles.sectionHeaderOptional}>
         Thông tin bổ sung (tuỳ chọn)
@@ -292,13 +403,13 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
       {!!submitError && (
         <View style={formStyles.submitErrorContainer}>
           <MaterialIcons name="error-outline" size={16} color={palette.danger} />
-          <KoolaText variant="caption" tone="danger" style={{ flex: 1 }}>{submitError}</KoolaText>
+          <KoolaText variant="caption" tone="danger" style={{ flex: 1, marginLeft: 6 }}>{submitError}</KoolaText>
         </View>
       )}
 
       <View style={formStyles.formActions}>
-        <KoolaButton title="Huỷ" variant="secondary" onPress={onCancel} style={formStyles.cancelBtn} disabled={submitting} />
-        <KoolaButton title="Gửi yêu cầu" onPress={handleSubmit} style={formStyles.submitBtn} loading={submitting} disabled={submitting} />
+        <KoolaButton title="Huỷ" variant="secondary" onPress={onCancel} style={formStyles.cancelBtn} disabled={submitting || isUploadActive} />
+        <KoolaButton title="Gửi yêu cầu" onPress={handleSubmit} style={formStyles.submitBtn} loading={submitting} disabled={!canSubmit} />
       </View>
     </ScrollView>
   );
@@ -308,6 +419,7 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
 
 const AccountListScreen: React.FC = () => {
   const { accounts, activeAccount, switchAccount } = useAuth();
+  const navigation = useNavigation();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -377,8 +489,23 @@ const AccountListScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.listContent}>
-      <KoolaText variant="heading" style={styles.pageTitle}>Danh sách tài khoản</KoolaText>
+    <View style={styles.screenContainer}>
+      <View style={styles.backHeader}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại"
+          style={styles.backButton}
+          android_ripple={{ color: palette.primarySoft, borderless: true }}>
+          <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
+        </Pressable>
+        <KoolaText variant="label" weight="600" numberOfLines={1} style={styles.backHeaderTitle}>
+          Tài khoản
+        </KoolaText>
+        <View style={styles.backHeaderSpacer} />
+      </View>
+      <ScrollView style={styles.container} contentContainerStyle={styles.listContent}>
+        <KoolaText variant="heading" style={styles.pageTitle}>Danh sách tài khoản</KoolaText>
 
       <KoolaSurface variant="raised" style={styles.listCard}>
         {localAccounts.map((account, index) => {
@@ -437,14 +564,41 @@ const AccountListScreen: React.FC = () => {
         style={styles.addButton}
       />
     </ScrollView>
+    </View>
   );
 };
 
 const makeStyles = (p: Palette) =>
   StyleSheet.create({
-    container: {
+    screenContainer: {
       flex: 1,
       backgroundColor: p.canvas,
+    },
+    backHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.sm,
+      paddingVertical: koolaSpacing.sm,
+      backgroundColor: p.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.line,
+    },
+    backButton: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 22,
+    },
+    backHeaderTitle: {
+      flex: 1,
+      marginLeft: koolaSpacing.sm,
+    },
+    backHeaderSpacer: {
+      width: 44,
+    },
+    container: {
+      flex: 1,
     },
     listContent: {
       padding: koolaSpacing.lg,
@@ -460,7 +614,6 @@ const makeStyles = (p: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       padding: 14,
-      gap: 12,
     },
     notifBadge: {
       position: 'absolute',
@@ -475,6 +628,7 @@ const makeStyles = (p: Palette) =>
     },
     accountInfo: {
       flex: 1,
+      marginLeft: 12,
     },
     accountMeta: {
       flexDirection: 'row',
@@ -558,7 +712,6 @@ const makeFormStyles = (p: Palette) =>
     uploadButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
       backgroundColor: p.surface,
       borderRadius: koolaRadii.md,
       borderWidth: StyleSheet.hairlineWidth,
@@ -570,7 +723,6 @@ const makeFormStyles = (p: Palette) =>
     submitErrorContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
       backgroundColor: p.dangerSoft,
       borderRadius: koolaRadii.md,
       padding: 12,
@@ -578,11 +730,11 @@ const makeFormStyles = (p: Palette) =>
     },
     formActions: {
       flexDirection: 'row',
-      gap: 12,
       marginTop: koolaSpacing.sm,
     },
     cancelBtn: {
       flex: 1,
+      marginRight: 12,
     },
     submitBtn: {
       flex: 1,

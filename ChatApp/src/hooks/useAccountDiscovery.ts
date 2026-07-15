@@ -65,7 +65,8 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
         setHasMore(res.hasMore);
       } catch (err: any) {
         if (!mountedRef.current || reqIdRef.current !== myId) return;
-        setError(err?.message || 'Không thể tải dữ liệu');
+        if (__DEV__) console.warn('[useAccountDiscovery] fetch error:', err?.message);
+        setError('Không thể tải dữ liệu');
       } finally {
         if (mountedRef.current && reqIdRef.current === myId) {
           setLoading(false);
@@ -96,7 +97,8 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
       setHasMore(res.hasMore);
     } catch (err: any) {
       if (!mountedRef.current || reqIdRef.current !== myId) return;
-      setError(err?.message || 'Không thể tải dữ liệu');
+      if (__DEV__) console.warn('[useAccountDiscovery] loadMore error:', err?.message);
+      setError('Không thể tải dữ liệu');
     } finally {
       if (mountedRef.current && reqIdRef.current === myId) {
         setLoading(false);
@@ -119,7 +121,8 @@ export function useAccountDiscovery(filters: AccountDiscoveryFilters) {
       setHasMore(res.hasMore);
     } catch (err: any) {
       if (!mountedRef.current || reqIdRef.current !== myId) return;
-      setError(err?.message || 'Không thể tải dữ liệu');
+      if (__DEV__) console.warn('[useAccountDiscovery] refresh error:', err?.message);
+      setError('Không thể tải dữ liệu');
     } finally {
       if (mountedRef.current && reqIdRef.current === myId) {
         setRefreshing(false);

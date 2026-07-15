@@ -1,9 +1,10 @@
 import { useContext } from 'react';
-import { AuthContext } from './AuthContext';
+import { AuthContext, type AdminIdentity } from './AuthContext';
 
 interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
+  identity: AdminIdentity | null;
   login: (token: string) => void;
   logout: () => void;
 }

@@ -4,6 +4,8 @@ import apiClient from '../apiClient';
 import StateBlock from '../components/StateBlock';
 import { VerificationBadge } from '../components/StatusBadge';
 import { initials } from '../components/formatters';
+import Dialog from '../components/Dialog';
+import { useToast } from '../components/Toast';
 
 interface User {
   _id: string;
@@ -29,6 +31,7 @@ function accountTypeLabel(type: string) {
 }
 
 export default function UsersPage() {
+  const { addToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -47,6 +50,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [banSubmitting, setBanSubmitting] = useState(false);
+  const [banError, setBanError] = useState<string | null>(null);
 
   const [requestedPage, setRequestedPage] = useState(1);
 
@@ -97,14 +101,15 @@ export default function UsersPage() {
       const res = await apiClient.get<User>(`/admin/users/${id}`);
       setDetailUser(res.data);
     } catch {
-      alert('Không thể tải thông tin người dùng.');
+      addToast('error', 'Không thể tải thông tin người dùng.');
     }
   }
 
   async function executeBanAction() {
-    if (!confirmBan || banSubmitting) return; // guard double-submit
+    if (!confirmBan || banSubmitting) return;
     const { id, action } = confirmBan;
     setBanSubmitting(true);
+    setBanError(null);
     try {
       await apiClient.post(`/admin/users/${id}/${action}`);
       const isBanned = action === 'ban';
@@ -114,11 +119,13 @@ export default function UsersPage() {
       if (detailUser?._id === id) {
         setDetailUser({ ...detailUser, isBanned });
       }
+      addToast('success', action === 'ban' ? `Đã cấm "${confirmBan.name}".` : `Đã bỏ cấm "${confirmBan.name}".`);
+      setConfirmBan(null);
+      setBanError(null);
     } catch {
-      alert('Thao tác thất bại. Vui lòng thử lại.');
+      setBanError('Thao tác thất bại. Vui lòng thử lại.');
     } finally {
       setBanSubmitting(false);
-      setConfirmBan(null);
     }
   }
 
@@ -138,8 +145,8 @@ export default function UsersPage() {
         <span className="badge badge-muted">{total.toLocaleString('vi-VN')} records</span>
       </header>
 
-      <section className="table-shell" aria-label="Bảng quản lý người dùng">
-        <form className="table-toolbar" onSubmit={handleSearchSubmit} aria-label="Tìm kiếm và lọc người dùng">
+      <section className="table-shell" aria-label="Bang quan ly nguoi dung">
+        <form className="table-toolbar" onSubmit={handleSearchSubmit} aria-label="Tim kiem va loc nguoi dung">
           <div className="table-toolbar-main">
             <div className="form-field search-field">
               <label className="form-label" htmlFor="user-search">
@@ -152,7 +159,7 @@ export default function UsersPage() {
                 placeholder="Tên, email, số điện thoại..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                aria-label="Từ khóa tìm kiếm"
+                aria-label="Tu khoa tim kiem"
               />
             </div>
             <div className="form-field">
@@ -167,7 +174,7 @@ export default function UsersPage() {
                   setRequestedPage(1);
                   setAccountType(e.target.value as 'personal' | 'business' | '');
                 }}
-                aria-label="Lọc theo loại tài khoản"
+                aria-label="Loc theo loai tai khoan"
               >
                 <option value="">Tất cả loại</option>
                 <option value="personal">Cá nhân</option>
@@ -186,7 +193,7 @@ export default function UsersPage() {
         </form>
 
         {hasActiveFilters && (
-          <div className="filter-chip-row" aria-label="Bộ lọc đang bật">
+          <div className="filter-chip-row" aria-label="Bo loc dang bat">
             {search && <span className="filter-chip">Từ khóa: {search}</span>}
             {accountType && <span className="filter-chip">Loại: {accountTypeLabel(accountType)}</span>}
           </div>
@@ -242,7 +249,7 @@ export default function UsersPage() {
                             className="cell-link"
                             onClick={() => openDetail(u._id)}
                             type="button"
-                            aria-label={`Xem chi tiết ${u.displayName}`}
+                            aria-label={`Xem chi tiet ${u.displayName}`}
                           >
                             {u.displayName}
                           </button>
@@ -277,7 +284,7 @@ export default function UsersPage() {
                             className="btn btn-secondary btn-sm"
                             onClick={() => setConfirmBan({ id: u._id, action: 'unban', name: u.displayName })}
                             type="button"
-                            aria-label={`Bỏ cấm ${u.displayName}`}
+                            aria-label={`Bo cam ${u.displayName}`}
                           >
                             Bỏ cấm
                           </button>
@@ -286,7 +293,7 @@ export default function UsersPage() {
                             className="btn btn-danger-ghost btn-sm"
                             onClick={() => setConfirmBan({ id: u._id, action: 'ban', name: u.displayName })}
                             type="button"
-                            aria-label={`Cấm ${u.displayName}`}
+                            aria-label={`Cam ${u.displayName}`}
                           >
                             Cấm
                           </button>
@@ -311,7 +318,7 @@ export default function UsersPage() {
                 onClick={() => setRequestedPage(page - 1)}
                 disabled={page <= 1}
                 type="button"
-                aria-label="Trang trước"
+                aria-label="Trang truoc"
               >
                 Trước
               </button>
@@ -329,8 +336,14 @@ export default function UsersPage() {
         )}
       </section>
 
-      {detailUser && (
-        <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title">
+      {/* User detail drawer */}
+      <Dialog
+        open={detailUser !== null}
+        onClose={() => setDetailUser(null)}
+        labelId="detail-dialog-title"
+        variant="drawer"
+      >
+        {detailUser && (
           <aside className="drawer">
             <div className="drawer-header">
               <div>
@@ -405,11 +418,17 @@ export default function UsersPage() {
               </div>
             </div>
           </aside>
-        </div>
-      )}
+        )}
+      </Dialog>
 
-      {confirmBan && (
-        <div className="overlay dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      {/* Ban/Unban confirmation dialog */}
+      <Dialog
+        open={confirmBan !== null}
+        onClose={() => { if (!banSubmitting) { setConfirmBan(null); setBanError(null); } }}
+        labelId="confirm-dialog-title"
+        variant="dialog"
+      >
+        {confirmBan && (
           <div className="dialog">
             <div className="dialog-header">
               <div>
@@ -422,6 +441,11 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="dialog-body">
+              {banError && (
+                <p className="alert" role="alert">
+                  {banError}
+                </p>
+              )}
               <div className="table-actions">
                 <button
                   className={confirmBan.action === 'ban' ? 'btn btn-danger' : 'btn btn-primary'}
@@ -437,7 +461,7 @@ export default function UsersPage() {
                 </button>
                 <button
                   className="btn btn-secondary"
-                  onClick={() => setConfirmBan(null)}
+                  onClick={() => { setConfirmBan(null); setBanError(null); }}
                   type="button"
                   disabled={banSubmitting}
                 >
@@ -446,8 +470,8 @@ export default function UsersPage() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import type {
   ConversationListResponse,
   Conversation,
   MessageListResponse,
+  MessageAroundResponse,
   SyncMessagesResponse,
   PaginatedResponse,
   UserSearchResult,
@@ -434,6 +435,18 @@ export const messagesApi = {
   ): Promise<MessageListResponse> {
     const params: Record<string, string | number> = { limit };
     if (cursor) params.cursor = cursor;
+    const { data } = await apiClient.get(
+      `/conversations/${conversationId}/messages`,
+      { params },
+    );
+    return data;
+  },
+  async getMessagesAround(
+    conversationId: string,
+    messageId: string,
+    limit = 20,
+  ): Promise<MessageAroundResponse> {
+    const params: Record<string, string | number> = { around: messageId, limit };
     const { data } = await apiClient.get(
       `/conversations/${conversationId}/messages`,
       { params },

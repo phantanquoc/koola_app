@@ -33,7 +33,11 @@ const SEARCH_MIN_LENGTH = 2;
 
 function getErrorMessage(err: unknown, fallback: string): string {
   const error = err as { response?: { data?: { message?: string } }; message?: string };
-  return error.response?.data?.message || error.message || fallback;
+  // Log diagnostic detail in dev; always show VN fallback to user
+  if (__DEV__) {
+    console.warn('[GroupCreateModal]', error.response?.data?.message || error.message);
+  }
+  return fallback;
 }
 
 const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {

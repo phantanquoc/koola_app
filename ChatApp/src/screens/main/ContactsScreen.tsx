@@ -14,6 +14,7 @@ import { useContactsSearch } from '../../hooks/useContactsSearch';
 import ContactSearchBar from '../../components/ContactSearchBar';
 import ContactItem from '../../components/ContactItem';
 import { KoolaEmptyState, KoolaErrorState, useTheme } from '../../ui';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { UserSearchResult } from '../../types';
 
@@ -21,6 +22,7 @@ const ContactsScreen: React.FC = () => {
   const navigation = useNavigation<ContactsScreenNavigationProp>();
   const { tokens } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+  const tabBarInset = useTabBarBottomInset();
   const { results, isLoading, error, search, loadMore, hasMore } =
     useContactsSearch();
 
@@ -71,8 +73,8 @@ const ContactsScreen: React.FC = () => {
       return (
         <KoolaEmptyState
           icon="people"
-          title="Tìm kiếm liên hệ"
-          message="Tìm kiếm mọi người theo tên hoặc email"
+          title="Tìm người trên Koola"
+          message="Tìm kiếm người dùng Koola theo tên hoặc email"
           style={styles.emptyContainer}
         />
       );
@@ -97,6 +99,7 @@ const ContactsScreen: React.FC = () => {
         onEndReached={hasMore ? loadMore : undefined}
         onEndReachedThreshold={0.5}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        contentContainerStyle={{ paddingBottom: tabBarInset }}
       />
     </SafeAreaView>
   );

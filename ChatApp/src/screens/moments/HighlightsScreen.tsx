@@ -209,7 +209,7 @@ const HighlightsScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={palette.primary} accessibilityLabel="Đang tải Highlights" />
+        <ActivityIndicator size="large" color={palette.primary} accessibilityLabel="Đang tải mục nổi bật" />
       </View>
     );
   }
@@ -301,7 +301,7 @@ const HighlightsScreen: React.FC = () => {
                 title="Hủy"
                 variant="secondary"
                 onPress={() => setRenameModalVisible(false)}
-                style={styles.renameBtn}
+                style={[styles.renameBtn, styles.renameBtnFirst]}
               />
               <KoolaButton
                 title="Lưu"
@@ -379,7 +379,6 @@ const makeStyles = (palette: Palette) =>
       borderRadius: koolaRadii.md,
       padding: 24,
       width: 300,
-      gap: 16,
     },
     renameTitle: {
       textAlign: 'center',
@@ -392,13 +391,16 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: 8,
       fontSize: 15,
       color: palette.ink,
+      marginVertical: 16,
     },
     renameActions: {
       flexDirection: 'row',
-      gap: 12,
     },
     renameBtn: {
       flex: 1,
+    },
+    renameBtnFirst: {
+      marginRight: 12,
     },
   });
 

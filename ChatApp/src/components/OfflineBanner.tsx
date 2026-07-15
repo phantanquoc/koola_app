@@ -38,11 +38,11 @@ const makeStyles = (semantic: SemanticTokens) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
     },
     text: {
       flex: 1,
       textAlign: 'center',
+      marginLeft: 8,
     },
   });
 

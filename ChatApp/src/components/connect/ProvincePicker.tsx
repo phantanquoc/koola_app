@@ -201,6 +201,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginRight: 8,
   },
   triggerError: {
     borderColor: koolaColors.danger,
@@ -219,10 +220,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: koolaColors.line,
-    gap: 8,
   },
   modalTitle: {
     flex: 1,
+    marginHorizontal: 8,
   },
   searchBox: {
     flexDirection: 'row',

@@ -24,14 +24,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    gap: 10,
   },
   contentCol: {
     flex: 1,
-    gap: 6,
+    marginLeft: 10,
   },
   line: {
-    marginTop: 2,
+    marginTop: 6,
   },
 });
 

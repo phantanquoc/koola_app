@@ -1,10 +1,19 @@
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  Max,
+  IsMongoId,
+  ValidateIf,
+} from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class ListMessagesDto {
   @ApiPropertyOptional({ example: '2026-03-31T10:00:00.000Z' })
   @IsOptional()
+  @ValidateIf((o) => !o.around)
   @IsString()
   cursor?: string;
 
@@ -15,6 +24,20 @@ export class ListMessagesDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  /**
+   * When provided, returns a context window of messages centered on this
+   * message ID (N/2 before + target + N/2 after). When `around` is present,
+   * `before`, `after`, and `cursor` parameters are silently ignored (no 400).
+   */
+  @ApiPropertyOptional({
+    description:
+      'Message ID to center the context window around. When present, cursor is ignored.',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsOptional()
+  @IsMongoId({ message: 'around must be a valid MongoDB ObjectId' })
+  around?: string;
 }
 
 /**

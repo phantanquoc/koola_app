@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
+import { ToastProvider } from './components/Toast';
 import { RequireAuth } from './RequireAuth';
 import AppLayout from './AppLayout';
 import LoginPage from './pages/LoginPage';
@@ -10,25 +11,27 @@ import UsersPage from './pages/UsersPage';
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <AppLayout />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<DashboardPage />} />
-            <Route path="businesses" element={<BusinessesPage />} />
-            <Route path="users" element={<UsersPage />} />
-          </Route>
-          {/* Catch-all: redirect to dashboard (auth guard handles unauthenticated) */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <AppLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="businesses" element={<BusinessesPage />} />
+              <Route path="users" element={<UsersPage />} />
+            </Route>
+            {/* Catch-all: redirect to dashboard (auth guard handles unauthenticated) */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

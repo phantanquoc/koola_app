@@ -164,12 +164,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    gap: 2,
   },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginBottom: 2,
   },
 });
 

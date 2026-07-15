@@ -94,7 +94,6 @@ const makeStyles = (semantic: SemanticTokens) =>
     actionsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
     },
     searchBar: {
       flex: 1,
@@ -102,11 +101,11 @@ const makeStyles = (semantic: SemanticTokens) =>
       paddingHorizontal: 10,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
       borderRadius: 16,
       // Search field sits ON the header canvas, so it needs a slightly-recessed
       // fill to read as an input — surface.level0 gives that subtle contrast.
       backgroundColor: semantic.surface.level0,
+      marginRight: 6,
     },
     searchBarPressed: {
       opacity: 0.78,
@@ -114,6 +113,7 @@ const makeStyles = (semantic: SemanticTokens) =>
     searchText: {
       flex: 1,
       fontSize: 12,
+      marginLeft: 6,
     },
   });
 

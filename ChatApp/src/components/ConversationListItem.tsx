@@ -6,29 +6,11 @@ import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
 import { KoolaText, koolaRadii, useTheme } from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
+import { formatShortTimestamp } from '../utils/formatViTimestamp';
 
 interface Props {
   conversation: Conversation;
   onPress: () => void;
-}
-
-// Short Vietnamese timestamp: "5p" / "3g" / "5n" / "2tu" / "1th" / "1n2024"
-function formatShortTimestamp(date: Date): string {
-  const now = Date.now();
-  const diffMs = now - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'vừa xong';
-  if (diffMin < 60) return `${diffMin}p`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}g`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}n`;
-  const diffWeek = Math.floor(diffDay / 7);
-  if (diffWeek < 4) return `${diffWeek}tu`;
-  const diffMonth = Math.floor(diffDay / 30);
-  if (diffMonth < 12) return `${diffMonth}th`;
-  const diffYr = Math.floor(diffDay / 365);
-  return `${diffYr}n`;
 }
 
 export function resolveConversationHeader(

@@ -25,7 +25,8 @@ import ShoppingTabStack from './ShoppingTabStack';
 import ConnectTabStack from './ConnectTabStack';
 import SupportTabStack from './SupportTabStack';
 import PersonalTabStack from './PersonalTabStack';
-import { KoolaText, koolaColors } from '../ui';
+import { KoolaText, useTheme } from '../ui';
+import type { Palette } from '../ui/theme';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -139,9 +140,10 @@ interface TabIcon3DProps {
   name: string;
   isFocused: boolean;
   pressProgress: SharedValue<number>;
+  palette: Palette;
 }
 
-const TabIcon3D: React.FC<TabIcon3DProps> = ({ name, isFocused, pressProgress }) => {
+const TabIcon3D: React.FC<TabIcon3DProps> = ({ name, isFocused, pressProgress, palette }) => {
   const progress = useDerivedValue(
     () => (isFocused
       ? withSpring(1, { damping: 12, stiffness: 180, mass: 0.7 })
@@ -209,13 +211,13 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({ name, isFocused, pressProgress })
 
   return (
     <View style={styles.iconWell}>
-      <Animated.View pointerEvents="none" style={[styles.iconHalo, haloStyle]} />
-      <Animated.View pointerEvents="none" style={[styles.iconRipple, rippleStyle]} />
+      <Animated.View pointerEvents="none" style={[styles.iconHalo, { backgroundColor: palette.primary }, haloStyle]} />
+      <Animated.View pointerEvents="none" style={[styles.iconRipple, { borderColor: palette.primary }, rippleStyle]} />
       <Animated.View style={wrapperStyle}>
         <AnimatedMaterialIcons
           name={name}
           size={20}
-          color={isFocused ? koolaColors.primary : koolaColors.muted}
+          color={isFocused ? palette.primary : palette.muted}
           style={iconStyle}
         />
       </Animated.View>
@@ -230,6 +232,7 @@ interface TabBarItemProps {
   label: string;
   onPress: () => void;
   onLongPress: () => void;
+  palette: Palette;
 }
 
 const TabBarItem: React.FC<TabBarItemProps> = ({
@@ -239,6 +242,7 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
   label,
   onPress,
   onLongPress,
+  palette,
 }) => {
   const press = useSharedValue(0);
 
@@ -267,7 +271,7 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
       accessibilityRole="tab"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={isFocused ? { selected: true } : {}}
-      android_ripple={{ color: koolaColors.primarySoft, borderless: false }}
+      android_ripple={{ color: palette.primarySoft, borderless: false }}
       onPress={onPress}
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
@@ -281,6 +285,7 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
         name={isFocused ? meta.focusedIcon : meta.icon}
         isFocused={isFocused}
         pressProgress={press}
+        palette={palette}
       />
       <KoolaText
         variant="caption"
@@ -300,9 +305,26 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   navigation,
 }) => {
   const insets = useSafeAreaInsets();
+  const { palette, resolvedScheme } = useTheme();
   const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
+
+  // Theme-aware SVG gradient stops for the faux-glass dock fill.
+  const gradientStops = React.useMemo(() => {
+    if (resolvedScheme === 'dark') {
+      return {
+        top: { color: '#1C2026', opacity: 0.85 },
+        mid: { color: '#1E2A44', opacity: 0.75 },
+        bottom: { color: '#1A2332', opacity: 0.70 },
+      };
+    }
+    return {
+      top: { color: '#FFFFFF', opacity: 0.78 },
+      mid: { color: '#EEF4FF', opacity: 0.70 },
+      bottom: { color: '#DBEAFE', opacity: 0.62 },
+    };
+  }, [resolvedScheme]);
 
   // Small one-shot reveal so the dock doesn't pop in after a fullscreen route
   // finishes closing. It is not a perpetual loop, so it remains unmount-safe.
@@ -364,15 +386,15 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         revealStyle,
       ]}>
       <View style={styles.shadowWrap}>
-        <View style={styles.tabDock}>
+        <View style={[styles.tabDock, { borderColor: palette.primary }]}>
           {/* Faux-glass layers (static — BlurView permanently removed). */}
           <View pointerEvents="none" style={styles.tabDockStaticFill}>
             <Svg width="100%" height="100%" preserveAspectRatio="none">
               <Defs>
                 <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.78" />
-                  <Stop offset="0.55" stopColor="#EEF4FF" stopOpacity="0.70" />
-                  <Stop offset="1" stopColor="#DBEAFE" stopOpacity="0.62" />
+                  <Stop offset="0" stopColor={gradientStops.top.color} stopOpacity={String(gradientStops.top.opacity)} />
+                  <Stop offset="0.55" stopColor={gradientStops.mid.color} stopOpacity={String(gradientStops.mid.opacity)} />
+                  <Stop offset="1" stopColor={gradientStops.bottom.color} stopOpacity={String(gradientStops.bottom.opacity)} />
                 </SvgLinearGradient>
               </Defs>
               <Rect width="100%" height="100%" fill="url(#tabFill)" />
@@ -385,18 +407,18 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
             <Svg width="100%" height="100%" preserveAspectRatio="none">
               <Defs>
                 <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.85" />
-                  <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+                  <Stop offset="0" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0.85" />
+                  <Stop offset="1" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0" />
                 </SvgLinearGradient>
               </Defs>
               <Rect width="100%" height="100%" fill="url(#tabSheen)" />
             </Svg>
           </View>
           {/* Layer 3 — side-edge shines. */}
-          <View pointerEvents="none" style={styles.tabEdgeShineLeft} />
-          <View pointerEvents="none" style={styles.tabEdgeShineRight} />
+          <View pointerEvents="none" style={[styles.tabEdgeShineLeft, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
+          <View pointerEvents="none" style={[styles.tabEdgeShineRight, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
           {/* Layer 4 — 1px inner top edge. */}
-          <View pointerEvents="none" style={styles.tabInnerEdge} />
+          <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' && styles.tabInnerEdgeDark]} />
           {/* Layer 5 — cool-tone bottom hairline. */}
           <View pointerEvents="none" style={styles.tabBottomHairline} />
           {state.routes.map((route, index) => {
@@ -415,14 +437,30 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                 isFocused={isFocused}
                 accessibilityLabel={accessibilityLabel}
                 label={label}
+                palette={palette}
                 onPress={() => {
                   const event = navigation.emit({
                     type: 'tabPress',
                     target: route.key,
                     canPreventDefault: true,
                   });
-                  if (!isFocused && !event.defaultPrevented) {
-                    navigation.navigate(route.name as never);
+                  if (event.defaultPrevented) return;
+                  if (!isFocused) {
+                    // Navigating to Chat from another tab: reset to Messages
+                    if (routeName === 'ChatTab') {
+                      navigation.navigate('ChatTab', {
+                        screen: 'ChatHome',
+                        params: { resetToMessages: true },
+                      } as never);
+                    } else {
+                      navigation.navigate(route.name as never);
+                    }
+                  } else if (routeName === 'ChatTab') {
+                    // Reselect Chat while already focused: reset nested tab to Messages
+                    navigation.navigate('ChatTab', {
+                      screen: 'ChatHome',
+                      params: { resetToMessages: true },
+                    } as never);
                   }
                 }}
                 onLongPress={() => {
@@ -531,10 +569,8 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: 'transparent',
     borderWidth: 2,
-    // Glass rim — matches the ChatComposer dock so the two floating docks read
-    // as the same material. (Was a debug mid-gray outline during the tab-dock
-    // crash investigation; restored to the brand primary rim.)
-    borderColor: koolaColors.primary,
+    // Glass rim — borderColor now applied via inline style from useTheme() palette.
+    borderColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -597,6 +633,13 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.55)',
   },
+  // Dark-mode overrides for glass layers
+  tabEdgeShineDark: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  tabInnerEdgeDark: {
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
   // Layer 5 — cool-tone bottom hairline.
   tabBottomHairline: {
     position: 'absolute',
@@ -640,7 +683,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 999,
-    backgroundColor: koolaColors.primary,
+    // backgroundColor applied inline from palette.primary
   },
   iconRipple: {
     position: 'absolute',
@@ -648,7 +691,7 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 999,
     borderWidth: 1.25,
-    borderColor: koolaColors.primary,
+    // borderColor applied inline from palette.primary
     backgroundColor: 'transparent',
   },
   activeLabel: {

@@ -21,6 +21,27 @@ The React Native client SHALL allow authenticated users to search for other user
 - **THEN** client does NOT call the search API
 - **AND** client displays the default empty state: "Search for people by name or email"
 
+### Requirement: People-Search Destination Describes Its Real Scope
+The mobile destination backed by `GET /users/search` SHALL describe global Koola user discovery and SHALL not imply a saved-contact list when no saved-contact model exists.
+
+#### Scenario: User views the Chat destination row
+- **WHEN** the people-search destination is visible
+- **THEN** its Vietnamese label SHALL describe finding people rather than saved contacts
+
+#### Scenario: No query has been entered
+- **WHEN** the people-search screen opens with an empty query
+- **THEN** the empty state SHALL explain that users can search Koola people by supported identity fields
+
+#### Scenario: Search fails
+- **WHEN** the people-search API fails
+- **THEN** the screen SHALL show a recoverable error state
+- **AND** it SHALL not present the failure as zero matching users
+
+#### Scenario: Error messages are Vietnamese
+- **WHEN** a people/contacts search error is displayed to the user
+- **THEN** the error message SHALL be in Vietnamese
+- **AND** English-only error strings SHALL be replaced with Vietnamese equivalents
+
 #### Scenario: Search result pagination
 - **WHEN** more than 20 users match the query
 - **THEN** server returns `{ items: User[], hasMore: true, nextCursor: <lastUserId> }`

@@ -295,30 +295,8 @@ code,
   gap: var(--space-3);
 }
 
-.admin-command {
-  display: flex;
-  min-width: 280px;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  border: 1px solid var(--koola-line);
-  border-radius: var(--radius-pill);
-  background: var(--koola-surface);
-  color: var(--koola-muted);
-  padding: 9px 10px 9px 14px;
-  box-shadow: var(--shadow-subtle);
-}
-
-.admin-command kbd {
-  border: 1px solid var(--koola-line);
-  border-radius: var(--radius-xs);
-  background: var(--koola-surface-soft);
-  color: var(--koola-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 6px;
-}
+/* Removed: .admin-command was the old interactive-looking command field.
+   Now replaced by .admin-command-info (non-interactive). */
 
 .admin-content {
   width: min(100%, 1440px);
@@ -933,8 +911,11 @@ code,
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+  border: 0;
+  background: transparent;
   color: var(--koola-primary);
   font-weight: 800;
+  padding: 0;
   text-decoration: none;
 }
 
@@ -1077,11 +1058,28 @@ code,
   }
 
   .admin-sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--koola-line);
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1100;
+    width: 264px;
+    height: 100vh;
+    border-right: 1px solid var(--koola-line);
+    border-bottom: 0;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+  }
+
+  .admin-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(16, 24, 40, 0.42);
+    backdrop-filter: blur(4px);
   }
 
   .admin-nav-section {
@@ -1092,7 +1090,7 @@ code,
     padding: 0 var(--space-4);
   }
 
-  .admin-command {
+  .admin-command-info {
     display: none;
   }
 
@@ -1121,4 +1119,146 @@ code,
   .description-list {
     grid-template-columns: 1fr;
   }
+}
+
+/* Mobile nav toggle — hidden on desktop */
+.mobile-nav-toggle {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .mobile-nav-toggle {
+    display: inline-flex;
+    font-size: 20px;
+  }
+}
+
+/* Admin topbar left layout */
+.admin-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Non-interactive command info (replaces the old interactive-looking command affordance) */
+.admin-command-info {
+  color: var(--koola-faint);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Toast notifications */
+.toast-container {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 2000;
+  display: flex;
+  max-width: 400px;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-weight: 700;
+  box-shadow: var(--shadow-soft);
+  animation: toast-in 200ms ease;
+}
+
+.toast-success {
+  border: 1px solid var(--koola-success-soft);
+  background: var(--koola-success-soft);
+  color: #067647;
+}
+
+.toast-error {
+  border: 1px solid var(--koola-danger-soft);
+  background: #fff7f7;
+  color: var(--koola-danger-dark);
+}
+
+.toast-info {
+  border: 1px solid var(--koola-primary-soft);
+  background: var(--koola-info-soft);
+  color: var(--koola-primary-dark);
+}
+
+.toast-text {
+  flex: 1;
+  font-size: 14px;
+}
+
+.toast-dismiss {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  opacity: 0.7;
+}
+
+.toast-dismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Lightbox */
+.lightbox-dialog {
+  width: min(720px, 100%);
+}
+
+.lightbox-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 60vh;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  object-fit: contain;
+}
+
+.lightbox-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.license-missing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.license-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  text-align: center;
 }

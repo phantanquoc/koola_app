@@ -97,9 +97,10 @@ const ProfileScreen: React.FC = () => {
       } as never);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
+      if (__DEV__) console.warn('Start chat failed:', error.response?.data?.message);
       Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Failed to start chat',
+        'Không thể bắt đầu trò chuyện',
+        'Đã xảy ra lỗi khi tạo cuộc trò chuyện. Bạn thử lại nhé.',
       );
     } finally {
       setChatLoading(false);
@@ -132,10 +133,10 @@ const ProfileScreen: React.FC = () => {
         {renderHeader()}
         <View style={styles.loadingWrap}>
           <KoolaSurface variant="raised" style={styles.loadingCard}>
-            <KoolaSkeleton width={92} height={92} radius={46} />
-            <KoolaSkeleton width="52%" height={22} />
-            <KoolaSkeleton width="68%" height={14} />
-            <KoolaSkeleton width="44%" height={32} radius={16} />
+            <KoolaSkeleton width={92} height={92} radius={46} style={styles.loadingItem} />
+            <KoolaSkeleton width="52%" height={22} style={styles.loadingItem} />
+            <KoolaSkeleton width="68%" height={14} style={styles.loadingItem} />
+            <KoolaSkeleton width="44%" height={32} radius={16} style={styles.loadingItem} />
             <KoolaSkeleton width="100%" height={84} radius={14} />
           </KoolaSurface>
         </View>
@@ -234,7 +235,7 @@ const ProfileScreen: React.FC = () => {
 
         <KoolaSurface variant="outline" style={styles.infoCard}>
           <View style={styles.sectionIntro}>
-            <KoolaText variant="heading" weight="700">
+            <KoolaText variant="heading" weight="700" style={{ marginBottom: koolaSpacing.xs }}>
               Thông tin hồ sơ
             </KoolaText>
             <KoolaText variant="caption" tone="muted">
@@ -326,7 +327,7 @@ const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, palette }) => (
       <MaterialIcons name={icon} size={19} color={palette.primary} />
     </View>
     <View style={infoRowStyles.infoCopy}>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={infoRowStyles.infoLabel}>
         {label}
       </KoolaText>
       <KoolaText variant="label" numberOfLines={2}>
@@ -343,7 +344,6 @@ const infoRowStyles = StyleSheet.create({
     paddingVertical: koolaSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: koolaSpacing.md,
   },
   infoIcon: {
     width: 44,
@@ -351,10 +351,13 @@ const infoRowStyles = StyleSheet.create({
     borderRadius: koolaRadii.md,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: koolaSpacing.md,
   },
   infoCopy: {
     flex: 1,
-    gap: koolaSpacing.xs,
+  },
+  infoLabel: {
+    marginBottom: koolaSpacing.xs,
   },
 });
 
@@ -408,7 +411,9 @@ const makeStyles = (p: Palette) =>
       alignItems: 'center',
       paddingVertical: 28,
       paddingHorizontal: 18,
-      gap: 14,
+    },
+    loadingItem: {
+      marginBottom: 14,
     },
     stateWrap: {
       flex: 1,
@@ -455,13 +460,13 @@ const makeStyles = (p: Palette) =>
     statusRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: koolaSpacing.sm,
       marginTop: koolaSpacing.md,
     },
     statusDot: {
       width: 9,
       height: 9,
       borderRadius: 5,
+      marginRight: koolaSpacing.sm,
     },
     online: {
       backgroundColor: p.success,
@@ -489,11 +494,9 @@ const makeStyles = (p: Palette) =>
       paddingHorizontal: koolaSpacing.lg,
       paddingTop: koolaSpacing.lg,
       paddingBottom: koolaSpacing.md,
-      gap: koolaSpacing.xs,
     },
     actionPanel: {
       marginTop: koolaSpacing.lg,
-      gap: koolaSpacing.md,
     },
     chatButton: {
       borderRadius: koolaRadii.md,

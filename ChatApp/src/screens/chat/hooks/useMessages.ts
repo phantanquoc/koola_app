@@ -27,6 +27,12 @@ function toGiftedMessage(msg: Message, currentUserId: string): IMessage & Record
     },
     system: msg.type === 'system',
     reactions: msg.reactions || [],
+    // Delivery state — consumed by presentation layer for tick icons
+    pending: msg.status === 'sending',
+    sent: msg.status !== 'failed',
+    failed: msg.status === 'failed',
+    readBy: msg.readBy ?? [],
+    messageStatus: msg.status ?? 'sent',
   };
 
   // Pass media metadata as custom props — do NOT set image to raw mediaKey

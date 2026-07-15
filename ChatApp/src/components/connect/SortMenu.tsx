@@ -45,7 +45,7 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
         accessibilityRole="button"
         accessibilityLabel={`Sắp xếp: ${LABELS[value]}`}>
         <MaterialIcons name="sort" size={16} color={koolaColors.primary} />
-        <KoolaText variant="caption" weight="600" tone="primary">
+        <KoolaText variant="caption" weight="600" tone="primary" style={{ marginHorizontal: 4 }}>
           {LABELS[value]}
         </KoolaText>
         <MaterialIcons name="expand-more" size={16} color={koolaColors.primary} />
@@ -109,12 +109,12 @@ const styles = StyleSheet.create({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: koolaRadii.xs,
     backgroundColor: koolaColors.primarySoft,
     minHeight: 34,
+    marginRight: 8,
   },
   backdrop: {
     flex: 1,
@@ -146,7 +146,6 @@ const styles = StyleSheet.create({
   option: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     paddingVertical: 14,
     paddingHorizontal: 8,
     minHeight: 48,
@@ -157,6 +156,7 @@ const styles = StyleSheet.create({
   },
   optionText: {
     flex: 1,
+    marginLeft: 12,
   },
   checkIcon: {
     marginLeft: 'auto',

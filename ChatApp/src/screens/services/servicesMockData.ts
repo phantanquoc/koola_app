@@ -76,7 +76,7 @@ export const services: ServiceItem[] = [
     jobs: '8.1k đơn',
     icon: 'restaurant',
     accent: '#F97316',
-    badge: 'Deal hôm nay',
+    badge: 'Đề xuất',
   },
   {
     id: 'sv4',

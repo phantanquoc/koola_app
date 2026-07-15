@@ -1,15 +1,25 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Conversation, UserSearchResult, MessageSearchItem } from '../types';
 import { usersApi, messagesApi } from '../services/api/apiService';
 
+export interface SectionState<T> {
+  data: T[];
+  loading: boolean;
+  error: string | null;
+}
+
 export interface UniversalSearchResults {
   conversations: Conversation[];
-  contacts: UserSearchResult[];
-  messages: MessageSearchItem[];
+  contacts: SectionState<UserSearchResult>;
+  messages: SectionState<MessageSearchItem>;
+  /** Retry only the contacts section for the current query */
+  retryContacts: () => void;
+  /** Retry only the messages section for the current query */
+  retryMessages: () => void;
+  // Legacy compat — these map to section state for backward compatibility
   loadingContacts: boolean;
   loadingMessages: boolean;
-  error: string | null;
 }
 
 /**
@@ -18,20 +28,29 @@ export interface UniversalSearchResults {
  *  - Contacts: GET /users/search?q=
  *  - Messages: GET /messages/search?q=
  *
- * In-flight HTTP requests are aborted via AbortController when the query
- * changes or the component unmounts, so rapid typing does not pile up
- * concurrent requests on the server.
+ * Each section maintains INDEPENDENT loading/error/empty state. A failure
+ * in one section does not affect the others. Retry re-runs only the failed
+ * section.
  */
 export function useUniversalSearch(
   query: string,
   conversations: Conversation[],
 ): UniversalSearchResults {
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [contacts, setContacts] = useState<UserSearchResult[]>([]);
-  const [messages, setMessages] = useState<MessageSearchItem[]>([]);
-  const [loadingContacts, setLoadingContacts] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [contacts, setContacts] = useState<SectionState<UserSearchResult>>({
+    data: [],
+    loading: false,
+    error: null,
+  });
+  const [messages, setMessages] = useState<SectionState<MessageSearchItem>>({
+    data: [],
+    loading: false,
+    error: null,
+  });
+  const [contactsRetryCount, setContactsRetryCount] = useState(0);
+  const [messagesRetryCount, setMessagesRetryCount] = useState(0);
+  const contactsAbortRef = useRef<AbortController | null>(null);
+  const messagesAbortRef = useRef<AbortController | null>(null);
 
   // Debounce: 300 ms
   useEffect(() => {
@@ -41,71 +60,75 @@ export function useUniversalSearch(
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Search contacts
+  // Search contacts — independent lifecycle
   useEffect(() => {
     if (debouncedQuery.length < 2) {
-      setContacts([]);
-      setLoadingContacts(false);
+      setContacts({ data: [], loading: false, error: null });
       return;
     }
 
+    // Abort any in-flight request
+    contactsAbortRef.current?.abort();
     const ctrl = new AbortController();
-    setLoadingContacts(true);
-    setError(null);
+    contactsAbortRef.current = ctrl;
+
+    setContacts((prev) => ({ ...prev, loading: true, error: null }));
 
     usersApi
       .searchUsers(debouncedQuery, undefined, ctrl.signal)
       .then((res) => {
-        setContacts(res.items);
+        if (ctrl.signal.aborted) return;
+        setContacts({ data: res.items, loading: false, error: null });
       })
       .catch((err) => {
-        // Ignore cancellations — they are expected when the query changes.
         if (axios.isCancel(err) || ctrl.signal.aborted) return;
-        setError('Không thể tải danh sách liên hệ');
-      })
-      .finally(() => {
-        if (!ctrl.signal.aborted) setLoadingContacts(false);
+        setContacts((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Tìm kiếm thất bại. Nhấn để thử lại.',
+        }));
       });
 
     return () => ctrl.abort();
-  }, [debouncedQuery]);
+  }, [debouncedQuery, contactsRetryCount]);
 
-  // Search messages
+  // Search messages — independent lifecycle
   useEffect(() => {
     if (debouncedQuery.length < 2) {
-      setMessages([]);
-      setLoadingMessages(false);
+      setMessages({ data: [], loading: false, error: null });
       return;
     }
 
+    messagesAbortRef.current?.abort();
     const ctrl = new AbortController();
-    setLoadingMessages(true);
+    messagesAbortRef.current = ctrl;
+
+    setMessages((prev) => ({ ...prev, loading: true, error: null }));
 
     messagesApi
       .searchMessages(debouncedQuery, undefined, undefined, ctrl.signal)
       .then((res) => {
-        setMessages(res.items);
+        if (ctrl.signal.aborted) return;
+        setMessages({ data: res.items, loading: false, error: null });
       })
       .catch((err) => {
         if (axios.isCancel(err) || ctrl.signal.aborted) return;
-        setError('Không thể tải tin nhắn');
-      })
-      .finally(() => {
-        if (!ctrl.signal.aborted) setLoadingMessages(false);
+        setMessages((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Không thể tải tin nhắn. Nhấn để thử lại.',
+        }));
       });
 
     return () => ctrl.abort();
-  }, [debouncedQuery]);
+  }, [debouncedQuery, messagesRetryCount]);
 
-  // Client-side conversation filter — memoized so callers don't re-run filter
-  // on every render even when inputs are unchanged.
+  // Client-side conversation filter
   const filteredConversations = useMemo<Conversation[]>(() => {
     if (debouncedQuery.length < 2) return [];
     const q = debouncedQuery.toLowerCase();
     return conversations.filter((conv) => {
-      // Match conversation name
       if (conv.name?.toLowerCase().includes(q)) return true;
-      // Match any member display name
       return conv.members.some((m) =>
         m.user?.displayName?.toLowerCase().includes(q),
       );
@@ -115,18 +138,28 @@ export function useUniversalSearch(
   // Reset results when query drops below threshold
   useEffect(() => {
     if (query.length < 2) {
-      setContacts([]);
-      setMessages([]);
-      setError(null);
+      setContacts({ data: [], loading: false, error: null });
+      setMessages({ data: [], loading: false, error: null });
     }
   }, [query]);
+
+  // Retry functions — only re-trigger the failed section
+  const retryContacts = useCallback(() => {
+    setContactsRetryCount((c) => c + 1);
+  }, []);
+
+  const retryMessages = useCallback(() => {
+    setMessagesRetryCount((c) => c + 1);
+  }, []);
 
   return {
     conversations: filteredConversations,
     contacts,
     messages,
-    loadingContacts,
-    loadingMessages,
-    error,
+    retryContacts,
+    retryMessages,
+    // Legacy compat
+    loadingContacts: contacts.loading,
+    loadingMessages: messages.loading,
   };
 }

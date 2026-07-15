@@ -17,6 +17,7 @@ import UserAvatar from '../../components/UserAvatar';
 import { KoolaText, KoolaEmptyState, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { RootStackParamList } from '../../navigation/types';
+import { formatRelativeTimestamp } from '../../utils/formatViTimestamp';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -52,21 +53,6 @@ function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHour = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-
-  if (diffMin < 1) return 'Vừa xong';
-  if (diffMin < 60) return `${diffMin} phút trước`;
-  if (diffHour < 24) return `${diffHour} giờ trước`;
-  if (diffDay < 7) return `${diffDay} ngày trước`;
-  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
 
 function getStatusInfo(
@@ -264,7 +250,7 @@ const CallsScreen: React.FC = () => {
       const remoteAvatar = isOutgoing ? item.targetAvatar : item.initiatorAvatar;
       const statusInfo = getStatusInfo(item.status, isOutgoing, tokens.semantic);
       const duration = formatDuration(item.duration);
-      const timeAgo = formatRelativeTime(item.startedAt);
+      const timeAgo = formatRelativeTimestamp(item.startedAt);
       const isMissedIncoming = !isOutgoing && (item.status === 'missed' || item.status === 'cancelled');
 
       return (
@@ -287,11 +273,11 @@ const CallsScreen: React.FC = () => {
                 size={16}
                 color={statusInfo.color}
               />
-              <KoolaText variant="caption" style={{ color: statusInfo.color }}>
+              <KoolaText variant="caption" style={{ color: statusInfo.color, marginLeft: 4 }}>
                 {statusInfo.label}
               </KoolaText>
               {!!duration && (
-                <KoolaText variant="caption" tone="muted"> · {duration}</KoolaText>
+                <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}> · {duration}</KoolaText>
               )}
             </View>
           </View>
@@ -377,7 +363,6 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
       flexDirection: 'row',
       alignItems: 'center',
       marginTop: 2,
-      gap: 4,
     },
     logRight: {
       alignItems: 'flex-end',

@@ -20,6 +20,8 @@ import {
 import type { Palette } from '../../ui/theme';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
+import { PreviewBanner } from '../../components/PreviewBanner';
+import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
 import {
   serviceCategories,
   serviceProviders,
@@ -72,7 +74,7 @@ const UrgentBand: React.FC<{
       <MaterialIcons name="flash-on" size={22} color={palette.surface} />
     </View>
     <View style={styles.urgentCopy}>
-      <KoolaText variant="label" weight="800" numberOfLines={1}>
+      <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 2 }}>
         Cần hỗ trợ ngay?
       </KoolaText>
       <KoolaText variant="caption" tone="muted" numberOfLines={2}>
@@ -84,7 +86,7 @@ const UrgentBand: React.FC<{
       accessibilityLabel="Tạo yêu cầu dịch vụ"
       onPress={onComingSoon}
       style={styles.requestButton}>
-      <MaterialIcons name="add-task" size={18} color={palette.surface} />
+      <MaterialIcons name="add-task" size={18} color={palette.surface} style={{ marginRight: 5 }} />
       <KoolaText variant="caption" tone="surface" weight="800" numberOfLines={1}>
         Tạo yêu cầu
       </KoolaText>
@@ -116,6 +118,7 @@ const CategoryRail: React.FC<{
             name={category.icon}
             size={17}
             color={selected ? palette.surface : palette.primary}
+            style={{ marginRight: 6 }}
           />
           <KoolaText
             variant="caption"
@@ -156,15 +159,15 @@ const ServiceCard: React.FC<{
     </KoolaText>
     <View style={styles.serviceMeta}>
       <View style={styles.metaItem}>
-        <MaterialIcons name="schedule" size={14} color={palette.primary} />
+        <MaterialIcons name="schedule" size={14} color={palette.primary} style={styles.metaItemIcon} />
         <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
           {item.eta}
         </KoolaText>
       </View>
       <View style={styles.metaItem}>
-        <MaterialIcons name="star" size={14} color={palette.warning} />
-        <KoolaText variant="caption" weight="700">
-          {item.rating.toFixed(1)}
+        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaItemIcon} />
+        <KoolaText variant="caption" tone="faint">
+          Mẫu
         </KoolaText>
       </View>
     </View>
@@ -204,20 +207,14 @@ const ProviderRow: React.FC<{
         <KoolaText variant="label" weight="800" numberOfLines={1} style={styles.providerName}>
           {provider.name}
         </KoolaText>
-        {provider.verified && (
-          <MaterialIcons name="verified" size={16} color={palette.success} />
-        )}
       </View>
       <KoolaText variant="caption" tone="muted" numberOfLines={1}>
         {provider.service} · {provider.area}
       </KoolaText>
       <View style={styles.providerMeta}>
-        <MaterialIcons name="star" size={14} color={palette.warning} />
-        <KoolaText variant="caption" weight="700">
-          {provider.rating.toFixed(1)}
-        </KoolaText>
+        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.providerMetaIcon} />
         <KoolaText variant="caption" tone="faint" numberOfLines={1}>
-          {provider.eta}
+          Dữ liệu mẫu · {provider.eta}
         </KoolaText>
       </View>
     </View>
@@ -243,7 +240,12 @@ const ServicesHomeScreen: React.FC = () => {
   );
   const [activeCategory, setActiveCategory] = useState('all');
 
-  const handleComingSoon = useCallback(() => notify(), [notify]);
+  const servicesIsPreview = isPreview('services');
+
+  const handleComingSoon = useCallback(
+    () => notify(`${AVAILABILITY_LABELS[servicesIsPreview ? 'preview' : 'unavailable']} — Tính năng đang được phát triển`),
+    [notify, servicesIsPreview],
+  );
 
   const filteredServices = useMemo(
     () =>
@@ -264,6 +266,9 @@ const ServicesHomeScreen: React.FC = () => {
     <View>
       <ServicesHeader palette={palette} styles={styles} onComingSoon={handleComingSoon} />
       <View style={styles.contentInset}>
+        {servicesIsPreview && (
+          <PreviewBanner message="Dịch vụ đang ở chế độ xem trước. Nhà cung cấp và giá là dữ liệu mẫu." />
+        )}
         <UrgentBand palette={palette} styles={styles} onComingSoon={handleComingSoon} />
         <View style={styles.sectionHeader}>
           <View>
@@ -368,7 +373,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.canvas,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
       paddingHorizontal: 12,
       marginRight: 8,
       overflow: 'hidden',
@@ -376,6 +380,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     searchText: {
       flex: 1,
       fontSize: 13,
+      marginLeft: 8,
     },
     supportWrap: {
       flexShrink: 0,
@@ -393,7 +398,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       padding: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
       ...bandShadow,
     },
     urgentIcon: {
@@ -403,10 +407,10 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.primary,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 12,
     },
     urgentCopy: {
       flex: 1,
-      gap: 2,
     },
     requestButton: {
       minHeight: 36,
@@ -416,8 +420,8 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 5,
       backgroundColor: p.accent,
+      marginLeft: 12,
     },
     sectionHeader: {
       marginTop: 18,
@@ -425,10 +429,8 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'flex-end',
       justifyContent: 'space-between',
-      gap: 12,
     },
     categoryRail: {
-      gap: 8,
       paddingRight: 12,
       paddingBottom: 6,
     },
@@ -438,29 +440,28 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
       backgroundColor: p.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
+      marginRight: 8,
     },
     categoryButtonActive: {
       backgroundColor: p.primary,
       borderColor: p.primary,
     },
     cardRow: {
-      gap: 10,
-      paddingHorizontal: 12,
+      paddingHorizontal: 7,
     },
     serviceCard: {
       flex: 1,
       minHeight: 226,
       marginBottom: 10,
+      marginHorizontal: 5,
       borderRadius: koolaRadii.md,
       backgroundColor: p.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
       padding: 10,
-      gap: 8,
       overflow: 'hidden',
     },
     serviceTop: {
@@ -468,7 +469,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
-      gap: 8,
+      marginBottom: 8,
     },
     serviceIcon: {
       width: 42,
@@ -476,32 +477,39 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       borderRadius: koolaRadii.sm,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 8,
     },
     serviceTitle: {
       minHeight: 40,
+      marginBottom: 8,
     },
     serviceSubtitle: {
       minHeight: 32,
+      marginBottom: 8,
     },
     serviceMeta: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 8,
+      marginBottom: 8,
     },
     metaItem: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      marginRight: 8,
+      marginBottom: 8,
+    },
+    metaItemIcon: {
+      marginRight: 4,
     },
     serviceBottom: {
       marginTop: 'auto',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 8,
     },
     priceCopy: {
       flex: 1,
+      marginRight: 8,
     },
     priceText: {
       color: p.primary,
@@ -518,9 +526,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       paddingBottom: 12,
     },
-    providerList: {
-      gap: 8,
-    },
+    providerList: {},
     providerRow: {
       minHeight: 78,
       borderRadius: koolaRadii.md,
@@ -530,7 +536,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       padding: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
+      marginBottom: 8,
       overflow: 'hidden',
     },
     providerIcon: {
@@ -539,15 +545,16 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       borderRadius: koolaRadii.sm,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 10,
     },
     providerCopy: {
       flex: 1,
-      gap: 3,
+      marginRight: 10,
     },
     providerTitleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      marginBottom: 3,
     },
     providerName: {
       flexShrink: 1,
@@ -555,7 +562,10 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     providerMeta: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      marginTop: 3,
+    },
+    providerMetaIcon: {
+      marginRight: 4,
     },
   });
 };
