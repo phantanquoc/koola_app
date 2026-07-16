@@ -3,15 +3,18 @@ import { View, Pressable, InteractionManager } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation, useIsFocused, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
 import KoolaHeader from '../../components/KoolaHeader';
+import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import ConversationListScreen from './ConversationListScreen';
 import ContactsScreen from './ContactsScreen';
 import MomentsScreen from './MomentsScreen';
@@ -20,9 +23,10 @@ import CallsScreen from './CallsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, koolaRadii, useTheme } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
+const CHAT_SUB_TAB_BAR_HEIGHT = 40;
 
 // ─── Sub-tab metadata ─────────────────────────────────────────────────────────
 // Each tab provides a paired (outline ↔ filled) icon. Active state crossfades
@@ -34,10 +38,10 @@ type TabMeta = {
 };
 
 const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
-  Messages: { iconIdle: 'chat-bubble-outline', iconActive: 'chat-bubble', label: 'Tin nhắn' },
+  Messages: { iconIdle: 'chat', iconActive: 'forum', label: 'Tin nhắn' },
   Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Tìm người' },
-  Moments: { iconIdle: 'auto-awesome', iconActive: 'auto-awesome', label: 'Khoảnh khắc' },
-  Calls: { iconIdle: 'call', iconActive: 'call', label: 'Cuộc gọi' },
+  Moments: { iconIdle: 'star-outline', iconActive: 'star', label: 'Khoảnh khắc' },
+  Calls: { iconIdle: 'phone', iconActive: 'phone-in-talk', label: 'Cuộc gọi' },
   Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
 };
 
@@ -46,7 +50,7 @@ function useUnreadCount(_routeName: keyof ChatSubTabParamList): number {
   return 0;
 }
 
-const AnimatedIcon = Animated.createAnimatedComponent(Icon);
+const AnimatedIcon = Animated.createAnimatedComponent(MaterialIcons);
 
 // ─── Tab item ────────────────────────────────────────────────────────────────
 interface TabItemProps {
@@ -54,34 +58,47 @@ interface TabItemProps {
   isFocused: boolean;
   unread: number;
   onPress: () => void;
-  palette: Palette;
+  semantic: SemanticTokens;
 }
 
-const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, palette }) => {
+const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, semantic }) => {
   const focus = useSharedValue(isFocused ? 1 : 0);
   const press = useSharedValue(0);
+  const selectionPulse = useSharedValue(0);
 
   useEffect(() => {
     focus.value = withTiming(isFocused ? 1 : 0, {
-      duration: 180,
+      duration: 200,
       easing: Easing.out(Easing.cubic),
     });
-  }, [isFocused, focus]);
+
+    if (isFocused) {
+      selectionPulse.value = 0;
+      selectionPulse.value = withSequence(
+        withTiming(1, { duration: 110, easing: Easing.out(Easing.cubic) }),
+        withSpring(0, { damping: 10, stiffness: 220, mass: 0.45 }),
+      );
+    }
+  }, [focus, isFocused, selectionPulse]);
 
   const handlePressIn = useCallback(() => {
     press.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
   }, [press]);
 
   const handlePressOut = useCallback(() => {
-    press.value = withTiming(0, { duration: 140, easing: Easing.out(Easing.quad) });
+    press.value = withSpring(0, { damping: 12, stiffness: 260, mass: 0.4 });
   }, [press]);
 
   const wrapperStyle = useAnimatedStyle(() => {
     const f = focus.value;
     const p = press.value;
+    const pulse = selectionPulse.value;
     return {
-      transform: [{ scale: (1 + 0.04 * f) * (1 - 0.05 * p) }],
-      opacity: 1 - 0.12 * p,
+      transform: [
+        { translateY: -1.5 * f },
+        { scale: (1 + 0.08 * f + 0.08 * pulse) * (1 - 0.09 * p) },
+      ],
+      opacity: 1 - 0.16 * p,
     };
   });
 
@@ -94,62 +111,51 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, pal
     opacity: focus.value,
   }));
 
-  // Active pill background — animates in/out with focus
-  const pillStyle = useAnimatedStyle(() => ({
+  const underlineStyle = useAnimatedStyle(() => ({
     opacity: focus.value,
-    transform: [{ scale: 0.85 + 0.15 * focus.value }],
+    transform: [{ scaleX: 0.45 + 0.55 * focus.value }],
   }));
 
   return (
     <Pressable
       style={tabItemStyles.host}
+      hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      android_ripple={{ color: palette.primarySoft, borderless: true, radius: 32 }}
+      android_ripple={{ color: semantic.action.primarySoft, borderless: true, radius: 32 }}
       accessibilityRole="tab"
       accessibilityState={{ selected: isFocused }}
       accessibilityLabel={meta.label}>
       <Animated.View style={[tabItemStyles.inner, wrapperStyle]}>
-        {/* Active indicator pill behind icon */}
-        <Animated.View
-          style={[
-            tabItemStyles.pill,
-            { backgroundColor: palette.primarySoft },
-            pillStyle,
-          ]}
-        />
         <View style={tabItemStyles.iconSlot}>
           <AnimatedIcon
             name={meta.iconIdle}
-            size={20}
-            color={palette.muted}
+            size={24}
+            color={semantic.text.muted}
             style={iconIdleStyle}
           />
           <AnimatedIcon
             name={meta.iconActive}
-            size={20}
-            color={palette.primary}
+            size={24}
+            color={semantic.action.primary}
             style={iconActiveStyle}
           />
           {unread > 0 ? (
-            <View style={[tabItemStyles.badge, { backgroundColor: palette.danger }]}>
-              <KoolaText variant="caption" weight="700" style={[tabItemStyles.badgeText, { color: palette.surface }]}>
+            <View style={[tabItemStyles.badge, { backgroundColor: semantic.signal.unread }]}>
+              <KoolaText variant="caption" weight="700" style={[tabItemStyles.badgeText, { color: semantic.text.onAction }]}>
                 {unread > 99 ? '99+' : String(unread)}
               </KoolaText>
             </View>
           ) : null}
         </View>
-        <KoolaText
-          variant="caption"
-          weight={isFocused ? '700' : '500'}
-          numberOfLines={1}
+        <Animated.View
           style={[
-            tabItemStyles.label,
-            { color: isFocused ? palette.primary : palette.muted },
-          ]}>
-          {meta.label}
-        </KoolaText>
+            tabItemStyles.activeUnderline,
+            { backgroundColor: semantic.action.primary },
+            underlineStyle,
+          ]}
+        />
       </Animated.View>
     </Pressable>
   );
@@ -160,32 +166,26 @@ const tabItemStyles = {
     flex: 1,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    minHeight: 44,
-    paddingVertical: 2,
-    paddingHorizontal: 2,
+    minHeight: 40,
+    paddingHorizontal: 1,
   },
   inner: {
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  pill: {
-    position: 'absolute' as const,
-    width: 40,
-    height: 32,
-    borderRadius: koolaRadii.sm,
-  },
   iconSlot: {
-    width: 24,
-    height: 22,
+    width: 28,
+    height: 28,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  label: {
-    fontSize: 9,
-    lineHeight: 12,
-    textAlign: 'center' as const,
-    maxWidth: 60,
-    marginTop: 2,
+  activeUnderline: {
+    position: 'absolute' as const,
+    left: 4,
+    bottom: -5,
+    width: 20,
+    height: 2,
+    borderRadius: 2,
   },
   badge: {
     position: 'absolute' as const,
@@ -206,7 +206,9 @@ const tabItemStyles = {
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
 const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) => {
-  const { palette } = useTheme();
+  const { tokens } = useTheme();
+  const semantic = tokens.semantic;
+  const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
   const messagesUnread = useUnreadCount('Messages');
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
@@ -223,9 +225,10 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
 
   const barStyles = useMemo(() => ({
     container: {
-      backgroundColor: palette.surface,
+      backgroundColor: semantic.surface.level1,
       paddingHorizontal: 4,
       paddingTop: 0,
+      overflow: 'hidden' as const,
     },
     row: {
       flexDirection: 'row' as const,
@@ -233,10 +236,28 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
       justifyContent: 'space-between' as const,
       position: 'relative' as const,
     },
-  }), [palette]);
+  }), [semantic]);
+
+  const visibilityStyle = useAnimatedStyle(() => {
+    const hidden = visibilityContext?.hiddenProgress.value ?? 0;
+    return {
+      height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - hidden),
+      opacity: 1 - hidden,
+      transform: [{ translateY: -CHAT_SUB_TAB_BAR_HEIGHT * hidden }],
+    };
+  }, [visibilityContext]);
+
+  useEffect(() => {
+    if (state.index !== 0 && visibilityContext) {
+      visibilityContext.hiddenProgress.value = withTiming(0, {
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [state.index, visibilityContext]);
 
   return (
-    <View style={barStyles.container} accessibilityRole="tablist">
+    <Animated.View style={[barStyles.container, visibilityStyle]} accessibilityRole="tablist">
       <View style={barStyles.row}>
         {state.routes.map((route, index) => {
           const meta = SUB_TAB_META[route.name as keyof ChatSubTabParamList];
@@ -248,7 +269,7 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
               meta={meta}
               isFocused={isFocused}
               unread={unreadByRoute[route.name] ?? 0}
-              palette={palette}
+              semantic={semantic}
               onPress={() => {
                 const event = navigation.emit({
                   type: 'tabPress',
@@ -263,7 +284,7 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
@@ -272,10 +293,11 @@ const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const route = useRoute<any>();
   const isFocused = useIsFocused();
-  const { palette } = useTheme();
+  const { tokens } = useTheme();
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [logoReplayKey, setLogoReplayKey] = useState(0);
+  const hiddenProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
   // Deterministic Chat entry: when resetToMessages param arrives, navigate the
@@ -292,9 +314,9 @@ const ChatHomeScreen: React.FC = () => {
   const screenStyles = useMemo(() => ({
     container: {
       flex: 1,
-      backgroundColor: palette.canvas,
+      backgroundColor: tokens.semantic.bg.canvas,
     },
-  }), [palette]);
+  }), [tokens.semantic]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -320,22 +342,24 @@ const ChatHomeScreen: React.FC = () => {
   return (
     <View style={screenStyles.container}>
       <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} />
-      <TopTab.Navigator
-        tabBar={(props) => {
-          // Capture the top-tab navigation for reset-to-Messages
-          topTabNavRef.current = props.navigation;
-          return <CustomTabBar {...props} />;
-        }}
-        screenOptions={{
-          lazy: true,
-          swipeEnabled: true,
-        }}>
-        <TopTab.Screen name="Messages" component={ConversationListScreen} />
-        <TopTab.Screen name="Contacts" component={ContactsScreen} />
-        <TopTab.Screen name="Moments" component={MomentsScreen} />
-        <TopTab.Screen name="Calls" component={CallsScreen} />
-        <TopTab.Screen name="Shorts" component={ShortsScreen} />
-      </TopTab.Navigator>
+      <ChatSubTabVisibilityContext.Provider value={{ hiddenProgress }}>
+        <TopTab.Navigator
+          tabBar={(props) => {
+            // Capture the top-tab navigation for reset-to-Messages
+            topTabNavRef.current = props.navigation;
+            return <CustomTabBar {...props} />;
+          }}
+          screenOptions={{
+            lazy: true,
+            swipeEnabled: true,
+          }}>
+          <TopTab.Screen name="Messages" component={ConversationListScreen} />
+          <TopTab.Screen name="Contacts" component={ContactsScreen} />
+          <TopTab.Screen name="Moments" component={MomentsScreen} />
+          <TopTab.Screen name="Calls" component={CallsScreen} />
+          <TopTab.Screen name="Shorts" component={ShortsScreen} />
+        </TopTab.Navigator>
+      </ChatSubTabVisibilityContext.Provider>
       <QrScannerModal
         visible={qrVisible}
         onClose={handleQrClose}

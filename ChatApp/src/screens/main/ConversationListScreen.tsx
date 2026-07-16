@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
-  FlatList,
   StyleSheet,
   RefreshControl,
 } from 'react-native';
@@ -34,6 +33,13 @@ import type { ConversationInput } from '../../services/db/conversationRepository
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
 import * as syncStateRepository from '../../services/db/syncStateRepository';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import Animated, {
+  Easing,
+  useAnimatedScrollHandler,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
@@ -47,6 +53,50 @@ const ConversationListScreen: React.FC = () => {
   const { isConnected } = useNetworkStatus();
   const localFirstEnabled = useLocalFirstFlag();
   const { tokens } = useTheme();
+  const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
+  const previousScrollY = useSharedValue(0);
+  const scrollDirection = useSharedValue(0);
+  const directionTravel = useSharedValue(0);
+
+  const handleScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      if (!visibilityContext) return;
+
+      const offsetY = Math.max(0, event.contentOffset.y);
+      const delta = offsetY - previousScrollY.value;
+
+      if (offsetY <= 4) {
+        directionTravel.value = 0;
+        if (scrollDirection.value !== -1) {
+          scrollDirection.value = -1;
+          visibilityContext.hiddenProgress.value = withTiming(0, {
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+          });
+        }
+      } else if (delta > 0) {
+        directionTravel.value = Math.max(0, directionTravel.value) + delta;
+        if (directionTravel.value > 8 && scrollDirection.value !== 1) {
+          scrollDirection.value = 1;
+          visibilityContext.hiddenProgress.value = withTiming(1, {
+            duration: 260,
+            easing: Easing.out(Easing.cubic),
+          });
+        }
+      } else if (delta < 0) {
+        directionTravel.value = Math.min(0, directionTravel.value) + delta;
+        if (directionTravel.value < -8 && scrollDirection.value !== -1) {
+          scrollDirection.value = -1;
+          visibilityContext.hiddenProgress.value = withTiming(0, {
+            duration: 220,
+            easing: Easing.out(Easing.cubic),
+          });
+        }
+      }
+
+      previousScrollY.value = offsetY;
+    },
+  });
 
   const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
@@ -351,7 +401,7 @@ const ConversationListScreen: React.FC = () => {
       <OfflineBanner
         isVisible={isConnected === false && conversations.length > 0}
       />
-      <FlatList
+      <Animated.FlatList
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
         initialNumToRender={10}
@@ -366,6 +416,8 @@ const ConversationListScreen: React.FC = () => {
           { paddingBottom: tabBarInset },
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         ListEmptyComponent={
           loading || refreshing ? (
             <KoolaLoadingState
