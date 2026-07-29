@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
+  InteractionManager,
   StyleSheet,
   RefreshControl,
 } from 'react-native';
@@ -178,11 +179,19 @@ const ConversationListScreen: React.FC = () => {
 
       try {
         const data = await conversationsApi.list(targetPage, 20);
-        // Pre-warm avatar cache from disk BEFORE rendering conversations
+        // Warm avatar cache post-render (fire-and-forget) — does not gate list paint
         const avatarKeys = data.conversations
           .flatMap((c) => c.members.map((m) => m.user?.avatar))
           .filter((a): a is string => !!a);
-        if (avatarKeys.length > 0) await warmMemoryCache(avatarKeys);
+        if (avatarKeys.length > 0) {
+          InteractionManager.runAfterInteractions(() => {
+            try {
+              warmMemoryCache(avatarKeys).catch(() => {});
+            } catch {
+              // Swallow — cache warm is additive, not a render precondition
+            }
+          });
+        }
 
         // Local-first additive seed: when flag is on, mirror REST result into
         // SQLite so the subscription-driven render path has data to show.

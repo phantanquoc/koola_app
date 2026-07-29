@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   FlatList,
+  InteractionManager,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
@@ -432,6 +433,19 @@ const ConnectHomeScreen: React.FC = () => {
   const [bannerDismissed, setBannerDismissed] = useState(true);
   const [qrVisible, setQrVisible] = useState(false);
 
+  // ─── First-mount defer: paint chrome immediately, defer heavy AccountListTab ─
+  const [contentReady, setContentReady] = useState(false);
+  const contentReadyFired = useRef(false);
+
+  useEffect(() => {
+    if (contentReadyFired.current) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      contentReadyFired.current = true;
+      setContentReady(true);
+    });
+    return () => task.cancel();
+  }, []);
+
   useEffect(() => {
     AsyncStorage.getItem(BANNER_DISMISSED_KEY).then((val) => {
       if (val !== 'true') setBannerDismissed(false);
@@ -505,15 +519,25 @@ const ConnectHomeScreen: React.FC = () => {
         />
       )}
 
-      <AccountListTab
-        navigation={navigation}
-        activeCategory={activeRelationship === 'all' ? null : activeCategory}
-        activeRelationship={activeRelationship}
-        activeSort={activeSort}
-        activeProvince={activeProvince}
-        onClearFilters={handleClearFilters}
-        palette={palette}
-      />
+      {!contentReady ? (
+        // Skeleton shell sized to business card list layout
+        <View style={{ flex: 1, paddingTop: 8 }}>
+          <BusinessCardSkeleton />
+          <BusinessCardSkeleton />
+          <BusinessCardSkeleton />
+          <BusinessCardSkeleton />
+        </View>
+      ) : (
+        <AccountListTab
+          navigation={navigation}
+          activeCategory={activeRelationship === 'all' ? null : activeCategory}
+          activeRelationship={activeRelationship}
+          activeSort={activeSort}
+          activeProvince={activeProvince}
+          onClearFilters={handleClearFilters}
+          palette={palette}
+        />
+      )}
 
       <QrScannerModal
         visible={qrVisible}

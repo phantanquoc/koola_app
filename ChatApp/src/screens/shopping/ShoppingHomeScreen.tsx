@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   KoolaBadge,
   KoolaIconButton,
   KoolaLogo,
+  KoolaSkeleton,
   KoolaText,
   koolaRadii,
   koolaShadows,
@@ -239,6 +241,19 @@ const ShoppingHomeScreen: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [favoriteIds] = useState<Set<string>>(new Set());
 
+  // ─── First-mount defer: paint shell immediately, defer heavy FlatList ─────
+  const [contentReady, setContentReady] = useState(false);
+  const contentReadyFired = useRef(false);
+
+  useEffect(() => {
+    if (contentReadyFired.current) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      contentReadyFired.current = true;
+      setContentReady(true);
+    });
+    return () => task.cancel();
+  }, []);
+
   const shoppingIsPreview = isPreview('shopping');
 
   const handleComingSoon = useCallback(
@@ -369,24 +384,56 @@ const ShoppingHomeScreen: React.FC = () => {
 
   return (
     <View style={styles.screen}>
-      <FlatList
-        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
-        removeClippedSubviews={false}
-        data={products}
-        numColumns={2}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        windowSize={7}
-        updateCellsBatchingPeriod={50}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        columnWrapperStyle={styles.productRow}
-        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
-        showsVerticalScrollIndicator={false}
-        style={styles.screen}
-      />
+      {!contentReady ? (
+        // Interactive shell: header chrome + skeleton placeholders sized to real layout
+        <View style={styles.screen}>
+          <ShoppingHeader
+            palette={palette}
+            styles={styles}
+            onComingSoon={handleComingSoon}
+          />
+          <View style={styles.contentInset}>
+            {/* PromoBand skeleton */}
+            <KoolaSkeleton width="100%" height={86} radius={koolaRadii.md} />
+            {/* QuickActions skeleton row */}
+            <View style={styles.quickGrid}>
+              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} />
+            </View>
+            {/* Section header skeleton */}
+            <View style={{ marginTop: 18, marginBottom: 10 }}>
+              <KoolaSkeleton width="50%" height={20} />
+              <KoolaSkeleton width="70%" height={12} style={{ marginTop: 6 }} />
+            </View>
+            {/* Product card skeleton row */}
+            <View style={styles.productRow}>
+              <KoolaSkeleton height={276} radius={koolaRadii.md} style={{ flex: 1, marginHorizontal: 5 }} />
+              <KoolaSkeleton height={276} radius={koolaRadii.md} style={{ flex: 1, marginHorizontal: 5 }} />
+            </View>
+          </View>
+        </View>
+      ) : (
+        <FlatList
+          // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
+          removeClippedSubviews={false}
+          data={products}
+          numColumns={2}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          columnWrapperStyle={styles.productRow}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
+          showsVerticalScrollIndicator={false}
+          style={styles.screen}
+        />
+      )}
       {toast}
     </View>
   );

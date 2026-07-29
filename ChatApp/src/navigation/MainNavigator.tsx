@@ -11,11 +11,7 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'reac
 import Animated, {
   Easing,
   useAnimatedStyle,
-  useDerivedValue,
   useSharedValue,
-  withRepeat,
-  withSequence,
-  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -43,14 +39,6 @@ const TabDockSuppressionContext = React.createContext<TabDockSuppressionContextV
 export function useTabDockSuppression(): () => () => void {
   return React.useContext(TabDockSuppressionContext).suppressTabDock;
 }
-
-// ─── DIAGNOSTIC (logout removeViewAt crash) ─────────────────────────────────
-// BlurView đã được gỡ HẲN (gây flash khi pop-back + crash removeViewAt lúc
-// logout). Tab dock nay luôn dùng faux-glass tĩnh. Cờ DIAG_STATIC_TABDOCK giờ
-// CHỈ còn gate các ambient reanimated loop (breath / borderPulse / sheen); đặt
-// false để bật lại animation ambient. Press animations stay (not perpetual —
-// they don't run at unmount time).
-const DIAG_STATIC_TABDOCK = true;
 
 const FULLSCREEN_CHAT_ROUTES = new Set(['Chat', 'MomentViewer', 'MomentComposer']);
 const FULLSCREEN_PERSONAL_ROUTES = new Set(['EditProfile', 'StorageSettings']);
@@ -133,7 +121,6 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
   return false;
 }
 
-const AnimatedMaterialIcons = Animated.createAnimatedComponent(MaterialIcons);
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface TabIcon3DProps {
@@ -144,81 +131,34 @@ interface TabIcon3DProps {
 }
 
 const TabIcon3D: React.FC<TabIcon3DProps> = ({ name, isFocused, pressProgress, palette }) => {
-  const progress = useDerivedValue(
-    () => (isFocused
-      ? withSpring(1, { damping: 12, stiffness: 180, mass: 0.7 })
-      : withTiming(0, { duration: 180 })),
-    [isFocused],
-  );
+  const progress = useSharedValue(isFocused ? 1 : 0);
 
-  // Slow breathing pulse on focused tab (sustained effect after tap)
-  const breath = useSharedValue(0);
   React.useEffect(() => {
-    if (DIAG_STATIC_TABDOCK) return;
-    if (isFocused) {
-      breath.value = withRepeat(
-        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.quad) }),
-        -1,
-        true,
-      );
-    } else {
-      breath.value = withTiming(0, { duration: 220 });
-    }
-  }, [isFocused, breath]);
+    progress.value = withTiming(isFocused ? 1 : 0, {
+      duration: 150,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isFocused, progress]);
 
   const wrapperStyle = useAnimatedStyle(() => {
     const p = progress.value;
     const press = pressProgress.value; // 0..1 quick punch
-    const breathe = breath.value;
-    // Quick punch: shrink slightly on press, then bounce back via spring on release
-    const pressScale = 1 - 0.18 * press;
-    const breatheScale = 1 + 0.04 * breathe * p;
     return {
       transform: [
-        { perspective: 600 },
-        { translateY: -4 * p - 1 * breathe * p },
-        { rotateX: `${-16 * p}deg` },
-        { scale: (1 + 0.14 * p) * pressScale * breatheScale },
+        { translateY: -3 * p },
+        { scale: (1 + 0.08 * p) * (1 - 0.12 * press) },
       ],
-    };
-  });
-
-  const iconStyle = useAnimatedStyle(() => ({
-    opacity: 0.7 + 0.3 * progress.value,
-  }));
-
-  // Expanding ripple ring on press (quick effect)
-  const rippleStyle = useAnimatedStyle(() => {
-    const press = pressProgress.value;
-    return {
-      opacity: press * 0.5,
-      transform: [{ scale: 0.5 + 0.55 * press }],
-    };
-  });
-
-  // Soft halo glow on focused state (sustained)
-  const haloStyle = useAnimatedStyle(() => {
-    const p = progress.value;
-    const breathe = breath.value;
-    return {
-      opacity: p * (0.22 + 0.22 * breathe),
-      transform: [
-        { translateY: -4 * p },
-        { scale: 0.95 + 0.2 * p + 0.06 * breathe },
-      ],
+      opacity: 0.78 + 0.22 * p,
     };
   });
 
   return (
     <View style={styles.iconWell}>
-      <Animated.View pointerEvents="none" style={[styles.iconHalo, { backgroundColor: palette.primary }, haloStyle]} />
-      <Animated.View pointerEvents="none" style={[styles.iconRipple, { borderColor: palette.primary }, rippleStyle]} />
       <Animated.View style={wrapperStyle}>
-        <AnimatedMaterialIcons
+        <MaterialIcons
           name={name}
           size={20}
           color={isFocused ? palette.primary : palette.muted}
-          style={iconStyle}
         />
       </Animated.View>
     </View>
@@ -235,7 +175,7 @@ interface TabBarItemProps {
   palette: Palette;
 }
 
-const TabBarItem: React.FC<TabBarItemProps> = ({
+const TabBarItemComponent: React.FC<TabBarItemProps> = ({
   meta,
   isFocused,
   accessibilityLabel,
@@ -252,11 +192,7 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
   }, [press]);
 
   const handlePressOut = React.useCallback(() => {
-    // Springy rebound back to rest
-    press.value = withSequence(
-      withTiming(0.45, { duration: 80, easing: Easing.out(Easing.quad) }),
-      withSpring(0, { damping: 9, stiffness: 220, mass: 0.6 }),
-    );
+    press.value = withTiming(0, { duration: 120, easing: Easing.out(Easing.cubic) });
   }, [press]);
 
   const itemAnimStyle = useAnimatedStyle(() => {
@@ -299,6 +235,68 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
   );
 };
 
+// Only the focused item and the item losing focus need to update after a tab
+// switch. Ignore callback identity because each callback is route-local and
+// its captured focus state changes whenever that route's focus changes.
+const TabBarItem = React.memo(
+  TabBarItemComponent,
+  (previous, next) => (
+    previous.meta === next.meta &&
+    previous.isFocused === next.isFocused &&
+    previous.accessibilityLabel === next.accessibilityLabel &&
+    previous.label === next.label &&
+    previous.palette === next.palette
+  ),
+);
+
+type TabDockGradientStop = { color: string; opacity: number };
+type TabDockGradientStops = {
+  top: TabDockGradientStop;
+  mid: TabDockGradientStop;
+  bottom: TabDockGradientStop;
+};
+
+interface TabDockBackgroundProps {
+  gradientStops: TabDockGradientStops;
+  resolvedScheme: string;
+}
+
+const TabDockBackground: React.FC<TabDockBackgroundProps> = React.memo(({
+  gradientStops,
+  resolvedScheme,
+}) => (
+  <>
+    <View pointerEvents="none" style={styles.tabDockStaticFill}>
+      <Svg width="100%" height="100%" preserveAspectRatio="none">
+        <Defs>
+          <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={gradientStops.top.color} stopOpacity={String(gradientStops.top.opacity)} />
+            <Stop offset="0.55" stopColor={gradientStops.mid.color} stopOpacity={String(gradientStops.mid.opacity)} />
+            <Stop offset="1" stopColor={gradientStops.bottom.color} stopOpacity={String(gradientStops.bottom.opacity)} />
+          </SvgLinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#tabFill)" />
+      </Svg>
+    </View>
+    <View pointerEvents="none" style={styles.tabDockTint} />
+    <View pointerEvents="none" style={styles.tabTopSheen}>
+      <Svg width="100%" height="100%" preserveAspectRatio="none">
+        <Defs>
+          <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0.85" />
+            <Stop offset="1" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0" />
+          </SvgLinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#tabSheen)" />
+      </Svg>
+    </View>
+    <View pointerEvents="none" style={[styles.tabEdgeShineLeft, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
+    <View pointerEvents="none" style={[styles.tabEdgeShineRight, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
+    <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' && styles.tabInnerEdgeDark]} />
+    <View pointerEvents="none" style={styles.tabBottomHairline} />
+  </>
+));
+
 const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   state,
   descriptors,
@@ -340,41 +338,6 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     transform: [{ translateY: 8 * (1 - reveal.value) }],
   }));
 
-  // Border breathing pulse (slow ambient)
-  const borderPulse = useSharedValue(0);
-  // Sheen sweep across dock edge
-  const sheen = useSharedValue(0);
-
-  React.useEffect(() => {
-    if (DIAG_STATIC_TABDOCK) return;
-    borderPulse.value = withRepeat(
-      withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
-    );
-    sheen.value = withRepeat(
-      withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false,
-    );
-  }, [borderPulse, sheen]);
-
-  const animatedBorderStyle = useAnimatedStyle(() => {
-    const v = borderPulse.value;
-    return {
-      borderColor: `rgba(37, 99, 235, ${0.18 + 0.32 * v})`, // primary tint pulse
-      shadowOpacity: 0.06 + 0.1 * v,
-    };
-  });
-
-  const sheenStyle = useAnimatedStyle(() => {
-    const v = sheen.value;
-    return {
-      opacity: v < 0.05 || v > 0.95 ? 0 : 0.55 * Math.sin(v * Math.PI),
-      transform: [{ translateX: -120 + v * 520 }, { rotate: '18deg' }],
-    };
-  });
-
   if (isHidden) return null;
 
   return (
@@ -387,40 +350,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       ]}>
       <View style={styles.shadowWrap}>
         <View style={[styles.tabDock, { borderColor: palette.primary }]}>
-          {/* Faux-glass layers (static — BlurView permanently removed). */}
-          <View pointerEvents="none" style={styles.tabDockStaticFill}>
-            <Svg width="100%" height="100%" preserveAspectRatio="none">
-              <Defs>
-                <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={gradientStops.top.color} stopOpacity={String(gradientStops.top.opacity)} />
-                  <Stop offset="0.55" stopColor={gradientStops.mid.color} stopOpacity={String(gradientStops.mid.opacity)} />
-                  <Stop offset="1" stopColor={gradientStops.bottom.color} stopOpacity={String(gradientStops.bottom.opacity)} />
-                </SvgLinearGradient>
-              </Defs>
-              <Rect width="100%" height="100%" fill="url(#tabFill)" />
-            </Svg>
-          </View>
-          {/* Layer 1b — primary-blue glass cast. */}
-          <View pointerEvents="none" style={styles.tabDockTint} />
-          {/* Layer 2 — top specular sheen. */}
-          <View pointerEvents="none" style={styles.tabTopSheen}>
-            <Svg width="100%" height="100%" preserveAspectRatio="none">
-              <Defs>
-                <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0.85" />
-                  <Stop offset="1" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0" />
-                </SvgLinearGradient>
-              </Defs>
-              <Rect width="100%" height="100%" fill="url(#tabSheen)" />
-            </Svg>
-          </View>
-          {/* Layer 3 — side-edge shines. */}
-          <View pointerEvents="none" style={[styles.tabEdgeShineLeft, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
-          <View pointerEvents="none" style={[styles.tabEdgeShineRight, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
-          {/* Layer 4 — 1px inner top edge. */}
-          <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' && styles.tabInnerEdgeDark]} />
-          {/* Layer 5 — cool-tone bottom hairline. */}
-          <View pointerEvents="none" style={styles.tabBottomHairline} />
+          <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
             const meta = TAB_META[routeName];
