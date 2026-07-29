@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Pressable, InteractionManager } from 'react-native';
+import { Animated as NativeAnimated, View, Pressable, InteractionManager } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation, useIsFocused, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,7 +8,6 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -50,36 +49,56 @@ function useUnreadCount(_routeName: keyof ChatSubTabParamList): number {
   return 0;
 }
 
-const AnimatedIcon = Animated.createAnimatedComponent(MaterialIcons);
-
 // ─── Tab item ────────────────────────────────────────────────────────────────
 interface TabItemProps {
   meta: TabMeta;
   isFocused: boolean;
+  position: MaterialTopTabBarProps['position'];
+  tabIndex: number;
+  routesLength: number;
   unread: number;
   onPress: () => void;
   semantic: SemanticTokens;
 }
 
-const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, semantic }) => {
-  const focus = useSharedValue(isFocused ? 1 : 0);
+const TabItem: React.FC<TabItemProps> = ({
+  meta,
+  isFocused,
+  position,
+  tabIndex,
+  routesLength,
+  unread,
+  onPress,
+  semantic,
+}) => {
   const press = useSharedValue(0);
-  const selectionPulse = useSharedValue(0);
-
-  useEffect(() => {
-    focus.value = withTiming(isFocused ? 1 : 0, {
-      duration: 200,
-      easing: Easing.out(Easing.cubic),
-    });
-
-    if (isFocused) {
-      selectionPulse.value = 0;
-      selectionPulse.value = withSequence(
-        withTiming(1, { duration: 110, easing: Easing.out(Easing.cubic) }),
-        withSpring(0, { damping: 10, stiffness: 220, mass: 0.45 }),
-      );
-    }
-  }, [focus, isFocused, selectionPulse]);
+  const inputRange = useMemo(() => Array.from({ length: routesLength }, (_, index) => index), [routesLength]);
+  const activeProgress = useMemo(() => position.interpolate({
+    inputRange,
+    outputRange: inputRange.map((index) => (index === tabIndex ? 1 : 0)),
+    extrapolate: 'clamp',
+  }), [inputRange, position, tabIndex]);
+  const inactiveProgress = useMemo(() => position.interpolate({
+    inputRange,
+    outputRange: inputRange.map((index) => (index === tabIndex ? 0 : 1)),
+    extrapolate: 'clamp',
+  }), [inputRange, position, tabIndex]);
+  const focusTransformStyle = useMemo(() => ({
+    transform: [
+      {
+        translateY: activeProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -1.5],
+        }),
+      },
+      {
+        scale: activeProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 1.08],
+        }),
+      },
+    ],
+  }), [activeProgress]);
 
   const handlePressIn = useCallback(() => {
     press.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
@@ -89,32 +108,13 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, sem
     press.value = withSpring(0, { damping: 12, stiffness: 260, mass: 0.4 });
   }, [press]);
 
-  const wrapperStyle = useAnimatedStyle(() => {
-    const f = focus.value;
+  const pressStyle = useAnimatedStyle(() => {
     const p = press.value;
-    const pulse = selectionPulse.value;
     return {
-      transform: [
-        { translateY: -1.5 * f },
-        { scale: (1 + 0.08 * f + 0.08 * pulse) * (1 - 0.09 * p) },
-      ],
+      transform: [{ scale: 1 - 0.09 * p }],
       opacity: 1 - 0.16 * p,
     };
   });
-
-  const iconIdleStyle = useAnimatedStyle(() => ({
-    opacity: 1 - focus.value,
-    position: 'absolute',
-  }));
-
-  const iconActiveStyle = useAnimatedStyle(() => ({
-    opacity: focus.value,
-  }));
-
-  const underlineStyle = useAnimatedStyle(() => ({
-    opacity: focus.value,
-    transform: [{ scaleX: 0.45 + 0.55 * focus.value }],
-  }));
 
   return (
     <Pressable
@@ -127,35 +127,47 @@ const TabItem: React.FC<TabItemProps> = ({ meta, isFocused, unread, onPress, sem
       accessibilityRole="tab"
       accessibilityState={{ selected: isFocused }}
       accessibilityLabel={meta.label}>
-      <Animated.View style={[tabItemStyles.inner, wrapperStyle]}>
-        <View style={tabItemStyles.iconSlot}>
-          <AnimatedIcon
-            name={meta.iconIdle}
-            size={24}
-            color={semantic.text.muted}
-            style={iconIdleStyle}
+      <Animated.View style={pressStyle}>
+        <NativeAnimated.View style={[tabItemStyles.inner, focusTransformStyle]}>
+          <View style={tabItemStyles.iconSlot}>
+            <NativeAnimated.View style={[tabItemStyles.iconLayer, { opacity: inactiveProgress }]}>
+              <MaterialIcons
+                name={meta.iconIdle}
+                size={24}
+                color={semantic.text.muted}
+              />
+            </NativeAnimated.View>
+            <NativeAnimated.View style={{ opacity: activeProgress }}>
+              <MaterialIcons
+                name={meta.iconActive}
+                size={24}
+                color={semantic.action.primary}
+              />
+            </NativeAnimated.View>
+            {unread > 0 ? (
+              <View style={[tabItemStyles.badge, { backgroundColor: semantic.signal.unread }]}>
+                <KoolaText variant="caption" weight="700" style={[tabItemStyles.badgeText, { color: semantic.text.onAction }]}>
+                  {unread > 99 ? '99+' : String(unread)}
+                </KoolaText>
+              </View>
+            ) : null}
+          </View>
+          <NativeAnimated.View
+            style={[
+              tabItemStyles.activeUnderline,
+              {
+                backgroundColor: semantic.action.primary,
+                opacity: activeProgress,
+                transform: [{
+                  scaleX: activeProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.45, 1],
+                  }),
+                }],
+              },
+            ]}
           />
-          <AnimatedIcon
-            name={meta.iconActive}
-            size={24}
-            color={semantic.action.primary}
-            style={iconActiveStyle}
-          />
-          {unread > 0 ? (
-            <View style={[tabItemStyles.badge, { backgroundColor: semantic.signal.unread }]}>
-              <KoolaText variant="caption" weight="700" style={[tabItemStyles.badgeText, { color: semantic.text.onAction }]}>
-                {unread > 99 ? '99+' : String(unread)}
-              </KoolaText>
-            </View>
-          ) : null}
-        </View>
-        <Animated.View
-          style={[
-            tabItemStyles.activeUnderline,
-            { backgroundColor: semantic.action.primary },
-            underlineStyle,
-          ]}
-        />
+        </NativeAnimated.View>
       </Animated.View>
     </Pressable>
   );
@@ -178,6 +190,9 @@ const tabItemStyles = {
     height: 28,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  iconLayer: {
+    position: 'absolute' as const,
   },
   activeUnderline: {
     position: 'absolute' as const,
@@ -205,7 +220,7 @@ const tabItemStyles = {
 };
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
-const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) => {
+const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, position }) => {
   const { tokens } = useTheme();
   const semantic = tokens.semantic;
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
@@ -268,6 +283,9 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation }) =
               key={route.key}
               meta={meta}
               isFocused={isFocused}
+              position={position}
+              tabIndex={index}
+              routesLength={state.routes.length}
               unread={unreadByRoute[route.name] ?? 0}
               semantic={semantic}
               onPress={() => {
@@ -341,7 +359,7 @@ const ChatHomeScreen: React.FC = () => {
 
   return (
     <View style={screenStyles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} />
+      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} animatedDockBorder />
       <ChatSubTabVisibilityContext.Provider value={{ hiddenProgress }}>
         <TopTab.Navigator
           tabBar={(props) => {

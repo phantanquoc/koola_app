@@ -14,7 +14,7 @@ QR and add-circle use blue outline MaterialIcons glyphs at matching visual size.
 
 ### Keep the dock perimeter static
 
-The header command dock reuses the tab dock's layered visual language at lower contrast: vertical fill, restrained primary tint, top sheen, side shines, inner edge, and bottom hairline. Its perimeter uses only the existing neutral hairline border; no semantic-blue outline, halo, or repeating border animation is rendered. The effect does not add BlurView.
+The header command dock defaults to a static neutral hairline border (`StyleSheet.hairlineWidth`, `border.subtle`) for all callers. ChatHomeScreen opts in via an `animatedDockBorder` prop to render a resting brand-gradient stroke (K=red, OOL=blue, A=green at low alpha) plus a one-shot semantic-primary comet that sweeps the perimeter once on first mount and does not repeat during the session. The rationale: the Chat home sub-tab bar and header cluster benefit from a first-visit flourish that pairs with the KoolaLogo entrance, while sibling screens (ConnectHome) keep the static neutral treatment unchanged. The effect does not add BlurView.
 
 ### Use the existing icon package
 

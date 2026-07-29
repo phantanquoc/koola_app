@@ -251,6 +251,7 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Spring animations (`withSpring`) are allowed ONLY for direct-manipulation gestures: image zoom/pan, drag release, pinch snap-back
 - Decorative spring/bounce on chrome elements (tab bars, buttons, headers) is BANNED
 - No perpetual `withRepeat(-1)` reanimated loops — the dead tab-dock loops gated behind `DIAG_STATIC_TABDOCK` remain gated dead
+- Animated chrome borders: use a ONE-SHOT light trace (bright dash sweeps the perimeter once via SVG `strokeDashoffset`, then fades) that plays ONCE on first mount and rests permanently for the rest of the session — never a looping gradient, never re-triggered on focus. Same sanctioned category as `KoolaLogo` entrances. When such a border is combined with a static resting gradient stroke, that combination must be gated per caller (opt-in prop) so headers used across multiple screens keep the static neutral default.
 
 ### Easing curves (`koolaEasing`)
 

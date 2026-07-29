@@ -21,7 +21,7 @@
 - [x] 4.2 Run mobile lint
 - [x] 4.3 Run focused feature-availability test
 - [x] 4.4 Run GitNexus detect_changes and confirm expected scope
-- [ ] 4.5 Review the result on an Android viewport with the user
+- [x] 4.5 Review the result on an Android viewport with the user
 
 ## 5. User feedback iteration
 
@@ -98,3 +98,9 @@
 - [x] 16.1 Collapse the rail to zero after a stable hide transition
 - [x] 16.2 Add directional hysteresis to ignore small scroll jitter
 - [x] 16.3 Verify the smoother transition and project checks
+
+## 17. Gated animated border re-introduction
+
+- [x] 17.1 Add `animatedDockBorder` opt-in prop to `KoolaHeader` and restore the neutral hairline as the OFF-branch default
+- [x] 17.2 Opt Chat home in and confirm Connect home stays on the static default
+- [x] 17.3 Sync spec, design, proposal, and ui-dna wording with the gated re-introduction; re-run mobile TypeScript, lint, OpenSpec validate, and gitnexus detect_changes

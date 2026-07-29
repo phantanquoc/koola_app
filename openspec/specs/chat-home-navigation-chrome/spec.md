@@ -1,5 +1,8 @@
-## ADDED Requirements
+# chat-home-navigation-chrome Specification
 
+## Purpose
+TBD - created by archiving change redesign-chat-home-chrome. Update Purpose after archive.
+## Requirements
 ### Requirement: Search-first Chat home header
 
 The Chat home header SHALL present universal search, QR scanning, and add in one shared command dock with visually separated touch targets.
@@ -20,7 +23,7 @@ Search, QR, and add actions SHALL expose descriptive accessibility labels and SH
 
 QR and add SHALL use glyphs from the same icon family, size, and semantic primary color. The command dock SHALL use spacing rather than visible divider lines between its actions and SHALL be inset from the header content edges.
 
-The command dock SHALL use a static neutral perimeter without a persistent semantic-primary outline or border animation.
+The command dock SHALL default to a static neutral perimeter without a persistent semantic-primary outline or border animation. When a caller opts in via the animated dock border affordance, the dock MAY render a resting brand-gradient stroke plus a one-shot semantic-primary light trace that sweeps the perimeter once on first mount and does not repeat during the session. All other callers SHALL receive the static neutral default.
 
 The header SHALL NOT render a separator rule between the command dock area and the Chat sub-tab bar.
 
@@ -55,3 +58,4 @@ The five Chat sub-tabs SHALL use icon-only controls from one visual family with 
 
 - **WHEN** the user taps or swipes between sub-tabs
 - **THEN** existing route names, lazy loading, swipe behavior, and reset-to-messages behavior SHALL remain unchanged
+

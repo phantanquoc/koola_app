@@ -14,6 +14,7 @@ The Chat home header currently renders search, QR, and add as three visually dis
 - Add restrained press and selection motion without changing routes, modals, service calls, accessibility labels, or tab behavior.
 - Add a short semantic-blue underline beneath the selected sub-tab icon.
 - Hide the Chat sub-tab rail while the conversation list scrolls upward and reveal it when the user scrolls back down.
+- Re-introduce a one-shot brand-gradient + semantic-primary comet border on the header command dock, gated per caller so only the Chat home screen opts in; other screens using the shared header keep the static neutral perimeter established in task 11.
 
 ## Impact
 
