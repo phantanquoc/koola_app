@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Animated as NativeAnimated, View, Pressable, InteractionManager } from 'react-native';
+import { Animated as NativeAnimated, View, Pressable } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { useNavigation, useIsFocused, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
@@ -310,11 +310,9 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const route = useRoute<any>();
-  const isFocused = useIsFocused();
   const { tokens } = useTheme();
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
-  const [logoReplayKey, setLogoReplayKey] = useState(0);
   const hiddenProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
@@ -336,14 +334,6 @@ const ChatHomeScreen: React.FC = () => {
     },
   }), [tokens.semantic]);
 
-  useEffect(() => {
-    if (!isFocused) return;
-    const task = InteractionManager.runAfterInteractions(() => {
-      setLogoReplayKey((k) => k + 1);
-    });
-    return () => task.cancel();
-  }, [isFocused]);
-
   const handleQrPress = useCallback(() => setQrVisible(true), []);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
   const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
@@ -359,7 +349,7 @@ const ChatHomeScreen: React.FC = () => {
 
   return (
     <View style={screenStyles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="stagger-pop" logoReplayKey={logoReplayKey} animatedDockBorder />
+      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder />
       <ChatSubTabVisibilityContext.Provider value={{ hiddenProgress }}>
         <TopTab.Navigator
           tabBar={(props) => {

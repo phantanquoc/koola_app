@@ -11,6 +11,13 @@ import { KoolaLogo, KoolaText, useTheme } from '../ui';
 import type { KoolaLogoAnimation } from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
 
+export interface HeaderAction {
+  icon: string;
+  accessibilityLabel: string;
+  onPress?: () => void;
+  iconSize?: number;
+}
+
 interface KoolaHeaderProps {
   searchPlaceholder?: string;
   onSearchPress?: () => void;
@@ -19,6 +26,8 @@ interface KoolaHeaderProps {
   logoAnimation?: KoolaLogoAnimation;
   logoReplayKey?: number;
   animatedDockBorder?: boolean;
+  trailingActions?: HeaderAction[];
+  showBottomHairline?: boolean;
 }
 
 const KoolaHeader: React.FC<KoolaHeaderProps> = ({
@@ -29,6 +38,8 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   logoAnimation = 'none',
   logoReplayKey = 0,
   animatedDockBorder = false,
+  trailingActions,
+  showBottomHairline = false,
 }) => {
   const { tokens } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
@@ -43,7 +54,7 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, showBottomHairline && styles.containerHairline]}>
       <View style={styles.headerRow}>
         <View style={styles.logoSlot}>
           <KoolaLogo key={logoReplayKey} showMark={false} variant="extruded" font="sora" wordmarkSize={22} animation={logoAnimation} />
@@ -82,42 +93,55 @@ const KoolaHeader: React.FC<KoolaHeaderProps> = ({
               {searchPlaceholder}
             </KoolaText>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Quét mã QR"
-            android_ripple={{ color: tokens.semantic.action.primarySoft }}
-            hitSlop={{ top: 2, bottom: 2 }}
-            onPress={onQrPress}
-            onPressIn={() => setQrPressed(true)}
-            onPressOut={() => setQrPressed(false)}
-            style={[
-              styles.actionButton,
-              qrPressed ? styles.controlPressed : null,
-            ]}>
-            <MaterialIcons
-              name="qr-code-scanner"
-              size={22}
-              color={tokens.semantic.action.primary}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Thêm mới"
-            android_ripple={{ color: tokens.semantic.action.primarySoft }}
-            hitSlop={{ top: 2, bottom: 2 }}
-            onPress={onAddPress}
-            onPressIn={() => setAddPressed(true)}
-            onPressOut={() => setAddPressed(false)}
-            style={[
-              styles.actionButton,
-              addPressed ? styles.controlPressed : null,
-            ]}>
-            <MaterialIcons
-              name="add-circle-outline"
-              size={24}
-              color={tokens.semantic.action.primary}
-            />
-          </Pressable>
+          {trailingActions ? (
+            trailingActions.map((action, index) => (
+              <DockActionButton
+                key={action.icon + index}
+                action={action}
+                semantic={tokens.semantic}
+                styles={styles}
+              />
+            ))
+          ) : (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã QR"
+                android_ripple={{ color: tokens.semantic.action.primarySoft }}
+                hitSlop={{ top: 2, bottom: 2 }}
+                onPress={onQrPress}
+                onPressIn={() => setQrPressed(true)}
+                onPressOut={() => setQrPressed(false)}
+                style={[
+                  styles.actionButton,
+                  qrPressed ? styles.controlPressed : null,
+                ]}>
+                <MaterialIcons
+                  name="qr-code-scanner"
+                  size={22}
+                  color={tokens.semantic.action.primary}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Thêm mới"
+                android_ripple={{ color: tokens.semantic.action.primarySoft }}
+                hitSlop={{ top: 2, bottom: 2 }}
+                onPress={onAddPress}
+                onPressIn={() => setAddPressed(true)}
+                onPressOut={() => setAddPressed(false)}
+                style={[
+                  styles.actionButton,
+                  addPressed ? styles.controlPressed : null,
+                ]}>
+                <MaterialIcons
+                  name="add-circle-outline"
+                  size={24}
+                  color={tokens.semantic.action.primary}
+                />
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
     </View>
@@ -136,6 +160,10 @@ const makeStyles = (semantic: SemanticTokens) =>
       paddingHorizontal: 12,
       paddingTop: 6,
       paddingBottom: 6,
+    },
+    containerHairline: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
     },
     headerRow: {
       flexDirection: 'row',
@@ -253,6 +281,37 @@ const makeStyles = (semantic: SemanticTokens) =>
       marginLeft: 8,
     },
   });
+
+// ─── Dock action button (per-action press state, avoids array-index bugs) ─────
+interface DockActionButtonProps {
+  action: HeaderAction;
+  semantic: SemanticTokens;
+  styles: ReturnType<typeof makeStyles>;
+}
+
+const DockActionButton: React.FC<DockActionButtonProps> = ({ action, semantic, styles }) => {
+  const [pressed, setPressed] = React.useState(false);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={action.accessibilityLabel}
+      android_ripple={{ color: semantic.action.primarySoft }}
+      hitSlop={{ top: 2, bottom: 2 }}
+      onPress={action.onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.actionButton,
+        pressed ? styles.controlPressed : null,
+      ]}>
+      <MaterialIcons
+        name={action.icon}
+        size={action.iconSize ?? 22}
+        color={semantic.action.primary}
+      />
+    </Pressable>
+  );
+};
 
 // ─── Animated dock border ──────────────────────────────────────────────────
 // A refined brand-gradient stroke (K=red → OOL=blue → A=green, low alpha) that

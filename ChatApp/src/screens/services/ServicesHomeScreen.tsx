@@ -10,7 +10,6 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
   KoolaIconButton,
-  KoolaLogo,
   KoolaText,
   koolaRadii,
   koolaShadows,
@@ -30,39 +29,9 @@ import {
   type ServiceProvider,
 } from './servicesMockData';
 
-type Styles = ReturnType<typeof makeStyles>;
+import KoolaHeader from '../../components/KoolaHeader';
 
-const ServicesHeader: React.FC<{
-  palette: Palette;
-  styles: Styles;
-  onComingSoon: () => void;
-}> = ({ palette, styles, onComingSoon }) => (
-  <View style={styles.header}>
-    <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
-    <Pressable
-      accessibilityRole="search"
-      accessibilityLabel="Tìm dịch vụ"
-      android_ripple={{ color: palette.line }}
-      onPress={onComingSoon}
-      style={styles.searchBox}>
-      <MaterialIcons name="search" size={18} color={palette.muted} />
-      <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
-        Tìm sửa chữa, giao hàng...
-      </KoolaText>
-    </Pressable>
-    <View style={styles.supportWrap}>
-      <KoolaIconButton
-        icon="support-agent"
-        variant="soft"
-        tone="primary"
-        size={38}
-        iconSize={20}
-        accessibilityLabel="Trung tâm hỗ trợ"
-        onPress={onComingSoon}
-      />
-    </View>
-  </View>
-);
+type Styles = ReturnType<typeof makeStyles>;
 
 const UrgentBand: React.FC<{
   palette: Palette;
@@ -264,7 +233,11 @@ const ServicesHomeScreen: React.FC = () => {
 
   const renderHeader = () => (
     <View>
-      <ServicesHeader palette={palette} styles={styles} onComingSoon={handleComingSoon} />
+      <KoolaHeader
+        searchPlaceholder="Tìm sửa chữa, giao hàng..."
+        onSearchPress={handleComingSoon}
+        trailingActions={[{ icon: 'support-agent', accessibilityLabel: 'Trung tâm hỗ trợ', onPress: handleComingSoon }]}
+      />
       <View style={styles.contentInset}>
         {servicesIsPreview && (
           <PreviewBanner message="Dịch vụ đang ở chế độ xem trước. Nhà cung cấp và giá là dữ liệu mẫu." />
@@ -350,41 +323,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.canvas,
     },
     listContent: {},
-    header: {
-      backgroundColor: p.surface,
-      paddingHorizontal: 12,
-      paddingTop: 8,
-      paddingBottom: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
-    },
-    // gap removed from this row (Hermes RN0.76 drops flex:1 children to new
-    // lines with gap in a row) — spacing via marginRight + flexShrink:0.
-    logoWrap: {
-      marginRight: 8,
-      flexShrink: 0,
-    },
-    searchBox: {
-      flex: 1,
-      minHeight: 38,
-      borderRadius: koolaRadii.pill,
-      backgroundColor: p.canvas,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      marginRight: 8,
-      overflow: 'hidden',
-    },
-    searchText: {
-      flex: 1,
-      fontSize: 13,
-      marginLeft: 8,
-    },
-    supportWrap: {
-      flexShrink: 0,
-    },
     contentInset: {
       paddingHorizontal: 12,
       paddingTop: 12,

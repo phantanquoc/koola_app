@@ -10,8 +10,6 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaBadge,
-  KoolaIconButton,
-  KoolaLogo,
   KoolaSkeleton,
   KoolaText,
   koolaRadii,
@@ -32,39 +30,9 @@ import {
   type ShoppingStore,
 } from './shoppingMockData';
 
-type Styles = ReturnType<typeof makeStyles>;
+import KoolaHeader from '../../components/KoolaHeader';
 
-const ShoppingHeader: React.FC<{
-  palette: Palette;
-  styles: Styles;
-  onComingSoon: () => void;
-}> = ({ palette, styles, onComingSoon }) => (
-  <View style={styles.header}>
-    <KoolaLogo showMark={false} variant="extruded" font="sora" wordmarkSize={24} style={styles.logoWrap} />
-    <Pressable
-      accessibilityRole="search"
-      accessibilityLabel="Tìm sản phẩm, cửa hàng"
-      android_ripple={{ color: palette.line }}
-      onPress={onComingSoon}
-      style={styles.searchBox}>
-      <MaterialIcons name="search" size={18} color={palette.muted} />
-      <KoolaText tone="muted" numberOfLines={1} style={styles.searchText}>
-        Tìm sản phẩm, cửa hàng...
-      </KoolaText>
-    </Pressable>
-    <View style={styles.cartWrap}>
-      <KoolaIconButton
-        icon="shopping-cart"
-        variant="solid"
-        tone="surface"
-        size={38}
-        iconSize={20}
-        accessibilityLabel="Giỏ hàng"
-        onPress={onComingSoon}
-      />
-    </View>
-  </View>
-);
+type Styles = ReturnType<typeof makeStyles>;
 
 const PromoBand: React.FC<{ palette: Palette; styles: Styles }> = ({
   palette,
@@ -284,10 +252,10 @@ const ShoppingHomeScreen: React.FC = () => {
 
   const renderHeader = () => (
     <View>
-      <ShoppingHeader
-        palette={palette}
-        styles={styles}
-        onComingSoon={handleComingSoon}
+      <KoolaHeader
+        searchPlaceholder="Tìm sản phẩm, cửa hàng..."
+        onSearchPress={handleComingSoon}
+        trailingActions={[{ icon: 'shopping-cart', accessibilityLabel: 'Giỏ hàng', onPress: handleComingSoon }]}
       />
       <View style={styles.contentInset}>
         {shoppingIsPreview && (
@@ -387,10 +355,10 @@ const ShoppingHomeScreen: React.FC = () => {
       {!contentReady ? (
         // Interactive shell: header chrome + skeleton placeholders sized to real layout
         <View style={styles.screen}>
-          <ShoppingHeader
-            palette={palette}
-            styles={styles}
-            onComingSoon={handleComingSoon}
+          <KoolaHeader
+            searchPlaceholder="Tìm sản phẩm, cửa hàng..."
+            onSearchPress={handleComingSoon}
+            trailingActions={[{ icon: 'shopping-cart', accessibilityLabel: 'Giỏ hàng', onPress: handleComingSoon }]}
           />
           <View style={styles.contentInset}>
             {/* PromoBand skeleton */}
@@ -447,41 +415,6 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.canvas,
     },
     listContent: {},
-    header: {
-      backgroundColor: p.surface,
-      paddingHorizontal: 12,
-      paddingTop: 8,
-      paddingBottom: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
-    },
-    // gap removed from this row (Hermes RN0.76 drops flex:1 children to new
-    // lines with gap in a row) — spacing via marginRight + flexShrink:0.
-    logoWrap: {
-      marginRight: 8,
-      flexShrink: 0,
-    },
-    searchBox: {
-      flex: 1,
-      minHeight: 38,
-      borderRadius: koolaRadii.pill,
-      backgroundColor: p.canvas,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      marginRight: 8,
-      overflow: 'hidden',
-    },
-    searchText: {
-      flex: 1,
-      fontSize: 13,
-      marginLeft: 8,
-    },
-    cartWrap: {
-      flexShrink: 0,
-    },
     contentInset: {
       paddingHorizontal: 12,
       paddingTop: 12,

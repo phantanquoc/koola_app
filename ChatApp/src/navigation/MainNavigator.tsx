@@ -207,7 +207,6 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
       accessibilityRole="tab"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={isFocused ? { selected: true } : {}}
-      android_ripple={{ color: palette.primarySoft, borderless: false }}
       onPress={onPress}
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
@@ -228,6 +227,8 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
         weight={isFocused ? '800' : '700'}
         tone={isFocused ? 'primary' : 'faint'}
         numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
         style={isFocused ? styles.activeLabel : styles.inactiveLabel}>
         {label}
       </KoolaText>
@@ -508,12 +509,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     overflow: 'hidden',
   },
-  dockBorderGlow: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 26,
-    borderWidth: 1.25,
-    borderColor: 'rgba(37,99,235,0.25)',
-  },
   // Liquid glass layer 1 — translucent SVG gradient fill (faux blur host).
   tabDockStaticFill: {
     ...StyleSheet.absoluteFillObject,
@@ -579,13 +574,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(37,99,235,0.18)',
   },
-  dockSheen: {
-    position: 'absolute',
-    top: -20,
-    bottom: -20,
-    width: 70,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
   tabItem: {
     minHeight: 54,
     paddingHorizontal: 2,
@@ -607,22 +595,6 @@ const styles = StyleSheet.create({
     height: 26,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconHalo: {
-    position: 'absolute',
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    // backgroundColor applied inline from palette.primary
-  },
-  iconRipple: {
-    position: 'absolute',
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    borderWidth: 1.25,
-    // borderColor applied inline from palette.primary
-    backgroundColor: 'transparent',
   },
   activeLabel: {
     maxWidth: '100%',
