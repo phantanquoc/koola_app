@@ -17,7 +17,6 @@ const VIDEO_HEIGHT = 200;
 
 interface VideoMessageProps {
   message: { mediaKey?: string; mediaDuration?: number; blurhash?: string | null; mediaThumbnailKey?: string | null };
-  isVisible?: boolean;
   onPress?: () => void;
 }
 
@@ -130,4 +129,20 @@ const styles = StyleSheet.create({
   },
 });
 
-export default VideoMessage;
+// Memoized: this row sits inside the chat list, where a parent re-render would
+// otherwise re-run the thumbnail effect and rebuild the whole view for every
+// video on screen.
+//
+// A field-level comparator is required rather than the default shallow one:
+// `renderMessageVideo` builds the `message` prop as a fresh object literal on
+// every call, so shallow comparison of props would never find it equal and the
+// memo would never hit. Its fields are all primitives, and `onPress` is a
+// per-message-id cached handler in ChatScreen, so comparing them is exact — this
+// is a cheaper equality check, not a looser one.
+export default React.memo(VideoMessage, (prev, next) =>
+  prev.onPress === next.onPress &&
+  prev.message.mediaKey === next.message.mediaKey &&
+  prev.message.mediaDuration === next.message.mediaDuration &&
+  prev.message.blurhash === next.message.blurhash &&
+  prev.message.mediaThumbnailKey === next.message.mediaThumbnailKey,
+);

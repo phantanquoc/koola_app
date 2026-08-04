@@ -69,4 +69,14 @@ const styles = StyleSheet.create({
   count: { fontSize: 12, color: '#666', marginLeft: 2 },
 });
 
-export default ReactionDisplay;
+// Memoized: rendered per message row inside the chat list, and the grouping loop
+// below runs on every render.
+//
+// Default shallow comparison is correct here. `currentUserId` and `isRight` are
+// primitives; `onPress` is cached per message id by ChatScreen (an inline arrow
+// there would silently defeat this memo, which is why the parent no longer builds
+// one); `reactions` is the array on the message object, so its identity changes
+// exactly when the message is remapped from the database — i.e. when a reaction
+// may actually have changed. That errs toward re-rendering, never toward a
+// missed update.
+export default React.memo(ReactionDisplay);

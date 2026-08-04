@@ -130,8 +130,22 @@ export function usePinManagement({
 
   const pinnedContents = useMemo(() => {
     const map: Record<string, string> = {};
+    if (pinnedMessages.length === 0) return map;
+
+    // One pass to index, then O(1) lookups — the previous `messages.find(...)`
+    // inside the pin loop rescanned the whole loaded window per pin, so cost was
+    // pins x messages and it re-ran on every message-list change (i.e. on every
+    // incoming message and every page of history).
+    const byId = new Map<string, IMessage>();
+    for (const m of messages) {
+      const id = String(m._id);
+      // First occurrence wins, matching `find`'s semantics exactly. Duplicate
+      // ids shouldn't occur, but parity must not depend on that.
+      if (!byId.has(id)) byId.set(id, m);
+    }
+
     for (const pin of pinnedMessages) {
-      const msg = messages.find((m) => String(m._id) === pin.messageId);
+      const msg = byId.get(pin.messageId);
       if (msg) map[pin.messageId] = msg.text || '📷 Media';
     }
     return map;

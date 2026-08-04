@@ -14,12 +14,20 @@
  *     before any React component renders. As a result, `getFromMemory` returns
  *     a hit on the very first frame after a process restart, eliminating the
  *     Blurhash flash that AsyncStorage's async hydration left behind.
- *   - Writes update `indexMap` synchronously and persist via MMKV.set(). Touch
- *     writes are debounced per-key (5s) so list-scroll bursts don't translate
- *     into hundreds of mmap flushes per second.
+ *   - Persistence is a full-snapshot `JSON.stringify` of `indexMap`, so its cost
+ *     grows with index size. Two classes of write therefore behave differently:
+ *       · Structural writes (`set`, `deleteEntry`) persist promptly — they carry
+ *         the file paths the cache needs to survive a process restart.
+ *       · `lastAccess` writes from `touch()` update memory synchronously but
+ *         persist deferred and coalesced (see `scheduleLastAccessFlush`). The
+ *         per-key 5 s debounce alone did not bound this: the first touch of each
+ *         distinct key always passed the gate, so scrolling past N cached images
+ *         meant N synchronous whole-map serializations on the JS thread. The
+ *         coalescing window bounds it by wall-clock time instead.
  *   - Requires React Native New Architecture (TurboModules + Fabric), which is
  *     enabled in this project (see android/gradle.properties).
  */
+import { InteractionManager } from 'react-native';
 import { MMKV } from 'react-native-mmkv';
 
 const BlobUtil = require('react-native-blob-util').default;
@@ -47,6 +55,15 @@ const EVICTION_FLOOR_RATIO = 0.8;
 
 /** Minimum milliseconds between MMKV writes for the same key on touch(). */
 const TOUCH_DEBOUNCE_MS = 5000;
+
+/**
+ * Coalescing window for deferred `lastAccess` persistence.
+ *
+ * All `touch()` writes that land inside one window share a single snapshot
+ * write, which is then further deferred until interactions (scrolling) settle.
+ * Bounds serialization to at most once per window while scrolling continuously.
+ */
+const LASTACCESS_FLUSH_MS = 2000;
 
 /** MMKV key holding the serialized index. */
 const STORAGE_KEY = 'entries';
@@ -81,9 +98,9 @@ const lastWriteTs = new Map<string, number>();
 /**
  * Synchronously serialize the indexMap and write it to MMKV.
  *
- * MMKV.set is synchronous and mmap-backed, so a full snapshot write of even
- * a few thousand entries completes in well under one millisecond. No need for
- * coalescing or async batching like the previous AsyncStorage implementation.
+ * This is a FULL snapshot: cost grows with index size, so it must never run on
+ * a scroll frame. Callers choose the timing — `persistNow()` for structural
+ * writes, `scheduleLastAccessFlush()` for LRU bookkeeping.
  */
 function persistMap(): void {
   const snapshot: Record<string, MediaIndexEntry> = {};
@@ -95,6 +112,73 @@ function persistMap(): void {
   } catch (err) {
     console.warn('[mediaIndexService] MMKV.set failed:', err);
   }
+}
+
+// ─── Deferred lastAccess persistence ──────────────────────────────────────────
+
+/** True when touch() has updated memory without the change reaching MMKV yet. */
+let lastAccessDirty = false;
+
+/** Coalescing timer for the deferred flush, or null when none is scheduled. */
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Pending InteractionManager handle, kept so it can be cancelled. */
+let flushInteraction: { cancel: () => void } | null = null;
+
+function cancelScheduledFlush(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  flushInteraction?.cancel();
+  flushInteraction = null;
+}
+
+/** Write pending lastAccess changes, if any. Safe to call unconditionally. */
+function flushLastAccess(): void {
+  cancelScheduledFlush();
+  if (!lastAccessDirty) return;
+  lastAccessDirty = false;
+  persistMap();
+}
+
+/**
+ * Persist immediately, absorbing any pending deferred write.
+ *
+ * The snapshot contains every current `lastAccess` value, so a prompt write
+ * already satisfies whatever the deferred flush was going to persist.
+ */
+function persistNow(): void {
+  cancelScheduledFlush();
+  lastAccessDirty = false;
+  persistMap();
+}
+
+/**
+ * Schedule one deferred, coalesced snapshot write for `lastAccess` changes.
+ *
+ * Runs on the scroll-critical path (via `touch()`), so it stays O(1) and
+ * serializes nothing. Calls arriving while a flush is already scheduled are
+ * absorbed by it: a burst of touches costs a single write, whatever its size.
+ */
+function scheduleLastAccessFlush(): void {
+  lastAccessDirty = true;
+  if (flushTimer !== null || flushInteraction !== null) {
+    return; // a flush is already pending — coalesce into it
+  }
+
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    // Yield to any gesture still in progress so the snapshot write cannot land
+    // inside a scroll frame. InteractionManager is pure JS (a TaskQueue drained
+    // via setImmediate) with no native-module dependency, so it is always
+    // available — in the app and under the react-native jest preset alike. No
+    // availability fallback is needed.
+    flushInteraction = InteractionManager.runAfterInteractions(() => {
+      flushInteraction = null;
+      flushLastAccess();
+    });
+  }, LASTACCESS_FLUSH_MS);
 }
 
 // ─── load ─────────────────────────────────────────────────────────────────────
@@ -150,21 +234,27 @@ export function get(mediaKey: string): MediaIndexEntry | null {
 
 /**
  * Insert or update an entry in the index and persist to MMKV.
+ *
+ * Structural write: persists promptly, because the entry carries the on-disk
+ * path that makes the cache usable after a restart.
  */
 export function set(mediaKey: string, entry: MediaIndexEntry): void {
   indexMap.set(mediaKey, entry);
-  persistMap();
+  persistNow();
 }
 
 // ─── delete ───────────────────────────────────────────────────────────────────
 
 /**
  * Remove an entry from the index and persist to MMKV.
+ *
+ * Structural write: persists promptly, so an evicted (unlinked) file can never
+ * be resurrected from a stale snapshot after a restart.
  */
 export function deleteEntry(mediaKey: string): void {
   indexMap.delete(mediaKey);
   lastWriteTs.delete(mediaKey);
-  persistMap();
+  persistNow();
 }
 
 // ─── touch ────────────────────────────────────────────────────────────────────
@@ -172,10 +262,21 @@ export function deleteEntry(mediaKey: string): void {
 /**
  * Update lastAccess for a key.
  *
- * Persists only if the previous write for this key was more than
- * TOUCH_DEBOUNCE_MS ago; otherwise updates only the in-memory Map.
- * This prevents a burst of MMKV writes when scrolling a list of cached
- * images.
+ * In-memory update is synchronous: `evictIfNeeded` reads `lastAccess` from the
+ * map, so LRU ordering stays correct and current the instant this returns.
+ *
+ * Persistence is deferred and coalesced, and kept off the scroll-critical path
+ * entirely. `getFromMemory` calls this on every cache hit and the chat
+ * viewability prefetch calls `getFromMemory` up to 11 times per change, so a
+ * synchronous whole-map `JSON.stringify` here showed up directly as scroll jank.
+ * The per-key 5 s debounce is retained on top, so a repeatedly-touched key does
+ * not keep re-arming the flush timer forever.
+ *
+ * Durability trade-off: `lastAccess` is LRU bookkeeping, not user data. A hard
+ * process kill can lose the last few seconds of timestamps, which at worst makes
+ * one eviction pass marginally less optimal. Nothing user-visible is lost, and
+ * entry paths — the part that matters across restarts — are written promptly by
+ * `set`/`deleteEntry`.
  */
 export function touch(mediaKey: string): void {
   const entry = indexMap.get(mediaKey);
@@ -188,7 +289,7 @@ export function touch(mediaKey: string): void {
   const prev = lastWriteTs.get(mediaKey) ?? 0;
   if (now - prev >= TOUCH_DEBOUNCE_MS) {
     lastWriteTs.set(mediaKey, now);
-    persistMap();
+    scheduleLastAccessFlush();
   }
 }
 
@@ -246,6 +347,11 @@ export async function evictIfNeeded(capBytes: number): Promise<void> {
 export async function clearAll(): Promise<void> {
   indexMap.clear();
   lastWriteTs.clear();
+  // Drop any pending lastAccess flush: its snapshot describes an index that no
+  // longer exists, and letting it fire would rewrite the storage key this call
+  // just cleared.
+  cancelScheduledFlush();
+  lastAccessDirty = false;
   try {
     mmkv.clearAll();
   } catch (err) {

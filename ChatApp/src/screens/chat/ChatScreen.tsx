@@ -1,24 +1,21 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   FlatList,
 } from 'react-native';
-import { GiftedChat, Bubble, SystemMessage, IMessage, BubbleProps, SystemMessageProps, DayProps, InputToolbarProps } from 'react-native-gifted-chat';
+import { GiftedChat, SystemMessage, IMessage, SystemMessageProps, DayProps, InputToolbarProps, MessageProps } from 'react-native-gifted-chat';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
 import { getFromMemory, getOrDownload } from '../../services/media/mediaCacheService';
-import type { Conversation, Message, MessageReaction } from '../../types';
+import type { Conversation, Message } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import { useTargetMessage } from './hooks/useTargetMessage';
-import StoryReferenceCard from '../../components/moments/StoryReferenceCard';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReadReceipts } from './hooks/useReadReceipts';
 import { usePinManagement } from './hooks/usePinManagement';
@@ -27,6 +24,7 @@ import { useMediaUpload } from './hooks/useMediaUpload';
 import { useDeadLetterActions } from './hooks/useDeadLetterActions';
 import { useChatHeaderState } from './hooks/useChatHeaderState';
 import ChatHeader from './components/ChatHeader';
+import MessageItem, { makeMessageItemStyles } from './components/MessageItem';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -36,7 +34,6 @@ import FileAttachment from '../../components/FileAttachment';
 import VideoMessage from '../../components/VideoMessage';
 import VideoPlayerModal from '../../components/VideoPlayerModal';
 import MessageContextMenu from '../../components/MessageContextMenu';
-import ReactionDisplay from '../../components/ReactionDisplay';
 import PinBanner from '../../components/PinBanner';
 import PinListBottomSheet from '../../components/PinListBottomSheet';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
@@ -95,100 +92,13 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
     progressFill: {
       height: 3, borderRadius: koolaRadii.pill, backgroundColor: semantic.action.primary,
     },
-    failedBubbleWrapper: {
-      borderLeftWidth: 1,
-      borderLeftColor: semantic.status.danger,
-    },
-    failedLabel: {
-      marginTop: 2,
-      marginLeft: 4,
-      marginBottom: 2,
-    },
-    storyRefCardWrapper: {
-      marginHorizontal: 8,
-      marginBottom: 4,
-      maxWidth: 240,
-    },
-    bubbleOuter: {
-      marginBottom: 2,
-    },
-    bubbleHighlight: {
-      backgroundColor: 'rgba(33, 150, 243, 0.12)',
-      borderRadius: koolaRadii.md,
-    },
-    // Grouped bubble (not last in a run) — no tail radius
-    bubbleGroupedRight: {
-      backgroundColor: compTokens.chatBubble.own.bg,
-      borderRadius: koolaRadii.lg,
-    },
-    bubbleGroupedLeft: {
-      backgroundColor: compTokens.chatBubble.other.bg,
-      borderRadius: koolaRadii.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: compTokens.chatBubble.other.border,
-    },
-    // Last bubble in a run — tail via asymmetric radius
-    bubbleTailRight: {
-      backgroundColor: compTokens.chatBubble.own.bg,
-      borderRadius: koolaRadii.lg,
-      borderBottomRightRadius: koolaRadii.xs2,
-    },
-    bubbleTailLeft: {
-      backgroundColor: compTokens.chatBubble.other.bg,
-      borderRadius: koolaRadii.lg,
-      borderBottomLeftRadius: koolaRadii.xs2,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: compTokens.chatBubble.other.border,
-    },
-    // Read tick row
-    tickRow: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      marginTop: 1,
-      marginRight: 4,
-    },
-    // Media message time scrim — semi-opaque backing for legibility over images
-    mediaTimeScrim: {
-      backgroundColor: 'rgba(0, 0, 0, 0.55)',
-      borderRadius: koolaRadii.xs2,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      alignSelf: 'flex-end',
-      marginRight: 6,
-      marginBottom: 4,
-    },
-    mediaTimeText: {
-      color: '#FFFFFF',
-      fontSize: 11,
-    },
-    // Text message time row
-    textTimeRow: {
-      paddingHorizontal: koolaSpacing.sm,
-      paddingBottom: 4,
-      alignItems: 'flex-end',
-    },
-    textTimeLabel: {
-      fontSize: 11,
-    },
   });
 }
 
-/**
- * Determine if a message is the last in a consecutive run from the same sender.
- * GiftedChat passes previousMessage/nextMessage in BubbleProps — we use
- * nextMessage (which in the inverted list is the *older* message chronologically)
- * to check if the NEXT rendered bubble is from a different sender, meaning
- * the current bubble is the "last" in the visual group (bottom of the run).
- */
-function isLastInGroup(props: BubbleProps<IMessage>): boolean {
-  const current = props.currentMessage;
-  const next = props.nextMessage;
-  if (!current) return true;
-  if (!next || !next.user) return true;
-  // Different sender → current is the last in its run
-  return next.user._id !== current.user._id;
-}
+// NOTE: the bubble-level styles (bubbleOuter/bubbleHighlight/bubbleTail*/
+// bubbleGrouped*/tickRow/mediaTime*/textTime*/failed*/storyRefCardWrapper) and
+// `isLastInGroup` now live in ./components/MessageItem, next to the only code
+// that reads them. Keeping a second copy here would let the two drift apart.
 
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
@@ -204,6 +114,13 @@ const ChatScreen: React.FC = () => {
   const { tokens } = useTheme();
   const styles = useMemo(
     () => makeScreenStyles(tokens.component, tokens.semantic),
+    [tokens],
+  );
+  // Built once per theme and passed to every row. Its identity is the signal
+  // MessageItem's comparator uses to detect a palette change, so it must be
+  // memoized on `tokens` and nothing else.
+  const messageStyles = useMemo(
+    () => makeMessageItemStyles(tokens.component, tokens.semantic),
     [tokens],
   );
 
@@ -268,26 +185,11 @@ const ChatScreen: React.FC = () => {
   // ─── Video player state ────────────────────────────────────────────────────
   const [playerMessage, setPlayerMessage] = useState<(IMessage & Record<string, unknown>) | null>(null);
 
-  // ─── Viewability tracking for auto-play ───────────────────────────────────
-  const [visibleMessageIds, setVisibleMessageIds] = useState<Set<string>>(new Set());
-  // Keep a ref of visible video IDs to avoid setState on every scroll frame
-  // (only video messages consume isVisible for autoplay — text/image don't need it)
-  const prevVisibleVideoIdsRef = useRef<string>('');
+  // ─── Viewability tracking: media prefetch only ────────────────────────────
+  // Intentionally writes NO React state. A setState here would re-render the
+  // whole GiftedChat subtree on every viewability change during scroll.
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: IMessage & Record<string, unknown>; index: number | null }> }) => {
-      // Filter to video messages only — these are the ones that need isVisible for autoplay
-      const videoIds = viewableItems
-        .filter((v) => v.item.mediaType === 'video' || v.item.video)
-        .map((v) => String(v.item._id))
-        .sort()
-        .join(',');
-      // Only trigger state update when the visible video set actually changed
-      if (videoIds !== prevVisibleVideoIdsRef.current) {
-        prevVisibleVideoIdsRef.current = videoIds;
-        const ids = new Set(viewableItems.map((v) => String(v.item._id)));
-        setVisibleMessageIds(ids);
-      }
-
       // ─── Media prefetch around viewport ──────────────────────────────────
       // Fire-and-forget: warm cache for images/thumbnails near visible area.
       // Uses messagesRef (stable ref) to find ±5 neighbors by index.
@@ -598,108 +500,62 @@ const ChatScreen: React.FC = () => {
   }, [isInitialLoading]);
 
   // ─── Custom renders ────────────────────────────────────────────────────────
-  const renderBubble = useCallback(
-    (props: BubbleProps<IMessage>) => {
-      const msg = props.currentMessage as IMessage & Record<string, unknown>;
-      const isImage = msg?.image && msg?.mediaType === 'image';
-      const isVideo = msg?.mediaType === 'video';
-      const isMedia = isImage || isVideo;
-      const reactions = (msg?.reactions as MessageReaction[]) || [];
-      const isRight = msg?.user?._id === currentUserId;
-      const isFailed = msg?.failed === true;
-      const isPending = msg?.pending === true;
 
-      // Consecutive-message grouping: determine if this is last in a run
-      const lastInRun = isLastInGroup(props);
+  // `ReactionDisplay` is memoized, so the `onPress` it receives must keep its
+  // identity across parent re-renders — an inline arrow would give every row a
+  // fresh function and make the memo never hit. One handler is cached per message
+  // id; the cache is dropped whenever `reactToMessage` changes identity so no
+  // handler can call a stale version.
+  const reactionPressHandlers = useRef(new Map<string, (emoji: string) => void>());
+  const getReactionPressHandler = useCallback((messageId: string) => {
+    const cached = reactionPressHandlers.current.get(messageId);
+    if (cached) return cached;
+    const handler = (emoji: string) => reactToMessage(messageId, emoji);
+    reactionPressHandlers.current.set(messageId, handler);
+    return handler;
+  }, [reactToMessage]);
 
-      // Bubble wrapper style: tail only on last bubble in a run
-      const bubbleWrapStyle = isMedia
-        ? { backgroundColor: 'transparent', padding: 0 }
-        : isRight
-          ? (lastInRun ? styles.bubbleTailRight : styles.bubbleGroupedRight)
-          : (lastInRun ? styles.bubbleTailLeft : styles.bubbleGroupedLeft);
+  useEffect(() => {
+    reactionPressHandlers.current.clear();
+  }, [getReactionPressHandler]);
 
-      // Detect story reply metadata
-      const storyReply = (msg?.metadata as Record<string, unknown> | undefined)?.storyReply as
-        | { storyId: string; mediaKeyPreview?: string; captionSnippet?: string; authorId?: string }
-        | undefined;
-
-      const isHighlighted = highlightedMessageId != null && String(msg?._id) === highlightedMessageId;
-
+  // Rows are rendered by the memoized `MessageItem` via GiftedChat's
+  // `renderMessage` prop (see the wiring at the <GiftedChat> element below).
+  // The former `renderBubble` closure lived here and depended on
+  // `highlightedMessageId`, so every highlight change gave GiftedChat a new
+  // render prop and repainted every mounted row. The highlight decision is now a
+  // per-row boolean, so only the affected row re-renders.
+  const renderMessage = useCallback(
+    (props: MessageProps<IMessage>) => {
+      const id = String(props.currentMessage?._id ?? '');
       return (
-        <View style={[styles.bubbleOuter, isHighlighted && styles.bubbleHighlight]}>
-          <TouchableOpacity
-            activeOpacity={isFailed ? 0.7 : 1}
-            onPress={isFailed ? () => handleRetryFailedMessage(String(msg._id)) : undefined}
-            accessible={isFailed}
-            accessibilityLabel={isFailed ? 'Gửi thất bại — nhấn để thử lại' : undefined}
-            accessibilityRole={isFailed ? 'button' : undefined}>
-            <View style={isFailed ? styles.failedBubbleWrapper : undefined}>
-              {/* Story reference card prepended above the bubble */}
-              {storyReply && (
-                <View style={styles.storyRefCardWrapper}>
-                  <StoryReferenceCard storyReply={storyReply} />
-                </View>
-              )}
-              <Bubble
-                {...props}
-                wrapperStyle={{
-                  right: bubbleWrapStyle,
-                  left: bubbleWrapStyle,
-                }}
-                textStyle={{
-                  right: { color: tokens.component.chatBubble.own.text, fontSize: 15, lineHeight: 22 },
-                  left: { color: tokens.component.chatBubble.other.text, fontSize: 15, lineHeight: 22 },
-                }}
-                renderTicks={() => null}
-                renderTime={(timeProps) => {
-                  const timeText = dayjs(timeProps.currentMessage?.createdAt).format('HH:mm');
-                  if (isMedia) {
-                    return (
-                      <View style={styles.mediaTimeScrim}>
-                        <KoolaText variant="caption" style={styles.mediaTimeText}>{timeText}</KoolaText>
-                      </View>
-                    );
-                  }
-                  return (
-                    <View style={styles.textTimeRow}>
-                      <KoolaText variant="caption" tone="muted" style={styles.textTimeLabel}>{timeText}</KoolaText>
-                    </View>
-                  );
-                }}
-              />
-            </View>
-            {isFailed && (
-              <KoolaText variant="caption" tone="danger" style={styles.failedLabel}>Gửi thất bại — nhấn để thử lại</KoolaText>
-            )}
-          </TouchableOpacity>
-          {/* Delivery/read tick for own messages */}
-          {isRight && !isFailed && !msg?.system && (
-            <View style={styles.tickRow}>
-              {isPending ? (
-                <MaterialIcons name="access-time" size={12} color={tokens.semantic.text.muted} />
-              ) : ((msg as IMessage & Record<string, unknown>).messageStatus === 'read' ||
-                    ((msg as IMessage & Record<string, unknown>).readBy as string[] | undefined)?.length) ? (
-                <MaterialIcons name="done-all" size={13} color={tokens.semantic.action.primary} />
-              ) : (
-                <MaterialIcons name="done" size={13} color={tokens.semantic.text.muted} />
-              )}
-            </View>
-          )}
-          {reactions.length > 0 && (
-            <ReactionDisplay
-              reactions={reactions}
-              currentUserId={currentUserId}
-              onPress={(emoji) => reactToMessage(String(msg._id), emoji)}
-              isRight={isRight}
-            />
-          )}
-        </View>
+        <MessageItem
+          {...props}
+          styles={messageStyles}
+          tokens={tokens}
+          currentUserId={currentUserId}
+          isHighlighted={highlightedMessageId != null && id === highlightedMessageId}
+          onRetry={handleRetryFailedMessage}
+          getReactionPressHandler={getReactionPressHandler}
+        />
       );
     },
-    [currentUserId, reactToMessage, handleRetryFailedMessage, highlightedMessageId, styles, tokens],
+    [
+      currentUserId,
+      getReactionPressHandler,
+      handleRetryFailedMessage,
+      highlightedMessageId,
+      messageStyles,
+      tokens,
+    ],
   );
 
+  // Both this and `renderDay` previously declared `[]` while referencing themed
+  // styles, which permanently captured the palette active at first render: after
+  // a light↔dark switch, system messages and day separators kept stale colors
+  // while the rest of the screen recolored. Declaring the real dependencies is
+  // the fix — `styles` is memoized on `tokens`, so these callbacks now recreate
+  // exactly on a theme change and at no other time.
   const renderSystemMessage = useCallback(
     (props: SystemMessageProps<IMessage>) => (
       <SystemMessage
@@ -707,7 +563,7 @@ const ChatScreen: React.FC = () => {
         textStyle={styles.systemMessage}
       />
     ),
-    [],
+    [styles.systemMessage],
   );
 
   const renderDay = useCallback(
@@ -733,7 +589,7 @@ const ChatScreen: React.FC = () => {
         </View>
       );
     },
-    [],
+    [styles.dayContainer, styles.dayText],
   );
 
   const renderFooter = useCallback(() => {
@@ -765,6 +621,59 @@ const ChatScreen: React.FC = () => {
   }, [typingUsers, isUploading, uploadProgress, styles, tokens]);
 
   // ─── Media renderers ──────────────────────────────────────────────────────
+  // Opening the swipe gallery needs the tapped message's id, so the handler is
+  // per-message. It is cached by id rather than rebuilt inline: `MediaImage` is
+  // memoized, and a fresh closure on every render would make that memo never hit.
+  const imagePressHandlers = useRef(new Map<string, (uri: string) => void>());
+
+  const openImageViewer = useCallback((messageId: string, uri: string) => {
+    // Collect all resolved image URIs from messages for swipe gallery
+    // Read from ref to avoid closing over messages array (stabilizes callback identity)
+    const currentMessages = messagesRef.current;
+    // messages is newest-first, so reverse to get chronological order (oldest = 1/X)
+    const allImageUris: string[] = [];
+    let tappedIndex = 0;
+    for (let i = currentMessages.length - 1; i >= 0; i--) {
+      const m = currentMessages[i];
+      const mRec = m as IMessage & Record<string, unknown>;
+      if (mRec.image === 'media-pending' && mRec.mediaKey) {
+        const resolved = getFromMemory(mRec.mediaKey as string);
+        if (resolved) {
+          allImageUris.push(resolved);
+          if (String(m._id) === messageId) {
+            tappedIndex = allImageUris.length - 1;
+          }
+        }
+      }
+    }
+    // Fallback: if we couldn't build the list, just show the single image
+    if (allImageUris.length === 0) {
+      allImageUris.push(uri);
+      tappedIndex = 0;
+    }
+    (navigation as unknown as NativeStackNavigationProp<RootStackParamList>)
+      .getParent()
+      ?.navigate('ImageViewer', {
+        imageUrl: uri,
+        imageUrls: allImageUris,
+        initialIndex: tappedIndex,
+      });
+  }, [navigation]);
+
+  const getImagePressHandler = useCallback((messageId: string) => {
+    const cached = imagePressHandlers.current.get(messageId);
+    if (cached) return cached;
+    const handler = (uri: string) => openImageViewer(messageId, uri);
+    imagePressHandlers.current.set(messageId, handler);
+    return handler;
+  }, [openImageViewer]);
+
+  // Drop cached handlers when the viewer changes identity, so they can never
+  // navigate with a stale navigation object.
+  useEffect(() => {
+    imagePressHandlers.current.clear();
+  }, [getImagePressHandler]);
+
   const renderMessageImage = useCallback(
     (props: any) => {
       const msg = props.currentMessage as IMessage & Record<string, unknown> | undefined;
@@ -777,50 +686,43 @@ const ChatScreen: React.FC = () => {
           isUploading={!!msg.isUploading}
           uploadProgress={msg.uploadProgress as number | undefined}
           blurhash={msg.blurhash as string | null | undefined}
-          onPress={(uri) => {
-            // Collect all resolved image URIs from messages for swipe gallery
-            // Read from ref to avoid closing over messages array (stabilizes callback identity)
-            const currentMessages = messagesRef.current;
-            // messages is newest-first, so reverse to get chronological order (oldest = 1/X)
-            const allImageUris: string[] = [];
-            let tappedIndex = 0;
-            for (let i = currentMessages.length - 1; i >= 0; i--) {
-              const m = currentMessages[i];
-              const mRec = m as IMessage & Record<string, unknown>;
-              if (mRec.image === 'media-pending' && mRec.mediaKey) {
-                const resolved = getFromMemory(mRec.mediaKey as string);
-                if (resolved) {
-                  allImageUris.push(resolved);
-                  if (String(m._id) === String(msg._id)) {
-                    tappedIndex = allImageUris.length - 1;
-                  }
-                }
-              }
-            }
-            // Fallback: if we couldn't build the list, just show the single image
-            if (allImageUris.length === 0) {
-              allImageUris.push(uri);
-              tappedIndex = 0;
-            }
-            (navigation as unknown as NativeStackNavigationProp<RootStackParamList>)
-              .getParent()
-              ?.navigate('ImageViewer', {
-                imageUrl: uri,
-                imageUrls: allImageUris,
-                initialIndex: tappedIndex,
-              });
-          }}
+          onPress={getImagePressHandler(String(msg._id))}
         />
       );
     },
-    [navigation],
+    [getImagePressHandler],
   );
+
+  // Same rationale as the image handler: `VideoMessage` is memoized, so its
+  // onPress must keep its identity across parent re-renders. The message is
+  // re-read from the ref at press time so the player never opens a stale row.
+  //
+  // NO CLEARING EFFECT HERE, unlike `imagePressHandlers` above — the asymmetry is
+  // deliberate, not an oversight. That cache needs clearing because its handlers
+  // close over `openImageViewer`, which closes over `navigation`; when navigation
+  // changes identity the cached closures would navigate with a stale object. This
+  // handler closes over nothing that can go stale: `messageId` is its own
+  // argument, `messagesRef` is a ref read at press time, and `setPlayerMessage`
+  // is a `useState` setter whose identity React guarantees is stable. Hence the
+  // empty dep array below is exhaustive and the Map never holds a stale entry.
+  // The Map grows one closure per distinct video message id and is discarded with
+  // the screen, so it is bounded per mount.
+  const videoPressHandlers = useRef(new Map<string, () => void>());
+  const getVideoPressHandler = useCallback((messageId: string) => {
+    const cached = videoPressHandlers.current.get(messageId);
+    if (cached) return cached;
+    const handler = () => {
+      const current = messagesRef.current.find((m) => String(m._id) === messageId);
+      if (current) setPlayerMessage(current as IMessage & Record<string, unknown>);
+    };
+    videoPressHandlers.current.set(messageId, handler);
+    return handler;
+  }, []);
 
   const renderMessageVideo = useCallback(
     (props: any) => {
       const msg = props.currentMessage as IMessage & Record<string, unknown> | undefined;
       if (!msg) return null;
-      const isVisible = visibleMessageIds.has(String(msg._id));
       const rawMsg = msg as unknown as Message;
       return (
         <VideoMessage
@@ -830,12 +732,11 @@ const ChatScreen: React.FC = () => {
             blurhash: rawMsg.blurhash,
             mediaThumbnailKey: msg.mediaThumbnailKey as string | null | undefined,
           }}
-          isVisible={isVisible}
-          onPress={() => setPlayerMessage(msg)}
+          onPress={getVideoPressHandler(String(msg._id))}
         />
       );
     },
-    [visibleMessageIds],
+    [getVideoPressHandler],
   );
 
   const renderCustomView = useCallback(
@@ -985,7 +886,7 @@ const ChatScreen: React.FC = () => {
             messages={messagesWithAvatar}
             onSend={() => {}}
             user={{ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }}
-            renderBubble={renderBubble}
+            renderMessage={renderMessage}
             renderInputToolbar={renderInputToolbar}
             renderSystemMessage={renderSystemMessage}
             renderMessageImage={renderMessageImage}
