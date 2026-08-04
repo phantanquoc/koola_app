@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Measurement-only overlay for the `perf` build type.
+
+  The perf variant is release-equivalent (minified JS bundle, __DEV__ false) but
+  points at a LAN dev backend over plain HTTP, which the release manifest
+  correctly forbids. This overlay relaxes that one setting so the variant can
+  reach the dev server. It is never part of a distributable build.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:targetApi="28" />
+</manifest>
