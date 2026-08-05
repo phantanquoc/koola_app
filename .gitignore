@@ -93,6 +93,14 @@ koola_screen.png
 ChatApp/koola_screen.png
 ChatApp/ui.xml
 
+# Built APKs + raw measurement output (APKs are ~138MB each; the CSVs worth
+# keeping are copied into docs/perf-measurements/ instead).
+build-artifacts/
+
+# Scratch dirs from audit tooling
+.tmp_audit/
+.fontaudit/
+
 # Generated reports
 docs/Bao_cao_tong_quat_APP_KOOLA.docx
 docs/report-assets/
