@@ -36,6 +36,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+# Perf-measurement env: holds the dev machine's LAN IP, which is per-machine.
+.env.perf
 
 # Logs
 logs/

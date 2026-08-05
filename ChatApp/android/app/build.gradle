@@ -2,6 +2,11 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
+// Injects .env into BuildConfig, which is where react-native-config reads its
+// values from via reflection. Without this, Config.* is undefined in any build
+// where __DEV__ is false and src/config/env.ts throws at module load.
+// ENVFILE=<path> selects a different file (see .env.perf).
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -123,6 +128,17 @@ android {
             }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+        // Release-equivalent build used only for on-device performance
+        // measurement: JS is bundled and minified by Metro and __DEV__ is false,
+        // so numbers reflect what users actually run. It differs from release in
+        // two measurement-only ways — it permits cleartext HTTP (src/perf
+        // manifest) and it reads .env.perf, so it can talk to a LAN dev backend.
+        // Never distribute this variant.
+        perf {
+            initWith release
+            matchingFallbacks = ['release']
+            signingConfig signingConfigs.debug
         }
     }
 }

@@ -122,4 +122,7 @@ const styles = StyleSheet.create({
   downloadText: { fontSize: 18 },
 });
 
-export default FileAttachment;
+// Memoized: rendered per message row inside the chat list. All four props are
+// primitives, so React.memo's default shallow comparison is exactly right — the
+// row skips re-render unless its own file metadata changes.
+export default React.memo(FileAttachment);
