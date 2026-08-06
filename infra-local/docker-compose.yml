@@ -146,6 +146,11 @@ services:
       # See backend-dev note: use a peer-reachable host (LAN/public IP), NOT
       # 10.0.2.2. Defaults to localhost; override via shell/.env for real calls.
       COTURN_IP: ${COTURN_IP:-localhost}
+      # Internal probe target for /health. COTURN_IP is client-facing and may be
+      # a LAN/public IP the backend container cannot route to; the service name
+      # always resolves on the compose network. Mirrors MINIO_ENDPOINT vs
+      # MINIO_PUBLIC_HOST above.
+      COTURN_INTERNAL_HOST: chat-coturn
       COTURN_PORT: "3478"
       TURN_STATIC_SECRET: ${TURN_STATIC_SECRET:-koola-turn-secret-dev-2024}
     depends_on:
@@ -187,6 +192,9 @@ services:
       # resolves on the Android emulator and breaks calls on real devices.
       COTURN_IP: ${COTURN_IP:-localhost}
       COTURN_PORT: "3478"
+      # Internal probe target for /health — see the `backend` service note.
+      # Not client-facing: this never enters the ICE server list.
+      COTURN_INTERNAL_HOST: chat-coturn
       # Single source of truth — must equal the secret coturn loads.
       TURN_STATIC_SECRET: ${TURN_STATIC_SECRET:-koola-turn-secret-dev-2024}
     depends_on:

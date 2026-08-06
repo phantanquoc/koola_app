@@ -5,3 +5,5 @@ storage/data/
 
 # Env files
 backend/.env
+# Compose variable-substitution file — holds TURN_STATIC_SECRET.
+.env
