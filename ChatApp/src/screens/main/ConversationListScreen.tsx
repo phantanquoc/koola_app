@@ -33,6 +33,15 @@ import * as conversationRepository from '../../services/db/conversationRepositor
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
 import * as syncStateRepository from '../../services/db/syncStateRepository';
+import {
+  CONVERSATION_PAGE_SIZE,
+  INITIAL_PAGINATION_STATE,
+  advancePagination,
+  dbReadLimit,
+  hasMoreFromWindow,
+  requestPage,
+  type PaginationState,
+} from './conversationPagination';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import Animated, {
   Easing,
@@ -109,7 +118,7 @@ const ConversationListScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const fetchingRef = useRef(false);
-  const pageRef = useRef(1);
+  const paginationRef = useRef<PaginationState>(INITIAL_PAGINATION_STATE);
   const lastFetchAtRef = useRef(0);
 
   // ─── SQLite read path (task 5.4) ──────────────────────────────────────────
@@ -129,10 +138,21 @@ const ConversationListScreen: React.FC = () => {
     // never flashes the old account's conversations while the new ones load.
     setConversations([]);
 
+    // switchAccount() wipes the DB, so the previous account's read window no
+    // longer describes anything. Rewind it, otherwise the new account would
+    // read a window sized for someone else's conversation count.
+    paginationRef.current = INITIAL_PAGINATION_STATE;
+    setPage(INITIAL_PAGINATION_STATE.nextPage);
+
     // Initial read from SQLite
     const loadFromDb = () => {
       const t0 = Date.now();
-      const rows = conversationRepository.list({ limit: 50 });
+      // Read window follows the REST pages actually loaded (see
+      // conversationPagination.dbReadLimit). A fixed cap here used to truncate
+      // the list at 50 rows regardless of how many pages the user paged in.
+      const rows = conversationRepository.list({
+        limit: dbReadLimit(paginationRef.current),
+      });
       const tQuery = Date.now();
       // Map ConversationInput to Conversation shape for the existing UI
       const mapped = rows.map((r: ConversationInput) => ({
@@ -173,12 +193,12 @@ const ConversationListScreen: React.FC = () => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
 
-      const targetPage = reset ? 1 : pageRef.current;
+      const targetPage = requestPage(paginationRef.current, reset);
       if (reset) setRefreshing(true);
       else setLoading(true);
 
       try {
-        const data = await conversationsApi.list(targetPage, 20);
+        const data = await conversationsApi.list(targetPage, CONVERSATION_PAGE_SIZE);
         // Warm avatar cache post-render (fire-and-forget) — does not gate list paint
         const avatarKeys = data.conversations
           .flatMap((c) => c.members.map((m) => m.user?.avatar))
@@ -192,6 +212,13 @@ const ConversationListScreen: React.FC = () => {
             }
           });
         }
+
+        // Advance the page counter for BOTH paths. This must happen before the
+        // SQLite upsert below: upsertMany() notifies subscribers, which runs
+        // loadFromDb() and reads dbReadLimit(paginationRef.current). Advancing
+        // first is what lets the freshly seeded rows actually be read back.
+        paginationRef.current = advancePagination(paginationRef.current, reset);
+        setPage(paginationRef.current.nextPage);
 
         // Local-first additive seed: when flag is on, mirror REST result into
         // SQLite so the subscription-driven render path has data to show.
@@ -224,15 +251,17 @@ const ConversationListScreen: React.FC = () => {
         if (!localFirstEnabled) {
           if (reset) {
             setConversations(data.conversations);
-            pageRef.current = 2;
-            setPage(2);
           } else {
             setConversations((prev) => [...prev, ...data.conversations]);
-            pageRef.current = pageRef.current + 1;
-            setPage((p) => p + 1);
           }
+          // Flag-off renders exactly the rows REST handed back, so the server's
+          // per-page flag is the right answer for this path.
+          setHasMore(data.hasMore);
+        } else {
+          // Flag-on renders the SQLite read window, which can be wider than the
+          // page just fetched — derive the footer from that window instead.
+          setHasMore(hasMoreFromWindow(paginationRef.current, data.total));
         }
-        setHasMore(data.hasMore);
         setError(null);
       } catch {
         setError('Không thể kết nối đến máy chủ.');
