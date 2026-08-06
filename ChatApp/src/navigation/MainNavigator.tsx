@@ -21,7 +21,7 @@ import ShoppingTabStack from './ShoppingTabStack';
 import ConnectTabStack from './ConnectTabStack';
 import SupportTabStack from './SupportTabStack';
 import PersonalTabStack from './PersonalTabStack';
-import { KoolaText, useTheme } from '../ui';
+import { KoolaText, koolaDarkShadows, koolaShadows, useTheme } from '../ui';
 import type { Palette } from '../ui/theme';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -225,11 +225,14 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
       <KoolaText
         variant="caption"
         weight={isFocused ? '800' : '700'}
-        tone={isFocused ? 'primary' : 'faint'}
+        tone={isFocused ? 'primary' : 'muted'}
         numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.8}
-        style={isFocused ? styles.activeLabel : styles.inactiveLabel}>
+        // The dock is fixed-size chrome, so labels must not scale with the OS font
+        // setting (a 1.25 scale overflows the 5 slots) and must not auto-shrink —
+        // adjustsFontSizeToFit made the longest label ("Trò chuyện") render smaller
+        // than the rest, and it was the active one, inverting the visual hierarchy.
+        allowFontScaling={false}
+        style={styles.tabLabel}>
         {label}
       </KoolaText>
     </AnimatedPressable>
@@ -304,7 +307,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   navigation,
 }) => {
   const insets = useSafeAreaInsets();
-  const { palette, resolvedScheme } = useTheme();
+  const { palette, resolvedScheme, tokens } = useTheme();
   const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
@@ -324,6 +327,17 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       bottom: { color: '#DBEAFE', opacity: 0.62 },
     };
   }, [resolvedScheme]);
+
+  // Opaque base under the glass layers, plus the float shadow. Dark mode gets a
+  // lighter elevated surface + top hairline instead of a shadow, since black
+  // shadows are invisible on dark backgrounds.
+  const dockElevation = React.useMemo(
+    () =>
+      resolvedScheme === 'dark'
+        ? koolaDarkShadows.xl
+        : { backgroundColor: tokens.semantic.surface.level1, ...koolaShadows.xl },
+    [resolvedScheme, tokens.semantic.surface.level1],
+  );
 
   // Small one-shot reveal so the dock doesn't pop in after a fullscreen route
   // finishes closing. It is not a perpetual loop, so it remains unmount-safe.
@@ -349,7 +363,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         { paddingBottom: Math.max(insets.bottom, 8) },
         revealStyle,
       ]}>
-      <View style={styles.shadowWrap}>
+      <View style={[styles.shadowWrap, dockElevation]}>
         <View style={[styles.tabDock, { borderColor: palette.primary }]}>
           <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
           {state.routes.map((route, index) => {
@@ -485,21 +499,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 32,
-    paddingTop: 4,
+    // Headroom for the dock's drop shadow, which spreads ~12px above the dock
+    // (xl radius 24 minus its +12 downward offset). The host is anchored to
+    // bottom:0, so this only grows the top edge — the dock does not move, and
+    // `useTabBarBottomInset()` stays correct.
+    paddingTop: 16,
     backgroundColor: 'transparent',
     zIndex: 20,
   },
-  // Liquid-glass shadow wrapper. Drop shadow lives here so it isn't clipped
-  // by `tabDock`'s overflow:hidden. Mirrors ChatComposer.shadowWrap.
+  // Liquid-glass shadow wrapper. Drop shadow lives here so it isn't clipped by
+  // `tabDock`'s overflow:hidden. The opaque backgroundColor is load-bearing on
+  // two counts: Android renders no shadow for a transparent view (no background
+  // drawable means no outline), and it stops list rows from bleeding through the
+  // translucent glass fill. Color + shadow come from the theme via inline style.
   shadowWrap: {
     borderRadius: 26,
-    backgroundColor: 'transparent',
   },
   tabDock: {
     minHeight: 66,
     borderRadius: 26,
     backgroundColor: 'transparent',
-    borderWidth: 2,
+    borderWidth: 3,
     // Glass rim — borderColor now applied via inline style from useTheme() palette.
     borderColor: 'transparent',
     flexDirection: 'row',
@@ -586,9 +606,11 @@ const styles = StyleSheet.create({
   tabItemActive: {
     flex: 1.04,
   },
+  // No item-level opacity: inactive state is already carried by tone + weight and
+  // by TabIcon3D's own icon opacity. Dimming the whole item on top of that only
+  // costs label contrast against the glass fill.
   tabItemInactive: {
     flex: 0.99,
-    opacity: 0.92,
   },
   iconWell: {
     width: 26,
@@ -596,17 +618,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activeLabel: {
-    maxWidth: '100%',
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: 'center',
-    backgroundColor: 'transparent',
-  },
-  inactiveLabel: {
+  // One size for all five labels. Active/inactive is carried by weight + tone
+  // only — differing fontSizes made the longest label ("Trò chuyện") the one that
+  // tripped adjustsFontSizeToFit, so the active tab rendered *smaller* (8.8dp)
+  // than the inactive ones (10dp) instead of larger.
+  tabLabel: {
     maxWidth: '100%',
     fontSize: 10,
-    lineHeight: 12,
+    lineHeight: 13,
     textAlign: 'center',
     backgroundColor: 'transparent',
   },
