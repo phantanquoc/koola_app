@@ -271,6 +271,40 @@ export const koolaDarkShadows = {
   },
 } as const;
 
+// ─── Faux-glass dock gradient ───────────────────────────────────────────────
+
+/**
+ * Gradient stops for the faux-glass chrome docks (bottom tab dock + chat
+ * composer). Both surfaces read the same stops so the two cannot drift apart
+ * on color — the drift risk that a shared component would otherwise solve.
+ *
+ * This is the primitive layer, so raw hex is allowed here (same as
+ * `koolaColors`). It is deliberately NOT a `GlassSurface` component token:
+ * that contract is five single colors, while a gradient needs an ordered
+ * top/mid/bottom triple with per-stop opacity.
+ *
+ * Usage:
+ *   const stops = koolaGlassGradient[resolvedScheme];
+ */
+export const koolaGlassGradient = {
+  light: {
+    top: { color: '#FFFFFF', opacity: 0.78 },
+    mid: { color: '#EEF4FF', opacity: 0.7 },
+    bottom: { color: '#DBEAFE', opacity: 0.62 },
+  },
+  dark: {
+    top: { color: '#1C2026', opacity: 0.85 },
+    mid: { color: '#1E2A44', opacity: 0.75 },
+    bottom: { color: '#1A2332', opacity: 0.7 },
+  },
+} as const;
+
+/** Specular sheen color for the glass docks, per scheme. */
+export const koolaGlassSheen = {
+  light: '#FFFFFF',
+  dark: '#2A323C',
+} as const;
+
 // ─── zIndex tokens ──────────────────────────────────────────────────────────
 
 export const koolaZIndex = {
