@@ -5,10 +5,12 @@ import { MessagesService } from './messages.service';
 import { Message, MessageType, MessageStatus } from './message.schema';
 import { Media } from '../media/media.schema';
 import { ConversationsService } from '../conversations/conversations.service';
+import { ConversationType } from '../conversations/conversation.schema';
 import { MembershipService } from '../conversations/services/membership.service';
 import { UnreadService } from '../conversations/services/unread.service';
 import { TypingService } from './typing.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 /**
  * Task 3.6: Unit tests for reply validation in MessagesService.sendMessage
@@ -69,6 +71,10 @@ describe('MessagesService — reply validation', () => {
     sendPushNotification: jest.fn(),
   };
 
+  const mockUsersService = {
+    findByIds: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,6 +86,7 @@ describe('MessagesService — reply validation', () => {
         { provide: UnreadService, useValue: mockUnreadService },
         { provide: TypingService, useValue: mockTypingService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: UsersService, useValue: mockUsersService },
       ],
     }).compile();
 
@@ -368,6 +375,10 @@ describe('MessagesService — setReaction', () => {
     sendPushNotification: jest.fn(),
   };
 
+  const mockUsersService = {
+    findByIds: jest.fn().mockResolvedValue([]),
+  };
+
   function makeMessage(reactions: { userId: string; emoji: string }[]) {
     return {
       _id: mockMessageId,
@@ -387,6 +398,7 @@ describe('MessagesService — setReaction', () => {
         { provide: UnreadService, useValue: mockUnreadService },
         { provide: TypingService, useValue: mockTypingService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: UsersService, useValue: mockUsersService },
       ],
     }).compile();
 
@@ -482,5 +494,297 @@ describe('MessagesService — setReaction', () => {
 
     expect(result).toEqual({ action: 'remove', emoji: null });
     expect(mockMessageModel.updateOne).not.toHaveBeenCalled();
+  });
+});
+
+// ─── searchMessages enrichment tests ────────────────────────────────────────
+
+describe('MessagesService — searchMessages enrichment', () => {
+  let service: MessagesService;
+
+  // Real 24-hex ObjectId strings so Types.ObjectId.isValid() passes and the
+  // user batch-fetch is not silently dropped.
+  const requesterId = '507f1f77bcf86cd799439011';
+  const otherUserId = '507f1f77bcf86cd799439012';
+  const senderId = '507f1f77bcf86cd799439013';
+  const convGroupId = '607f1f77bcf86cd799439021';
+  const convDirectId = '607f1f77bcf86cd799439022';
+  const convMissingId = '607f1f77bcf86cd799439023';
+
+  const mockMessageModel = {
+    find: jest.fn(),
+    findById: jest.fn(),
+    countDocuments: jest.fn(),
+    create: jest.fn(),
+    findOne: jest.fn(),
+    updateOne: jest.fn(),
+    updateMany: jest.fn(),
+  };
+
+  const mockMediaModel = {
+    findOne: jest.fn().mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve(null) }),
+    }),
+  };
+
+  const mockConversationsService = {
+    findByIdOrFail: jest.fn(),
+    updateLastMessage: jest.fn(),
+    getSharedConversationIds: jest.fn(),
+    getConversationsByIds: jest.fn(),
+  };
+
+  const mockMembershipService = {
+    verifyMember: jest.fn(),
+    getUserConversationIds: jest.fn(),
+  };
+
+  const mockUnreadService = {
+    incrementUnreadCount: jest.fn(),
+    resetUnreadCount: jest.fn(),
+  };
+
+  const mockTypingService = {
+    startTyping: jest.fn(),
+    stopTyping: jest.fn(),
+    setTypingStopCallback: jest.fn(),
+  };
+
+  const mockNotificationsService = {
+    sendPushNotification: jest.fn(),
+  };
+
+  const mockUsersService = {
+    findByIds: jest.fn(),
+  };
+
+  // find(filter).sort().limit().lean() → resolves to the given raw docs
+  function mockFindReturns(rawItems: unknown[]) {
+    mockMessageModel.find.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(rawItems),
+    });
+  }
+
+  function makeRawMsg(overrides: Record<string, unknown> = {}) {
+    return {
+      _id: 'msg-1',
+      conversationId: convGroupId,
+      senderId,
+      content: 'xin chào',
+      type: MessageType.TEXT,
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MessagesService,
+        { provide: getModelToken(Message.name), useValue: mockMessageModel },
+        { provide: getModelToken(Media.name), useValue: mockMediaModel },
+        { provide: ConversationsService, useValue: mockConversationsService },
+        { provide: MembershipService, useValue: mockMembershipService },
+        { provide: UnreadService, useValue: mockUnreadService },
+        { provide: TypingService, useValue: mockTypingService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: UsersService, useValue: mockUsersService },
+      ],
+    }).compile();
+
+    service = module.get<MessagesService>(MessagesService);
+
+    // Default happy-path stubs — individual tests override as needed.
+    mockMembershipService.getUserConversationIds.mockResolvedValue([
+      convGroupId,
+    ]);
+    mockMessageModel.countDocuments.mockResolvedValue(1);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([]);
+    mockUsersService.findByIds.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('resolves a GROUP conversation to its own name', async () => {
+    mockFindReturns([makeRawMsg()]);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([
+      {
+        _id: convGroupId,
+        type: ConversationType.GROUP,
+        name: 'Team Rocket',
+        members: [
+          { userId: requesterId, role: 'admin' },
+          { userId: senderId, role: 'member' },
+        ],
+      },
+    ]);
+    mockUsersService.findByIds.mockResolvedValue([
+      { _id: senderId, displayName: 'Bob', phone: '', email: '' },
+    ]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].conversationName).toBe('Team Rocket');
+    expect(res.items[0].senderDisplayName).toBe('Bob');
+    expect(res.items[0].createdAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('resolves a DIRECT conversation to the OTHER member, never the requester', async () => {
+    mockMembershipService.getUserConversationIds.mockResolvedValue([
+      convDirectId,
+    ]);
+    mockFindReturns([makeRawMsg({ conversationId: convDirectId })]);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([
+      {
+        _id: convDirectId,
+        type: ConversationType.DIRECT,
+        name: null,
+        members: [
+          { userId: requesterId, role: 'member' },
+          { userId: otherUserId, role: 'member' },
+        ],
+      },
+    ]);
+    mockUsersService.findByIds.mockResolvedValue([
+      { _id: senderId, displayName: 'Bob', phone: '', email: '' },
+      { _id: otherUserId, displayName: 'Alice', phone: '', email: '' },
+      { _id: requesterId, displayName: 'Me', phone: '', email: '' },
+    ]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    // Title is the other participant, not the person doing the search.
+    expect(res.items[0].conversationName).toBe('Alice');
+    expect(res.items[0].conversationName).not.toBe('Me');
+  });
+
+  it('falls back to non-empty placeholders when person and conversation are missing', async () => {
+    mockMembershipService.getUserConversationIds.mockResolvedValue([
+      convMissingId,
+    ]);
+    mockFindReturns([
+      makeRawMsg({
+        conversationId: convMissingId,
+        senderId: '507f1f77bcf86cd799439099',
+      }),
+    ]);
+    // getConversationsByIds returns nothing for this id, findByIds returns nobody.
+    mockConversationsService.getConversationsByIds.mockResolvedValue([]);
+    mockUsersService.findByIds.mockResolvedValue([]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    expect(res.items[0].conversationName).toBe('Trò chuyện');
+    expect(res.items[0].senderDisplayName).toBe('Người dùng');
+    // Never empty strings — the UI would render blank rows.
+    expect(res.items[0].conversationName).not.toBe('');
+    expect(res.items[0].senderDisplayName).not.toBe('');
+  });
+
+  it('follows the displayName || phone || email fallback chain', async () => {
+    mockFindReturns([makeRawMsg()]);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([
+      {
+        _id: convGroupId,
+        type: ConversationType.GROUP,
+        name: 'G',
+        members: [{ userId: senderId, role: 'member' }],
+      },
+    ]);
+    mockUsersService.findByIds.mockResolvedValue([
+      { _id: senderId, displayName: '', phone: '+84900000000', email: 'x@y.z' },
+    ]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    // displayName is empty → phone wins over email.
+    expect(res.items[0].senderDisplayName).toBe('+84900000000');
+  });
+
+  it('batches lookups: findByIds + getConversationsByIds called ONCE for a multi-item page (no N+1)', async () => {
+    mockMembershipService.getUserConversationIds.mockResolvedValue([
+      convGroupId,
+      convDirectId,
+    ]);
+    mockFindReturns([
+      makeRawMsg({ _id: 'm1', conversationId: convGroupId, senderId }),
+      makeRawMsg({ _id: 'm2', conversationId: convGroupId, senderId }),
+      makeRawMsg({ _id: 'm3', conversationId: convDirectId, senderId }),
+    ]);
+    mockMessageModel.countDocuments.mockResolvedValue(3);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([
+      {
+        _id: convGroupId,
+        type: ConversationType.GROUP,
+        name: 'G',
+        members: [{ userId: senderId, role: 'member' }],
+      },
+      {
+        _id: convDirectId,
+        type: ConversationType.DIRECT,
+        name: null,
+        members: [
+          { userId: requesterId, role: 'member' },
+          { userId: otherUserId, role: 'member' },
+        ],
+      },
+    ]);
+    mockUsersService.findByIds.mockResolvedValue([
+      { _id: senderId, displayName: 'Bob', phone: '', email: '' },
+      { _id: otherUserId, displayName: 'Alice', phone: '', email: '' },
+    ]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    expect(res.items).toHaveLength(3);
+    // One batched read each, regardless of page size.
+    expect(mockConversationsService.getConversationsByIds).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(mockUsersService.findByIds).toHaveBeenCalledTimes(1);
+    // The single user query carries the de-duped id set (sender + other member).
+    const idsArg = mockUsersService.findByIds.mock.calls[0][0] as string[];
+    expect(idsArg).toEqual(expect.arrayContaining([senderId, otherUserId]));
+  });
+
+  it('preserves total and emits a nextCursor when the page overflows the limit', async () => {
+    // limit 1, but find returns 2 (limit+1) → hasMore, so a cursor is emitted.
+    mockFindReturns([
+      makeRawMsg({ _id: 'first' }),
+      makeRawMsg({ _id: 'overflow' }),
+    ]);
+    mockMessageModel.countDocuments.mockResolvedValue(42);
+    mockConversationsService.getConversationsByIds.mockResolvedValue([
+      {
+        _id: convGroupId,
+        type: ConversationType.GROUP,
+        name: 'G',
+        members: [{ userId: senderId, role: 'member' }],
+      },
+    ]);
+    mockUsersService.findByIds.mockResolvedValue([
+      { _id: senderId, displayName: 'Bob', phone: '', email: '' },
+    ]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 1);
+
+    expect(res.total).toBe(42);
+    expect(res.items).toHaveLength(1); // page trimmed to limit
+    // Cursor is base64 of the last item ON THE PAGE ('first'), not the overflow row.
+    expect(res.nextCursor).toBe(Buffer.from('first').toString('base64'));
+  });
+
+  it('returns empty (no cursor) when the user has no conversations', async () => {
+    mockMembershipService.getUserConversationIds.mockResolvedValue([]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    expect(res).toEqual({ items: [], nextCursor: null, total: 0 });
+    expect(mockUsersService.findByIds).not.toHaveBeenCalled();
   });
 });

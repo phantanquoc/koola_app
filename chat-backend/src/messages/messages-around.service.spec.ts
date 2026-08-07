@@ -9,6 +9,7 @@ import { MembershipService } from '../conversations/services/membership.service'
 import { UnreadService } from '../conversations/services/unread.service';
 import { TypingService } from './typing.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 /**
  * Unit tests for MessagesService.getMessagesAround (bidirectional context window).
@@ -97,6 +98,10 @@ describe('MessagesService — getMessagesAround', () => {
     sendPushNotification: jest.fn(),
   };
 
+  const mockUsersService = {
+    findByIds: jest.fn().mockResolvedValue([]),
+  };
+
   const mockMediaModel = {
     findOne: jest.fn().mockReturnValue({
       select: () => ({ lean: () => Promise.resolve(null) }),
@@ -114,6 +119,7 @@ describe('MessagesService — getMessagesAround', () => {
         { provide: UnreadService, useValue: mockUnreadService },
         { provide: TypingService, useValue: mockTypingService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: UsersService, useValue: mockUsersService },
       ],
     }).compile();
 

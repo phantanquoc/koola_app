@@ -9,6 +9,7 @@ import { MembershipService } from '../conversations/services/membership.service'
 import { UnreadService } from '../conversations/services/unread.service';
 import { TypingService } from './typing.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 /**
  * Task 3.4 — Integration tests for syncMessages (tombstone-inclusive sync).
@@ -104,6 +105,10 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
     sendPushNotification: jest.fn(),
   };
 
+  const mockUsersService = {
+    findByIds: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,6 +120,7 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
         { provide: UnreadService, useValue: mockUnreadService },
         { provide: TypingService, useValue: mockTypingService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: UsersService, useValue: mockUsersService },
       ],
     }).compile();
 

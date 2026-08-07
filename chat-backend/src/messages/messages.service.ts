@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   Message,
   MessageDocument,
@@ -20,8 +20,25 @@ import { MembershipService } from '../conversations/services/membership.service'
 import { UnreadService } from '../conversations/services/unread.service';
 import { TypingService } from './typing.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 import { minioClient, BUCKET } from '../media/minio-client';
 import { ConversationType } from '../conversations/conversation.schema';
+
+/**
+ * Enriched search result shape returned to mobile (see MessageSearchItem in
+ * ChatApp/src/types). Names are always non-empty so the UI never renders blank
+ * rows — missing person → 'Người dùng', missing conversation → 'Trò chuyện'.
+ */
+export interface MessageSearchItem {
+  _id: string;
+  conversationId: string;
+  conversationName: string;
+  senderId: string;
+  senderDisplayName: string;
+  content: string;
+  type: MessageType;
+  createdAt: string;
+}
 
 export interface TypingPayload {
   conversationId: string;
@@ -64,6 +81,7 @@ export class MessagesService {
     private unreadService: UnreadService,
     private typingService: TypingService,
     private notificationsService: NotificationsService,
+    private usersService: UsersService,
   ) {
     // Wire TypingService 5s timeout → emitTypingStop
     this.typingService.setTypingStopCallback((convId, userId) => {
@@ -993,7 +1011,7 @@ export class MessagesService {
     limit: number,
     cursor?: string,
   ): Promise<{
-    items: MessageDocument[];
+    items: MessageSearchItem[];
     nextCursor: string | null;
     total: number;
   }> {
@@ -1024,17 +1042,28 @@ export class MessagesService {
       }
     }
 
-    const [items, total] = await Promise.all([
+    // Lean read — the whole page is remapped to MessageSearchItem below, so a
+    // hydrated document buys nothing. Typed so createdAt/_id are safe to touch.
+    const [rawItems, total] = await Promise.all([
       this.messageModel
         .find(filter)
         .sort({ createdAt: -1 })
         .limit(limit + 1)
-        .exec(),
+        .lean<
+          Array<{
+            _id: Types.ObjectId;
+            conversationId: string;
+            senderId: string;
+            content: string;
+            type: MessageType;
+            createdAt: Date;
+          }>
+        >(),
       this.messageModel.countDocuments(filter),
     ]);
 
-    const hasMore = items.length > limit;
-    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const hasMore = rawItems.length > limit;
+    const pageItems = hasMore ? rawItems.slice(0, limit) : rawItems;
     const nextCursor =
       hasMore && pageItems.length > 0
         ? Buffer.from(pageItems[pageItems.length - 1]._id.toString()).toString(
@@ -1042,6 +1071,86 @@ export class MessagesService {
           )
         : null;
 
-    return { items: pageItems, nextCursor, total };
+    const items = await this.enrichSearchResults(pageItems, userId);
+    return { items, nextCursor, total };
+  }
+
+  /**
+   * Turn a page of raw search hits into MessageSearchItem[] using exactly two
+   * batched reads (conversations, then users) — never per-item lookups. The
+   * user fetch runs after the conversation fetch because DIRECT conversation
+   * names resolve to the OTHER member, whose id is only known once members are
+   * loaded. Both names are guaranteed non-empty so the UI never renders blank.
+   */
+  private async enrichSearchResults(
+    pageItems: Array<{
+      _id: Types.ObjectId;
+      conversationId: string;
+      senderId: string;
+      content: string;
+      type: MessageType;
+      createdAt: Date;
+    }>,
+    requesterId: string,
+  ): Promise<MessageSearchItem[]> {
+    if (pageItems.length === 0) return [];
+
+    // Query 1 — conversations for this page.
+    const convIds = [...new Set(pageItems.map((m) => m.conversationId))];
+    const convs =
+      await this.conversationsService.getConversationsByIds(convIds);
+    const convById = new Map(convs.map((c) => [c._id, c]));
+
+    // Collect every user id we must resolve: message senders + the "other"
+    // member of each DIRECT conversation (for its display-name-as-title).
+    const userIds = new Set<string>();
+    for (const m of pageItems) userIds.add(m.senderId);
+    for (const c of convs) {
+      if (c.type === ConversationType.DIRECT) {
+        for (const member of c.members) {
+          if (member.userId !== requesterId) userIds.add(member.userId);
+        }
+      }
+    }
+    // findByIds → { _id: { $in } }: pass only real ObjectIds, otherwise Mongoose
+    // throws a CastError on values like the 'system' sender.
+    const validUserIds = [...userIds].filter((id) =>
+      Types.ObjectId.isValid(id),
+    );
+
+    // Query 2 — users for the whole page.
+    const users = await this.usersService.findByIds(validUserIds);
+    const userById = new Map(
+      users.map((u) => [(u as any)._id.toString() as string, u]),
+    );
+
+    const displayNameOf = (id: string): string => {
+      const u = userById.get(id);
+      if (!u) return 'Người dùng';
+      return u.displayName || u.phone || u.email || id;
+    };
+
+    const conversationNameOf = (conversationId: string): string => {
+      const c = convById.get(conversationId);
+      if (!c) return 'Trò chuyện';
+      if (c.type === ConversationType.GROUP) {
+        return c.name && c.name.trim().length > 0 ? c.name : 'Trò chuyện';
+      }
+      // DIRECT — title is the other participant's name, never the requester's.
+      const other = c.members.find((m) => m.userId !== requesterId);
+      if (!other) return 'Trò chuyện';
+      return displayNameOf(other.userId);
+    };
+
+    return pageItems.map((m) => ({
+      _id: m._id.toString(),
+      conversationId: m.conversationId,
+      conversationName: conversationNameOf(m.conversationId),
+      senderId: m.senderId,
+      senderDisplayName: displayNameOf(m.senderId),
+      content: m.content,
+      type: m.type,
+      createdAt: m.createdAt.toISOString(),
+    }));
   }
 }

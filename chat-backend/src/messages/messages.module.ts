@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MessagesController } from './messages.controller';
+import { MessagesSearchController } from './messages-search.controller';
 import { MessagesSyncController } from './messages-sync.controller';
 import { MessagesService } from './messages.service';
 import { TypingService } from './typing.service';
@@ -18,7 +19,11 @@ import { GatewayModule } from '../gateway/gateway.module';
     NotificationsModule,
     forwardRef(() => GatewayModule),
   ],
-  controllers: [MessagesController, MessagesSyncController],
+  controllers: [
+    MessagesController,
+    MessagesSearchController,
+    MessagesSyncController,
+  ],
   providers: [MessagesService, TypingService],
   exports: [MessagesService, TypingService],
 })

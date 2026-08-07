@@ -55,14 +55,6 @@ export class MomentsGateway {
       createdAt: (story as any).createdAt,
     };
 
-    if (story.audienceScope === AudienceScope.PUBLIC) {
-      // Broadcast to namespace; redis-adapter handles cross-instance fanout
-      this.io.emit('story.new', payload);
-      this.logger.debug('[MomentsGateway] story.new broadcast (public)');
-      return;
-    }
-
-    // CONNECTIONS + CUSTOM: targeted emit
     const recipientIds = await this.resolvePermittedViewers(story);
 
     for (const viewerId of recipientIds) {
@@ -78,10 +70,9 @@ export class MomentsGateway {
   // ─── story.deleted ────────────────────────────────────────────────────────
 
   /**
-   * Emit story.deleted. Mirrors emitStoryNew's audience scoping: PUBLIC stories
-   * broadcast namespace-wide (anyone could have them in-feed), while
-   * CONNECTIONS/CUSTOM target only the users who were permitted to see them —
-   * avoiding an O(N) fanout to every connected client for a private delete.
+   * Emit story.deleted to the same audience that could see the story, mirroring
+   * emitStoryNew's scoping. The author is always included — they hold the story
+   * in their own feed state.
    */
   async emitStoryDeleted(story: StoryDocument): Promise<void> {
     if (!this.io) return;
@@ -90,16 +81,9 @@ export class MomentsGateway {
     const authorId = story.authorId;
     const payload = { storyId, authorId };
 
-    if (story.audienceScope === AudienceScope.PUBLIC) {
-      this.io.emit('story.deleted', payload);
-      this.logger.debug(
-        `[MomentsGateway] story.deleted broadcast for ${storyId}`,
-      );
-      return;
-    }
-
     const recipientIds = await this.resolvePermittedViewers(story);
     for (const viewerId of recipientIds) {
+      if (viewerId === authorId) continue; // author handled below
       this.io.to(`user:${viewerId}`).emit('story.deleted', payload);
     }
     // The author also holds the story in their own feed state.
@@ -154,10 +138,13 @@ export class MomentsGateway {
     const scope = story.audienceScope;
 
     if (scope === AudienceScope.PUBLIC) {
-      // PUBLIC stories are broadcast via io.emit() in emitStoryNew — this path is
-      // never reached for PUBLIC (emitStoryNew returns early before calling
-      // resolvePermittedViewers). Return an empty array as a safety fallback.
-      return [];
+      // PUBLIC stories are world-readable via REST, but the socket event is a
+      // feed-ring hint — only useful to someone whose feed already surfaces the
+      // author. Targeting the author's connections keeps fanout O(connections)
+      // instead of O(every connected socket), which is what the project rule
+      // against global io.emit() exists to prevent. Anyone else still discovers
+      // the story through GET /moments/feed.
+      return this.conversationsService.getConnectedUserIds(story.authorId);
     }
 
     if (scope === AudienceScope.CONNECTIONS) {

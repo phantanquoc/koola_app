@@ -113,6 +113,24 @@ export class ChatGateway
           .emit('message_unpinned', { conversationId, ...payload });
       },
     );
+
+    // Wire membership revocation → force-evict sockets from the conversation room.
+    // socketsLeave is adapter-aware, so this reaches sockets held by other instances.
+    this.conversationsService.setMembershipRevokedCallback(
+      (conversationId, userIds) => {
+        for (const userId of userIds) {
+          this.io
+            .in(`user:${userId}`)
+            .socketsLeave(`conversation:${conversationId}`);
+          this.io
+            .to(`user:${userId}`)
+            .emit('conversation_access_revoked', { conversationId });
+        }
+        this.logger.debug(
+          `[ChatGateway] Evicted ${userIds.length} user(s) from conversation:${conversationId}`,
+        );
+      },
+    );
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────────

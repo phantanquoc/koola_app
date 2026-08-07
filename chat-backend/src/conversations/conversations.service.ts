@@ -280,6 +280,8 @@ export class ConversationsService {
       `${targetName} was removed from the group`,
     );
 
+    this.membershipRevokedCallback?.(conversationId, [targetId]);
+
     return conv;
   }
 
@@ -325,6 +327,8 @@ export class ConversationsService {
       conversationId,
       `${displayName} left the group`,
     );
+
+    this.membershipRevokedCallback?.(conversationId, [userId]);
   }
 
   // ─── Read ────────────────────────────────────────────────────────────────
@@ -430,12 +434,23 @@ export class ConversationsService {
   // ─── Delete ─────────────────────────────────────────────────────────────
 
   async deleteConversation(conversationId: string): Promise<void> {
+    // Capture members before deletion so their sockets can be evicted from the
+    // conversation room — after the delete there is nothing left to read them from.
+    const doomed = await this.conversationModel
+      .findById(conversationId, { members: 1 })
+      .lean();
+    const memberIds = (doomed?.members ?? []).map((m) => m.userId.toString());
+
     await Promise.all([
       this.conversationModel.findByIdAndDelete(conversationId),
       this.userConversationModel.deleteMany({
         conversationId: new Types.ObjectId(conversationId),
       }),
     ]);
+
+    if (memberIds.length > 0) {
+      this.membershipRevokedCallback?.(conversationId, memberIds);
+    }
   }
 
   // ─── System Messages ────────────────────────────────────────────────────
@@ -471,6 +486,45 @@ export class ConversationsService {
     return userConvs.map((uc) => uc.conversationId.toString());
   }
 
+  /**
+   * Batch-read conversations by ID for enrichment (e.g. message search).
+   * Returns only the fields needed to derive a display name — type, name, and
+   * member ids/roles. Invalid ObjectIds are filtered out; never throws. This is
+   * a single query for the whole set (callers must avoid per-item lookups —
+   * N+1 is banned by CLAUDE.md).
+   */
+  async getConversationsByIds(ids: string[]): Promise<
+    Array<{
+      _id: string;
+      type: ConversationType;
+      name: string | null;
+      members: { userId: string; role: MemberRole }[];
+    }>
+  > {
+    const validIds = ids.filter((id) => Types.ObjectId.isValid(id));
+    if (validIds.length === 0) return [];
+    const convs = await this.conversationModel
+      .find({ _id: { $in: validIds } })
+      .select('_id type name members')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          type: ConversationType;
+          name: string | null;
+          members: { userId: Types.ObjectId; role: MemberRole }[];
+        }>
+      >();
+    return convs.map((c) => ({
+      _id: c._id.toString(),
+      type: c.type,
+      name: c.name ?? null,
+      members: (c.members ?? []).map((m) => ({
+        userId: m.userId.toString(),
+        role: m.role,
+      })),
+    }));
+  }
+
   async getConnectedUserIds(userId: string): Promise<string[]> {
     if (!Types.ObjectId.isValid(userId)) return [];
     const oid = new Types.ObjectId(userId);
@@ -488,12 +542,33 @@ export class ConversationsService {
     return Array.from(others);
   }
 
+  // ─── Membership room revocation ───────────────────────────────────────────
+
+  /**
+   * Invoked when a user loses access to a conversation (kicked, left, or the
+   * conversation was deleted). The gateway force-removes their sockets from the
+   * `conversation:<id>` room so they stop receiving fanout for it. Without this
+   * the socket keeps its room membership until it disconnects, and a removed
+   * member continues receiving `new_message` for a group they are no longer in.
+   */
+  private membershipRevokedCallback?: (
+    conversationId: string,
+    userIds: string[],
+  ) => void;
+
+  setMembershipRevokedCallback(
+    cb: (conversationId: string, userIds: string[]) => void,
+  ): void {
+    this.membershipRevokedCallback = cb;
+  }
+
   // ─── Pin/Unpin ────────────────────────────────────────────────────────────
 
   private pinEmitCallback?: (
     conversationId: string,
     payload: { messageId: string; pinnedBy: string },
   ) => void;
+
   private unpinEmitCallback?: (
     conversationId: string,
     payload: { messageId: string },

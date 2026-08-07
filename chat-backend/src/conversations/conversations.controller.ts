@@ -123,6 +123,22 @@ export class ConversationsController {
     return { message: 'Member added', conversation: conv };
   }
 
+  // IMPORTANT: The literal `/members/me` route MUST be declared BEFORE the
+  // parameterized `/members/:userId` route. Express matches routes in
+  // registration order, so if `:userId` came first it would greedily capture
+  // `me` (userId="me") and `leaveGroup` would become unreachable — breaking the
+  // mobile "Rời nhóm" button. Do NOT reorder these two handlers.
+  // A regression test in conversations.controller.spec.ts guards this ordering.
+  @Delete(':id/members/me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Leave a conversation (or delete if direct)' })
+  @ApiResponse({ status: 200, description: 'Left successfully' })
+  @ApiResponse({ status: 404, description: 'Conversation not found' })
+  async leaveGroup(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    await this.conversationsService.leaveGroup(id, userId);
+    return { message: 'Left conversation' };
+  }
+
   @Delete(':id/members/:userId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -141,16 +157,6 @@ export class ConversationsController {
       userId,
     );
     return { message: 'Member removed', conversation: conv };
-  }
-
-  @Delete(':id/members/me')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Leave a conversation (or delete if direct)' })
-  @ApiResponse({ status: 200, description: 'Left successfully' })
-  @ApiResponse({ status: 404, description: 'Conversation not found' })
-  async leaveGroup(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    await this.conversationsService.leaveGroup(id, userId);
-    return { message: 'Left conversation' };
   }
 
   @Post(':id/pin/:messageId')
