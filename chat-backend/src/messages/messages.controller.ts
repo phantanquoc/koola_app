@@ -58,10 +58,13 @@ export class MessagesController {
   ) {
     const payload = await this.messagesService.sendMessage(convId, userId, dto);
 
-    // Broadcast new message to conversation room via socket
-    this.chatGateway.io
-      .to(`conversation:${convId}`)
-      .emit('new_message', { message: payload.message.toObject() });
+    // Broadcast to every member: the conversation room only reaches clients that
+    // currently have this chat open, so recipients sitting on the conversation
+    // list would otherwise not see the message until a manual refresh.
+    await this.chatGateway.broadcastNewMessage(
+      convId,
+      payload.message.toObject() as Record<string, unknown>,
+    );
 
     // Fire-and-forget push notifications to offline recipients
     const sender = await this.usersService.findById(userId);

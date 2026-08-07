@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import { AppState, AppStateStatus, Alert } from 'react-native';
-import { authApi, usersApi, accountsApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
+import { authApi, usersApi, accountsApi, conversationsApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
 import { asyncStorage } from '../services/storage/asyncStorage';
 import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
@@ -22,6 +22,7 @@ import { pause as pauseOutboxProcessor, start as startOutboxProcessor, stop as s
 import { navigationRef } from '../navigation/RootNavigator';
 import { momentsService } from '../services/moments/momentsService';
 import { clearAccountBadge } from '../services/push/accountBadgeStorage';
+import * as conversationRepository from '../services/db/conversationRepository';
 import type { User, Account } from '../types';
 
 // ─── Local-first wiring teardown refs ─────────────────────────────────────────
@@ -44,6 +45,42 @@ function wireLocalFirst(): void {
   setDataSaver(isDataSaverEnabled());
   // Phase 4: start outbox processor (registers NetInfo + AppState triggers)
   startOutboxProcessor();
+}
+
+/**
+ * Seed conversations into SQLite on login/restore/switch.
+ * Ensures bumpFromMessage() always finds a row to UPDATE when new_message
+ * socket events arrive, preventing silent real-time failures where
+ * rowsAffected = 0 → notify() never called → UI never updates.
+ *
+ * Fire-and-forget: does not block the auth flow. Failures are logged but
+ * non-fatal — user can still pull-to-refresh to seed manually.
+ */
+function seedConversationsIntoSQLite(): void {
+  if (!isLocalFirstEnabled()) return;
+
+  conversationsApi.list(1, 50)
+    .then(data => {
+      const inputs = data.conversations.map(c => ({
+        id: c._id,
+        type: c.type,
+        name: c.name ?? null,
+        avatarKey: c.avatar ?? null,
+        members: c.members,
+        lastMessageId: null,
+        lastMessagePreview: c.lastMessagePreview ?? null,
+        lastMessageAt: c.lastMessageAt ?? 0,
+        unreadCount: c.unreadCount ?? 0,
+        pinned: false,
+        archived: false,
+        updatedAt: c.updatedAt,
+      }));
+      conversationRepository.upsertMany(inputs);
+      console.log('[AuthContext] Seeded', inputs.length, 'conversations into SQLite');
+    })
+    .catch(err => {
+      console.warn('[AuthContext] Conversation seed failed (non-fatal):', err);
+    });
 }
 
 /**
@@ -257,6 +294,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Wire local-first services
       wireLocalFirst();
 
+      // Seed conversations so socket bumps have rows to update
+      seedConversationsIntoSQLite();
+
       // Connect socket + webrtc with the working token
       socketService.connect(workingAccessToken);
       webrtcService.connect(workingAccessToken);
@@ -312,6 +352,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       webrtcService.connect(newToken);
       // Re-register FCM context (token stays on root, but we want listeners active)
       pushNotificationService.registerToken().catch(() => {});
+
+      // Seed conversations after account switch
+      seedConversationsIntoSQLite();
 
       // (f) Adopt the target's identity so every `user._id` consumer (chat
       // bubble left/right, conversation "other member" detection, the profile
@@ -375,6 +418,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Wire local-first services (socket router, sync triggers, media preloader)
     wireLocalFirst();
 
+    // Seed conversations so socket bumps have rows to update
+    seedConversationsIntoSQLite();
+
     // Connect socket + webrtc
     socketService.connect(data.accessToken);
     webrtcService.connect(data.accessToken);
@@ -421,6 +467,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Wire local-first services (socket router, sync triggers, media preloader)
     wireLocalFirst();
+
+    // Seed conversations so socket bumps have rows to update. A brand-new
+    // account normally has none, but this keeps the invariant unconditional:
+    // every path that wires the socket router also seeds.
+    seedConversationsIntoSQLite();
 
     socketService.connect(data.accessToken);
     webrtcService.connect(data.accessToken);

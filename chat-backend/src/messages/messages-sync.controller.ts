@@ -98,11 +98,14 @@ through large result sets. Advance the local sync cursor only after all pages ar
       body.targetConversationIds,
     );
 
-    // Broadcast each forwarded message to its target conversation room
+    // Broadcast each forwarded message to every member of its target
+    // conversation (conversation room + user rooms), so recipients see it
+    // without having that chat open. Capped at 10 targets by the DTO.
     for (const msg of messages) {
-      this.chatGateway.io
-        .to(`conversation:${msg.conversationId}`)
-        .emit('new_message', { message: msg.toObject() });
+      await this.chatGateway.broadcastNewMessage(
+        String(msg.conversationId),
+        msg.toObject() as Record<string, unknown>,
+      );
     }
 
     return { forwarded: messages.length, messages };

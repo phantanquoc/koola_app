@@ -94,9 +94,17 @@ export class ChatGateway
     // Wire new-message emit callback → broadcast new_message for story-reply DMs
     this.messagesService.setNewMessageEmitCallback(
       (conversationId, payload) => {
-        this.io
-          .to(`conversation:${conversationId}`)
-          .emit('new_message', { message: payload.message });
+        // Callback is sync; the fan-out needs a member lookup. Fire-and-forget
+        // with an explicit catch so a rejection can never surface as an
+        // unhandled promise.
+        void this.broadcastNewMessage(
+          conversationId,
+          payload.message as unknown as Record<string, unknown>,
+        ).catch((err) =>
+          this.logger.warn(
+            `[ChatGateway] story-reply broadcastNewMessage failed: ${(err as Error)?.message}`,
+          ),
+        );
       },
     );
 
@@ -131,6 +139,60 @@ export class ChatGateway
         );
       },
     );
+  }
+
+  // ─── new_message fan-out ──────────────────────────────────────────────────────
+
+  /**
+   * Broadcast `new_message` to every member of a conversation.
+   *
+   * Emits to the conversation room AND each member's personal `user:<id>` room.
+   * The conversation room alone is not sufficient: a client only joins it while
+   * ChatScreen is mounted (see the join_conversation emit in ChatScreen), so a
+   * user sitting on the conversation list — or on any other tab — never received
+   * the event, and their list could not update until a manual refresh.
+   *
+   * Socket.IO dedupes recipients across the rooms passed to a single `.to()`
+   * chain, so a socket that is in both the conversation room and its user room
+   * receives exactly one copy. That matters: the client increments unread once
+   * per event, so a second copy would double-count.
+   *
+   * Membership is read at emit time rather than relying on room state, so a user
+   * removed from the conversation is excluded even if their socket is still in a
+   * stale conversation room.
+   *
+   * @param exceptSocketId Socket to exclude — the sender's own connection, which
+   *   already received `message_ack`. Other devices of the same user still get
+   *   the event through their shared `user:<id>` room.
+   */
+  async broadcastNewMessage(
+    conversationId: string,
+    message: Record<string, unknown>,
+    exceptSocketId?: string,
+  ): Promise<void> {
+    const rooms = [`conversation:${conversationId}`];
+
+    try {
+      const memberIds =
+        await this.membershipService.getMemberIds(conversationId);
+      for (const memberId of memberIds) {
+        rooms.push(`user:${memberId}`);
+      }
+    } catch (err) {
+      // Degrade to the conversation room rather than dropping the broadcast:
+      // clients with a chat open still update, and the sync loop backfills the
+      // rest. Never let a member lookup failure lose a message event.
+      this.logger.warn(
+        `[ChatGateway] getMemberIds failed for ${conversationId}, ` +
+          `falling back to conversation room only: ${(err as Error)?.message}`,
+      );
+    }
+
+    const channel = exceptSocketId
+      ? this.io.to(rooms).except(exceptSocketId)
+      : this.io.to(rooms);
+
+    channel.emit('new_message', { message });
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────────
@@ -342,13 +404,9 @@ export class ChatGateway
         status: result.message.status,
       });
 
-      // Broadcast to conversation room (excluding sender)
-      this.io
-        .to(`conversation:${conversationId}`)
-        .except(client.id)
-        .emit('new_message', {
-          message: ackPayload,
-        });
+      // Broadcast to every member (conversation room + user rooms), excluding
+      // the sending socket, which already got `message_ack` above.
+      await this.broadcastNewMessage(conversationId, ackPayload, client.id);
 
       // Fire-and-forget push notifications
       const sender = await this.usersService.findById(userId);
