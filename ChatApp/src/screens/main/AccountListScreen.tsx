@@ -18,6 +18,7 @@ import {
   clearAccountBadge,
 } from '../../services/push/accountBadgeStorage';
 import UserAvatar from '../../components/UserAvatar';
+import ProvincePicker from '../../components/connect/ProvincePicker';
 import {
   KoolaButton,
   KoolaDivider,
@@ -204,7 +205,7 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
     }
     if (!relationshipType) e.relationshipType = 'Vui lòng chọn loại quan hệ';
     if (!businessCategory) e.businessCategory = 'Vui lòng chọn lĩnh vực';
-    if (!province.trim()) e.province = 'Vui lòng nhập tỉnh/thành phố';
+    if (!province.trim()) e.province = 'Vui lòng chọn tỉnh/thành phố';
     if (!licenseUpload.state.confirmedKey) {
       e.licenseImageKey = 'Vui lòng tải lên giấy phép kinh doanh';
     }
@@ -327,12 +328,11 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
 
       <View style={formStyles.fieldGroup}>
         <KoolaText variant="label" weight="600">{`Tỉnh/Thành phố *`}</KoolaText>
-        <TextInput
-          style={[formStyles.input, errors.province && formStyles.inputError]}
-          placeholder="Ví dụ: HCM City, Hà Nội"
-          placeholderTextColor={palette.faint}
+        <ProvincePicker
           value={province}
-          onChangeText={setProvince}
+          onChange={setProvince}
+          placeholder="Chọn tỉnh/thành phố"
+          error={!!errors.province}
         />
         {!!errors.province && <KoolaText variant="caption" tone="danger">{errors.province}</KoolaText>}
       </View>
