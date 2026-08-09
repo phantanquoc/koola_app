@@ -5,8 +5,8 @@ import {
   FlatList,
   ActivityIndicator,
   StyleSheet,
-  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
@@ -23,6 +23,7 @@ const BusinessSearchScreen: React.FC = () => {
   const navigation = useNavigation<BusinessSearchNavProp>();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const toast = useKoolaToast();
 
@@ -112,7 +113,7 @@ const BusinessSearchScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Search bar header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <KoolaIconButton
           icon="arrow-back"
           tone="muted"
@@ -163,7 +164,10 @@ const makeStyles = (p: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: p.surface,
-      paddingTop: (StatusBar.currentHeight || 0) + 8,
+      // paddingTop comes from useSafeAreaInsets() at the call site. StatusBar
+      // .currentHeight reads ROOT window insets, so it stays non-zero even
+      // though <StatusBar translucent={false}> already offsets the RN view
+      // below the bar — that double-counted and pushed the header down.
       paddingHorizontal: 12,
       paddingBottom: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
