@@ -30,6 +30,7 @@ export type ChatTabStackParamList = {
   UniversalSearch: undefined;
   OutboxDevPanel: undefined;
   LogoLab: undefined;
+  MomentsFeedLab: undefined;
   // Moments screens
   MomentComposer: undefined;
   MomentViewer: { authorId: string; startStoryId: string };

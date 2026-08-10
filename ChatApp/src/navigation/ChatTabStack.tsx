@@ -64,7 +64,6 @@ const ChatTabStack: React.FC = () => {
       {__DEV__ && (
         <Stack.Screen
           name="OutboxDevPanel"
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
           component={require('../screens/dev/OutboxDevPanel').default}
           options={{ headerShown: true, title: '[DEV] Outbox Panel' }}
         />
@@ -74,6 +73,17 @@ const ChatTabStack: React.FC = () => {
           name="LogoLab"
           component={require('../screens/dev/LogoLabScreen').default}
           options={{ headerShown: true, title: '[DEV] Logo Lab' }}
+        />
+      )}
+      {__DEV__ && (
+        <Stack.Screen
+          name="MomentsFeedLab"
+          component={require('../screens/dev/MomentsFeedLabScreen').default}
+          // headerShown:false + in-app back/title row (the StorageSettingsScreen
+          // pattern). The NATIVE header re-adds the display-cutout inset on top
+          // of an RN root that already starts below it, leaving a blank band —
+          // measured 132px cutout counted twice on this device.
+          options={{ headerShown: false }}
         />
       )}
 
