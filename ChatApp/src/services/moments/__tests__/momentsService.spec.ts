@@ -298,10 +298,14 @@ describe('momentsService', () => {
       storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
       await momentsService.refreshFeed();
 
-      // Simulate an error state (via a failing refresh)
+      // Phase 1: API error now falls back to mock data instead of setting error.
+      // This test still verifies warm-refresh behavior (no isLoading flash), but
+      // the error check is removed because Phase 1 always populates mock rings.
       storiesApi.getFeed.mockRejectedValueOnce(new Error('Network down'));
       await momentsService.refreshFeed();
-      expect(momentsService.getState().error).toBe('Network down');
+      // Phase 1: error is cleared, mock data is loaded
+      expect(momentsService.getState().error).toBe(null);
+      expect(momentsService.getState().feedRing.length).toBeGreaterThan(0);
 
       // Now a successful warm refresh should clear error without isLoading
       storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });

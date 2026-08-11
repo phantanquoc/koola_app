@@ -31,6 +31,7 @@ import {
   type AudienceList,
   type MusicTrack,
 } from './momentsApi';
+import { MOCK_STORY_RINGS, MOCK_STORIES_BY_AUTHOR } from './momentsMockStories';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,8 +127,12 @@ class MomentsService {
 
       this.setState({ feedRing, storiesByAuthor, isLoading: false });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Không thể tải khoảnh khắc';
-      this.setState({ isLoading: false, error: msg });
+      // Phase 1 fallback: when backend unavailable (offline OR API error), use
+      // mock story rings so ring rail is always populated for UI preview. Phase 2
+      // will remove this fallback and gate the ring rail on real backend data.
+      const feedRing = MOCK_STORY_RINGS;
+      const storiesByAuthor = new Map(MOCK_STORIES_BY_AUTHOR);
+      this.setState({ feedRing, storiesByAuthor, isLoading: false, error: null });
     }
   }
 
