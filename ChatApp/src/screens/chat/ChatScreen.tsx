@@ -251,7 +251,7 @@ const ChatScreen: React.FC = () => {
   const {
     messages,
     sendMessage,
-    sendMediaMessage,
+    sendMediaMessage: _sendMediaMessage,
     createOptimisticMedia,
     confirmMediaMessage,
     loadEarlier,
@@ -275,7 +275,7 @@ const ChatScreen: React.FC = () => {
   const {
     contextMessages: targetContextMessages,
     highlightId: targetHighlightId,
-    isLoading: targetLoading,
+    isLoading: _targetLoading,
     error: targetError,
     clearHighlight: clearTargetHighlight,
     clearContextMessages,
@@ -426,24 +426,6 @@ const ChatScreen: React.FC = () => {
   }, [conversationId]);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
-  const onSend = useCallback(
-    (newMessages: IMessage[] = []) => {
-      if (newMessages.length > 0) {
-        const text = newMessages[0].text;
-        console.log('[ChatScreen] onSend called, text:', text, 'isConnected:', isConnected);
-        // Stop typing when sending
-        socketService.emit('typing_stop', { conversationId });
-        if (isConnected !== false) {
-          sendMessage(text);
-        } else {
-          console.log('[ChatScreen] Offline - sending via queue');
-          sendViaQueue(conversationId, text, 'text');
-        }
-      }
-    },
-    [sendMessage, isConnected, sendViaQueue, conversationId],
-  );
-
   // ─── Media upload (image / document / video) ──────────────────────────────
   const {
     isUploading,

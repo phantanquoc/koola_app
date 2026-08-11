@@ -80,7 +80,9 @@ function loadFromDb(
   const rows = messageRepository.list({ conversationId, currentUserId, limit });
   const tQuery = Date.now();
   const result = rows.map((r) => dbMsgToGifted(r, currentUserId));
-  console.log(`[PERF useMessagesFromDb] LOAD conv=${conversationId.slice(-6)} queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+  if (__DEV__) {
+    console.log(`[PERF useMessagesFromDb] LOAD conv=${conversationId.slice(-6)} queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+  }
   return result;
 }
 
@@ -91,7 +93,9 @@ export function useMessagesFromDb(
   const [messages, setMessages] = useState<IMessage[]>(() => {
     const t0 = Date.now();
     const result = loadFromDb(conversationId, currentUserId);
-    console.log(`[PERF useMessagesFromDb] MOUNT conv=${conversationId.slice(-6)} totalMs=${Date.now() - t0} count=${result.length}`);
+    if (__DEV__) {
+      console.log(`[PERF useMessagesFromDb] MOUNT conv=${conversationId.slice(-6)} totalMs=${Date.now() - t0} count=${result.length}`);
+    }
     return result;
   });
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
@@ -138,7 +142,9 @@ export function useMessagesFromDb(
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
         setMessages(fresh);
-        console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
+        if (__DEV__) {
+          console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
+        }
         return;
       }
 
@@ -152,7 +158,9 @@ export function useMessagesFromDb(
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
         setMessages(fresh);
-        console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+        if (__DEV__) {
+          console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+        }
         return;
       }
 
@@ -178,7 +186,7 @@ export function useMessagesFromDb(
           }
         }
 
-        if (changed) {
+        if (changed && __DEV__) {
           console.log(`[PERF useMessagesFromDb] PATCH kind=${kind} conv=${conversationId.slice(-6)} ms=${Date.now() - t0} affected=${(messageIds || []).length}`);
         }
 
@@ -191,7 +199,11 @@ export function useMessagesFromDb(
     // Trigger background sync on mount (respects freshness window)
     const tSync = Date.now();
     syncOnOpen(conversationId)
-      .then(() => console.log(`[PERF useMessagesFromDb] syncOnOpen conv=${conversationId.slice(-6)} ms=${Date.now() - tSync}`))
+      .then(() => {
+        if (__DEV__) {
+          console.log(`[PERF useMessagesFromDb] syncOnOpen conv=${conversationId.slice(-6)} ms=${Date.now() - tSync}`);
+        }
+      })
       .catch((err) =>
         console.warn('[useMessagesFromDb] syncOnOpen error:', err),
       );

@@ -70,11 +70,15 @@ export async function initDb(userId: string): Promise<void> {
     // Awaited so cold-start after upgrade doesn't flash empty list (Bug #8).
     // Non-fatal: on failure, logs and continues boot.
     const flagOn = isLocalFirstEnabled();
-    console.log(`[dbInit] LOCAL_FIRST_SQLITE=${flagOn}`);
+    if (__DEV__) {
+      console.log(`[dbInit] LOCAL_FIRST_SQLITE=${flagOn}`);
+    }
     if (flagOn) {
       try {
         await runBackfillFromMmkv();
-        console.log(`[PERF dbInit] backfill success totalMs=${Date.now() - t0}`);
+        if (__DEV__) {
+          console.log(`[PERF dbInit] backfill success totalMs=${Date.now() - t0}`);
+        }
       } catch (err) {
         console.warn('[dbInit] backfill error (non-fatal):', err);
       }
@@ -96,7 +100,9 @@ export async function initDb(userId: string): Promise<void> {
       }
     }
 
-    console.log(`[PERF dbInit] init done userId=${userId.slice(-6)} ms=${Date.now() - t0}`);
+    if (__DEV__) {
+      console.log(`[PERF dbInit] init done userId=${userId.slice(-6)} ms=${Date.now() - t0}`);
+    }
   } catch (err) {
     console.error('[dbInit] Failed to initialise database:', err);
     throw err;

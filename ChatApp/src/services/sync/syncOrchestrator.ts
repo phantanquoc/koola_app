@@ -45,9 +45,11 @@ function logSyncMetrics(ok: boolean, durationMs: number): void {
   const errorRate = _syncAttempts > 0
     ? ((_syncErrors / _syncAttempts) * 100).toFixed(1)
     : '0.0';
-  console.log(
-    `[PERF syncOrchestrator] ok=${ok} durationMs=${durationMs} attempts=${_syncAttempts} errorRate=${errorRate}%`,
-  );
+  if (__DEV__) {
+    console.log(
+      `[PERF syncOrchestrator] ok=${ok} durationMs=${durationMs} attempts=${_syncAttempts} errorRate=${errorRate}%`,
+    );
+  }
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────

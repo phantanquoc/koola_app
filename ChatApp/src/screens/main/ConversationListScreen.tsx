@@ -168,7 +168,9 @@ const ConversationListScreen: React.FC = () => {
         updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
       })) as unknown as Conversation[];
       setConversations(mapped);
-      console.log(`[PERF ConvList] SQLite queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+      if (__DEV__) {
+        console.log(`[PERF ConvList] SQLite queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+      }
     };
 
     loadFromDb();
