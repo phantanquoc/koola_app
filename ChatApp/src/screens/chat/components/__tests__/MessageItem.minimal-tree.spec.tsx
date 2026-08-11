@@ -19,6 +19,12 @@ import React from 'react';
 import { create as render } from 'react-test-renderer';
 import type { BubbleProps, IMessage } from 'react-native-gifted-chat';
 
+// Mock components for react-test-renderer with PascalCase type strings
+const Text = 'Text' as any;
+const View = 'View' as any;
+const TouchableOpacity = 'TouchableOpacity' as any;
+const TouchableWithoutFeedback = 'TouchableWithoutFeedback' as any;
+
 function makeMessage(overrides: Partial<IMessage & Record<string, unknown>> = {}): IMessage {
   return {
     _id: 'm1',
@@ -58,28 +64,28 @@ function getRenderBubbleCallback(): (props: BubbleProps<IMessage>) => React.Reac
       : () => bubbleProps.onLongPress?.(undefined, msg);
 
     // Simplified bubble content for test — just a text node
-    const bubbleContent = <text>bubble</text>;
+    const bubbleContent = <Text>bubble</Text>;
 
     const wrappedContent = isFailed ? (
-      <touchableOpacity
+      <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => onRetry(String(msg._id))}
         onLongPress={longPressHandler}>
-        <view testID="failedBubbleWrapper">
+        <View testID="failedBubbleWrapper">
           {bubbleContent}
-        </view>
-      </touchableOpacity>
+        </View>
+      </TouchableOpacity>
     ) : (
-      <touchableWithoutFeedback onLongPress={longPressHandler}>
+      <TouchableWithoutFeedback onLongPress={longPressHandler}>
         {bubbleContent}
-      </touchableWithoutFeedback>
+      </TouchableWithoutFeedback>
     );
 
     return (
-      <view testID="bubbleOuter">
+      <View testID="bubbleOuter">
         {wrappedContent}
-        {isFailed && <text testID="failedLabel">Gửi thất bại</text>}
-      </view>
+        {isFailed && <Text testID="failedLabel">Gửi thất bại</Text>}
+      </View>
     );
   };
 
@@ -95,11 +101,11 @@ describe('MessageItem minimal tree — conditional failed-state mounting', () =>
     const root = tree.root;
 
     // TouchableWithoutFeedback present
-    const twf = root.findAll((node: any) => node.type === 'touchableWithoutFeedback');
+    const twf = root.findAll((node: any) => node.type === 'TouchableWithoutFeedback');
     expect(twf.length).toBe(1);
 
     // No TouchableOpacity
-    const to = root.findAll((node: any) => node.type === 'touchableOpacity');
+    const to = root.findAll((node: any) => node.type === 'TouchableOpacity');
     expect(to.length).toBe(0);
 
     // No failedBubbleWrapper or failedLabel
@@ -115,11 +121,11 @@ describe('MessageItem minimal tree — conditional failed-state mounting', () =>
     const root = tree.root;
 
     // TouchableOpacity present
-    const to = root.findAll((node: any) => node.type === 'touchableOpacity');
+    const to = root.findAll((node: any) => node.type === 'TouchableOpacity');
     expect(to.length).toBe(1);
 
     // No TouchableWithoutFeedback
-    const twf = root.findAll((node: any) => node.type === 'touchableWithoutFeedback');
+    const twf = root.findAll((node: any) => node.type === 'TouchableWithoutFeedback');
     expect(twf.length).toBe(0);
 
     // failedBubbleWrapper and failedLabel both present
@@ -138,7 +144,7 @@ describe('MessageItem minimal tree — long-press gesture', () => {
     const tree = render(renderBubble(bubbleProps));
     const root = tree.root;
 
-    const twf = root.findAll((node: any) => node.type === 'touchableWithoutFeedback')[0];
+    const twf = root.findAll((node: any) => node.type === 'TouchableWithoutFeedback')[0];
     expect(twf.props.onLongPress).toBeDefined();
 
     // Invoke the handler
@@ -156,7 +162,7 @@ describe('MessageItem minimal tree — long-press gesture', () => {
     const tree = render(renderBubble(bubbleProps));
     const root = tree.root;
 
-    const twf = root.findAll((node: any) => node.type === 'touchableWithoutFeedback')[0];
+    const twf = root.findAll((node: any) => node.type === 'TouchableWithoutFeedback')[0];
     expect(twf.props.onLongPress).toBeUndefined();
 
     // onLongPress was never invoked
@@ -172,7 +178,7 @@ describe('MessageItem minimal tree — long-press gesture', () => {
     const tree = render(renderBubble(bubbleProps));
     const root = tree.root;
 
-    const to = root.findAll((node: any) => node.type === 'touchableOpacity')[0];
+    const to = root.findAll((node: any) => node.type === 'TouchableOpacity')[0];
     expect(to.props.onPress).toBeDefined();
     expect(to.props.onLongPress).toBeDefined();
 

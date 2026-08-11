@@ -95,7 +95,7 @@ export function useMessagesFromDb(
     return result;
   });
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [_isInitialLoading, _setIsInitialLoading] = useState(false);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
   const mountedRef = useRef(true);
@@ -127,18 +127,66 @@ export function useMessagesFromDb(
       setMessages(loadFromDb(conversationId, currentUserId));
     }
 
-    const reload = () => {
+    const handleInvalidation = (payload: any) => {
       if (!mountedRef.current) return;
+
+      // Legacy path: payload is undefined → full reload
+      if (!payload) {
+        const t0 = Date.now();
+        const limit = Math.max(50, loadedCountRef.current);
+        const fresh = loadFromDb(conversationId, currentUserId, limit);
+        loadedKeyRef.current = key;
+        loadedCountRef.current = fresh.length;
+        setMessages(fresh);
+        console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
+        return;
+      }
+
+      const { kind, messageIds, orderChanged } = payload;
+
+      // If order changed (insert/batch with new messages), full reload required
+      if (orderChanged) {
+        const t0 = Date.now();
+        const limit = Math.max(50, loadedCountRef.current);
+        const fresh = loadFromDb(conversationId, currentUserId, limit);
+        loadedKeyRef.current = key;
+        loadedCountRef.current = fresh.length;
+        setMessages(fresh);
+        console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+        return;
+      }
+
+      // Incremental patch: update/reaction/ack/delete without order change
       const t0 = Date.now();
-      const limit = Math.max(50, loadedCountRef.current);
-      const fresh = loadFromDb(conversationId, currentUserId, limit);
-      loadedKeyRef.current = key;
-      loadedCountRef.current = fresh.length;
-      setMessages(fresh);
-      console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
+      setMessages((prev) => {
+        const updated = [...prev];
+        let changed = false;
+
+        for (const msgId of messageIds || []) {
+          const idx = updated.findIndex((m) => String(m._id) === msgId);
+          if (idx !== -1) {
+            // Message exists in current window — re-fetch it
+            const fresh = messageRepository.getById(msgId);
+            if (fresh) {
+              updated[idx] = dbMsgToGifted(fresh, currentUserId);
+              changed = true;
+            } else {
+              // Message was deleted or filtered out — remove from window
+              updated.splice(idx, 1);
+              changed = true;
+            }
+          }
+        }
+
+        if (changed) {
+          console.log(`[PERF useMessagesFromDb] PATCH kind=${kind} conv=${conversationId.slice(-6)} ms=${Date.now() - t0} affected=${(messageIds || []).length}`);
+        }
+
+        return changed ? updated : prev;
+      });
     };
 
-    const unsub = messageRepository.subscribe(conversationId, reload);
+    const unsub = messageRepository.subscribe(conversationId, handleInvalidation);
 
     // Trigger background sync on mount (respects freshness window)
     const tSync = Date.now();
@@ -486,7 +534,7 @@ export function useMessagesFromDb(
     markAsRead,
     updateUploadProgress,
     isLoadingEarlier,
-    isInitialLoading,
+    isInitialLoading: _isInitialLoading,
     initialLoadError,
     retryInitialLoad,
     hasEarlier,

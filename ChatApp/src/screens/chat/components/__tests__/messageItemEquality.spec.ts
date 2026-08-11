@@ -133,6 +133,81 @@ describe('messageItemPropsEqual — the four live updates from task 8.6', () => 
     expect(messageItemPropsEqual(prev, next)).toBe(false);
   });
 
+  it('skips when reactions arrays have identical content (value comparison)', () => {
+    // Phase D1: reactions comparator now compares by value, not identity.
+    // Two new arrays with same userId + emoji should yield memo hit.
+    const prev = makeProps({
+      currentMessage: makeMessage({ reactions: [{ emoji: '👍', userId: 'u2' }] }),
+    });
+    const next = makeProps({
+      currentMessage: makeMessage({ reactions: [{ emoji: '👍', userId: 'u2' }] }),
+    });
+    expect(prev.currentMessage?.reactions).not.toBe(next.currentMessage?.reactions);
+    expect(messageItemPropsEqual(prev, next)).toBe(true);
+  });
+
+  it('skips when both reactions arrays are empty', () => {
+    const prev = makeProps({ currentMessage: makeMessage({ reactions: [] }) });
+    const next = makeProps({ currentMessage: makeMessage({ reactions: [] }) });
+    expect(messageItemPropsEqual(prev, next)).toBe(true);
+  });
+
+  it('skips when both reactions are undefined', () => {
+    const prev = makeProps({ currentMessage: makeMessage({ reactions: undefined }) });
+    const next = makeProps({ currentMessage: makeMessage({ reactions: undefined }) });
+    expect(messageItemPropsEqual(prev, next)).toBe(true);
+  });
+
+  it('re-renders when reaction length differs', () => {
+    const prev = makeProps({
+      currentMessage: makeMessage({ reactions: [{ emoji: '👍', userId: 'u2' }] }),
+    });
+    const next = makeProps({
+      currentMessage: makeMessage({
+        reactions: [
+          { emoji: '👍', userId: 'u2' },
+          { emoji: '❤️', userId: 'u3' },
+        ],
+      }),
+    });
+    expect(messageItemPropsEqual(prev, next)).toBe(false);
+  });
+
+  it('re-renders when reactions are swapped (order matters)', () => {
+    const prev = makeProps({
+      currentMessage: makeMessage({
+        reactions: [
+          { emoji: '👍', userId: 'u2' },
+          { emoji: '❤️', userId: 'u3' },
+        ],
+      }),
+    });
+    const next = makeProps({
+      currentMessage: makeMessage({
+        reactions: [
+          { emoji: '❤️', userId: 'u3' },
+          { emoji: '👍', userId: 'u2' },
+        ],
+      }),
+    });
+    expect(messageItemPropsEqual(prev, next)).toBe(false);
+  });
+
+  it('re-renders when a reaction is removed', () => {
+    const prev = makeProps({
+      currentMessage: makeMessage({
+        reactions: [
+          { emoji: '👍', userId: 'u2' },
+          { emoji: '❤️', userId: 'u3' },
+        ],
+      }),
+    });
+    const next = makeProps({
+      currentMessage: makeMessage({ reactions: [{ emoji: '👍', userId: 'u2' }] }),
+    });
+    expect(messageItemPropsEqual(prev, next)).toBe(false);
+  });
+
   it('re-renders when a tick advances sent → read via messageStatus', () => {
     const prev = makeProps({ currentMessage: makeMessage({ messageStatus: 'sent' }) });
     const next = makeProps({ currentMessage: makeMessage({ messageStatus: 'read' }) });

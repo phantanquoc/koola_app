@@ -100,6 +100,41 @@ export function timeOf(value: unknown): number {
 }
 
 /**
+ * Compare reactions arrays by value (length + per-index userId + emoji).
+ * Returns true if reactions are equal. Treats undefined/null as empty array.
+ *
+ * WHY VALUE COMPARISON: reactions arrive from JSON.parse (socket events, REST sync)
+ * which creates new array instances on every parse. Identity comparison would
+ * always miss the memo even when reactions are unchanged, defeating the optimization.
+ *
+ * WARNING: This comparator only checks userId + emoji. If reactions gain additional
+ * fields (e.g., timestamp, displayName), those fields will NOT trigger re-render.
+ * Update this function if reaction schema changes.
+ */
+function sameReactions(
+  a: unknown,
+  b: unknown,
+): boolean {
+  // Type guard: reactions should be array of {userId, emoji, ...}
+  const aReactions = Array.isArray(a) ? a : [];
+  const bReactions = Array.isArray(b) ? b : [];
+
+  // Fast path: length mismatch
+  if (aReactions.length !== bReactions.length) return false;
+
+  // Compare each reaction's userId + emoji (order matters)
+  for (let i = 0; i < aReactions.length; i++) {
+    const aReaction = aReactions[i];
+    const bReaction = bReactions[i];
+    // Cast to any to avoid deep type dependency on reaction shape
+    if ((aReaction as any)?.userId !== (bReaction as any)?.userId) return false;
+    if ((aReaction as any)?.emoji !== (bReaction as any)?.emoji) return false;
+  }
+
+  return true;
+}
+
+/**
  * Neighbours influence this row only through their sender and their timestamp:
  * `isLastInGroup` reads the sender for the tail radius, and gifted-chat's
  * `isSameUser`/`isSameDay` use both to pick the grouping margin and to decide
@@ -144,9 +179,10 @@ export function sameMessage(
     a.sent === b.sent &&
     // Length is enough: the row renders a single icon from it, not the members.
     (a.readBy?.length ?? 0) === (b.readBy?.length ?? 0) &&
-    // Rebuilt on every DB remap, so identity errs toward re-rendering — which is
-    // the safe direction for a comparator.
-    a.reactions === b.reactions &&
+    // Value comparison for reactions: JSON.parse creates new arrays on every DB
+    // read, so identity check would always fail. Compare length + per-index userId
+    // and emoji. WARNING: only checks userId + emoji, ignores other reaction fields.
+    sameReactions(a.reactions, b.reactions) &&
     // Upload overlay and progress bar inside MediaImage.
     a.isUploading === b.isUploading &&
     a.uploadProgress === b.uploadProgress &&

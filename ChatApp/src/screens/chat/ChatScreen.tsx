@@ -25,6 +25,7 @@ import { useDeadLetterActions } from './hooks/useDeadLetterActions';
 import { useChatHeaderState } from './hooks/useChatHeaderState';
 import ChatHeader from './components/ChatHeader';
 import MessageItem, { makeMessageItemStyles } from './components/MessageItem';
+import { MemoizedMessageList } from './components/MemoizedMessageList';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -811,6 +812,35 @@ const ChatScreen: React.FC = () => {
 
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
+  // Stabilize listViewProps reference to prevent memo boundary from breaking.
+  // All values are frozen constants or stable refs (viewabilityConfig, onViewableItemsChanged).
+  // composerScrollClearance depends on insets but is computed once at mount.
+  const stableListViewProps = useMemo(
+    () => ({
+      viewabilityConfig,
+      onViewableItemsChanged,
+      scrollEventThrottle: 16,
+      contentContainerStyle: {
+        paddingTop: composerScrollClearance,
+        paddingBottom: 20,
+      },
+      showsVerticalScrollIndicator: false,
+      removeClippedSubviews: false,
+      initialNumToRender: 10,
+      maxToRenderPerBatch: 5,
+      windowSize: 7,
+      updateCellsBatchingPeriod: 100,
+      onScrollToIndexFailed: (info: { index: number; averageItemLength: number }) => {
+        const offset = info.averageItemLength * info.index;
+        messageContainerRef.current?.scrollToOffset({ offset, animated: true });
+        setTimeout(() => {
+          messageContainerRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+        }, 100);
+      },
+    }),
+    [composerScrollClearance, onViewableItemsChanged],
+  );
+
   return (
     <BottomSheetModalProvider>
     <View style={styles.container}>
@@ -881,7 +911,7 @@ const ChatScreen: React.FC = () => {
         )}
         {/* GiftedChat - always rendered (Fabric-safe: no Animated.View wrapper) */}
         <View style={{ flex: 1, opacity: chatReady ? 1 : 0 }}>
-          <GiftedChat
+          <MemoizedMessageList
             messageContainerRef={messageContainerRef as unknown as React.ComponentProps<typeof GiftedChat>['messageContainerRef']}
             messages={messagesWithAvatar}
             onSend={() => {}}
@@ -906,42 +936,7 @@ const ChatScreen: React.FC = () => {
             onLongPress={handleLongPress}
             bottomOffset={composerBottomInset}
             minInputToolbarHeight={0}
-            listViewProps={{
-              viewabilityConfig,
-              onViewableItemsChanged,
-              // Cap scroll events to ~1/frame (16ms). GiftedChat's internal default
-              // is scrollEventThrottle=1 which fires on every pixel. This prop is
-              // spread AFTER GiftedChat's internals in MessageContainer, so it wins.
-              scrollEventThrottle: 16,
-              contentContainerStyle: {
-                paddingTop: composerScrollClearance,
-                paddingBottom: 20,
-              },
-              showsVerticalScrollIndicator: false,
-              // Fabric (RN 0.76 New Arch) workaround: facebook/react-native#53258
-              // FlatList + state-driven data updates can throw
-              // "addViewAt: child already has a parent" when view recycling
-              // collides with mount items. Disabling clipped-subview recycling
-              // forces stable view tree at the cost of slightly more memory.
-              removeClippedSubviews: false,
-              // Tuned 2026-06-30: smaller batches + longer batching period spread
-              // render work across frames to cut fling jank spikes
-              // (removeClippedSubviews must stay false → keep windowSize modest).
-              initialNumToRender: 10,
-              maxToRenderPerBatch: 5,
-              windowSize: 7,
-              updateCellsBatchingPeriod: 100,
-              // Required by FlatList when scrollToIndex targets an offscreen row
-              // without getItemLayout. Average bubble height ~80px is a reasonable
-              // estimate; retry after a tick lets layout pass measure the target.
-              onScrollToIndexFailed: (info: { index: number; averageItemLength: number }) => {
-                const offset = info.averageItemLength * info.index;
-                messageContainerRef.current?.scrollToOffset({ offset, animated: true });
-                setTimeout(() => {
-                  messageContainerRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
-                }, 100);
-              },
-            } as Record<string, unknown>}
+            listViewProps={stableListViewProps}
           />
         </View>
       </View>

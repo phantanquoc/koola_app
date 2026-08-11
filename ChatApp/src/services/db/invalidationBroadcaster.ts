@@ -9,26 +9,33 @@
  * into a single callback invocation to avoid redundant re-queries.
  */
 
-type Callback = () => void;
+export interface InvalidationPayload {
+  conversationId: string;
+  kind: 'insert' | 'update' | 'delete' | 'reaction' | 'ack' | 'batch';
+  messageIds: string[];
+  orderChanged: boolean;
+}
+
+type Callback = (payload: InvalidationPayload | undefined) => void;
 
 // Map from conversationId → Set of callbacks
 const subscribers = new Map<string, Set<Callback>>();
 
-// Pending notification set — coalesced per frame
-const pending = new Set<string>();
+// Pending notification map — conversationId → payload (undefined for legacy full reload)
+const pending = new Map<string, InvalidationPayload | undefined>();
 let frameScheduled = false;
 
 function flushPending(): void {
   frameScheduled = false;
-  const toNotify = Array.from(pending);
+  const toNotify = Array.from(pending.entries());
   pending.clear();
 
-  for (const conversationId of toNotify) {
+  for (const [conversationId, payload] of toNotify) {
     const cbs = subscribers.get(conversationId);
     if (cbs) {
       for (const cb of cbs) {
         try {
-          cb();
+          cb(payload);
         } catch (err) {
           console.warn('[invalidationBroadcaster] callback error', err);
         }
@@ -41,8 +48,8 @@ function flushPending(): void {
  * Notify all subscribers for a given conversationId.
  * Coalesces multiple calls within one frame.
  */
-export function notify(conversationId: string): void {
-  pending.add(conversationId);
+export function notify(conversationId: string, payload?: InvalidationPayload): void {
+  pending.set(conversationId, payload);
   if (!frameScheduled) {
     frameScheduled = true;
     // Use Promise.resolve (microtask) — works in both RN and Node/Jest.

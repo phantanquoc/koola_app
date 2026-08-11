@@ -261,3 +261,120 @@ describe('markAsRead', () => {
     );
   });
 });
+
+// ─── Incremental invalidation tests ──────────────────────────────────────────
+
+describe('incremental invalidation', () => {
+  let subscribeCallback: ((payload: any) => void) | null = null;
+  const mockSubscribe = messageRepository.subscribe as jest.Mock;
+  const mockList = messageRepository.list as jest.Mock;
+  const mockGetById = messageRepository.getById as jest.Mock;
+
+  beforeEach(() => {
+    // Clear only call history, not implementations
+    mockSubscribe.mockClear();
+    mockList.mockClear();
+    mockGetById.mockClear();
+    subscribeCallback = null;
+
+    // Restore subscribe mock implementation to capture callback
+    mockSubscribe.mockImplementation((_convId: string, cb: (payload: any) => void) => {
+      subscribeCallback = cb;
+      return () => {}; // unsubscribe
+    });
+
+    mockList.mockReturnValue([]);
+    mockGetById.mockReturnValue(null);
+
+    // Override useEffect mock to call callbacks immediately
+    const React = require('react');
+    (React.useEffect as jest.Mock).mockImplementation((fn: () => void) => fn());
+  });
+
+  it('subscribe is called with conversationId and callback that accepts payload', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    // Verify subscribe was called with correct signature
+    expect(mockSubscribe).toHaveBeenCalledWith(CONV_ID, expect.any(Function));
+
+    // Verify callback was captured
+    expect(subscribeCallback).not.toBeNull();
+  });
+
+  it('callback accepts payload with kind, messageIds, orderChanged fields', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    // Verify the callback can be called with full payload without throwing
+    expect(() => {
+      if (subscribeCallback) {
+        subscribeCallback({
+          conversationId: CONV_ID,
+          kind: 'reaction',
+          messageIds: ['msg1'],
+          orderChanged: false,
+        });
+      }
+    }).not.toThrow();
+  });
+
+  it('callback accepts undefined payload for backward compatibility', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    // Verify the callback can be called with undefined without throwing
+    expect(() => {
+      if (subscribeCallback) {
+        subscribeCallback(undefined);
+      }
+    }).not.toThrow();
+  });
+
+  it('callback accepts all mutation kinds without throwing', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    const kinds = ['insert', 'update', 'delete', 'reaction', 'ack', 'batch'];
+
+    kinds.forEach(kind => {
+      expect(() => {
+        if (subscribeCallback) {
+          subscribeCallback({
+            conversationId: CONV_ID,
+            kind,
+            messageIds: ['msg1'],
+            orderChanged: false,
+          });
+        }
+      }).not.toThrow();
+    });
+  });
+
+  it('callback handles orderChanged true without throwing', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    expect(() => {
+      if (subscribeCallback) {
+        subscribeCallback({
+          conversationId: CONV_ID,
+          kind: 'insert',
+          messageIds: ['new-msg'],
+          orderChanged: true,
+        });
+      }
+    }).not.toThrow();
+  });
+
+  it('callback handles empty messageIds array without throwing', () => {
+    useMessagesFromDb(CONV_ID, USER_ID);
+
+    expect(() => {
+      if (subscribeCallback) {
+        subscribeCallback({
+          conversationId: CONV_ID,
+          kind: 'batch',
+          messageIds: [],
+          orderChanged: false,
+        });
+      }
+    }).not.toThrow();
+  });
+});
+

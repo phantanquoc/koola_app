@@ -116,7 +116,9 @@ async function runDelta(opts: { force?: boolean } = {}): Promise<boolean> {
   try {
     let pageCursor: string | undefined;
     let hasMore = true;
+    const allMessages: any[] = [];
 
+    // Accumulate all pages before writing to DB
     while (hasMore) {
       const data = await messagesApi.sync(since, pageCursor, 100);
 
@@ -147,12 +149,16 @@ async function runDelta(opts: { force?: boolean } = {}): Promise<boolean> {
           replyTo: msg.replyTo ?? null,
           replyToPreview: msg.replyToPreview ?? null,
         }));
-
-        messageRepository.upsertMany(inputs);
+        allMessages.push(...inputs);
       }
 
       hasMore = data.hasMore;
       pageCursor = data.nextCursor ?? undefined;
+    }
+
+    // Write all messages in one batch (this will emit notify once per conversation with kind='batch')
+    if (allMessages.length > 0) {
+      messageRepository.upsertMany(allMessages);
     }
 
     // Advance cursor only after all pages committed

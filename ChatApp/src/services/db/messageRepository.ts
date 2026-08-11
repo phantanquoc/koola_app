@@ -11,7 +11,7 @@
  *   applySocketEvent(event)    ≤ 5 ms
  */
 import { getDb } from './connection';
-import { notify, subscribe as broadcastSubscribe } from './invalidationBroadcaster';
+import { notify, subscribe as broadcastSubscribe, InvalidationPayload } from './invalidationBroadcaster';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -216,7 +216,12 @@ export function insertOptimistic(msg: MessageInput): void {
       msg.replyToPreview ? JSON.stringify(msg.replyToPreview) : null,
     ],
   );
-  notify(msg.conversationId);
+  notify(msg.conversationId, {
+    conversationId: msg.conversationId,
+    kind: 'insert',
+    messageIds: [msg.id],
+    orderChanged: true,
+  });
 }
 
 /**
@@ -276,7 +281,14 @@ export function confirmSend(opts: {
 
   // Get conversation_id for notification
   const row = getById(realId);
-  if (row) notify(row.conversationId);
+  if (row) {
+    notify(row.conversationId, {
+      conversationId: row.conversationId,
+      kind: 'ack',
+      messageIds: [realId],
+      orderChanged: false,
+    });
+  }
 }
 
 /**
@@ -289,7 +301,14 @@ export function markFailed(tempId: string): void {
     Date.now(),
     tempId,
   ]);
-  if (row) notify(row.conversationId);
+  if (row) {
+    notify(row.conversationId, {
+      conversationId: row.conversationId,
+      kind: 'update',
+      messageIds: [tempId],
+      orderChanged: false,
+    });
+  }
 }
 
 /**
@@ -303,7 +322,14 @@ export function markPendingFromRetry(tempId: string): void {
     Date.now(),
     tempId,
   ]);
-  if (row) notify(row.conversationId);
+  if (row) {
+    notify(row.conversationId, {
+      conversationId: row.conversationId,
+      kind: 'update',
+      messageIds: [tempId],
+      orderChanged: false,
+    });
+  }
 }
 
 /**
@@ -320,6 +346,7 @@ export function upsertMany(messages: MessageInput[]): void {
   if (messages.length === 0) return;
   const db = getDb();
   const affectedConvIds = new Set<string>();
+  const messageIdsByConv = new Map<string, string[]>();
 
   db.transaction(() => {
     for (const msg of messages) {
@@ -349,7 +376,7 @@ export function upsertMany(messages: MessageInput[]): void {
 
           // Promote the temp row: update its id to the real id and merge all
           // server-authoritative fields (mirrors confirmSend field list).
-          db.execute(
+          const updateResult = db.execute(
             `UPDATE messages SET
               id = ?,
               status = ?,
@@ -389,13 +416,20 @@ export function upsertMany(messages: MessageInput[]): void {
             ],
           );
 
-          affectedConvIds.add(msg.conversationId);
+          // Only add to affectedConvIds if the UPDATE actually changed something
+          if (updateResult.rowsAffected > 0) {
+            affectedConvIds.add(msg.conversationId);
+            if (!messageIdsByConv.has(msg.conversationId)) {
+              messageIdsByConv.set(msg.conversationId, []);
+            }
+            messageIdsByConv.get(msg.conversationId)!.push(msg.id);
+          }
           continue; // skip the INSERT below — reconciliation is complete
         }
       }
       // ── End optimistic reconciliation ─────────────────────────────────────
 
-      db.execute(
+      const result = db.execute(
         `INSERT INTO messages (
           id, conversation_id, sender_id, client_message_id, type, content,
           media_key, media_mime_type, media_size, media_duration, media_thumbnail_key,
@@ -447,12 +481,29 @@ export function upsertMany(messages: MessageInput[]): void {
           msg.replyToPreview ? JSON.stringify(msg.replyToPreview) : null,
         ],
       );
-      affectedConvIds.add(msg.conversationId);
+      // Only add to affectedConvIds if the INSERT/UPDATE actually changed something
+      if (result.rowsAffected > 0) {
+        affectedConvIds.add(msg.conversationId);
+        if (!messageIdsByConv.has(msg.conversationId)) {
+          messageIdsByConv.set(msg.conversationId, []);
+        }
+        messageIdsByConv.get(msg.conversationId)!.push(msg.id);
+      }
     }
   });
 
   for (const convId of affectedConvIds) {
-    notify(convId);
+    const ids = messageIdsByConv.get(convId) ?? [];
+    if (ids.length === 0) continue;
+
+    // If multiple messages, use kind='batch'; if single, use kind='insert'
+    const kind = ids.length > 1 ? 'batch' : 'insert';
+    notify(convId, {
+      conversationId: convId,
+      kind,
+      messageIds: ids,
+      orderChanged: true,
+    });
   }
 }
 
@@ -535,16 +586,31 @@ export function applySocketEvent(event: SocketEvent): void {
               now, now, 'sent', 1, '[]', '[]', '[]', null, null,
             ],
           );
-          notify(convId);
+          notify(convId, {
+            conversationId: convId,
+            kind: 'delete',
+            messageIds: [del.messageId],
+            orderChanged: false,
+          });
         }
         return;
+      }
+      if (row.deleted) {
+        return; // Already deleted, skip notify
       }
       db.execute(
         "UPDATE messages SET deleted = 1, updated_at = ? WHERE id = ?",
         [Date.now(), del.messageId],
       );
       const convId = del.conversationId ?? row?.conversationId;
-      if (convId) notify(convId);
+      if (convId) {
+        notify(convId, {
+          conversationId: convId,
+          kind: 'delete',
+          messageIds: [del.messageId],
+          orderChanged: false,
+        });
+      }
       break;
     }
 
@@ -579,24 +645,40 @@ export function applySocketEvent(event: SocketEvent): void {
         if (!row) return; // should not happen, but guard anyway
       }
       const reactions = (row.reactions as Array<{ userId: string; emoji: string }>) ?? [];
+      let changed = false;
       if (react.action === 'remove') {
         const idx = reactions.findIndex(
           (r) => r.userId === react.userId && r.emoji === react.emoji,
         );
-        if (idx >= 0) reactions.splice(idx, 1);
+        if (idx >= 0) {
+          reactions.splice(idx, 1);
+          changed = true;
+        }
       } else {
         const idx = reactions.findIndex((r) => r.userId === react.userId);
         if (idx >= 0) {
-          reactions[idx] = { userId: react.userId, emoji: react.emoji };
+          // Check if emoji is already the same
+          if (reactions[idx].emoji !== react.emoji) {
+            reactions[idx] = { userId: react.userId, emoji: react.emoji };
+            changed = true;
+          }
         } else {
           reactions.push({ userId: react.userId, emoji: react.emoji });
+          changed = true;
         }
       }
-      db.execute(
-        'UPDATE messages SET reactions = ?, updated_at = ? WHERE id = ?',
-        [JSON.stringify(reactions), Date.now(), react.messageId],
-      );
-      notify(react.conversationId);
+      if (changed) {
+        db.execute(
+          'UPDATE messages SET reactions = ?, updated_at = ? WHERE id = ?',
+          [JSON.stringify(reactions), Date.now(), react.messageId],
+        );
+        notify(react.conversationId, {
+          conversationId: react.conversationId,
+          kind: 'reaction',
+          messageIds: [react.messageId],
+          orderChanged: false,
+        });
+      }
       break;
     }
 
@@ -628,8 +710,21 @@ export function applySocketEvent(event: SocketEvent): void {
             now, now, 'sent', 0, '[]', '[]', '[]', null, null,
           ],
         );
-        notify(upd.conversationId);
+        notify(upd.conversationId, {
+          conversationId: upd.conversationId,
+          kind: 'update',
+          messageIds: [upd.messageId],
+          orderChanged: false,
+        });
         return;
+      }
+      // Check if the update would actually change any values
+      const willChange =
+        (upd.blurhash != null && upd.blurhash !== existing.blurhash) ||
+        (upd.imageWidth != null && upd.imageWidth !== existing.imageWidth) ||
+        (upd.imageHeight != null && upd.imageHeight !== existing.imageHeight);
+      if (!willChange) {
+        return; // No-op update, skip notify
       }
       db.execute(
         `UPDATE messages SET
@@ -646,7 +741,12 @@ export function applySocketEvent(event: SocketEvent): void {
           upd.messageId,
         ],
       );
-      notify(upd.conversationId);
+      notify(upd.conversationId, {
+        conversationId: upd.conversationId,
+        kind: 'update',
+        messageIds: [upd.messageId],
+        orderChanged: false,
+      });
       break;
     }
   }
@@ -660,14 +760,20 @@ export function softDeleteForUser(messageId: string, userId: string): void {
   const row = getById(messageId);
   if (!row) return;
   const deletedFor = (row.deletedFor as string[]) ?? [];
-  if (!deletedFor.includes(userId)) {
-    deletedFor.push(userId);
+  if (deletedFor.includes(userId)) {
+    return; // User already in deletedFor array, skip notify
   }
+  deletedFor.push(userId);
   db.execute(
     'UPDATE messages SET deleted_for = ?, updated_at = ? WHERE id = ?',
     [JSON.stringify(deletedFor), Date.now(), messageId],
   );
-  notify(row.conversationId);
+  notify(row.conversationId, {
+    conversationId: row.conversationId,
+    kind: 'update',
+    messageIds: [messageId],
+    orderChanged: false,
+  });
 }
 
 /**
@@ -676,7 +782,7 @@ export function softDeleteForUser(messageId: string, userId: string): void {
  */
 export function subscribe(
   conversationId: string,
-  callback: () => void,
+  callback: (payload: InvalidationPayload | undefined) => void,
 ): () => void {
   return broadcastSubscribe(conversationId, callback);
 }
@@ -689,7 +795,14 @@ export function deleteById(id: string): void {
   const db = getDb();
   const row = getById(id);
   db.execute('DELETE FROM messages WHERE id = ?', [id]);
-  if (row) notify(row.conversationId);
+  if (row) {
+    notify(row.conversationId, {
+      conversationId: row.conversationId,
+      kind: 'delete',
+      messageIds: [id],
+      orderChanged: false,
+    });
+  }
 }
 
 /**

@@ -563,3 +563,331 @@ describe('messageRepository performance budget', () => {
     expect(elapsed).toBeLessThanOrEqual(5);
   });
 });
+
+// ─── Phase C1: No-op write suppression tests ─────────────────────────────────
+
+describe('Phase C1: No-op write suppression', () => {
+  let notifySpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    // Spy on the notify function from invalidationBroadcaster
+    const broadcaster = require('../invalidationBroadcaster');
+    notifySpy = jest.spyOn(broadcaster, 'notify');
+  });
+
+  afterEach(() => {
+    notifySpy.mockRestore();
+  });
+
+  describe('upsertMany rowsAffected check', () => {
+    // Note: SQLite INSERT...ON CONFLICT DO UPDATE always returns rowsAffected > 0
+    // even when values are identical, because it "touches" the row. Perfect no-op
+    // detection would require SELECT-before-write which is too costly for batch
+    // operations. The real no-op wins come from reaction/update/delete operations
+    // which have explicit value comparison before write.
+
+    it('notifies when ON CONFLICT actually updates fields', () => {
+      const msg = makeMsg({ id: 'will_change', content: 'original' });
+      repo.upsertMany([msg]);
+      notifySpy.mockClear();
+
+      repo.upsertMany([{ ...msg, content: 'updated' }]);
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'insert',
+        messageIds: ['will_change'],
+      }));
+    });
+
+    it('notifies when inserting new row', () => {
+      notifySpy.mockClear();
+      repo.upsertMany([makeMsg({ id: 'new_row' })]);
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'insert',
+        messageIds: ['new_row'],
+      }));
+    });
+  });
+
+  describe('message_reaction duplicate check', () => {
+    it('does not notify when reaction with same userId+emoji already exists', () => {
+      repo.upsertMany([makeMsg({ id: 'react_dup', reactions: [{ userId: 'user_2', emoji: '👍' }] })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_reaction',
+        payload: {
+          messageId: 'react_dup',
+          conversationId: 'conv_1',
+          userId: 'user_2',
+          emoji: '👍',
+          action: 'add',
+        },
+      });
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+
+    it('notifies when reaction emoji changes for same user', () => {
+      repo.upsertMany([makeMsg({ id: 'react_change', reactions: [{ userId: 'user_2', emoji: '👍' }] })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_reaction',
+        payload: {
+          messageId: 'react_change',
+          conversationId: 'conv_1',
+          userId: 'user_2',
+          emoji: '❤️',
+          action: 'add',
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'reaction',
+        messageIds: ['react_change'],
+      }));
+    });
+
+    it('notifies when adding new reaction from different user', () => {
+      repo.upsertMany([makeMsg({ id: 'react_new', reactions: [{ userId: 'user_2', emoji: '👍' }] })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_reaction',
+        payload: {
+          messageId: 'react_new',
+          conversationId: 'conv_1',
+          userId: 'user_3',
+          emoji: '👍',
+          action: 'add',
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'reaction',
+        messageIds: ['react_new'],
+      }));
+    });
+
+    it('notifies when removing existing reaction', () => {
+      repo.upsertMany([makeMsg({ id: 'react_remove', reactions: [{ userId: 'user_2', emoji: '👍' }] })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_reaction',
+        payload: {
+          messageId: 'react_remove',
+          conversationId: 'conv_1',
+          userId: 'user_2',
+          emoji: '👍',
+          action: 'remove',
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'reaction',
+        messageIds: ['react_remove'],
+      }));
+    });
+
+    it('does not notify when removing nonexistent reaction', () => {
+      repo.upsertMany([makeMsg({ id: 'react_remove_nonex', reactions: [] })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_reaction',
+        payload: {
+          messageId: 'react_remove_nonex',
+          conversationId: 'conv_1',
+          userId: 'user_2',
+          emoji: '👍',
+          action: 'remove',
+        },
+      });
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('message_updated value comparison', () => {
+    it('does not notify when all fields identical to current state', () => {
+      repo.upsertMany([
+        makeMsg({
+          id: 'upd_same',
+          blurhash: 'LKO2?U%2Tw=w]~RBVZRi};RPxuwH',
+          imageWidth: 800,
+          imageHeight: 600,
+        }),
+      ]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_updated',
+        payload: {
+          messageId: 'upd_same',
+          conversationId: 'conv_1',
+          blurhash: 'LKO2?U%2Tw=w]~RBVZRi};RPxuwH',
+          imageWidth: 800,
+          imageHeight: 600,
+        },
+      });
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+
+    it('notifies when blurhash changes', () => {
+      repo.upsertMany([makeMsg({ id: 'upd_blurhash', blurhash: 'old_hash' })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_updated',
+        payload: {
+          messageId: 'upd_blurhash',
+          conversationId: 'conv_1',
+          blurhash: 'new_hash',
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'update',
+        messageIds: ['upd_blurhash'],
+      }));
+    });
+
+    it('notifies when imageWidth changes', () => {
+      repo.upsertMany([makeMsg({ id: 'upd_width', imageWidth: 800 })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_updated',
+        payload: {
+          messageId: 'upd_width',
+          conversationId: 'conv_1',
+          imageWidth: 1024,
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'update',
+        messageIds: ['upd_width'],
+      }));
+    });
+
+    it('notifies when imageHeight changes', () => {
+      repo.upsertMany([makeMsg({ id: 'upd_height', imageHeight: 600 })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_updated',
+        payload: {
+          messageId: 'upd_height',
+          conversationId: 'conv_1',
+          imageHeight: 768,
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'update',
+        messageIds: ['upd_height'],
+      }));
+    });
+
+    it('notifies when message does not exist (stub insertion)', () => {
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_updated',
+        payload: {
+          messageId: 'upd_nonexist',
+          conversationId: 'conv_1',
+          blurhash: 'new_hash',
+        },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'update',
+        messageIds: ['upd_nonexist'],
+      }));
+    });
+  });
+
+  describe('softDeleteForUser state check', () => {
+    it('does not notify when user already in deletedFor array', () => {
+      repo.upsertMany([makeMsg({ id: 'soft_del_dup', deletedFor: ['user_1'] })]);
+      notifySpy.mockClear();
+
+      repo.softDeleteForUser('soft_del_dup', 'user_1');
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+
+    it('notifies when adding new user to deletedFor', () => {
+      repo.upsertMany([makeMsg({ id: 'soft_del_new', deletedFor: [] })]);
+      notifySpy.mockClear();
+
+      repo.softDeleteForUser('soft_del_new', 'user_1');
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'update',
+        messageIds: ['soft_del_new'],
+      }));
+    });
+  });
+
+  describe('message_deleted state check', () => {
+    it('does not notify when message already marked deleted', () => {
+      repo.upsertMany([makeMsg({ id: 'del_already', deleted: true })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_deleted',
+        payload: { messageId: 'del_already', conversationId: 'conv_1' },
+      });
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+
+    it('notifies when marking message as deleted for first time', () => {
+      repo.upsertMany([makeMsg({ id: 'del_first', deleted: false })]);
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_deleted',
+        payload: { messageId: 'del_first', conversationId: 'conv_1' },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'delete',
+        messageIds: ['del_first'],
+      }));
+    });
+
+    it('notifies when message does not exist (tombstone insertion)', () => {
+      notifySpy.mockClear();
+
+      repo.applySocketEvent({
+        type: 'message_deleted',
+        payload: { messageId: 'del_nonexist', conversationId: 'conv_1' },
+      });
+
+      expect(notifySpy).toHaveBeenCalledWith('conv_1', expect.objectContaining({
+        conversationId: 'conv_1',
+        kind: 'delete',
+        messageIds: ['del_nonexist'],
+      }));
+    });
+  });
+});
+

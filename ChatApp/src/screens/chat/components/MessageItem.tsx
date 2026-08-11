@@ -69,7 +69,7 @@ import type { MessageReaction } from '../../../types';
 import { KoolaText, koolaRadii, koolaSpacing } from '../../../ui';
 import type { SemanticTokens } from '../../../ui/tokens/semantic';
 import type { ComponentTokens } from '../../../ui/tokens/components';
-import { messageItemPropsEqual } from './messageItemEquality';
+import { messageItemPropsEqual, sameMessage, sameNeighbour } from './messageItemEquality';
 
 /**
  * Row-local palette-aware styles. These moved here verbatim from ChatScreen's
