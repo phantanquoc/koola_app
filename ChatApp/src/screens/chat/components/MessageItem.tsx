@@ -12,14 +12,31 @@
  *
  * HOW IT KEEPS THE VISUALS IDENTICAL
  * The row still renders GiftedChat's own `Message` component internally, and the
- * ported bubble body is handed to it via `renderBubble`. That is deliberate:
- * `Message` owns the left/right container alignment, the same-sender bottom
- * margin, the avatar gating (placeholder vs real avatar), and the
- * `currentMessage.system` branch that routes to `renderSystemMessage`. Copying
- * those by hand would be the most likely source of silent visual drift, so we
- * reuse them instead. `Message` in turn renders `Bubble`, so
- * `renderMessageImage`, `renderMessageVideo`, `renderCustomView` and
- * `renderTime` keep being invoked exactly as before.
+ * bubble body is handed to it via `renderBubble`. That is deliberate: `Message`
+ * owns the left/right container alignment, the same-sender bottom margin, the
+ * avatar gating (placeholder vs real avatar), and the `currentMessage.system`
+ * branch that routes to `renderSystemMessage`. Copying those by hand would be the
+ * most likely source of silent visual drift, so we reuse them instead.
+ *
+ * WHY THE BUBBLE BODY IS NO LONGER GiftedChat's `Bubble` (Phase 2B)
+ * `renderBubble` used to render GiftedChat's `<Bubble>`, which builds three
+ * structurally empty layers per row — `View (fill+container)`, an inner
+ * `TouchableWithoutFeedback`, and `View (inner)` — plus a retry touchable and its
+ * wrapper that mounted with `undefined` props on every message. Fabric's
+ * shadow-tree commit (`draw→sync`) cost scales with mounted view count, so those
+ * dead layers were the dominant on-device scroll-jank source. This component now
+ * renders the minimal tree directly: it reproduces `Bubble`'s geometry (start/end
+ * alignment, 60 dp opposite-side inset, 20 dp min height, bottom-aligned content,
+ * justified metadata strip) and its content order (leading custom view → image →
+ * video → audio → text → trailing custom view) while dropping the empty wrappers.
+ * Message TEXT is still rendered by GiftedChat's `MessageText` (imported from the
+ * same barrel as `Message`), so url/phone/email linkification, `WWW_URL_PATTERN`
+ * scheme repair, and the `Linking` failure fallback are preserved rather than
+ * hand-ported. The long-press gesture — previously triggered by the touchable
+ * INSIDE `Bubble` — is re-hosted on the row's own wrapper here; without that
+ * re-host the reaction/reply/pin menu would die silently. `renderMessageImage`,
+ * `renderMessageVideo` and `renderCustomView` (passed by ChatScreen through the
+ * prop spread) keep being invoked exactly as before.
  *
  * WHY `shouldUpdateMessage` IS FORCED TRUE
  * `Message` is itself wrapped in `React.memo` with a comparator that ONLY deep-
@@ -34,8 +51,8 @@
  */
 
 import React, { useCallback } from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import { Bubble, Message } from 'react-native-gifted-chat';
+import { View, TouchableOpacity, TouchableWithoutFeedback, StyleSheet } from 'react-native';
+import { Message, MessageText } from 'react-native-gifted-chat';
 import type {
   BubbleProps,
   IMessage,
@@ -85,6 +102,38 @@ export function makeMessageItemStyles(
     bubbleHighlight: {
       backgroundColor: 'rgba(33, 150, 243, 0.12)',
       borderRadius: koolaRadii.md,
+    },
+    // ─── Bubble geometry, ported verbatim from GiftedChat's Bubble/styles.js ───
+    // The row now draws the bubble itself instead of rendering <Bubble>, so the
+    // wrapper geometry that used to come from that component's stylesheet lives
+    // here. Losing any of these makes bubbles span the full width or collapse
+    // below a legible height (see chat-message-presentation spec).
+    //
+    // `minHeight: 20` + `justifyContent: 'flex-end'` reproduce Bubble's 20 dp
+    // floor and bottom-aligned content. The 60 dp opposite-side margin is the
+    // inset that stops a bubble from ever reaching the far edge — it is applied
+    // per side below because it differs for incoming vs outgoing.
+    bubbleWrapperBase: {
+      minHeight: 20,
+      justifyContent: 'flex-end',
+    },
+    // Incoming: reserve the inset on the trailing (right) side.
+    bubbleInsetLeft: {
+      marginRight: 60,
+    },
+    // Outgoing: reserve the inset on the leading (left) side.
+    bubbleInsetRight: {
+      marginLeft: 60,
+    },
+    // The metadata strip beneath the bubble body (time). Bubble laid this out as
+    // a horizontal row justified to the start for incoming and end for outgoing.
+    bottomStripLeft: {
+      flexDirection: 'row',
+      justifyContent: 'flex-start',
+    },
+    bottomStripRight: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
     },
     // Grouped bubble (not last in a run) — no tail radius
     bubbleGroupedRight: {
@@ -250,53 +299,102 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
         | { storyId: string; mediaKeyPreview?: string; captionSnippet?: string; authorId?: string }
         | undefined;
 
+      // Time label — media uses scrim, text uses row
+      const timeText = dayjs(msg.createdAt).format('HH:mm');
+      const timeElement = isMedia ? (
+        <View style={styles.mediaTimeScrim}>
+          <KoolaText variant="caption" style={styles.mediaTimeText}>{timeText}</KoolaText>
+        </View>
+      ) : (
+        <View style={styles.textTimeRow}>
+          <KoolaText variant="caption" tone="muted" style={styles.textTimeLabel}>{timeText}</KoolaText>
+        </View>
+      );
+
+      // Text style for MessageText
+      const textStyle = {
+        right: { color: tokens.component.chatBubble.own.text, fontSize: 15, lineHeight: 22 },
+        left: { color: tokens.component.chatBubble.other.text, fontSize: 15, lineHeight: 22 },
+      };
+
+      // Bubble content in fixed order: leading custom view → image → video →
+      // audio (slot retained, unused today) → text → trailing custom view
+      const bubbleContent = (
+        <View
+          style={[
+            styles.bubbleWrapperBase,
+            isRight ? styles.bubbleInsetRight : styles.bubbleInsetLeft,
+            bubbleWrapStyle,
+          ]}>
+          {/* Leading custom view */}
+          {!bubbleProps.isCustomViewBottom && bubbleProps.renderCustomView?.(bubbleProps)}
+          {/* Image */}
+          {msg.image && bubbleProps.renderMessageImage?.(bubbleProps as RenderMessageImageProps<IMessage>)}
+          {/* Video */}
+          {msg.video && bubbleProps.renderMessageVideo?.(bubbleProps as RenderMessageVideoProps<IMessage>)}
+          {/* Audio slot — retained per spec, never populated today */}
+          {msg.audio && bubbleProps.renderMessageAudio?.(bubbleProps as RenderMessageVideoProps<IMessage>)}
+          {/* Text */}
+          {msg.text && (
+            <MessageText
+              currentMessage={msg}
+              position={bubbleProps.position}
+              textStyle={textStyle}
+            />
+          )}
+          {/* Trailing custom view */}
+          {bubbleProps.isCustomViewBottom && bubbleProps.renderCustomView?.(bubbleProps)}
+          {/* Time beneath content */}
+          <View style={isRight ? styles.bottomStripRight : styles.bottomStripLeft}>
+            {timeElement}
+          </View>
+        </View>
+      );
+
+      // TASK 3.1–3.3: Re-host the long-press gesture on the row's own wrapper.
+      // System messages must NOT trigger long-press (task 3.4). Failed messages
+      // need BOTH tap-retry (single tap) and long-press-menu on the same subtree
+      // (task 3.3). The context argument is ignored by ChatScreen:353, so passing
+      // `undefined` is safe.
+      const longPressHandler = msg.system
+        ? undefined
+        : () => bubbleProps.onLongPress?.(undefined, msg);
+
+      // TASK 2.6: Mount retry TouchableOpacity + failedBubbleWrapper ONLY when
+      // failed, so normal messages no longer carry two layers with undefined props.
+      const wrappedContent = isFailed ? (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => onRetry(String(msg._id))}
+          onLongPress={longPressHandler}
+          accessible
+          accessibilityLabel="Gửi thất bại — nhấn để thử lại"
+          accessibilityRole="button">
+          <View style={styles.failedBubbleWrapper}>
+            {bubbleContent}
+          </View>
+        </TouchableOpacity>
+      ) : (
+        <TouchableWithoutFeedback onLongPress={longPressHandler}>
+          {bubbleContent}
+        </TouchableWithoutFeedback>
+      );
+
       return (
         <View style={[styles.bubbleOuter, isHighlighted && styles.bubbleHighlight]}>
-          <TouchableOpacity
-            activeOpacity={isFailed ? 0.7 : 1}
-            onPress={isFailed ? () => onRetry(String(msg._id)) : undefined}
-            accessible={isFailed}
-            accessibilityLabel={isFailed ? 'Gửi thất bại — nhấn để thử lại' : undefined}
-            accessibilityRole={isFailed ? 'button' : undefined}>
-            <View style={isFailed ? styles.failedBubbleWrapper : undefined}>
-              {/* Story reference card prepended above the bubble */}
-              {storyReply && (
-                <View style={styles.storyRefCardWrapper}>
-                  <StoryReferenceCard storyReply={storyReply} />
-                </View>
-              )}
-              <Bubble
-                {...bubbleProps}
-                wrapperStyle={{
-                  right: bubbleWrapStyle,
-                  left: bubbleWrapStyle,
-                }}
-                textStyle={{
-                  right: { color: tokens.component.chatBubble.own.text, fontSize: 15, lineHeight: 22 },
-                  left: { color: tokens.component.chatBubble.other.text, fontSize: 15, lineHeight: 22 },
-                }}
-                renderTicks={() => null}
-                renderTime={(timeProps) => {
-                  const timeText = dayjs(timeProps.currentMessage?.createdAt).format('HH:mm');
-                  if (isMedia) {
-                    return (
-                      <View style={styles.mediaTimeScrim}>
-                        <KoolaText variant="caption" style={styles.mediaTimeText}>{timeText}</KoolaText>
-                      </View>
-                    );
-                  }
-                  return (
-                    <View style={styles.textTimeRow}>
-                      <KoolaText variant="caption" tone="muted" style={styles.textTimeLabel}>{timeText}</KoolaText>
-                    </View>
-                  );
-                }}
-              />
+          {/* Story reference card above bubble */}
+          {storyReply && (
+            <View style={styles.storyRefCardWrapper}>
+              <StoryReferenceCard storyReply={storyReply} />
             </View>
-            {isFailed && (
-              <KoolaText variant="caption" tone="danger" style={styles.failedLabel}>Gửi thất bại — nhấn để thử lại</KoolaText>
-            )}
-          </TouchableOpacity>
+          )}
+          {wrappedContent}
+          {/* Failed label beneath retry touchable */}
+          {isFailed && (
+            <KoolaText variant="caption" tone="danger" style={styles.failedLabel}>
+              Gửi thất bại — nhấn để thử lại
+            </KoolaText>
+          )}
           {/* Delivery/read tick for own messages */}
           {isRight && !isFailed && !msg?.system && (
             <View style={styles.tickRow}>
@@ -310,6 +408,7 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
               )}
             </View>
           )}
+          {/* Reactions beneath bubble */}
           {reactions.length > 0 && (
             <ReactionDisplay
               reactions={reactions}

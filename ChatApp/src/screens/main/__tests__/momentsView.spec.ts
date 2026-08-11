@@ -1,42 +1,71 @@
 /**
  * momentsView.spec.ts
  *
- * Unit tests for the pure resolveMomentsView function.
- * Verifies view-state decision logic that prevents the Moments tab flash.
+ * Unit tests for the pure resolveMomentsStoryRegion function.
+ *
+ * This resolver describes ONLY the story-rail region. The anti-flash guarantee
+ * lives here: when friend rings already exist the region stays "ready" through a
+ * silent refresh or transient error, and a cold start shows "loading" (not a
+ * flash of the friend-empty state). Regression 2026-08-11: the region must never
+ * be able to blank the whole screen — that is enforced at the screen level, but
+ * these cases prove the region itself never reports a blocking state while data
+ * is present.
  */
 
-import { resolveMomentsView } from '../momentsView';
+import { resolveMomentsStoryRegion } from '../momentsView';
 
-describe('resolveMomentsView', () => {
-  it('returns "skeleton" on cold start (loading, empty feed)', () => {
-    expect(resolveMomentsView({ isLoading: true, error: null, ringsLength: 0 })).toBe('skeleton');
+describe('resolveMomentsStoryRegion', () => {
+  it('returns "loading" on cold start when there are no friend rings', () => {
+    expect(
+      resolveMomentsStoryRegion({ isLoading: true, error: null, hasFriendRings: false }),
+    ).toBe('loading');
   });
 
-  it('returns "empty" on auth-race / no data yet (not loading, no error, empty feed)', () => {
-    expect(resolveMomentsView({ isLoading: false, error: null, ringsLength: 0 })).toBe('empty');
+  it('returns "friend-empty" when loaded with no friend rings and no error', () => {
+    expect(
+      resolveMomentsStoryRegion({ isLoading: false, error: null, hasFriendRings: false }),
+    ).toBe('friend-empty');
   });
 
-  it('returns "content" when feed has rings (warm, idle)', () => {
-    expect(resolveMomentsView({ isLoading: false, error: null, ringsLength: 3 })).toBe('content');
+  it('returns "ready" when friend rings exist', () => {
+    expect(
+      resolveMomentsStoryRegion({ isLoading: false, error: null, hasFriendRings: true }),
+    ).toBe('ready');
   });
 
-  it('returns "content" during silent background refresh (isLoading true but rings exist)', () => {
-    // This is THE anti-flash assertion: even though isLoading is true,
-    // existing rings prevent the spinner/skeleton from replacing content.
-    expect(resolveMomentsView({ isLoading: true, error: null, ringsLength: 3 })).toBe('content');
+  it('returns "ready" during a silent refresh when friend rings already exist', () => {
+    expect(
+      resolveMomentsStoryRegion({ isLoading: true, error: null, hasFriendRings: true }),
+    ).toBe('ready');
   });
 
-  it('returns "content" when refresh errors but rings already loaded', () => {
-    // Background refresh failed — keep showing stale content, don't flash error
-    expect(resolveMomentsView({ isLoading: false, error: 'Network error', ringsLength: 2 })).toBe('content');
+  it('returns "ready" when a refresh errors but friend rings already exist', () => {
+    expect(
+      resolveMomentsStoryRegion({
+        isLoading: false,
+        error: 'Network error',
+        hasFriendRings: true,
+      }),
+    ).toBe('ready');
   });
 
-  it('returns "error" when feed is empty and there is an error', () => {
-    expect(resolveMomentsView({ isLoading: false, error: 'Không thể tải khoảnh khắc', ringsLength: 0 })).toBe('error');
+  it('returns "error" when there are no friend rings and the feed errors', () => {
+    expect(
+      resolveMomentsStoryRegion({
+        isLoading: false,
+        error: 'Không thể tải khoảnh khắc',
+        hasFriendRings: false,
+      }),
+    ).toBe('error');
   });
 
-  it('skeleton takes priority over error when loading + error + empty (edge case)', () => {
-    // If somehow both isLoading and error are set with empty feed, loading wins
-    expect(resolveMomentsView({ isLoading: true, error: 'stale error', ringsLength: 0 })).toBe('skeleton');
+  it('gives loading priority over error while no friend rings exist and loading', () => {
+    expect(
+      resolveMomentsStoryRegion({
+        isLoading: true,
+        error: 'stale error',
+        hasFriendRings: false,
+      }),
+    ).toBe('loading');
   });
 });

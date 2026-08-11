@@ -217,6 +217,7 @@ const makeStyles = (semantic: SemanticTokens) =>
     },
     actionRow: {
       flexDirection: 'row',
+      flexWrap: 'nowrap',
       paddingHorizontal: koolaSpacing.xs,
       paddingVertical: 2,
     },
@@ -233,6 +234,7 @@ const makeStyles = (semantic: SemanticTokens) =>
     },
     actionLabel: {
       marginLeft: 6,
+      flexShrink: 1,
     },
     commentsWrap: {
       paddingHorizontal: koolaSpacing.md,

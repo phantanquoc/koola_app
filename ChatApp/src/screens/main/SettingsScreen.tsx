@@ -163,13 +163,6 @@ const SettingsScreen: React.FC = () => {
             icon="science"
             onPress={() => (navigation as any).navigate('ChatTab', { screen: 'LogoLab' })}
           />
-          <KoolaListItem
-            title="[DEV] Moments Feed Lab"
-            icon="dynamic-feed"
-            onPress={() =>
-              (navigation as any).navigate('ChatTab', { screen: 'MomentsFeedLab' })
-            }
-          />
         </View>
       )}
     </ScrollView>

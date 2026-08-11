@@ -60,7 +60,7 @@ const ChatTabStack: React.FC = () => {
         component={UniversalSearchScreen}
         options={{ headerShown: false }}
       />
-      {/* __DEV__ only — not accessible in production builds */}
+      {/* __DEV__ only — Logo Lab playground for 3D variant experiments */}
       {__DEV__ && (
         <Stack.Screen
           name="OutboxDevPanel"
@@ -75,18 +75,6 @@ const ChatTabStack: React.FC = () => {
           options={{ headerShown: true, title: '[DEV] Logo Lab' }}
         />
       )}
-      {__DEV__ && (
-        <Stack.Screen
-          name="MomentsFeedLab"
-          component={require('../screens/dev/MomentsFeedLabScreen').default}
-          // headerShown:false + in-app back/title row (the StorageSettingsScreen
-          // pattern). The NATIVE header re-adds the display-cutout inset on top
-          // of an RN root that already starts below it, leaving a blank band —
-          // measured 132px cutout counted twice on this device.
-          options={{ headerShown: false }}
-        />
-      )}
-
       {/* ── Moments screens ────────────────────────────────────────── */}
       <Stack.Screen
         name="MomentComposer"

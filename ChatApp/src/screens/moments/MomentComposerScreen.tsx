@@ -298,7 +298,6 @@ const MomentComposerScreen: React.FC = () => {
             </KoolaText>
           </View>
         ))}
-/* COMPOSER_PREVIEW_CONTINUE_PLACEHOLDER */
 
         {/* Caption with mention support */}
         <View style={styles.captionSection}>

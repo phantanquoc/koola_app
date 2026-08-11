@@ -330,7 +330,7 @@ const MediaImage: React.FC<Props> = ({ mediaKey, isUploading, uploadProgress, bl
         {uri && (
           <Animated.Image
             source={{ uri }}
-            style={[StyleSheet.absoluteFillObject, { opacity, borderRadius: 8 }]}
+            style={[StyleSheet.absoluteFillObject, { opacity }]}
             resizeMode="cover"
             onLoad={handleImageLoad}
             onError={() => setError(true)}

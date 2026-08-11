@@ -72,7 +72,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 const QUICK_ACTION_GAP = koolaSpacing.sm;
 /** Floor so the row stays usable on very narrow screens. */
 const MIN_QUICK_ACTION_WIDTH = 72;
-/** Page gutter the feed applies around this header — mirrors MomentsFeedLabScreen. */
+/** Page gutter the feed applies around this header. */
 const PAGE_GUTTER = koolaSpacing.md;
 
 interface Props {
