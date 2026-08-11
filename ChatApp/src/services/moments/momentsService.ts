@@ -111,6 +111,7 @@ class MomentsService {
     }
     try {
       const response = await storiesApi.getFeed({ limit: 50 });
+      console.log('[momentsService] refreshFeed response:', response);
 
       const feedRing: FeedRingItem[] = response.items.map((item: FeedItem) => ({
         authorId: item.authorId,
@@ -125,8 +126,10 @@ class MomentsService {
         storiesByAuthor.set(item.authorId, item.stories);
       }
 
+      console.log('[momentsService] feedRing length:', feedRing.length);
       this.setState({ feedRing, storiesByAuthor, isLoading: false });
     } catch (err: unknown) {
+      console.log('[momentsService] refreshFeed error, using mock fallback:', err);
       // Phase 1 fallback: when backend unavailable (offline OR API error), use
       // mock story rings so ring rail is always populated for UI preview. Phase 2
       // will remove this fallback and gate the ring rail on real backend data.

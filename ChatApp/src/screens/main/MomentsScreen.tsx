@@ -277,18 +277,8 @@ const MomentsScreen: React.FC = () => {
         />
       );
     }
-    if (storyRegion === 'friend-empty') {
-      return (
-        <KoolaEmptyState
-          style={styles.regionState}
-          icon="auto-awesome"
-          title="Bạn bè chưa đăng khoảnh khắc"
-          message="Hãy là người mở đầu — chia sẻ ảnh, video hoặc bài hát. Kéo xuống để tải lại khi bạn bè đăng bài."
-          actionLabel="Tạo khoảnh khắc"
-          onActionPress={handleAddPress}
-        />
-      );
-    }
+    // Phase 1: friend-empty banner removed — feed always shows with mock posts.
+    // Phase 2 will gate feed on real Post API availability.
     return null;
   }, [handleAddPress, requestFeed, state.error, storyRegion, styles.regionBanner, styles.regionState, tokens.semantic.action.primary]);
 

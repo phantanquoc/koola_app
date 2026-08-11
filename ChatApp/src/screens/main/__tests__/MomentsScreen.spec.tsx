@@ -62,20 +62,6 @@ describe('MomentsScreen - Phase 1 feed always renders', () => {
     expect(source).toMatch(/hasFriendRings:\s*otherRings\.length > 0/);
   });
 
-  it('keeps a creation action on the friend-empty banner wired to handleAddPress', () => {
-    const friendEmptyBranch = (() => {
-      const marker = "storyRegion === 'friend-empty'";
-      const start = source.indexOf(marker);
-      if (start === -1) return '';
-      const end = source.indexOf('return null;', start);
-      return end === -1 ? source.slice(start) : source.slice(start, end);
-    })();
-    expect(friendEmptyBranch).not.toBe('');
-    expect(friendEmptyBranch).toMatch(/<KoolaEmptyState/);
-    expect(friendEmptyBranch).toMatch(/actionLabel=/);
-    expect(friendEmptyBranch).toMatch(/onActionPress=\{handleAddPress\}/);
-  });
-
   it('keeps the story-region error state retryable via requestFeed', () => {
     const errorBranch = (() => {
       const marker = "storyRegion === 'error'";
