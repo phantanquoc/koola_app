@@ -89,4 +89,13 @@ describe('MomentsScreen - Phase 1 feed always renders', () => {
     expect(depsMatch?.[1]).toMatch(/handleAddPress/);
     expect(depsMatch?.[1]).toMatch(/storyRegionBanner/);
   });
+
+  it('does not render a layout-shifting loading banner (cold load uses in-place rail skeletons)', () => {
+    // 2026-08-13 jump fix: the cold-load banner (ActivityIndicator row) was
+    // inserted under the rail and removed on settle, shifting the whole feed.
+    // Loading is now signalled by skeleton rings inside MomentsFeedHeader via
+    // the `railLoading` prop — the rail height never changes.
+    expect(source).not.toMatch(/ActivityIndicator/);
+    expect(source).toMatch(/railLoading/);
+  });
 });

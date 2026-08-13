@@ -22,7 +22,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import UserAvatar from '../UserAvatar';
 import MomentRing from './MomentRing';
-import { KoolaText, koolaRadii, koolaSpacing, useTheme } from '../../ui';
+import { KoolaSkeleton, KoolaText, koolaRadii, koolaSpacing, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
@@ -72,13 +72,13 @@ const QUICK_ACTIONS: QuickAction[] = [
 const QUICK_ACTION_GAP = koolaSpacing.sm;
 /** Floor so the row stays usable on very narrow screens. */
 const MIN_QUICK_ACTION_WIDTH = 72;
-/** Page gutter the feed applies around this header. */
-const PAGE_GUTTER = koolaSpacing.md;
 
 interface Props {
   myDisplayName: string;
   myAvatar?: string;
   rings: FeedHeaderRing[];
+  /** Cold-load state of the story rail — renders in-place skeleton rings. */
+  railLoading?: boolean;
   onPressComposer?: () => void;
   onPressQuickAction?: (key: string) => void;
   onPressRing?: (authorId: string) => void;
@@ -90,6 +90,7 @@ const MomentsFeedHeader: React.FC<Props> = ({
   myDisplayName,
   myAvatar,
   rings,
+  railLoading,
   onPressComposer,
   onPressQuickAction,
   onPressRing,
@@ -106,13 +107,17 @@ const MomentsFeedHeader: React.FC<Props> = ({
   // An explicit width is deterministic and cannot silently degrade.
   const [rowWidth, setRowWidth] = useState(0);
   const onRowLayout = useCallback((e: LayoutChangeEvent) => {
-    const w = e.nativeEvent.layout.width;
+    // Measured width INCLUDES the row's own paddingHorizontal (measured on
+    // device: cells sized from it overflowed the right gutter, clipping the
+    // last tile's corner). Cells must fit inside the padded content box.
+    const w = e.nativeEvent.layout.width - koolaSpacing.lg * 2;
     setRowWidth((prev) => (Math.abs(prev - w) > 0.5 ? w : prev));
   }, []);
 
-  // First-paint estimate keeps the row correct before onLayout fires (screen
-  // width minus the feed page gutter and this row's own padding).
-  const fallbackRowWidth = windowWidth - PAGE_GUTTER * 2 - koolaSpacing.lg * 2;
+  // First-paint estimate keeps the row correct before onLayout fires. The feed
+  // is now full-bleed (no page gutter), so only this row's own padding remains
+  // to subtract from the screen width.
+  const fallbackRowWidth = windowWidth - koolaSpacing.lg * 2;
   const effectiveRowWidth = rowWidth > 0 ? rowWidth : Math.max(fallbackRowWidth, 0);
   const gapTotal = QUICK_ACTION_GAP * (QUICK_ACTIONS.length - 1);
   const cellWidth = Math.max(
@@ -148,9 +153,11 @@ const MomentsFeedHeader: React.FC<Props> = ({
         {QUICK_ACTIONS.map((action, index) => (
           <View
             key={action.key}
-            // Width/gap live on a plain View. Pressable's style-function form
-            // did not apply them (measured on device), so the sizing box is kept
-            // separate from the press target.
+            // Width / minHeight / bg / radius / overflow live on this plain
+            // View. On RN 0.76 the Pressable style-as-function form silently
+            // drops layout props (documented in ui-dna): a row layout placed
+            // directly on the Pressable rendered as a column and stacked the
+            // label under the icon. Keeping the sizing box here is deterministic.
             style={[
               styles.quickActionSlot,
               {
@@ -163,24 +170,29 @@ const MomentsFeedHeader: React.FC<Props> = ({
             accessibilityRole="button"
             accessibilityLabel={action.label}
             android_ripple={{ color: palette.primarySoft }}
-            style={({ pressed }) => [styles.quickAction, pressed && styles.pressed]}>
-            <View
-              style={[
-                styles.quickActionIconShell,
-                { backgroundColor: palette[action.shellKey] },
-              ]}>
-              <MaterialIcons name={action.icon} size={16} color={palette[action.tintKey]} />
+            // Pressable carries ONLY press feedback (opacity). Stretches full
+            // slot width because the slot View is column + alignItems stretch.
+            style={({ pressed }) => [pressed && styles.pressed]}>
+            {/* Row layout lives on this inner View, not on the Pressable. */}
+            <View style={styles.quickActionContent}>
+              <View
+                style={[
+                  styles.quickActionIconShell,
+                  { backgroundColor: palette[action.shellKey] },
+                ]}>
+                <MaterialIcons name={action.icon} size={16} color={palette[action.tintKey]} />
+              </View>
+              <KoolaText
+                variant="label"
+                tone="ink"
+                numberOfLines={1}
+                // Row is a hard single-line layout in a ~107dp cell; the 1.6 variant
+                // cap overflows it and collides with the neighbouring label.
+                maxFontSizeMultiplier={1.2}
+                style={styles.quickActionLabel}>
+                {action.label}
+              </KoolaText>
             </View>
-            <KoolaText
-              variant="label"
-              tone="ink"
-              numberOfLines={1}
-              // Row is a hard single-line layout in a ~107dp cell; the 1.6 variant
-              // cap overflows it and collides with the neighbouring label.
-              maxFontSizeMultiplier={1.2}
-              style={styles.quickActionLabel}>
-              {action.label}
-            </KoolaText>
           </Pressable>
           </View>
         ))}
@@ -188,27 +200,51 @@ const MomentsFeedHeader: React.FC<Props> = ({
 
       <View style={styles.divider} />
 
-      <FlatList
-        data={rings}
-        keyExtractor={(item) => item.authorId}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.ringList}
-        renderItem={({ item }) => (
-          <MomentRing
-            authorId={item.authorId}
-            displayName={item.displayName}
-            avatarKey={item.avatarKey}
-            hasUnviewed={item.hasUnviewed}
-            isOwn={item.isOwn}
-            onPress={() => onPressRing?.(item.authorId)}
-            onLongPress={item.isOwn ? onLongPressOwnRing : undefined}
-            onAddPress={item.isOwn ? onPressAddStory : undefined}
-          />
-        )}
-        accessibilityRole="list"
-        accessibilityLabel="Danh sách người dùng có khoảnh khắc"
-      />
+      {/* In-place skeleton rings during cold load (2026-08-13 jump fix): they
+          replace the removed "Đang tải khoảnh khắc" banner in MomentsScreen,
+          whose insert/remove made the feed jump. Metrics mirror MomentRing
+          exactly (container 78+6, ring 72, label marginTop 6 / minHeight 16)
+          so the rail height is identical before and after loading settles. */}
+      {railLoading && rings.length === 0 ? (
+        <View
+          style={styles.railSkeletonRow}
+          accessibilityLabel="Đang tải khoảnh khắc"
+          accessibilityRole="progressbar">
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={styles.railSkeletonItem}>
+              <KoolaSkeleton width={72} height={72} radius={36} />
+              <KoolaSkeleton
+                width={48}
+                height={16}
+                radius={6}
+                style={styles.railSkeletonLabel}
+              />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <FlatList
+          data={rings}
+          keyExtractor={(item) => item.authorId}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.ringList}
+          renderItem={({ item }) => (
+            <MomentRing
+              authorId={item.authorId}
+              displayName={item.displayName}
+              avatarKey={item.avatarKey}
+              hasUnviewed={item.hasUnviewed}
+              isOwn={item.isOwn}
+              onPress={() => onPressRing?.(item.authorId)}
+              onLongPress={item.isOwn ? onLongPressOwnRing : undefined}
+              onAddPress={item.isOwn ? onPressAddStory : undefined}
+            />
+          )}
+          accessibilityRole="list"
+          accessibilityLabel="Danh sách người dùng có khoảnh khắc"
+        />
+      )}
 
       <View style={styles.dividerThick} />
     </View>
@@ -255,13 +291,21 @@ const makeStyles = (semantic: SemanticTokens) =>
       backgroundColor: semantic.surface.level0,
       overflow: 'hidden',
     },
-    quickAction: {
-      // Sized by the wrapping View (width comes from there); this just fills it.
-      flex: 1,
+    quickActionContent: {
+      // Row layout lives on a plain View INSIDE the Pressable — on RN 0.76 the
+      // Pressable style-as-function form drops layout props (ui-dna), so any
+      // flexDirection set directly on the Pressable degraded to a column.
+      // minHeight keeps the >=44dp touch target regardless of the Pressable's
+      // own (unreliable) sizing.
+      // paddingHorizontal is a tight 2 (not xs/4): after the measured width was
+      // corrected to exclude the row's own padding, cells lost ~10dp each and
+      // the longest label ("Ảnh/video") ellipsized at the 1.2 font-scale cap on
+      // a 360dp screen — every dp inside the cell goes to the label.
+      minHeight: 44,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: koolaSpacing.xs,
+      paddingHorizontal: 2,
     },
     quickActionLabel: {
       // Without this the Text refuses to shrink and spills past the cell.
@@ -274,7 +318,8 @@ const makeStyles = (semantic: SemanticTokens) =>
       borderRadius: koolaRadii.xs,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: koolaSpacing.xs,
+      // Tight 2dp spacer (not xs/4) — same label-space reclamation as above.
+      marginRight: 2,
       flexShrink: 0,
     },
     divider: {
@@ -285,6 +330,24 @@ const makeStyles = (semantic: SemanticTokens) =>
     ringList: {
       paddingHorizontal: koolaSpacing.sm,
       paddingVertical: koolaSpacing.md,
+    },
+    // Cold-load skeleton rail — same chrome as the FlatList contentContainer
+    // (ringList padding) + a plain row, so switching to real rings never shifts.
+    railSkeletonRow: {
+      flexDirection: 'row',
+      paddingHorizontal: koolaSpacing.sm,
+      paddingVertical: koolaSpacing.md,
+    },
+    // Mirrors MomentRing's container exactly (width 78 + marginHorizontal 6).
+    railSkeletonItem: {
+      width: 78,
+      marginHorizontal: 6,
+      alignItems: 'center',
+    },
+    // Mirrors MomentRing's label box exactly: marginTop 6 + minHeight 16.
+    railSkeletonLabel: {
+      marginTop: 6,
+      minHeight: 16,
     },
     dividerThick: {
       height: 8,

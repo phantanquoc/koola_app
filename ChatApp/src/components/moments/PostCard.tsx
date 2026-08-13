@@ -92,27 +92,39 @@ const ActionButton: React.FC<{
 }> = ({ icon, label, active, onPress, semantic }) => {
   const styles = useMemo(() => makeStyles(semantic), [semantic]);
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: !!active }}
-      android_ripple={{ color: semantic.action.primarySoft, borderless: false }}
-      style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}>
-      <MaterialIcons
-        name={icon}
-        size={20}
-        color={active ? semantic.action.primary : semantic.text.muted}
-      />
-      <KoolaText
-        variant="label"
-        weight={active ? '700' : '600'}
-        tone={active ? 'primary' : 'muted'}
-        style={styles.actionLabel}
-        numberOfLines={1}>
-        {label}
-      </KoolaText>
-    </Pressable>
+    // Sizing box (flex/minHeight/radius/overflow) lives on this plain View. On
+    // RN 0.76 the Pressable style-as-function form silently drops layout props
+    // (documented in ui-dna): flex:1 + flexDirection row set directly on the
+    // Pressable collapsed the button and stacked the label under the icon.
+    <View style={styles.actionBtnSlot}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: !!active }}
+        android_ripple={{ color: semantic.action.primarySoft, borderless: false }}
+        // Pressable carries ONLY press feedback (opacity). It stretches to the
+        // slot width (column parent + default stretch); height comes from the
+        // inner content View's minHeight, which guarantees the >=44dp target.
+        style={({ pressed }) => [pressed && styles.actionBtnPressed]}>
+        {/* Row layout lives on this inner View, not on the Pressable. */}
+        <View style={styles.actionBtnContent}>
+          <MaterialIcons
+            name={icon}
+            size={20}
+            color={active ? semantic.action.primary : semantic.text.muted}
+          />
+          <KoolaText
+            variant="label"
+            weight={active ? '700' : '600'}
+            tone={active ? 'primary' : 'muted'}
+            style={styles.actionLabel}
+            numberOfLines={1}>
+            {label}
+          </KoolaText>
+        </View>
+      </Pressable>
+    </View>
   );
 };
 
@@ -133,11 +145,18 @@ const makeStyles = (semantic: SemanticTokens) =>
       paddingTop: koolaSpacing.md,
       paddingBottom: koolaSpacing.sm,
     },
-    headerIdentity: {
+    headerIdentitySlot: {
+      // flex/radius/overflow on a plain View — the Pressable's own
+      // style-as-function drops layout props on this RN version (ui-dna).
       flex: 1,
+      borderRadius: koolaRadii.sm,
+    },
+    headerIdentityRow: {
+      // Row layout lives here, not on the Pressable. minHeight keeps the
+      // identity strip a comfortable >=40dp tap surface.
       flexDirection: 'row',
       alignItems: 'center',
-      borderRadius: koolaRadii.sm,
+      minHeight: 40,
     },
     headerText: {
       flex: 1,
@@ -151,14 +170,22 @@ const makeStyles = (semantic: SemanticTokens) =>
     metaDot: {
       marginHorizontal: 4,
     },
-    menuBtn: {
+    menuBtnSlot: {
+      // width/height/margin live on a plain View — the Pressable's own
+      // style-as-function drops layout props on this RN version (ui-dna).
       width: 44,
       height: 44,
-      borderRadius: 22,
-      alignItems: 'center',
-      justifyContent: 'center',
       marginLeft: koolaSpacing.xs,
       flexShrink: 0,
+    },
+    menuBtnContent: {
+      // Icon centering lives on a plain View inside the Pressable. Explicit
+      // 44x44 (not flex:1): the Pressable has no layout of its own and wraps
+      // its content, so this View's size IS the tap surface.
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     pressedSoft: {
       opacity: 0.7,
@@ -221,13 +248,24 @@ const makeStyles = (semantic: SemanticTokens) =>
       paddingHorizontal: koolaSpacing.xs,
       paddingVertical: 2,
     },
-    actionBtn: {
+    actionBtnSlot: {
+      // flex/minHeight/radius/overflow on a plain View — the Pressable's own
+      // style-as-function drops layout props on this RN version (ui-dna).
+      flex: 1,
+      minHeight: 44,
+      borderRadius: koolaRadii.sm,
+      overflow: 'hidden',
+    },
+    actionBtnContent: {
+      // Row layout + centering live on a plain View inside the Pressable.
+      // minHeight is on THIS View (not just the slot): the Pressable itself has
+      // no layout, so its height comes from its content — this guarantees the
+      // tap surface stays >=44dp even if the slot minHeight were ignored.
       flex: 1,
       minHeight: 44,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: koolaRadii.sm,
     },
     actionBtnPressed: {
       opacity: 0.7,
@@ -309,45 +347,62 @@ const PostCard: React.FC<Props> = ({
     <View style={styles.card} accessibilityLabel={`Bài viết của ${post.authorDisplayName}`}>
       {/* ── Author header ─────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Pressable
-          onPress={() => onPressAuthor?.(post.authorId)}
-          accessibilityRole="button"
-          accessibilityLabel={`Xem trang cá nhân ${post.authorDisplayName}`}
-          android_ripple={{ color: semantic.action.primarySoft, borderless: true }}
-          style={({ pressed }) => [styles.headerIdentity, pressed && styles.pressedSoft]}>
-          <UserAvatar
-            displayName={post.authorDisplayName}
-            avatar={post.authorAvatar}
-            size={40}
-          />
-          <View style={styles.headerText}>
-            <KoolaText variant="label" weight="700" numberOfLines={1}>
-              {post.authorDisplayName}
-            </KoolaText>
-            <View style={styles.metaRow}>
-              <KoolaText variant="caption" tone="muted">
-                {post.timeLabel}
-              </KoolaText>
-              <KoolaText variant="caption" tone="faint" style={styles.metaDot}>
-                ·
-              </KoolaText>
-              <MaterialIcons
-                name={AUDIENCE_ICON[post.audience]}
-                size={12}
-                color={semantic.text.faint}
+        {/* Sizing box (flex/radius/overflow) lives on a plain View. On RN 0.76
+            the Pressable style-as-function form drops layout props (ui-dna), so
+            flexDirection row set directly on the Pressable stacked the avatar
+            above the name on device. Row layout moves to an inner View below. */}
+        <View style={styles.headerIdentitySlot}>
+          <Pressable
+            onPress={() => onPressAuthor?.(post.authorId)}
+            accessibilityRole="button"
+            accessibilityLabel={`Xem trang cá nhân ${post.authorDisplayName}`}
+            android_ripple={{ color: semantic.action.primarySoft, borderless: true }}
+            // Pressable carries ONLY press feedback (opacity).
+            style={({ pressed }) => [pressed && styles.pressedSoft]}>
+            {/* Row layout lives on this inner View, not on the Pressable. */}
+            <View style={styles.headerIdentityRow}>
+              <UserAvatar
+                displayName={post.authorDisplayName}
+                avatar={post.authorAvatar}
+                size={40}
               />
+              <View style={styles.headerText}>
+                <KoolaText variant="label" weight="700" numberOfLines={1}>
+                  {post.authorDisplayName}
+                </KoolaText>
+                <View style={styles.metaRow}>
+                  <KoolaText variant="caption" tone="muted">
+                    {post.timeLabel}
+                  </KoolaText>
+                  <KoolaText variant="caption" tone="faint" style={styles.metaDot}>
+                    ·
+                  </KoolaText>
+                  <MaterialIcons
+                    name={AUDIENCE_ICON[post.audience]}
+                    size={12}
+                    color={semantic.text.faint}
+                  />
+                </View>
+              </View>
             </View>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
 
-        <Pressable
-          onPress={() => onPressMenu?.(post.id)}
-          accessibilityRole="button"
-          accessibilityLabel="Tùy chọn bài viết"
-          android_ripple={{ color: semantic.action.primarySoft, borderless: true }}
-          style={({ pressed }) => [styles.menuBtn, pressed && styles.pressedSoft]}>
-          <MaterialIcons name="more-horiz" size={22} color={semantic.text.muted} />
-        </Pressable>
+        {/* Same drop risk for width/height/position-ish props: the 44x44 sizing
+            box moves to a plain View; the Pressable keeps only press feedback. */}
+        <View style={styles.menuBtnSlot}>
+          <Pressable
+            onPress={() => onPressMenu?.(post.id)}
+            accessibilityRole="button"
+            accessibilityLabel="Tùy chọn bài viết"
+            android_ripple={{ color: semantic.action.primarySoft, borderless: true }}
+            style={({ pressed }) => [pressed && styles.pressedSoft]}>
+            {/* Icon centering lives on a plain View inside the Pressable. */}
+            <View style={styles.menuBtnContent}>
+              <MaterialIcons name="more-horiz" size={22} color={semantic.text.muted} />
+            </View>
+          </Pressable>
+        </View>
       </View>
 
       {/* ── Caption ───────────────────────────────────────────────────────── */}

@@ -6,7 +6,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
-  ActivityIndicator,
   Alert,
   Platform,
   RefreshControl,
@@ -42,7 +41,6 @@ import { resolveMomentsStoryRegion } from './momentsView';
 import { MOCK_MOMENTS_POSTS } from './momentsMockPosts';
 
 type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
-const PAGE_GUTTER = koolaSpacing.md;
 
 const MomentsScreen: React.FC = () => {
   const navigation = useNavigation<MomentsNavProp>();
@@ -225,7 +223,9 @@ const MomentsScreen: React.FC = () => {
     } : post));
   }, []);
 
-  const contentWidth = screenWidth - PAGE_GUTTER * 2;
+  // Full-bleed feed: the list has no page gutter, so PostMediaGrid computes
+  // media tile widths from the full screen width.
+  const contentWidth = screenWidth;
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
     <PostCard
       post={item}
@@ -239,6 +239,11 @@ const MomentsScreen: React.FC = () => {
     />
   ), [contentWidth, handleToggleLike, notify]);
 
+  // Cold-load signal for the story rail. The same flag is forwarded to the
+  // header, which renders in-place skeleton rings in the rail — the rail height
+  // stays identical before/after loading settles, so nothing below it shifts.
+  const railLoading = state.isLoading || !hasAttemptedLoad;
+
   // Story-rail region status. This describes ONLY the story rail, never the
   // whole screen (regression 2026-08-11): the header chrome and the Phase-1
   // mock feed always render. `hasFriendRings` is the meaningful signal because
@@ -246,27 +251,17 @@ const MomentsScreen: React.FC = () => {
   const storyRegion = resolveMomentsStoryRegion({
     // The service starts idle before useFocusEffect invokes refreshFeed. Treat
     // that first frame as cold-loading so the rail cannot flash friend-empty.
-    isLoading: state.isLoading || !hasAttemptedLoad,
+    isLoading: railLoading,
     error: state.error,
     hasFriendRings: otherRings.length > 0,
   });
 
   // Non-blocking banner for the story rail, rendered inside the header flow so
   // it never replaces the composer, quick actions, own ring, or the feed.
+  // Cold loading is signalled by in-place skeletons in the ring rail
+  // (MomentsFeedHeader), never by a banner here — a banner row inserted under
+  // the rail and removed on settle shifted the whole feed vertically.
   const storyRegionBanner = useMemo(() => {
-    if (storyRegion === 'loading') {
-      return (
-        <View style={styles.regionBanner} accessibilityLiveRegion="polite">
-          <ActivityIndicator
-            color={tokens.semantic.action.primary}
-            accessibilityLabel="Đang tải khoảnh khắc"
-          />
-          <KoolaText variant="caption" tone="muted">
-            Đang tải khoảnh khắc của bạn bè…
-          </KoolaText>
-        </View>
-      );
-    }
     if (storyRegion === 'error') {
       return (
         <KoolaErrorState
@@ -280,7 +275,7 @@ const MomentsScreen: React.FC = () => {
     // Phase 1: friend-empty banner removed — feed always shows with mock posts.
     // Phase 2 will gate feed on real Post API availability.
     return null;
-  }, [handleAddPress, requestFeed, state.error, storyRegion, styles.regionBanner, styles.regionState, tokens.semantic.action.primary]);
+  }, [handleAddPress, requestFeed, state.error, storyRegion, styles.regionState]);
 
   // Header ALWAYS renders when signed in: it is chrome (composer prompt, quick
   // actions) and it carries the own story ring, so it must not be gated behind
@@ -291,6 +286,7 @@ const MomentsScreen: React.FC = () => {
         myDisplayName={user?.displayName ?? 'Tôi'}
         myAvatar={user?.avatar ?? undefined}
         rings={rings}
+        railLoading={railLoading}
         onPressComposer={handleAddPress}
         onPressQuickAction={handleQuickAction}
         onPressRing={handleRingPress}
@@ -299,7 +295,7 @@ const MomentsScreen: React.FC = () => {
       />
       {storyRegionBanner}
     </View>
-  ), [handleAddPress, handleQuickAction, handleOwnLongPress, handleRingPress, rings, storyRegionBanner, user?.avatar, user?.displayName]);
+  ), [handleAddPress, handleQuickAction, handleOwnLongPress, handleRingPress, railLoading, rings, storyRegionBanner, user?.avatar, user?.displayName]);
 
   return (
     <View style={styles.container} accessibilityLabel="Danh sách khoảnh khắc" accessibilityRole="list">
@@ -338,17 +334,11 @@ const MomentsScreen: React.FC = () => {
 
 const makeStyles = (semantic: SemanticTokens) => StyleSheet.create({
   container: { flex: 1, backgroundColor: semantic.surface.level0 },
-  listContent: { paddingHorizontal: PAGE_GUTTER },
-  // Compact inline loading hint for the story rail — never a full-screen block.
-  regionBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: koolaSpacing.sm,
-    paddingVertical: koolaSpacing.md,
-  },
-  // Error / friend-empty cards sit inline in the feed flow, not centered on a
-  // blank screen, so the composer, quick actions, own ring, and feed stay put.
+  // Full-bleed feed: no page gutter here — the header and PostCards each own
+  // their internal padding, and PostMediaGrid media spans the full screen width.
+  listContent: {},
+  // Error cards sit inline in the feed flow, not centered on a blank screen, so
+  // the composer, quick actions, own ring, and feed stay put.
   regionState: { paddingVertical: koolaSpacing.lg },
   footer: { paddingTop: koolaSpacing.lg, paddingBottom: koolaSpacing.lg },
 });
