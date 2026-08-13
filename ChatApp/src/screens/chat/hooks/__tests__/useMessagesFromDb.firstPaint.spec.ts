@@ -142,7 +142,7 @@ describe('useMessagesFromDb — first paint', () => {
     expect(mockList).toHaveBeenCalledWith({
       conversationId: CONV_ID,
       currentUserId: USER_ID,
-      limit: 50,
+      limit: 150,
     });
   });
 

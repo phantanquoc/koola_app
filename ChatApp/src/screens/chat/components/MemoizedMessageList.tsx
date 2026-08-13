@@ -13,7 +13,6 @@
 
 import React from 'react';
 import { GiftedChat, type IMessage, type User } from 'react-native-gifted-chat';
-import type { ViewStyle } from 'react-native';
 
 export interface MemoizedMessageListProps {
   messageContainerRef?: React.Ref<any>;
@@ -29,15 +28,23 @@ export interface MemoizedMessageListProps {
   renderCustomView: (props: any) => React.ReactElement | null;
   renderDay: (props: any) => React.ReactElement | null;
   renderFooter: () => React.ReactElement | null;
+  renderLoadEarlier?: (props: any) => React.ReactElement | null;
   loadEarlier: boolean;
   onLoadEarlier: () => void;
-  isLoadingEarlier: boolean;
+  isLoadingEarlier?: boolean;
   bottomOffset: number;
   listViewProps: Record<string, unknown>;
   timeFormat?: string;
   locale?: string;
   showUserAvatar?: boolean;
   showAvatarForEveryMessage?: boolean;
+  /**
+   * gifted-chat treats the literal `null` as "render no avatar" (its `Avatar`
+   * component short-circuits on `renderAvatar === null` and returns null), which
+   * also removes the invisible avatar slot its `Message` row would otherwise
+   * reserve. ChatScreen always passes `null`.
+   */
+  renderAvatar?: null | ((props: any) => React.ReactNode);
   alwaysShowSend?: boolean;
   infiniteScroll?: boolean;
   minInputToolbarHeight?: number;
@@ -57,6 +64,7 @@ const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
   renderCustomView,
   renderDay,
   renderFooter,
+  renderLoadEarlier,
   loadEarlier,
   onLoadEarlier,
   isLoadingEarlier,
@@ -66,6 +74,7 @@ const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
   locale = 'vi',
   showUserAvatar = false,
   showAvatarForEveryMessage = false,
+  renderAvatar,
   alwaysShowSend = true,
   infiniteScroll = true,
   minInputToolbarHeight = 0,
@@ -86,8 +95,10 @@ const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
       timeFormat={timeFormat}
       locale={locale}
       renderFooter={renderFooter}
+      renderLoadEarlier={renderLoadEarlier}
       showUserAvatar={showUserAvatar}
       showAvatarForEveryMessage={showAvatarForEveryMessage}
+      renderAvatar={renderAvatar}
       loadEarlier={loadEarlier}
       onLoadEarlier={onLoadEarlier}
       isLoadingEarlier={isLoadingEarlier}

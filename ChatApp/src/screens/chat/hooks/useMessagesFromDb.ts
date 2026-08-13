@@ -71,10 +71,36 @@ function dbMsgToGifted(
   return base;
 }
 
+/**
+ * How many older messages one `loadEarlier` round trip pulls.
+ *
+ * Raised from 40 (itself raised from 20, when a 1000-message conversation
+ * needed ~48 round trips to reach the top). The fetch now starts a full screen
+ * before the list edge (see `onEndReachedThreshold` in ChatScreen), so each
+ * round trip must cover more ground than the user can scroll while it runs;
+ * the wider page means fewer round trips overall, and every arrival is one
+ * fewer merge into the live `messages` state mid-scroll. The query runs on
+ * `idx_messages_conv_created (conversation_id, created_at DESC)` and stops at
+ * LIMIT, so a wider page costs no extra index work. The rows still mount
+ * through FlatList's `maxToRenderPerBatch`, so a bigger page spreads over more
+ * batches rather than landing as one hitch.
+ */
+const EARLIER_PAGE_SIZE = 80;
+
+/**
+ * Size of the window read at mount and re-read on a full invalidation.
+ *
+ * 50 was small enough that the first scroll up already hit the edge and paid for
+ * a pagination round trip. Holding 150 rows in state is cheap — they are plain
+ * objects and FlatList mounts only `windowSize` of them — and it moves the first
+ * "load earlier" well past where a user usually stops.
+ */
+const INITIAL_WINDOW_SIZE = 150;
+
 function loadFromDb(
   conversationId: string,
   currentUserId: string,
-  limit = 50,
+  limit = INITIAL_WINDOW_SIZE,
 ): IMessage[] {
   const t0 = Date.now();
   const rows = messageRepository.list({ conversationId, currentUserId, limit });
@@ -102,16 +128,27 @@ export function useMessagesFromDb(
   const [_isInitialLoading, _setIsInitialLoading] = useState(false);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
+  // Mirrors of the two pagination flags and of the loaded window, read by
+  // `loadEarlier` so that callback never has to list them as dependencies. See
+  // the comment on `loadEarlier` for why its identity must stay pinned.
+  const hasEarlierRef = useRef(true);
+  const isLoadingEarlierRef = useRef(false);
+  const visibleMessagesRef = useRef<IMessage[]>([]);
   const mountedRef = useRef(true);
   const loadedKeyRef = useRef(`${conversationId}:${currentUserId}`);
   // Track how many messages are currently loaded so reload preserves the window
-  // (prevents truncation back to 50 after user scrolled to load earlier messages)
-  const loadedCountRef = useRef(50);
+  // (prevents truncation back to the initial window after the user scrolled to
+  // load earlier messages)
+  const loadedCountRef = useRef(INITIAL_WINDOW_SIZE);
   const currentLoadKey = `${conversationId}:${currentUserId}`;
   const stateMatchesConversation = loadedKeyRef.current === currentLoadKey;
   const visibleMessages = stateMatchesConversation
     ? messages
     : loadFromDb(conversationId, currentUserId);
+  // Kept in sync on every render rather than in an effect: `loadEarlier` can fire
+  // from a scroll before an effect has committed, and reading a stale cursor there
+  // would re-request a page the list already holds.
+  visibleMessagesRef.current = visibleMessages;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -125,9 +162,14 @@ export function useMessagesFromDb(
     const key = `${conversationId}:${currentUserId}`;
     if (loadedKeyRef.current !== key) {
       loadedKeyRef.current = key;
-      loadedCountRef.current = 50;
+      loadedCountRef.current = INITIAL_WINDOW_SIZE;
       setInitialLoadError(null);
       setHasEarlier(true);
+      // The ref must be reset alongside the state it mirrors. Without this, a
+      // conversation opened after one that had been scrolled to its oldest
+      // message would inherit `hasEarlierRef = false` and refuse to paginate,
+      // while `hasEarlier` state said otherwise.
+      hasEarlierRef.current = true;
       setMessages(loadFromDb(conversationId, currentUserId));
     }
 
@@ -137,7 +179,7 @@ export function useMessagesFromDb(
       // Legacy path: payload is undefined → full reload
       if (!payload) {
         const t0 = Date.now();
-        const limit = Math.max(50, loadedCountRef.current);
+        const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
         const fresh = loadFromDb(conversationId, currentUserId, limit);
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
@@ -153,7 +195,7 @@ export function useMessagesFromDb(
       // If order changed (insert/batch with new messages), full reload required
       if (orderChanged) {
         const t0 = Date.now();
-        const limit = Math.max(50, loadedCountRef.current);
+        const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
         const fresh = loadFromDb(conversationId, currentUserId, limit);
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
@@ -217,27 +259,44 @@ export function useMessagesFromDb(
   }, [conversationId, currentUserId]);
 
   // ─── Load earlier (cursor-based) ──────────────────────────────────────────
+  // Every input this reads comes from a ref, so its identity is pinned to the
+  // conversation. That is load-bearing rather than cosmetic: it is handed to
+  // GiftedChat as `onLoadEarlier` through `MemoizedMessageList`, whose React.memo
+  // does a shallow prop compare. While this callback listed `visibleMessages`,
+  // `hasEarlier` and `isLoadingEarlier` in its deps it was rebuilt on every
+  // message change and on both edges of every load — each rebuild failing that
+  // shallow compare and re-rendering the whole chat list, which is exactly the
+  // work the memo boundary exists to prevent.
   const loadEarlier = useCallback(async () => {
-    if (!hasEarlier || isLoadingEarlier) return;
+    if (!hasEarlierRef.current || isLoadingEarlierRef.current) return;
+    isLoadingEarlierRef.current = true;
     setIsLoadingEarlier(true);
     try {
-      const oldest = visibleMessages[visibleMessages.length - 1];
+      const loaded = visibleMessagesRef.current;
+      const oldest = loaded[loaded.length - 1];
       if (!oldest) {
+        hasEarlierRef.current = false;
         setHasEarlier(false);
         return;
       }
       const before = new Date(oldest.createdAt as Date).getTime();
+      const t0 = Date.now();
       const rows = messageRepository.listBefore({
         conversationId,
         currentUserId,
         before,
-        limit: 20,
+        limit: EARLIER_PAGE_SIZE,
       });
       if (rows.length === 0) {
+        hasEarlierRef.current = false;
         setHasEarlier(false);
         return;
       }
+      const tQuery = Date.now();
       const older = rows.map((r) => dbMsgToGifted(r, currentUserId));
+      if (__DEV__) {
+        console.log(`[PERF useMessagesFromDb] EARLIER conv=${conversationId.slice(-6)} queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+      }
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => String(m._id)));
         const newItems = older.filter((m) => !existingIds.has(String(m._id)));
@@ -245,13 +304,17 @@ export function useMessagesFromDb(
         loadedCountRef.current = merged.length;
         return merged;
       });
-      setHasEarlier(rows.length === 20);
+      // A short page means the cursor reached the oldest stored row.
+      const more = rows.length === EARLIER_PAGE_SIZE;
+      hasEarlierRef.current = more;
+      setHasEarlier(more);
     } catch (err) {
       console.warn('[useMessagesFromDb] loadEarlier:', (err as Error)?.message);
     } finally {
+      isLoadingEarlierRef.current = false;
       if (mountedRef.current) setIsLoadingEarlier(false);
     }
-  }, [conversationId, currentUserId, hasEarlier, isLoadingEarlier, visibleMessages]);
+  }, [conversationId, currentUserId]);
 
   // ─── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(

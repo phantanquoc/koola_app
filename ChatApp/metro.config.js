@@ -28,7 +28,23 @@ const config = mergeConfig(getDefaultConfig(__dirname), {
           filePath: path.resolve(__dirname, 'dev-config.example.json'),
         };
       }
+      // Fix axios browser resolution
+      if (moduleName === 'axios') {
+        return {
+          type: 'sourceFile',
+          filePath: path.resolve(__dirname, 'node_modules/axios/index.js'),
+        };
+      }
       return context.resolveRequest(context, moduleName, platform);
+    },
+    blockList: [
+      /node_modules\/@op-engineering\/op-sqlite\/android\/build\/.*/,
+    ],
+  },
+  watcher: {
+    additionalExts: [],
+    watchman: {
+      deferStates: [],
     },
   },
 });

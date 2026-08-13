@@ -1,0 +1,127 @@
+diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
+index 2615e91..b49c75c 100644
+--- a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
++++ b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
+@@ -1,5 +1,5 @@
+ import React, { useCallback, useEffect, useMemo, useState } from 'react';
+-import Animated, { interpolate, useAnimatedStyle, useDerivedValue, useSharedValue, useAnimatedReaction, withTiming, runOnJS } from 'react-native-reanimated';
++import Animated, { interpolate, useAnimatedStyle, useDerivedValue, useSharedValue, useAnimatedReaction, withTiming, withSequence, withDelay, runOnJS } from 'react-native-reanimated';
+ import { Day } from '../../../Day';
+ import { isSameDay } from '../../../utils';
+ import { useAbsoluteScrolledPositionToBottomOfDay, useRelativeScrolledPositionToBottomOfDay } from '../Item';
+@@ -8,7 +8,6 @@ import styles from './styles';
+ export * from './types';
+ const DayAnimated = ({ scrolledY, daysPositions, listHeight, renderDay, messages, isLoadingEarlier, ...rest }) => {
+     const opacity = useSharedValue(0);
+-    const fadeOutOpacityTimeoutId = useSharedValue(undefined);
+     const containerHeight = useSharedValue(0);
+     const isScrolledOnMount = useSharedValue(false);
+     const isLoadingEarlierAnim = useSharedValue(isLoadingEarlier);
+@@ -43,14 +42,16 @@ const DayAnimated = ({ scrolledY, daysPositions, listHeight, renderDay, messages
+     const contentStyle = useAnimatedStyle(() => ({
+         opacity: opacity.value,
+     }), [opacity]);
+-    const fadeOut = useCallback(() => {
++    // PERF: fade in on scroll, fade out after rest — entirely on the UI thread.
++    // The upstream implementation hopped to the JS thread on EVERY scroll frame
++    // (runOnJS(scheduleFadeOut) → clearTimeout + setTimeout) just to schedule the
++    // fade-out. withSequence + withDelay express the same timing (in fast, hold,
++    // out) with zero JS hops; re-assigning the sequence on each scroll frame
++    // restarts it, which is exactly the old debounce semantics.
++    const showThenFade = useCallback(() => {
+         'worklet';
+-        opacity.value = withTiming(0, { duration: 500 });
++        opacity.value = withSequence(withTiming(1, { duration: 200 }), withDelay(500, withTiming(0, { duration: 500 })));
+     }, [opacity]);
+-    const scheduleFadeOut = useCallback(() => {
+-        clearTimeout(fadeOutOpacityTimeoutId.value);
+-        fadeOutOpacityTimeoutId.value = setTimeout(fadeOut, 500);
+-    }, [fadeOut, fadeOutOpacityTimeoutId]);
+     const handleLayout = useCallback(({ nativeEvent }) => {
+         containerHeight.value = nativeEvent.layout.height;
+     }, [containerHeight]);
+@@ -61,9 +62,8 @@ const DayAnimated = ({ scrolledY, daysPositions, listHeight, renderDay, messages
+         }
+         if (value[0] === prevValue?.[0])
+             return;
+-        opacity.value = withTiming(1, { duration: 500 });
+-        runOnJS(scheduleFadeOut)();
+-    }, [scrolledY, scheduleFadeOut, daysPositionsArray]);
++        showThenFade();
++    }, [scrolledY, showThenFade, daysPositionsArray]);
+     useAnimatedReaction(() => createdAtDate.value, (value, prevValue) => {
+         if (value && value !== prevValue)
+             runOnJS(setCreatedAt)(value);
+diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/Item/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/Item/index.js
+index 17535e3..a57dd93 100644
+--- a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/Item/index.js
++++ b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/Item/index.js
+@@ -52,37 +52,9 @@ const DayWrapper = forwardRef((props, ref) => {
+ });
+ const Item = (props) => {
+     const { renderMessage: renderMessageProp, scrolledY, daysPositions, listHeight, ...rest } = props;
+-    const dayContainerHeight = useSharedValue(0);
+-    const dayTopOffset = useMemo(() => 10, []);
+-    const dayBottomMargin = useMemo(() => 10, []);
+-    const createdAt = useMemo(() => new Date(props.currentMessage.createdAt).getTime(), [props.currentMessage.createdAt]);
+-    const relativeScrolledPositionToBottomOfDay = useRelativeScrolledPositionToBottomOfDay(listHeight, scrolledY, daysPositions, dayContainerHeight, dayBottomMargin, dayTopOffset, createdAt);
+-    const handleLayoutDayContainer = useCallback(({ nativeEvent }) => {
+-        dayContainerHeight.value = nativeEvent.layout.height;
+-    }, [dayContainerHeight]);
+-    const style = useAnimatedStyle(() => ({
+-        opacity: interpolate(relativeScrolledPositionToBottomOfDay.value, [
+-            -dayTopOffset,
+-            -0.0001,
+-            0,
+-            dayContainerHeight.value + dayTopOffset,
+-        ], [
+-            0,
+-            0,
+-            1,
+-            1,
+-        ], 'clamp'),
+-    }), [relativeScrolledPositionToBottomOfDay, dayContainerHeight, dayTopOffset]);
+-    return (
+-    // do not remove key. it helps to get correct position of the day container
+-    <View key={props.currentMessage._id.toString()}>
+-      <Animated.View style={style} onLayout={handleLayoutDayContainer}>
+-        <DayWrapper {...rest}/>
+-      </Animated.View>
+-      {renderMessageProp
+-            ? renderMessageProp(rest)
+-            : <Message {...rest}/>}
+-    </View>);
++    // PERF-TEST: day-label animated wrapper removed (3 useDerivedValue chains + Animated.View per row).
++    const renderResult = renderMessageProp ? renderMessageProp(rest) : <Message {...rest}/>;
++    return <View key={props.currentMessage._id.toString()}>{renderResult}</View>;
+ };
+ export default Item;
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
+index 964b436..24cb3d8 100644
+--- a/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
++++ b/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
+@@ -188,9 +188,11 @@ function MessageContainer(props) {
+     const scrollHandler = useAnimatedScrollHandler({
+         onScroll: event => {
+             scrolledY.value = event.contentOffset.y;
+-            runOnJS(handleOnScroll)(event);
++            if (isScrollToBottomEnabled) {
++                runOnJS(handleOnScroll)(event);
++            }
+         },
+-    }, [handleOnScroll]);
++    }, [handleOnScroll, isScrollToBottomEnabled]);
+     // removes unrendered days positions when messages are added/removed
+     useEffect(() => {
+         Object.keys(daysPositions.value).forEach(key => {
+@@ -217,7 +219,7 @@ function MessageContainer(props) {
+       {isScrollToBottomEnabled
+             ? renderScrollToBottomWrapper()
+             : null}
+-      <DayAnimated scrolledY={scrolledY} daysPositions={daysPositions} listHeight={listHeight} messages={messages} isLoadingEarlier={isLoadingEarlier}/>
++      <DayAnimated scrolledY={scrolledY} daysPositions={daysPositions} listHeight={listHeight} messages={messages} isLoadingEarlier={isLoadingEarlier} renderDay={props.renderDay}/>
+     </View>);
+ }
+ export default MessageContainer;

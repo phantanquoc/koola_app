@@ -16,16 +16,16 @@
  *      absent, and the memo comparator treats a flip as "no change" so React
  *      skips the row entirely.
  *
- *   2. The viewability callback performs no state update — proven STRUCTURALLY,
- *      by reading ChatScreen's source. The callback is defined inline inside
- *      `useRef(...)` in the component body, and ChatScreen itself cannot be
- *      rendered in this environment (no jsdom; navigation, sqlite, socket,
- *      gifted-chat and bottom-sheet would all need mocking, which is the same
- *      reason the sibling chat specs test contracts rather than trees). A source
- *      assertion is a weaker instrument than a render, and it is used only where
- *      a render is unavailable — but it targets this defect exactly: the failure
- *      mode is literally "a `set*` call reappears inside this callback", and that
- *      is what it detects.
+ *   2. ChatScreen wires NO per-tick viewability — proven STRUCTURALLY, by reading
+ *      ChatScreen's source. The screen once kept a debounced media prefetch on
+ *      `onViewableItemsChanged`; on-device profiling showed that merely having the
+ *      callback wired pins the JS thread at ~100% during scroll once the loaded
+ *      window grows (ViewabilityHelper recomputes per scroll tick, cost scales
+ *      with data length), so the callback and its config were deleted outright and
+ *      the guard now asserts their absence. A source assertion is a weaker
+ *      instrument than a render, and it is used only where a render is unavailable
+ *      — but it targets this defect exactly: the failure mode is literally "the
+ *      callback comes back", and that is what it detects.
  *
  * Both halves guard against regression, which is the point: with the props and
  * the state gone, nothing else in the codebase would fail if they came back.
@@ -148,37 +148,27 @@ describe('VideoMessage exposes no isVisible prop', () => {
   });
 });
 
-// ─── 2. The viewability callback performs no state update (structural) ───────
+// ─── 2. ChatScreen wires no per-tick viewability (structural) ────────────────
+//
+// History: this block originally asserted that the viewability callback wrote no
+// React state. On-device profiling (2026-08-12, Xiaomi 2410DPN6CC) then showed the
+// deeper defect: with `onViewableItemsChanged` wired at all, FlatList's
+// ViewabilityHelper recomputes the visible set on every scroll tick and the cost
+// scales with data length — the JS thread pinned at ~100% once a conversation
+// loaded past the first screen, starving row mounts ("khựng như đợi load"). The
+// callback was removed entirely; the media prefetch it drove was cache-warming
+// only and images lazy-load on row mount. The guard below therefore inverts: the
+// regression it must catch is the callback (or its config) coming back.
 
-describe('chat viewability callback triggers no state update', () => {
+describe('chat list wires no per-tick viewability', () => {
   const chatScreenSource = readSource('screens/chat/ChatScreen.tsx');
-  const callbackBody = extractCallbackBody(
-    chatScreenSource,
-    'const onViewableItemsChanged = useRef(',
-  );
 
-  it('contains no setState call of any kind', () => {
-    // Matches the `setFoo(` convention React state setters follow. A setState
-    // here is the whole defect: it re-renders the entire GiftedChat subtree on
-    // every viewability change while the user is scrolling.
-    const setStateCalls = callbackBody.match(/\bset[A-Z]\w*\s*\(/g) ?? [];
-    expect(setStateCalls).toEqual([]);
+  it('does not define or pass onViewableItemsChanged', () => {
+    expect(chatScreenSource).not.toMatch(/onViewableItemsChanged/);
   });
 
-  it('reads messages from a ref rather than from render-scoped state', () => {
-    // Reading state instead would force the callback out of its useRef and back
-    // into a dependency-tracked callback, reintroducing identity churn.
-    expect(callbackBody).toContain('messagesRef.current');
-  });
-
-  it('still performs the ±5 neighbour media prefetch', () => {
-    // Hard constraint from design.md Decision 1: only the re-render side effect
-    // was to be removed, never the prefetch. Asserted here so a future cleanup
-    // of the state chain cannot quietly take the prefetch with it.
-    expect(callbackBody).toContain('getFromMemory');
-    expect(callbackBody).toContain('getOrDownload');
-    expect(callbackBody).toMatch(/-\s*5/);
-    expect(callbackBody).toMatch(/\+\s*5/);
+  it('does not pass a viewabilityConfig into the list', () => {
+    expect(chatScreenSource).not.toMatch(/viewabilityConfig/);
   });
 
   it('no longer holds the visibleMessageIds state chain anywhere in ChatScreen', () => {

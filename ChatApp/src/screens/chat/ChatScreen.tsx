@@ -12,7 +12,7 @@ import 'dayjs/locale/vi';
 import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
-import { getFromMemory, getOrDownload } from '../../services/media/mediaCacheService';
+import { getFromMemory } from '../../services/media/mediaCacheService';
 import type { Conversation, Message } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import { useTargetMessage } from './hooks/useTargetMessage';
@@ -63,10 +63,6 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
 
-const viewabilityConfig = {
-  itemVisiblePercentThreshold: 50,
-};
-
 // ─── Palette-aware style factory ─────────────────────────────────────────────
 function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens) {
   return StyleSheet.create({
@@ -100,6 +96,15 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
 // bubbleGrouped*/tickRow/mediaTime*/textTime*/failed*/storyRefCardWrapper) and
 // `isLastInGroup` now live in ./components/MessageItem, next to the only code
 // that reads them. Keeping a second copy here would let the two drift apart.
+
+// Stable no-ops for MemoizedMessageList props. Sending goes through ChatComposer
+// and the useMessages callbacks, never through GiftedChat's onSend, and older
+// messages load silently in the background — the default "Load earlier" spinner
+// would shift the list header on every page arrival. Both were previously inline
+// arrows / absent, which handed the memo boundary a fresh identity (or a toggling
+// boolean) and re-rendered the whole list on unrelated ChatScreen renders.
+const NOOP_SEND = () => {};
+const RENDER_NO_LOAD_EARLIER = () => null;
 
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
@@ -186,55 +191,23 @@ const ChatScreen: React.FC = () => {
   // ─── Video player state ────────────────────────────────────────────────────
   const [playerMessage, setPlayerMessage] = useState<(IMessage & Record<string, unknown>) | null>(null);
 
-  // ─── Viewability tracking: media prefetch only ────────────────────────────
-  // Intentionally writes NO React state. A setState here would re-render the
-  // whole GiftedChat subtree on every viewability change during scroll.
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<{ item: IMessage & Record<string, unknown>; index: number | null }> }) => {
-      // ─── Media prefetch around viewport ──────────────────────────────────
-      // Fire-and-forget: warm cache for images/thumbnails near visible area.
-      // Uses messagesRef (stable ref) to find ±5 neighbors by index.
-      const allMessages = messagesRef.current;
-      if (!allMessages.length || !viewableItems.length) return;
-
-      const indices = viewableItems
-        .map((v) => v.index)
-        .filter((i): i is number => i !== null);
-      if (!indices.length) return;
-
-      const minIdx = Math.max(0, Math.min(...indices) - 5);
-      const maxIdx = Math.min(allMessages.length - 1, Math.max(...indices) + 5);
-
-      for (let i = minIdx; i <= maxIdx; i++) {
-        const msg = allMessages[i] as IMessage & Record<string, unknown>;
-        if (!msg) continue;
-
-        // Image messages
-        const mediaKey = msg.mediaKey as string | undefined;
-        const mediaType = msg.mediaType as string | undefined;
-        if (mediaKey && (mediaType === 'image' || msg.image === 'media-pending')) {
-          if (!getFromMemory(mediaKey)) {
-            getOrDownload(mediaKey).catch(() => {});
-          }
-        }
-
-        // Video thumbnail
-        const thumbKey = msg.mediaThumbnailKey as string | undefined;
-        if (thumbKey && (mediaType === 'video' || msg.video)) {
-          if (!getFromMemory(thumbKey)) {
-            getOrDownload(thumbKey).catch(() => {});
-          }
-        }
-      }
-    },
-  ).current;
+  // ─── Viewability / media prefetch: REMOVED (perf isolation) ────────────────
+  // This screen previously wired the list's per-tick viewability callback to a
+  // debounced media prefetch. On-device profiling showed the JS thread pinned at
+  // ~100% during scroll once the loaded window grew past the first screen: the
+  // viewability helper recomputes the visible set on every scroll tick (60/s via
+  // scrollEventThrottle) and the cost scales with the data length, so a 1000-row
+  // conversation starved the same thread that mounts new rows — the "khựng như
+  // đợi load" past the first 50 messages. The prefetch was cache-warming only;
+  // images already lazy-load on row mount. If media warm-up is wanted back,
+  // re-implement it off scroll position (onMomentumScrollEnd / onScrollEndDrag),
+  // NOT off per-tick viewability.
 
   // ─── Header state: conversation load, avatar, title, status, header tap ────
   const {
     chatTitle,
     otherUserStatus,
     otherAvatarKey,
-    otherAvatarUrl,
     handleHeaderPress,
   } = useChatHeaderState({
     conversationId,
@@ -259,7 +232,6 @@ const ChatScreen: React.FC = () => {
     reactToMessage,
     deleteForMe,
     updateUploadProgress,
-    isLoadingEarlier,
     isInitialLoading,
     initialLoadError,
     retryInitialLoad,
@@ -394,25 +366,94 @@ const ChatScreen: React.FC = () => {
     }
   }, [messages]);
 
-  // Inject other user's avatar into messages for GiftedChat rendering.
-  // chatTitle is intentionally excluded from deps — it resolves async via
-  // getDetails and would cause a full FlatList re-render on every title change.
-  // name is not displayed in bubbles (showUserAvatar=false, showAvatarForEveryMessage=false).
-  // Perf note: when otherAvatarUrl is falsy, returns the messages reference unchanged
-  // (no new objects created). When truthy, .map() is unavoidable — avatar comes from
-  // header state, not DB, so injection at DB-map time is not possible.
-  const messagesWithAvatar = React.useMemo(() => {
-    // When a target message context window is loaded, prefer it over normal messages
-    const baseMessages = (targetContextMessages && targetContextMessages.length > 0)
+  // Pick the window GiftedChat renders. When a search navigation loaded a
+  // target-message context window, prefer it over the normal messages.
+  //
+  // No avatar injection here, on purpose. Rows never draw sender avatars
+  // (showUserAvatar={false}, showAvatarForEveryMessage={false}, and the minimal
+  // MessageItem tree has no avatar element), so the only reader of
+  // `user.avatar` on a message was the row comparator. The old
+  // `messagesWithAvatar` mapped the whole array to stamp the avatar in, which
+  // rebuilt every message object on each page arrival and invalidated GiftedChat
+  // end to end — a full-list invalidation per 40-row page for a pixel nothing
+  // renders. The header avatar is unaffected: ChatHeader resolves it from
+  // `otherAvatarKey` via UserAvatar.
+  const displayedMessages = React.useMemo(() => {
+    return (targetContextMessages && targetContextMessages.length > 0)
       ? targetContextMessages
       : messages;
-    if (!otherAvatarUrl) return baseMessages;
-    return baseMessages.map((m) =>
-      m.user._id !== currentUserId
-        ? { ...m, user: { ...m.user, avatar: otherAvatarUrl } }
-        : m,
-    );
-  }, [messages, targetContextMessages, otherAvatarUrl, currentUserId]);
+  }, [messages, targetContextMessages]);
+
+  // ─── Scroll back to newest on own send ────────────────────────────────────
+  // Sending never goes through GiftedChat: `onSend` is the stable `NOOP_SEND`
+  // and ONLINE sends flow ChatComposer -> handleSend -> useMessages ->
+  // messageRepository.insertOptimistic -> repository notify -> a fresh array
+  // in `messages`. OFFLINE sends take the sendViaQueue/outbox path instead and
+  // create no optimistic bubble, so this effect does not fire for them at send
+  // time; they snap only later, when the message materializes via socket
+  // echo/sync as a normal prepend of an own message. GiftedChat's internal
+  // `_onSend` scroll-to-bottom never runs, and nothing else moves the list —
+  // a message typed while scrolled up landed off-screen with no jump to it.
+  //
+  // THE SEND SIGNATURE IS A HEAD CHANGE, NOT LENGTH GROWTH. The repository
+  // invalidation for a send takes the `orderChanged` branch of
+  // handleInvalidation and does a FULL RELOAD capped at LIMIT =
+  // max(INITIAL_WINDOW_SIZE, loadedCount): the new row is included but the
+  // oldest row is truncated, so the window length does NOT grow on send
+  // (confirmed on device: rows=150 before, rows=150 after). A length-growth
+  // guard here was always false on the real send path and silently disabled
+  // this feature. The reliable signal is the index-0 `_id` changing to a
+  // fresh OWN-authored row. Fires only when ALL of these hold:
+  //   1. The head `_id` changed vs the tracked one — a fresh row at index 0
+  //      (or the optimistic temp id swapping for the server id on ack).
+  //   2. The new head belongs to the current user: an own send. Incoming
+  //      messages from the other user change the head the exact same way,
+  //      and this identity check is what excludes them — a receive must never
+  //      yank a reading user back to the bottom (deliberate UX decision).
+  //   3. No target-message context window is active: that snapshot has its
+  //      own scroll-to-target effect above and must not be fought.
+  // Every other mutation is excluded by check 1 or 2:
+  //   - loadEarlier appends older rows to the TAIL of the newest-first array,
+  //     so index 0 never moves.
+  //   - Incremental PATCH (reactions/status/delete) replaces rows in place;
+  //     the head's `_id` is unchanged.
+  //   - Initial mount / conversation switch can fire once when the newest
+  //     message is one's own, but offset 0 IS the mount position of the
+  //     inverted list — the scrollToOffset is a no-op there.
+  //   - The send ack (temp id -> server id) changes the head `_id` again and
+  //     re-fires at offset 0 — already there, another no-op.
+  // animated MUST stay false: the list can hold hundreds of unmounted rows
+  // between a scrolled-up position and the bottom, and an animated scroll
+  // would mount every one of them in a single pass — the exact jank this
+  // screen's memo/batch tuning exists to prevent. An instant snap mounts only
+  // what maxToRenderPerBatch schedules.
+  const prevRenderedHeadIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const first = displayedMessages[0];
+    const headChanged = !!first && String(first._id) !== prevRenderedHeadIdRef.current;
+    const isOwnHead = first?.user?._id === currentUserId;
+    const noTargetContext = !targetContextMessages || targetContextMessages.length === 0;
+    if (headChanged && isOwnHead && noTargetContext) {
+      messageContainerRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }
+    // Update the tracked head only while the live window is rendered. During
+    // a target-context snapshot, freeze the ref (skip the update) so it keeps
+    // the live window's pre-snapshot head; when the snapshot clears, the exit
+    // transition reads as no head change and no spurious snap fires. (Resetting
+    // the ref to null here would NOT achieve this: the exit run would then see
+    // a head differing from null and re-fire the very snap this prevents.)
+    if (noTargetContext) {
+      prevRenderedHeadIdRef.current = first ? String(first._id) : null;
+    }
+  }, [displayedMessages, currentUserId, targetContextMessages]);
+
+  // GiftedChat's "self" identity. Inline it would hand MemoizedMessageList a new
+  // object every ChatScreen render and fail its shallow memo; only `_id` drives
+  // left/right alignment, and the own avatar is never drawn.
+  const chatUser = React.useMemo(
+    () => ({ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }),
+    [currentUserId, user?.displayName, user?.avatar],
+  );
 
   const { typingUsers, emitTyping } = useTypingIndicator(conversationId);
   useReadReceipts(conversationId, messages, currentUserId);
@@ -520,15 +561,22 @@ const ChatScreen: React.FC = () => {
           isHighlighted={highlightedMessageId != null && id === highlightedMessageId}
           onRetry={handleRetryFailedMessage}
           getReactionPressHandler={getReactionPressHandler}
+          // Other sender's avatar for incoming rows. Threaded as plain props —
+          // NOT injected into the message objects — so a header resolve repaints
+          // rows once instead of rebuilding the whole messages array.
+          otherAvatarKey={otherAvatarKey}
+          otherDisplayName={chatTitle}
         />
       );
     },
     [
+      chatTitle,
       currentUserId,
       getReactionPressHandler,
       handleRetryFailedMessage,
       highlightedMessageId,
       messageStyles,
+      otherAvatarKey,
       tokens,
     ],
   );
@@ -795,12 +843,11 @@ const ChatScreen: React.FC = () => {
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
   // Stabilize listViewProps reference to prevent memo boundary from breaking.
-  // All values are frozen constants or stable refs (viewabilityConfig, onViewableItemsChanged).
   // composerScrollClearance depends on insets but is computed once at mount.
+  // NOTE: no per-tick viewability props here — see the removal note near the top
+  // of the component for why they were dropped.
   const stableListViewProps = useMemo(
     () => ({
-      viewabilityConfig,
-      onViewableItemsChanged,
       scrollEventThrottle: 16,
       contentContainerStyle: {
         paddingTop: composerScrollClearance,
@@ -809,9 +856,24 @@ const ChatScreen: React.FC = () => {
       showsVerticalScrollIndicator: false,
       removeClippedSubviews: false,
       initialNumToRender: 10,
-      maxToRenderPerBatch: 5,
-      windowSize: 7,
-      updateCellsBatchingPeriod: 100,
+      // Real-device recalibration. The conservative pair (5 / 100) was tuned on the
+      // emulator, whose weak JS thread starved scrolling whenever a batch landed;
+      // on device the bottleneck inverts — a fast flick outruns a 5-row batch that
+      // only schedules every 100ms, so the viewport shows blank space until the
+      // next batch lands ("khựng như đợi load"). A larger batch on a shorter
+      // period spends the device's spare JS headroom on mount throughput instead.
+      maxToRenderPerBatch: 12,
+      windowSize: 21,
+      updateCellsBatchingPeriod: 50,
+      // Start fetching older messages one full screen before the user reaches
+      // the top instead of at half a screen. GiftedChat hardcodes 0.1 on its
+      // FlatList but spreads `listViewProps` after it, so this override wins.
+      // The fetch is a local SQLite read on `idx_messages_conv_created`, so
+      // triggering it early costs little and is what keeps the "load earlier"
+      // spinner off screen; an 80-row page (EARLIER_PAGE_SIZE, ≈ 4 screens of
+      // rows) landing this far ahead of the cursor means the next page is
+      // already mounted before a fast flick can outrun it.
+      onEndReachedThreshold: 1.0,
       onScrollToIndexFailed: (info: { index: number; averageItemLength: number }) => {
         const offset = info.averageItemLength * info.index;
         messageContainerRef.current?.scrollToOffset({ offset, animated: true });
@@ -820,7 +882,7 @@ const ChatScreen: React.FC = () => {
         }, 100);
       },
     }),
-    [composerScrollClearance, onViewableItemsChanged],
+    [composerScrollClearance],
   );
 
   return (
@@ -895,9 +957,9 @@ const ChatScreen: React.FC = () => {
         <View style={{ flex: 1, opacity: chatReady ? 1 : 0 }}>
           <MemoizedMessageList
             messageContainerRef={messageContainerRef as unknown as React.ComponentProps<typeof GiftedChat>['messageContainerRef']}
-            messages={messagesWithAvatar}
-            onSend={() => {}}
-            user={{ _id: currentUserId, name: user?.displayName, avatar: user?.avatar }}
+            messages={displayedMessages}
+            onSend={NOOP_SEND}
+            user={chatUser}
             renderMessage={renderMessage}
             renderInputToolbar={renderInputToolbar}
             renderSystemMessage={renderSystemMessage}
@@ -908,11 +970,12 @@ const ChatScreen: React.FC = () => {
             timeFormat="HH:mm"
             locale="vi"
             renderFooter={renderFooter}
+            renderAvatar={null}
             showUserAvatar={false}
             showAvatarForEveryMessage={false}
             loadEarlier={hasEarlier}
             onLoadEarlier={loadEarlier}
-            isLoadingEarlier={isLoadingEarlier}
+            renderLoadEarlier={RENDER_NO_LOAD_EARLIER}
             alwaysShowSend
             infiniteScroll
             onLongPress={handleLongPress}

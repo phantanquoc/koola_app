@@ -65,6 +65,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import dayjs from 'dayjs';
 import StoryReferenceCard from '../../../components/moments/StoryReferenceCard';
 import ReactionDisplay from '../../../components/ReactionDisplay';
+import UserAvatar from '../../../components/UserAvatar';
 import type { MessageReaction } from '../../../types';
 import { KoolaText, koolaRadii, koolaSpacing } from '../../../ui';
 import type { SemanticTokens } from '../../../ui/tokens/semantic';
@@ -190,6 +191,18 @@ export function makeMessageItemStyles(
     textTimeLabel: {
       fontSize: 11,
     },
+    // Sender avatar for incoming rows. The incoming bubble shifts right by
+    // `incomingAvatarGutter` so a 28 dp avatar fits in the left gutter, parked
+    // absolute and bottom-aligned with the run's last bubble. Absolute so the
+    // avatar adds no height to the row and bubbles never shift when it resolves.
+    incomingAvatarGutter: {
+      marginLeft: 34,
+    },
+    avatarGutter: {
+      position: 'absolute',
+      left: 2,
+      bottom: 0,
+    },
   });
 }
 
@@ -245,6 +258,14 @@ export interface MessageItemProps extends MessageProps<IMessage> {
   renderMessageVideo?: (props: RenderMessageVideoProps<IMessage>) => React.ReactNode;
   renderCustomView?: (props: BubbleProps<IMessage>) => React.ReactNode;
   /**
+   * Other sender's avatar, threaded as plain props by ChatScreen (header state)
+   * instead of being injected into every message object. Rendered in the left
+   * gutter of incoming rows, only on the last bubble of a run; grouped rows
+   * still reserve the gutter so bubbles stay aligned.
+   */
+  otherAvatarKey?: string;
+  otherDisplayName?: string;
+  /**
    * Also a Bubble prop rather than a `MessageProps` one, declared for the same
    * reason: to put it under the ledger guard. Unlike the three above it is NOT
    * compared, because this component passes its own `renderTime` AFTER the
@@ -267,8 +288,23 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
     isHighlighted,
     onRetry,
     getReactionPressHandler,
+    otherAvatarKey,
+    otherDisplayName,
     ...giftedProps
   } = props;
+
+  // Sender-avatar visibility for incoming rows, computed here at the ROW level
+  // (not inside renderBubble): the avatar is drawn on the row root below so its
+  // absolute positioning anchors to the row = the screen edge, not to the
+  // bubble (which sits `incomingAvatarGutter` dp to the right). Conditions:
+  // incoming sender, not a system message, and last bubble of the sender's run
+  // — the same grouping check renderBubble uses for the bubble tail.
+  const currentMessage = giftedProps.currentMessage;
+  const showIncomingAvatar =
+    !!currentMessage &&
+    !currentMessage.system &&
+    currentMessage.user._id !== currentUserId &&
+    isLastInGroup(props);
 
   // Ported verbatim from ChatScreen's former `renderBubble`, with one change:
   // `isHighlighted` is now a prop decided per row instead of being derived from
@@ -323,7 +359,7 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
         <View
           style={[
             styles.bubbleWrapperBase,
-            isRight ? styles.bubbleInsetRight : styles.bubbleInsetLeft,
+            isRight ? styles.bubbleInsetRight : [styles.bubbleInsetLeft, styles.incomingAvatarGutter],
             bubbleWrapStyle,
           ]}>
           {/* Leading custom view */}
@@ -350,7 +386,6 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
           </View>
         </View>
       );
-
       // TASK 3.1–3.3: Re-host the long-press gesture on the row's own wrapper.
       // System messages must NOT trigger long-press (task 3.4). Failed messages
       // need BOTH tap-retry (single tap) and long-press-menu on the same subtree
@@ -382,6 +417,9 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
 
       return (
         <View style={[styles.bubbleOuter, isHighlighted && styles.bubbleHighlight]}>
+          {/* The sender avatar is NOT rendered here — it lives on the row root
+              (see the component body below) so its absolute positioning anchors
+              to the screen edge instead of to this bubble's offset box. */}
           {/* Story reference card above bubble */}
           {storyReply && (
             <View style={styles.storyRefCardWrapper}>
@@ -424,11 +462,27 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
   );
 
   return (
-    <Message
-      {...giftedProps}
-      renderBubble={renderBubble}
-      shouldUpdateMessage={alwaysUpdate}
-    />
+    <View>
+      {/* Sender avatar in the left gutter, once per run (last bubble). Drawn on
+          the row ROOT — not inside renderBubble — so `avatarGutter`'s absolute
+          left:2 anchors to the row/screen edge. Absolute + pointerEvents none,
+          so it adds no row height, never shifts the bubble, and never captures
+          touches. */}
+      {showIncomingAvatar && (
+        <View style={styles.avatarGutter} pointerEvents="none">
+          <UserAvatar
+            displayName={otherDisplayName ?? ''}
+            avatar={otherAvatarKey}
+            size={28}
+          />
+        </View>
+      )}
+      <Message
+        {...giftedProps}
+        renderBubble={renderBubble}
+        shouldUpdateMessage={alwaysUpdate}
+      />
+    </View>
   );
 };
 

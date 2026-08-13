@@ -1,0 +1,5 @@
+{
+  "ignore_dirs": [
+    "node_modules/@op-engineering/op-sqlite/android/build"
+  ]
+}

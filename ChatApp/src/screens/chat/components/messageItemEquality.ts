@@ -84,6 +84,10 @@ export interface ComparableMessageItemProps {
   renderMessageImage?: unknown;
   renderMessageVideo?: unknown;
   renderCustomView?: unknown;
+  // Other-side sender avatar, threaded as its own props (never injected into the
+  // message objects — see MessageItem). A header resolve must repaint rows.
+  otherAvatarKey?: unknown;
+  otherDisplayName?: unknown;
 }
 
 /**
@@ -200,10 +204,10 @@ export function sameMessage(
     a.imageHeight === b.imageHeight &&
     // Story-reply card.
     a.metadata === b.metadata &&
-    // Sender identity decides left/right. `avatar` is injected asynchronously by
-    // ChatScreen's `messagesWithAvatar` once the header resolves it, which
-    // rebuilds the message object — without this check the avatar would never
-    // appear on a row that was already mounted.
+    // Sender identity decides left/right. `avatar` on the message object is
+    // legacy: rows now receive the other sender's avatar as their own props
+    // (`otherAvatarKey`/`otherDisplayName`, compared in the memo comparator),
+    // so nothing injects it here anymore — the check stays as a harmless guard.
     a.user?._id === b.user?._id &&
     a.user?.avatar === b.user?.avatar
   );
@@ -240,6 +244,10 @@ export function messageItemPropsEqual(
     prev.renderMessageImage === next.renderMessageImage &&
     prev.renderMessageVideo === next.renderMessageVideo &&
     prev.renderCustomView === next.renderCustomView &&
+    // Sender avatar for incoming rows: threaded as plain props so the header's
+    // async resolve repaints rows, while message objects stay untouched.
+    prev.otherAvatarKey === next.otherAvatarKey &&
+    prev.otherDisplayName === next.otherDisplayName &&
     sameCurrentMessage(prev.currentMessage, next.currentMessage) &&
     sameNeighbour(prev.previousMessage, next.previousMessage) &&
     sameNeighbour(prev.nextMessage, next.nextMessage)
@@ -287,7 +295,9 @@ type ComparedPropKey =
   | 'nextMessage'
   | 'renderMessageImage'
   | 'renderMessageVideo'
-  | 'renderCustomView';
+  | 'renderCustomView'
+  | 'otherAvatarKey'
+  | 'otherDisplayName';
 
 /**
  * Keys deliberately NOT compared, each with the reason it cannot produce a
@@ -317,10 +327,13 @@ type UncomparedPropKey =
   // row reads it — neither `Message` nor `Bubble` declares it.
   | 'renderDay'
   // Constant for the life of the screen: ChatScreen passes the literal
-  // `showUserAvatar={false}` and never passes `containerStyle`, `renderAvatar`
-  // or `onMessageLayout` at all, and leaves `inverted` at GiftedChat's default.
-  // A fixed value cannot change between two renders, so there is nothing to
-  // detect. If ChatScreen ever makes one of these dynamic, move it above.
+  // `showUserAvatar={false}`, the literal `renderAvatar={null}` (gifted-chat
+  // treats `null` as "render no avatar", which also removes the invisible
+  // avatar slot `Message` would otherwise reserve for incoming rows), and never
+  // passes `containerStyle` or `onMessageLayout` at all, leaving `inverted` at
+  // GiftedChat's default. A fixed value cannot change between two renders, so
+  // there is nothing to detect. If ChatScreen ever makes one of these dynamic,
+  // move it above.
   | 'showUserAvatar'
   | 'inverted'
   | 'containerStyle'
