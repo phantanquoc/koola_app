@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import type { Conversation } from '../types';
@@ -10,7 +10,7 @@ import { formatShortTimestamp } from '../utils/formatViTimestamp';
 
 interface Props {
   conversation: Conversation;
-  onPress: () => void;
+  onPress: (conversation: Conversation) => void;
 }
 
 export function resolveConversationHeader(
@@ -74,6 +74,14 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   const previewIcon = getPreviewIcon(lastMessagePreview);
   const [isPressed, setIsPressed] = React.useState(false);
 
+  // The parent passes ONE stable handler for every row (no per-item closure),
+  // so this callback's identity only changes when the row's conversation
+  // reference changes — which, combined with the parent's row-reference cache,
+  // keeps React.memo effective for unchanged rows.
+  const handlePress = useCallback(() => {
+    onPress(conversation);
+  }, [onPress, conversation]);
+
   const itemStyles = useMemo(() => makeItemStyles(tokens.semantic), [tokens.semantic]);
 
   return (
@@ -85,7 +93,7 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
       onPressIn={() => setIsPressed(true)}
       onPressOut={() => setIsPressed(false)}
       android_ripple={{ color: tokens.semantic.surface.level0 }}
-      onPress={onPress}
+      onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`Trò chuyện với ${displayName}`}>
       <UserAvatar

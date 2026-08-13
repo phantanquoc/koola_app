@@ -55,6 +55,25 @@ const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
 );
 
+/**
+ * Fingerprint of exactly the fields that drive a conversation row's render.
+ * The row-reference cache compares this across SQLite reads so unchanged rows
+ * keep the SAME object reference and React.memo(ConversationListItem) hits.
+ */
+function conversationFingerprint(c: Conversation): string {
+  const members = (c.members || [])
+    .map(
+      (m) =>
+        `${m.userId}|${m.user?.displayName ?? ''}|${m.user?.avatar ?? ''}|${
+          m.user?.isOnline ? 1 : 0
+        }`,
+    )
+    .join(';');
+  return `${c.type}|${c.name ?? ''}|${c.avatar ?? ''}|${c.lastMessagePreview ?? ''}|${
+    c.lastMessageAt ?? ''
+  }|${c.unreadCount ?? 0}||${members}`;
+}
+
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation<ConversationListScreenNavigationProp>();
   const tabBarInset = useTabBarBottomInset();
@@ -120,6 +139,11 @@ const ConversationListScreen: React.FC = () => {
   const fetchingRef = useRef(false);
   const paginationRef = useRef<PaginationState>(INITIAL_PAGINATION_STATE);
   const lastFetchAtRef = useRef(0);
+  // Row-reference cache for the SQLite read path: id → (fingerprint + object).
+  // SQLite reads rebuild every Conversation object; reusing the previous
+  // reference when the render-relevant fingerprint is unchanged lets
+  // React.memo on ConversationListItem skip re-renders for stable rows.
+  const rowCacheRef = useRef(new Map<string, { fp: string; obj: Conversation }>());
 
   // ─── SQLite read path (task 5.4) ──────────────────────────────────────────
   // When LOCAL_FIRST_SQLITE is on: read from conversationRepository + subscribe.
@@ -144,6 +168,11 @@ const ConversationListScreen: React.FC = () => {
     paginationRef.current = INITIAL_PAGINATION_STATE;
     setPage(INITIAL_PAGINATION_STATE.nextPage);
 
+    // The previous account's row references describe nothing for the new
+    // account — drop them so the cache can't hand stale objects to this
+    // account's render (also keeps the cache bounded).
+    rowCacheRef.current.clear();
+
     // Initial read from SQLite
     const loadFromDb = () => {
       const t0 = Date.now();
@@ -167,7 +196,28 @@ const ConversationListScreen: React.FC = () => {
         createdAt: new Date().toISOString(),
         updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
       })) as unknown as Conversation[];
-      setConversations(mapped);
+
+      // Row-reference stability: reuse the previous Conversation object when
+      // its render-relevant fingerprint is unchanged, so unchanged rows keep
+      // the SAME reference and React.memo(ConversationListItem) skips them.
+      const cache = rowCacheRef.current;
+      const stabilized = mapped.map((candidate) => {
+        const fp = conversationFingerprint(candidate);
+        const hit = cache.get(candidate._id);
+        if (hit && hit.fp === fp) return hit.obj;
+        cache.set(candidate._id, { fp, obj: candidate });
+        return candidate;
+      });
+      // Prune ids that fell out of the read window so the cache doesn't grow
+      // unbounded (only when the window shrinks, so it stays cheap).
+      if (stabilized.length < cache.size) {
+        const liveIds = new Set(stabilized.map((c) => c._id));
+        for (const id of cache.keys()) {
+          if (!liveIds.has(id)) cache.delete(id);
+        }
+      }
+
+      setConversations(stabilized);
       if (__DEV__) {
         console.log(`[PERF ConvList] SQLite queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
       }
@@ -334,16 +384,26 @@ const ConversationListScreen: React.FC = () => {
     };
 
     const handlePresenceUpdate = (data: { userId: string; isOnline: boolean }) => {
-      setConversations((prev) =>
-        prev.map((conv) => ({
-          ...conv,
-          members: conv.members.map((m) =>
-            m.userId === data.userId && m.user
-              ? { ...m, user: { ...m.user, isOnline: data.isOnline } }
-              : m,
-          ),
-        })),
-      );
+      setConversations((prev) => {
+        // Targeted update: only conversations that contain this user get new
+        // references; every other row is returned with the SAME reference so
+        // React.memo(ConversationListItem) skips it entirely.
+        let touched = false;
+        const next = prev.map((conv) => {
+          if (!conv.members.some((m) => m.userId === data.userId)) return conv;
+          touched = true;
+          return {
+            ...conv,
+            members: conv.members.map((m) =>
+              m.userId === data.userId && m.user
+                ? { ...m, user: { ...m.user, isOnline: data.isOnline } }
+                : m,
+            ),
+          };
+        });
+        // No conversation contains this user — skip the state update entirely.
+        return touched ? next : prev;
+      });
     };
 
     socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
@@ -375,12 +435,12 @@ const ConversationListScreen: React.FC = () => {
     navigation.navigate('Chat', { conversationId: conv._id, displayName, avatar });
   }, [navigation, user?._id]);
 
+  // ONE stable handler for every row (no per-item closure): the row component
+  // calls onPress(conversation) itself. With the row-reference cache above,
+  // this is what lets React.memo on ConversationListItem hit for stable rows.
   const renderConversation = useCallback(
     ({ item }: { item: Conversation }) => (
-      <ConversationListItem
-        conversation={item}
-        onPress={() => handleConversationPress(item)}
-      />
+      <ConversationListItem conversation={item} onPress={handleConversationPress} />
     ),
     [handleConversationPress],
   );
@@ -445,12 +505,20 @@ const ConversationListScreen: React.FC = () => {
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
         initialNumToRender={10}
-        maxToRenderPerBatch={8}
-        windowSize={7}
+        // Batch tuning follows the ChatScreen device-calibration precedent
+        // (screens/chat/ChatScreen.tsx stableListViewProps): a larger batch on
+        // a short period spends the device's spare JS headroom on mount
+        // throughput, and a wider window keeps more rows mounted so fast
+        // flicks don't hit blank space. removeClippedSubviews must stay false
+        // (Fabric #53258).
+        maxToRenderPerBatch={10}
+        windowSize={15}
         updateCellsBatchingPeriod={50}
         data={conversations}
         keyExtractor={(item) => item._id}
         renderItem={renderConversation}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={[
           screenStyles.listContent,
           { paddingBottom: tabBarInset },
@@ -481,7 +549,7 @@ const ConversationListScreen: React.FC = () => {
           )
         }
         ListFooterComponent={
-          hasMore ? <LoadingFooter loading={loading} onLoadMore={handleLoadMore} /> : null
+          hasMore && loading ? <LoadingFooter /> : null
         }
         refreshControl={
           <RefreshControl

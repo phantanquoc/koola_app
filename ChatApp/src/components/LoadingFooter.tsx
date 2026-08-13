@@ -1,29 +1,18 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { KoolaText, useTheme } from '../ui';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useTheme } from '../ui';
 
-interface Props {
-  loading: boolean;
-  onLoadMore: () => void;
-}
-
-const LoadingFooter: React.FC<Props> = ({ loading, onLoadMore }) => {
+/**
+ * Infinite-scroll footer: a pure centered loading indicator. The list drives
+ * pagination itself via onEndReached, so there is no manual "load more" button.
+ */
+const LoadingFooter: React.FC = () => {
   const { tokens } = useTheme();
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
-      </View>
-    );
-  }
-
   return (
-    <Pressable style={styles.container} onPress={onLoadMore}>
-      <KoolaText tone="primary" weight="800">
-        Tải thêm
-      </KoolaText>
-    </Pressable>
+    <View style={styles.container}>
+      <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
+    </View>
   );
 };
 
