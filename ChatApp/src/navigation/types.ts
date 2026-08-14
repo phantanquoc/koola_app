@@ -23,7 +23,7 @@ export type ChatSubTabParamList = {
 
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────
 export type ChatTabStackParamList = {
-  ChatHome: { resetToMessages?: boolean } | undefined;
+  ChatHome: undefined;
   Chat: { conversationId: string; displayName?: string; avatar?: string; targetMessageId?: string };
   GroupInfo: { conversationId: string };
   Profile: { userId: string };

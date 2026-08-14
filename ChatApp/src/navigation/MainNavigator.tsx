@@ -21,6 +21,7 @@ import ShoppingTabStack from './ShoppingTabStack';
 import ConnectTabStack from './ConnectTabStack';
 import SupportTabStack from './SupportTabStack';
 import PersonalTabStack from './PersonalTabStack';
+import { requestChatHomeReset } from './chatTabReset';
 import { KoolaText, koolaDarkShadows, koolaShadows, useTheme } from '../ui';
 import type { Palette } from '../ui/theme';
 
@@ -391,21 +392,20 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                   });
                   if (event.defaultPrevented) return;
                   if (!isFocused) {
-                    // Navigating to Chat from another tab: reset to Messages
+                    // Navigating to Chat from another tab: reset to Messages.
+                    // Signal via emitter instead of navigation params so the
+                    // route object doesn't change — keeps the switch frame
+                    // free of navigation-driven re-renders inside ChatHome.
                     if (routeName === 'ChatTab') {
-                      navigation.navigate('ChatTab', {
-                        screen: 'ChatHome',
-                        params: { resetToMessages: true },
-                      } as never);
+                      navigation.navigate('ChatTab', { screen: 'ChatHome' } as never);
+                      requestChatHomeReset();
                     } else {
                       navigation.navigate(route.name as never);
                     }
                   } else if (routeName === 'ChatTab') {
-                    // Reselect Chat while already focused: reset nested tab to Messages
-                    navigation.navigate('ChatTab', {
-                      screen: 'ChatHome',
-                      params: { resetToMessages: true },
-                    } as never);
+                    // Reselect Chat while already focused: reset nested tab to Messages.
+                    navigation.navigate('ChatTab', { screen: 'ChatHome' } as never);
+                    requestChatHomeReset();
                   }
                 }}
                 onLongPress={() => {
@@ -458,7 +458,18 @@ const MainNavigator: React.FC = () => {
             elevation: 0,
           },
         }}>
-        <Tab.Screen name="ChatTab" component={ChatTabStack} />
+        <Tab.Screen
+          name="ChatTab"
+          component={ChatTabStack}
+          // WHY: ChatTab holds the heaviest subtree (nested material-top-tabs +
+          // FlatList + Reanimated sub-tab bar). With screenOptions.freezeOnBlur:true,
+          // every revisit flushes that entire subtree in one frame → jank. Keeping
+          // this tab live spreads socket-driven renders across idle frames instead
+          // of batching them into the switch moment. Stack-level freeze on inner
+          // screens (Chat, Profile, etc.) is untouched — only the Tab.Screen wrapper
+          // opts out so the nested TopTab.Navigator stays mounted.
+          options={{ freezeOnBlur: false }}
+        />
         <Tab.Screen
           name="ShoppingTab"
           component={ShoppingTabStack}

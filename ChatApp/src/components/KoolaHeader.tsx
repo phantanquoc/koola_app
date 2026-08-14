@@ -30,7 +30,7 @@ interface KoolaHeaderProps {
   showBottomHairline?: boolean;
 }
 
-const KoolaHeader: React.FC<KoolaHeaderProps> = ({
+const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
   searchPlaceholder = 'Tìm kiếm',
   onSearchPress,
   onQrPress,
@@ -458,5 +458,11 @@ const HeaderDockChrome: React.FC<HeaderDockChromeProps> = ({
     <View pointerEvents="none" style={styles.dockBottomHairline} />
   </>
 );
+
+// WHY memo: props are stable callbacks or constant primitives at every call site.
+// Memoizing bails the re-render when a parent (e.g. ChatHomeScreen) re-renders
+// for reasons unrelated to header state, keeping the command dock out of the
+// tab-switch render budget.
+const KoolaHeader: React.FC<KoolaHeaderProps> = React.memo(KoolaHeaderInner);
 
 export default KoolaHeader;

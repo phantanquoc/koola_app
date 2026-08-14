@@ -1,17 +1,19 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Animated as NativeAnimated, View, Pressable } from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
   Easing,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
+import { onChatHomeReset } from '../../navigation/chatTabReset';
 import KoolaHeader from '../../components/KoolaHeader';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import ConversationListScreen from './ConversationListScreen';
@@ -21,7 +23,7 @@ import ShortsScreen from './ShortsScreen';
 import CallsScreen from './CallsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
-import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
@@ -306,51 +308,73 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
   );
 };
 
-// ─── Screen ──────────────────────────────────────────────────────────────────
-const ChatHomeScreen: React.FC = () => {
+// ─── Heavy content subtree (memo boundary) ────────────────────────────────────
+// Why a separate React.memo component: ChatHomeScreen re-renders on every
+// bottom-tab focus cycle (route.params dance, modal state toggles, header
+// press feedback). Without this boundary each of those re-renders walks the
+// entire nested TopTab.Navigator tree — 5 sub-tabs, each mounting its own
+// screen component — even though none of that UI depends on the outer state.
+// Memoizing here confines those re-renders to the chrome layer above and
+// keeps the unfreeze-from-freezeOnBlur path from repainting the whole subtree
+// on every tab switch. Props are deliberately narrow and all stable (refs,
+// useCallback'd handlers, the shared value itself which is a stable object).
+interface ChatHomeContentProps {
+  styles: ReturnType<typeof makeScreenStyles>;
+  hiddenProgress: SharedValue<number>;
+  topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
+  qrVisible: boolean;
+  onQrClose: () => void;
+  onNavigateProfile: (userId: string) => void;
+  onNavigateChat: (conversationId: string) => void;
+  groupModalVisible: boolean;
+  setGroupModalVisible: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
+  styles: _styles,
+  hiddenProgress,
+  topTabNavRef,
+  qrVisible,
+  onQrClose,
+  onNavigateProfile,
+  onNavigateChat,
+  groupModalVisible,
+  setGroupModalVisible,
+}) {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
-  const route = useRoute<any>();
-  const { tokens } = useTheme();
-  const [qrVisible, setQrVisible] = useState(false);
-  const [groupModalVisible, setGroupModalVisible] = useState(false);
-  const hiddenProgress = useSharedValue(0);
-  const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
-  // Deterministic Chat entry: when resetToMessages param arrives, navigate the
-  // nested TopTab to Messages. This receives the reset from MainNavigator's
-  // tabPress handler (both cross-tab navigation and reselect).
-  useEffect(() => {
-    if (route.params?.resetToMessages && topTabNavRef.current) {
-      topTabNavRef.current.navigate('Messages');
-      // Clear the param so subsequent focuses don't re-trigger
-      navigation.setParams({ resetToMessages: undefined } as any);
-    }
-  }, [route.params?.resetToMessages, navigation]);
+  // Stable context value: `hiddenProgress` is a Reanimated shared value (stable
+  // object identity across renders), so wrapping it in useMemo means the
+  // Provider's `value` prop only changes when the shared value itself would —
+  // which is never. Without this, every parent re-render built a fresh
+  // `{ hiddenProgress }` object literal and forced every consumer subtree to
+  // re-render even though the underlying shared value hadn't changed. That was
+  // the dominant cost on the freezeOnBlur flush (4 state updates in rapid
+  // succession each rebuilt the context value and cascaded through 5 sub-tabs).
+  const visibilityValue = useMemo(() => ({ hiddenProgress }), [hiddenProgress]);
 
-  const screenStyles = useMemo(() => ({
-    container: {
-      flex: 1,
-      backgroundColor: tokens.semantic.bg.canvas,
-    },
-  }), [tokens.semantic]);
+  // Deterministic Chat entry: subscribe to the emitter fired by MainNavigator's
+  // ChatTab handler (both cross-tab navigation and reselect). This replaces the
+  // route-params reset dance so no navigation state update happens on tab switch
+  // — the emit touches nothing inside the navigation tree, keeping the switch
+  // frame free of an extra render pass.
+  useEffect(() => onChatHomeReset(() => {
+    topTabNavRef.current?.navigate('Messages');
+  }), [topTabNavRef]);
 
-  const handleQrPress = useCallback(() => setQrVisible(true), []);
-  const handleQrClose = useCallback(() => setQrVisible(false), []);
-  const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
-  const handleSearchPress = useCallback(() => {
-    navigation.navigate('UniversalSearch');
-  }, [navigation]);
-  const handleNavigateProfile = useCallback((userId: string) => {
-    navigation.navigate('Profile', { userId });
-  }, [navigation]);
-  const handleNavigateChat = useCallback((conversationId: string) => {
-    navigation.navigate('Chat', { conversationId });
-  }, [navigation]);
+  // onCreated must be stable for GroupCreateModal AND for this memo boundary.
+  // It closes over `navigation` only (a stable navigator ref), so deps are
+  // correct and the callback identity survives parent re-renders.
+  const handleGroupCreated = useCallback((conv: { _id: string }) => {
+    setGroupModalVisible(false);
+    navigation.navigate('Chat', { conversationId: conv._id });
+  }, [navigation, setGroupModalVisible]);
+
+  const handleCloseGroupModal = useCallback(() => setGroupModalVisible(false), [setGroupModalVisible]);
 
   return (
-    <View style={screenStyles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder />
-      <ChatSubTabVisibilityContext.Provider value={{ hiddenProgress }}>
+    <>
+      <ChatSubTabVisibilityContext.Provider value={visibilityValue}>
         <TopTab.Navigator
           tabBar={(props) => {
             // Capture the top-tab navigation for reset-to-Messages
@@ -370,20 +394,157 @@ const ChatHomeScreen: React.FC = () => {
       </ChatSubTabVisibilityContext.Provider>
       <QrScannerModal
         visible={qrVisible}
-        onClose={handleQrClose}
-        onNavigateProfile={handleNavigateProfile}
-        onNavigateChat={handleNavigateChat}
+        onClose={onQrClose}
+        onNavigateProfile={onNavigateProfile}
+        onNavigateChat={onNavigateChat}
       />
       <GroupCreateModal
         visible={groupModalVisible}
-        onClose={() => setGroupModalVisible(false)}
-        onCreated={(conv) => {
-          setGroupModalVisible(false);
-          navigation.navigate('Chat', { conversationId: conv._id });
-        }}
+        onClose={handleCloseGroupModal}
+        onCreated={handleGroupCreated}
       />
+    </>
+  );
+});
+
+// ─── Screen ──────────────────────────────────────────────────────────────────
+const ChatHomeScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
+  const { tokens } = useTheme();
+  const [qrVisible, setQrVisible] = useState(false);
+  const [groupModalVisible, setGroupModalVisible] = useState(false);
+  const hiddenProgress = useSharedValue(0);
+  const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
+
+  // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
+  // ChatHomeScreen is the only bottom tab holding a nested material-top-tabs
+  // (5 sub-tabs) + a large FlatList + a Reanimated sub-tab bar. With
+  // freezeOnBlur, returning to this tab unfreezes and re-renders that whole
+  // subtree in one frame → jank ("đơ một nhịp"). Deferring the nested content
+  // behind a shell frame spreads that cost, mirroring the proven D1 pattern on
+  // Shopping/Connect. The ref guard makes this fire once per mount only, so a
+  // revisit of an already-populated screen skips the skeleton (no flash).
+  const [contentReady, setContentReady] = useState(false);
+  const contentReadyFired = useRef(false);
+
+  useEffect(() => {
+    if (contentReadyFired.current) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      contentReadyFired.current = true;
+      setContentReady(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
+
+  const handleQrPress = useCallback(() => setQrVisible(true), []);
+  const handleQrClose = useCallback(() => setQrVisible(false), []);
+  const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
+  const handleSearchPress = useCallback(() => {
+    navigation.navigate('UniversalSearch');
+  }, [navigation]);
+  const handleNavigateProfile = useCallback((userId: string) => {
+    navigation.navigate('Profile', { userId });
+  }, [navigation]);
+  const handleNavigateChat = useCallback((conversationId: string) => {
+    navigation.navigate('Chat', { conversationId });
+  }, [navigation]);
+
+  return (
+    <View style={screenStyles.container}>
+      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder />
+      {!contentReady ? (
+        // Interactive shell: KoolaHeader (command dock) stays live above; the
+        // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
+        // sized to the conversation-list layout so there is no layout shift when
+        // the real content swaps in. One frame only — InteractionManager fires
+        // right after the shell paints.
+        <ChatHomeShell styles={screenStyles} />
+      ) : (
+        <ChatHomeContent
+          styles={screenStyles}
+          hiddenProgress={hiddenProgress}
+          topTabNavRef={topTabNavRef}
+          qrVisible={qrVisible}
+          onQrClose={handleQrClose}
+          onNavigateProfile={handleNavigateProfile}
+          onNavigateChat={handleNavigateChat}
+          groupModalVisible={groupModalVisible}
+          setGroupModalVisible={setGroupModalVisible}
+        />
+      )}
     </View>
   );
 };
+
+// ─── Shell (first-mount / unfreeze placeholder) ───────────────────────────
+// Skeleton sub-tab bar strip (matching CustomTabBar's 5 icon slots at
+// CHAT_SUB_TAB_BAR_HEIGHT) + skeleton conversation rows (matching
+// ConversationListItem: 48px avatar, minHeight 72, hairline separators).
+const SHELL_ROW_KEYS = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'];
+const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3', 't4'];
+
+const ChatHomeShell: React.FC<{ styles: ReturnType<typeof makeScreenStyles> }> = ({ styles }) => (
+  <View style={styles.shellBody}>
+    <View style={styles.shellSubTabBar}>
+      {SHELL_TAB_KEYS.map((key) => (
+        <View key={key} style={styles.shellSubTabItem}>
+          <KoolaSkeleton width={24} height={24} radius={koolaRadii.pill} />
+        </View>
+      ))}
+    </View>
+    {SHELL_ROW_KEYS.map((key) => (
+      <View key={key} style={styles.shellRow}>
+        <KoolaSkeleton width={48} height={48} radius={koolaRadii.pill} />
+        <View style={styles.shellRowContent}>
+          <KoolaSkeleton width="55%" height={14} />
+          <KoolaSkeleton width="80%" height={12} style={styles.shellRowPreview} />
+        </View>
+      </View>
+    ))}
+  </View>
+);
+
+function makeScreenStyles(semantic: SemanticTokens) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: semantic.bg.canvas,
+    },
+    shellBody: {
+      flex: 1,
+    },
+    shellSubTabBar: {
+      height: CHAT_SUB_TAB_BAR_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: semantic.surface.level1,
+      paddingHorizontal: 4,
+    },
+    shellSubTabItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    shellRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 72,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      backgroundColor: semantic.surface.level1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    shellRowContent: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    shellRowPreview: {
+      marginTop: 8,
+    },
+  });
+}
 
 export default ChatHomeScreen;

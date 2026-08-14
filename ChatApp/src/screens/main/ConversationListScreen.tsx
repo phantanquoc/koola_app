@@ -333,12 +333,33 @@ const ConversationListScreen: React.FC = () => {
   // When LOCAL_FIRST_SQLITE is on we still hit REST here so SQLite stays
   // seeded; the flag-on read path above also subscribes to invalidations
   // for live updates from socket events.
+  //
+  // Throttle raised from 5s → 30s + deferred behind InteractionManager:
+  // live data arrives via socket bumpFromMessage (instant), cross-device
+  // freshness comes from syncOnForeground (>60s) + pull-to-refresh. This
+  // refetch is belt-and-braces only, so it should never steal frames from
+  // the tab-switch animation or the unfreeze flush. Bumping the throttle
+  // eliminates the visible reload users saw ~1s after returning to this
+  // tab; deferring via InteractionManager ensures it runs only after the
+  // UI has settled. The cancel handle prevents a queued fetch from firing
+  // after the user has already blurred away.
   useFocusEffect(
     useCallback(() => {
-      if (Date.now() - lastFetchAtRef.current > 5000) {
-        lastFetchAtRef.current = Date.now();
-        fetchConversations(true);
+      let cancelled = false;
+      let taskHandle: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+
+      if (Date.now() - lastFetchAtRef.current > 30000) {
+        taskHandle = InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          lastFetchAtRef.current = Date.now();
+          fetchConversations(true);
+        });
       }
+
+      return () => {
+        cancelled = true;
+        taskHandle?.cancel();
+      };
     }, [fetchConversations]),
   );
 
