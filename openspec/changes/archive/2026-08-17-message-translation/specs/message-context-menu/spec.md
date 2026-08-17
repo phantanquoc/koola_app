@@ -1,8 +1,7 @@
-# message-context-menu Specification
+# message-context-menu Specification Delta
 
-## Purpose
-TBD - created by archiving change chat-message-actions. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Long press message shows context menu
 The system SHALL show a bottom sheet context menu when the user long-presses any message. The menu SHALL contain: a row of 6 emoji reactions (👍❤️😆😮😢😠), "Dịch" (Translate), "Chuyển tiếp" (Forward), "Ghim" / "Bỏ ghim" (Pin/Unpin), "Sao chép" (Copy), "Xóa" (Delete), each as a tappable option. The "Dịch" action SHALL only appear when the message has non-empty textual content; it SHALL NOT appear for media-only, file, or system messages.
 
@@ -34,12 +33,7 @@ The long-press gesture SHALL be hosted by the application's own row wrapper. It 
 - **THEN** the link action SHALL run
 - **AND** the context menu SHALL NOT open
 
-### Requirement: Copy text from context menu
-The system SHALL copy the message text content to the clipboard when user taps "Sao chép".
-
-#### Scenario: Copy text message
-- **WHEN** user taps "Sao chép" on a text message
-- **THEN** the message content is copied to clipboard and a Toast shows "Đã sao chép"
+## ADDED Requirements
 
 ### Requirement: Translate action visible only for text messages
 The context menu SHALL display the "Dịch" (Translate) action only when the long-pressed message has non-empty textual content. The action SHALL be hidden for messages without text.
@@ -51,4 +45,3 @@ The context menu SHALL display the "Dịch" (Translate) action only when the lon
 #### Scenario: Translate action hidden for media-only message
 - **WHEN** user long-presses an image, video, or file message with no text caption
 - **THEN** the "Dịch" action is not shown in the menu
-
