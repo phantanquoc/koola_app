@@ -19,6 +19,7 @@ import { HealthModule } from './health/health.module';
 import { CallLogsModule } from './call-logs/call-logs.module';
 import { MomentsModule } from './moments/moments.module';
 import { AccountsModule } from './accounts/accounts.module';
+import { TranslationModule } from './translation/translation.module';
 import { AdminModule } from './admin/admin.module';
 
 @Module({
@@ -57,6 +58,7 @@ import { AdminModule } from './admin/admin.module';
     CallLogsModule,
     MomentsModule, // ← Moments feature (story system)
     AccountsModule,
+    TranslationModule,
     AdminModule,
   ],
   providers: [

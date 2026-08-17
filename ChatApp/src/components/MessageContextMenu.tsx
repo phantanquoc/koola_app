@@ -10,6 +10,12 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import type { IMessage } from 'react-native-gifted-chat';
 import Toast from 'react-native-toast-message';
+import { translate } from '../services/translation/translationService';
+import translationStore from '../services/translation/translationStore';
+import {
+  getTranslationPrefs,
+  hydrateTranslationPrefs,
+} from '../services/translation/translationPrefs';
 
 const EMOJIS = ['👍', '❤️', '😆', '😮', '😢', '😠'] as const;
 
@@ -107,6 +113,39 @@ const MessageContextMenu: React.FC<Props> = ({
         </View>
 
         <View style={styles.divider} />
+
+        {/* Translate — only for messages with non-empty text content. Hidden for
+            media-only, file, and system messages per message-context-menu spec. */}
+        {message.text && !message.system ? (
+          <TouchableOpacity
+            style={styles.actionRow}
+            activeOpacity={0.6}
+            onPress={() => {
+              const messageId = String(message._id);
+              const text = typeof message.text === 'string' ? message.text : '';
+              onClose();
+              // Ensure prefs are hydrated; getTranslationPrefs returns defaults
+              // synchronously even if hydration hasn't resolved yet.
+              void hydrateTranslationPrefs();
+              const { preferredLanguage } = getTranslationPrefs();
+              translationStore.setLoading(messageId);
+              translate(text, preferredLanguage)
+                .then((result) => {
+                  translationStore.setResult(messageId, result.translatedText);
+                })
+                .catch(() => {
+                  translationStore.clear(messageId);
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Không thể dịch, thử lại sau',
+                    visibilityTime: 2500,
+                  });
+                });
+            }}>
+            <Text style={styles.actionIcon}>🌐</Text>
+            <Text style={styles.actionText}>Dịch</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Actions */}
         {message.text ? (

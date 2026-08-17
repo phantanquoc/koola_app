@@ -318,7 +318,11 @@ export const usersApi = {
     const { data } = await apiClient.delete('/users/me/phone');
     return data;
   },
-  async updateSettings(body: { notificationsEnabled?: boolean }) {
+  async updateSettings(body: {
+    notificationsEnabled?: boolean;
+    preferredLanguage?: string;
+    autoTranslateEnabled?: boolean;
+  }) {
     const { data } = await apiClient.put('/users/me/settings', body);
     return data;
   },

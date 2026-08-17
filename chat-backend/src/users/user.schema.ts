@@ -121,9 +121,19 @@ export class User {
 
   @Prop({
     type: Object,
-    default: { notificationsEnabled: true },
+    default: {
+      notificationsEnabled: true,
+      preferredLanguage: 'vi',
+      autoTranslateEnabled: false,
+    },
   })
-  settings: { notificationsEnabled: boolean };
+  settings: {
+    notificationsEnabled: boolean;
+    /** ISO 639-1 language code for translation target. Default "vi". */
+    preferredLanguage?: string;
+    /** Whether incoming foreign-language messages should be auto-translated. */
+    autoTranslateEnabled?: boolean;
+  };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

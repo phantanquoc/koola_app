@@ -68,6 +68,20 @@ function dbMsgToGifted(
     if (msg.type === 'video') base.video = 'media-pending';
   }
 
+  // Translation eligibility marker. TranslatedText reads live state from
+  // translationStore (not from this object); the marker only gates whether the
+  // component mounts at all, so hooks do not execute for non-text rows. The
+  // marker is static per mapping and invisible to the MessageItem comparator
+  // (ComparableMessage has no `translation` field), so memo behavior is unchanged.
+  if (
+    !msg.deleted &&
+    msg.type === 'text' &&
+    typeof msg.content === 'string' &&
+    msg.content.trim().length > 0
+  ) {
+    base.translation = { messageId: msg.id };
+  }
+
   return base;
 }
 

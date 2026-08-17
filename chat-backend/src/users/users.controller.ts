@@ -53,7 +53,8 @@ export class UsersController {
   @ApiResponse({ status: 200 })
   async getMe(@CurrentUser() user: { userId: string }) {
     const u = await this.usersService.findById(user.userId);
-    return u;
+    if (!u) return u;
+    return this.usersService.applySettingsDefaults(u);
   }
 
   @Put('me')

@@ -65,6 +65,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import dayjs from 'dayjs';
 import StoryReferenceCard from '../../../components/moments/StoryReferenceCard';
 import ReactionDisplay from '../../../components/ReactionDisplay';
+import TranslatedText from '../../../components/TranslatedText';
 import UserAvatar from '../../../components/UserAvatar';
 import type { MessageReaction } from '../../../types';
 import { KoolaText, koolaRadii, koolaSpacing } from '../../../ui';
@@ -377,6 +378,14 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
               position={bubbleProps.position}
               textStyle={textStyle}
             />
+          )}
+          {/* Translation subtitle — only for eligible text messages. The marker
+              is attached by dbMsgToGifted; live state flows through
+              translationStore inside TranslatedText, so this mount gate does not
+              affect memo behavior or re-render other rows when a translation
+              arrives. */}
+          {msg.text && !!(msg as IMessage & Record<string, unknown>).translation && (
+            <TranslatedText message={msg} currentUserId={currentUserId} />
           )}
           {/* Trailing custom view */}
           {bubbleProps.isCustomViewBottom && bubbleProps.renderCustomView?.(bubbleProps)}

@@ -1,0 +1,63 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsIn, IsNotEmpty, MaxLength, Length } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+/**
+ * Exhaustive ISO 639-1 two-letter codes (184 entries, lower-case).
+ * Used as the enum for `targetLang` and `preferredLanguage` validation.
+ * Unknown codes are rejected with 400 via `IsIn`.
+ */
+export const ISO6391_CODES = [
+  'aa','ab','ae','af','ak','am','an','ar','as','av','ay','az',
+  'ba','be','bg','bh','bi','bm','bn','bo','br','bs',
+  'ca','ce','ch','co','cr','cs','cu','cv','cy',
+  'da','de','dv','dz',
+  'ee','el','en','eo','es','et','eu',
+  'fa','ff','fi','fj','fo','fr','fy',
+  'ga','gd','gl','gn','gu','gv',
+  'ha','he','hi','ho','hr','ht','hu','hy','hz',
+  'ia','id','ie','ig','ii','ik','io','is','it','iu',
+  'ja','jv',
+  'ka','kg','ki','kj','kk','kl','km','kn','ko','kr','ks','ku','kv','kw','ky',
+  'la','lb','lg','li','ln','lo','lt','lu','lv',
+  'mg','mh','mi','mk','ml','mn','mr','ms','mt','my',
+  'na','nb','nd','ne','ng','nl','nn','no','nr','nv','ny',
+  'oc','oj','om','or','os',
+  'pa','pi','pl','ps','pt',
+  'qu',
+  'rm','rn','ro','ru','rw',
+  'sa','sc','sd','se','sg','si','sk','sl','sm','sn','so','sq','sr','ss','st','su','sv','sw',
+  'ta','te','tg','th','ti','tk','tl','tn','to','tr','ts','tt','tw','ty',
+  'ug','uk','ur','uz',
+  've','vi','vo',
+  'wa','wo',
+  'xh','yi','yo',
+  'za','zh','zu',
+] as const;
+
+export type Iso6391Code = typeof ISO6391_CODES[number];
+
+export class TranslateDto {
+  @ApiProperty({
+    description: 'Text to translate (1..10000 chars after trimming)',
+    example: 'Hello world',
+    minLength: 1,
+    maxLength: 10000,
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty({ message: 'text must not be empty or whitespace' })
+  @Length(1, 10000, { message: 'text must be between 1 and 10000 characters' })
+  @MaxLength(10000)
+  text!: string;
+
+  @ApiProperty({
+    description: 'Target language as ISO 639-1 code',
+    example: 'vi',
+    enum: ISO6391_CODES as unknown as string[],
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.toLowerCase().trim() : value))
+  @IsString()
+  @IsIn(ISO6391_CODES as unknown as string[], { message: 'targetLang must be a valid ISO 639-1 code' })
+  targetLang!: string;
+}

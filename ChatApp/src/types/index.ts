@@ -15,7 +15,13 @@ export interface User {
   gender?: UserGender;
   isOnline: boolean;
   lastSeen: string;
-  settings: { notificationsEnabled: boolean };
+  settings: {
+    notificationsEnabled: boolean;
+    /** ISO 639-1 target language for translation. Default "vi". */
+    preferredLanguage?: string;
+    /** Whether incoming foreign-language messages are auto-translated. */
+    autoTranslateEnabled?: boolean;
+  };
 }
 
 export interface UserSearchResult {
@@ -218,4 +224,21 @@ export interface BusinessCategory {
 export interface RecentSearchItem {
   query: string;
   searchedAt: string;
+}
+
+// ─── Translation ──────────────────────────────────────────────────────────────
+
+/** Result returned by POST /api/translate and cached locally. */
+export interface TranslateResult {
+  translatedText: string;
+  sourceLang: string;
+  cached: boolean;
+}
+
+/** UI state threaded into MessageItem via IMessage & Record<string, unknown>. */
+export interface TranslatedTextState {
+  translatedText: string;
+  isLoading: boolean;
+  error: boolean;
+  collapsed: boolean;
 }

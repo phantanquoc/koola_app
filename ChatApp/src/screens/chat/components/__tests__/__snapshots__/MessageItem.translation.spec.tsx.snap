@@ -1,0 +1,437 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MessageItem — translation slot snapshot — failed message with translation (failed wrapper coexists with subtitle) 1`] = `
+<View>
+  <View
+    pointerEvents="none"
+    style={
+      {
+        "bottom": 0,
+        "left": 2,
+        "position": "absolute",
+      }
+    }
+  />
+  <View
+    testID="GiftedMessage"
+  >
+    <View
+      style={
+        [
+          {
+            "marginBottom": 2,
+          },
+          false,
+        ]
+      }
+    >
+      <View
+        accessibilityLabel="Gửi thất bại — nhấn để thử lại"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "opacity": 1,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "borderLeftColor": "#e53935",
+              "borderLeftWidth": 1,
+            }
+          }
+        >
+          <View
+            style={
+              [
+                {
+                  "justifyContent": "flex-end",
+                  "minHeight": 20,
+                },
+                [
+                  {
+                    "marginRight": 60,
+                  },
+                  {
+                    "marginLeft": 34,
+                  },
+                ],
+                {
+                  "backgroundColor": "#f5f5f5",
+                  "borderBottomLeftRadius": 4,
+                  "borderColor": "#e0e0e0",
+                  "borderRadius": 20,
+                  "borderWidth": 0.5,
+                },
+              ]
+            }
+          >
+            <Text
+              testID="MessageText"
+            >
+              Hello
+            </Text>
+            <Text
+              _id="m1"
+              testID="TranslatedText"
+            >
+              translated
+            </Text>
+            <View
+              style={
+                {
+                  "flexDirection": "row",
+                  "justifyContent": "flex-start",
+                }
+              }
+            >
+              <View
+                style={
+                  {
+                    "alignItems": "flex-end",
+                    "paddingBottom": 4,
+                    "paddingHorizontal": 8,
+                  }
+                }
+              >
+                <Text
+                  maxFontSizeMultiplier={1.6}
+                  style={
+                    [
+                      {
+                        "letterSpacing": 0,
+                      },
+                      {
+                        "fontSize": 12,
+                        "fontWeight": "500",
+                        "lineHeight": 16,
+                      },
+                      {
+                        "color": "#667085",
+                        "textAlign": "left",
+                      },
+                      null,
+                      {
+                        "fontSize": 11,
+                      },
+                    ]
+                  }
+                >
+                  17:00
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+      <Text
+        maxFontSizeMultiplier={1.6}
+        style={
+          [
+            {
+              "letterSpacing": 0,
+            },
+            {
+              "fontSize": 12,
+              "fontWeight": "500",
+              "lineHeight": 16,
+            },
+            {
+              "color": "#EF4444",
+              "textAlign": "left",
+            },
+            null,
+            {
+              "marginBottom": 2,
+              "marginLeft": 4,
+              "marginTop": 2,
+            },
+          ]
+        }
+      >
+        Gửi thất bại — nhấn để thử lại
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`MessageItem — translation slot snapshot — with translation 1`] = `
+<View>
+  <View
+    pointerEvents="none"
+    style={
+      {
+        "bottom": 0,
+        "left": 2,
+        "position": "absolute",
+      }
+    }
+  />
+  <View
+    testID="GiftedMessage"
+  >
+    <View
+      style={
+        [
+          {
+            "marginBottom": 2,
+          },
+          false,
+        ]
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessible={true}
+        focusable={false}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "justifyContent": "flex-end",
+              "minHeight": 20,
+            },
+            [
+              {
+                "marginRight": 60,
+              },
+              {
+                "marginLeft": 34,
+              },
+            ],
+            {
+              "backgroundColor": "#f5f5f5",
+              "borderBottomLeftRadius": 4,
+              "borderColor": "#e0e0e0",
+              "borderRadius": 20,
+              "borderWidth": 0.5,
+            },
+          ]
+        }
+      >
+        <Text
+          testID="MessageText"
+        >
+          Hello world
+        </Text>
+        <Text
+          _id="m1"
+          testID="TranslatedText"
+        >
+          translated
+        </Text>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "justifyContent": "flex-start",
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "flex-end",
+                "paddingBottom": 4,
+                "paddingHorizontal": 8,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={1.6}
+              style={
+                [
+                  {
+                    "letterSpacing": 0,
+                  },
+                  {
+                    "fontSize": 12,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#667085",
+                    "textAlign": "left",
+                  },
+                  null,
+                  {
+                    "fontSize": 11,
+                  },
+                ]
+              }
+            >
+              17:00
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`MessageItem — translation slot snapshot — without translation 1`] = `
+<View>
+  <View
+    pointerEvents="none"
+    style={
+      {
+        "bottom": 0,
+        "left": 2,
+        "position": "absolute",
+      }
+    }
+  />
+  <View
+    testID="GiftedMessage"
+  >
+    <View
+      style={
+        [
+          {
+            "marginBottom": 2,
+          },
+          false,
+        ]
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessible={true}
+        focusable={false}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "justifyContent": "flex-end",
+              "minHeight": 20,
+            },
+            [
+              {
+                "marginRight": 60,
+              },
+              {
+                "marginLeft": 34,
+              },
+            ],
+            {
+              "backgroundColor": "#f5f5f5",
+              "borderBottomLeftRadius": 4,
+              "borderColor": "#e0e0e0",
+              "borderRadius": 20,
+              "borderWidth": 0.5,
+            },
+          ]
+        }
+      >
+        <Text
+          testID="MessageText"
+        >
+          Hello world
+        </Text>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "justifyContent": "flex-start",
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "flex-end",
+                "paddingBottom": 4,
+                "paddingHorizontal": 8,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={1.6}
+              style={
+                [
+                  {
+                    "letterSpacing": 0,
+                  },
+                  {
+                    "fontSize": 12,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#667085",
+                    "textAlign": "left",
+                  },
+                  null,
+                  {
+                    "fontSize": 11,
+                  },
+                ]
+              }
+            >
+              17:00
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+`;

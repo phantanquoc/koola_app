@@ -1,0 +1,92 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`TranslatedText snapshot — collapsed translated text 1`] = `
+<Text
+  maxFontSizeMultiplier={1.6}
+  numberOfLines={1}
+  onPress={[MockFunction]}
+  style={
+    [
+      {
+        "letterSpacing": 0,
+      },
+      {
+        "fontSize": 12,
+        "fontWeight": "500",
+        "lineHeight": 16,
+      },
+      {
+        "color": "#667085",
+        "textAlign": "left",
+      },
+      null,
+      {
+        "fontStyle": "italic",
+        "marginTop": 4,
+      },
+    ]
+  }
+>
+  Xin chào thế giới, đây là bản dịch.
+</Text>
+`;
+
+exports[`TranslatedText snapshot — expanded translated text 1`] = `
+<Text
+  maxFontSizeMultiplier={1.6}
+  onPress={[MockFunction]}
+  style={
+    [
+      {
+        "letterSpacing": 0,
+      },
+      {
+        "fontSize": 12,
+        "fontWeight": "500",
+        "lineHeight": 16,
+      },
+      {
+        "color": "#667085",
+        "textAlign": "left",
+      },
+      null,
+      {
+        "fontStyle": "italic",
+        "marginTop": 4,
+      },
+    ]
+  }
+>
+  Xin chào thế giới, đây là bản dịch đã mở rộng.
+</Text>
+`;
+
+exports[`TranslatedText snapshot — loading state 1`] = `
+<Text
+  maxFontSizeMultiplier={1.6}
+  numberOfLines={1}
+  style={
+    [
+      {
+        "letterSpacing": 0,
+      },
+      {
+        "fontSize": 12,
+        "fontWeight": "500",
+        "lineHeight": 16,
+      },
+      {
+        "color": "#667085",
+        "textAlign": "left",
+      },
+      null,
+      {
+        "fontStyle": "italic",
+        "marginTop": 4,
+      },
+    ]
+  }
+>
+  Đang dịch…
+</Text>
+`;

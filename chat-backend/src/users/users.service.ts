@@ -11,6 +11,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { RedisService } from '../common/redis/redis.service';
 import { PlivoService } from '../auth/plivo.service';
 import { RESERVED_USERNAMES } from './constants/reserved-usernames';
@@ -347,19 +348,50 @@ export class UsersService {
 
   // ─── Existing methods ─────────────────────────────────────────────────────
 
+  /**
+   * Applies translation-setting defaults for pre-existing user documents whose
+   * `settings` subdocument predates this schema extension. Called by GET /users/me
+   * and PUT /users/me/settings so the mobile always sees a complete settings
+   * object, even on accounts created before the feature shipped.
+   */
+  applySettingsDefaults(user: UserDocument): UserDocument {
+    if (!user.settings) {
+      (user as any).settings = {
+        notificationsEnabled: true,
+        preferredLanguage: 'vi',
+        autoTranslateEnabled: false,
+      };
+    } else {
+      const s = user.settings;
+      if (s.preferredLanguage === undefined || s.preferredLanguage === null) {
+        s.preferredLanguage = 'vi';
+      }
+      if (s.autoTranslateEnabled === undefined || s.autoTranslateEnabled === null) {
+        s.autoTranslateEnabled = false;
+      }
+    }
+    return user;
+  }
+
   async updateSettings(
     userId: string,
-    settings: { notificationsEnabled?: boolean },
+    settings: UpdateSettingsDto,
   ): Promise<UserDocument> {
     const update: Record<string, unknown> = {};
     if (settings.notificationsEnabled !== undefined) {
       update['settings.notificationsEnabled'] = settings.notificationsEnabled;
     }
+    if (settings.preferredLanguage !== undefined) {
+      update['settings.preferredLanguage'] = settings.preferredLanguage;
+    }
+    if (settings.autoTranslateEnabled !== undefined) {
+      update['settings.autoTranslateEnabled'] = settings.autoTranslateEnabled;
+    }
     const user = await this.userModel
       .findByIdAndUpdate(userId, { $set: update }, { new: true })
       .select('-passwordHash');
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return this.applySettingsDefaults(user);
   }
 
   async registerFcmToken(

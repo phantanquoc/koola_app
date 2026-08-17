@@ -11,6 +11,8 @@ const KEYS = {
   RECENT_SEARCHES: 'recent_searches',
   ACTIVE_ACCOUNT_ID: 'active_account_id',
   THEME: 'theme',
+  AUTO_TRANSLATE: 'auto_translate',
+  PREFERRED_LANGUAGE: 'preferred_language',
 };
 
 const RECENT_SEARCHES_MAX = 10;
@@ -115,6 +117,37 @@ export const asyncStorage = {
   },
   async setThemeMode(mode: ThemeMode): Promise<void> {
     await AsyncStorage.setItem(KEYS.THEME, mode);
+  },
+
+  // ─── Translation preferences ─────────────────────────────────────────────
+  // Optimistic local persistence for the auto-translate toggle and preferred
+  // target language. Authoritative values live on PUT /users/me/settings; these
+  // keys let the UI reflect the last-known state before the network round-trip
+  // completes and survive a device reinstall until the next GET /users/me.
+  async getAutoTranslate(): Promise<boolean> {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.AUTO_TRANSLATE);
+      return raw === 'true';
+    } catch {
+      return false;
+    }
+  },
+  async setAutoTranslate(enabled: boolean): Promise<void> {
+    await AsyncStorage.setItem(KEYS.AUTO_TRANSLATE, enabled ? 'true' : 'false');
+  },
+  async getPreferredLanguage(): Promise<string> {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.PREFERRED_LANGUAGE);
+      return raw && /^[a-z]{2}$/.test(raw) ? raw : 'vi';
+    } catch {
+      return 'vi';
+    }
+  },
+  async setPreferredLanguage(lang: string): Promise<void> {
+    const normalized = typeof lang === 'string' ? lang.trim().toLowerCase() : '';
+    if (/^[a-z]{2}$/.test(normalized)) {
+      await AsyncStorage.setItem(KEYS.PREFERRED_LANGUAGE, normalized);
+    }
   },
 
   // ─── Clear all ────────────────────────────────────────────────────────────
