@@ -90,7 +90,10 @@ export class MessagesController {
     summary:
       'List messages in a conversation (cursor pagination or around context)',
   })
-  @ApiResponse({ status: 200, description: 'Paginated message list or context window' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated message list or context window',
+  })
   @ApiResponse({ status: 403, description: 'Not a member' })
   @ApiResponse({
     status: 404,

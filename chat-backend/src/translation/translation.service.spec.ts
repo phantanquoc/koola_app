@@ -114,7 +114,9 @@ describe('TranslationService', () => {
     it('produces the same key for composed vs decomposed unicode', () => {
       const composed = 'é'; // é
       const decomposed = 'é'; // e + combining acute
-      expect(service.buildKey(composed, 'vi')).toBe(service.buildKey(decomposed, 'vi'));
+      expect(service.buildKey(composed, 'vi')).toBe(
+        service.buildKey(decomposed, 'vi'),
+      );
     });
 
     it('isolates keys across target languages', () => {
@@ -136,7 +138,10 @@ describe('TranslationService', () => {
   describe('translate — cache miss/hit/TTL', () => {
     it('on miss calls provider once, returns cached:false, writes cache with 30-day TTL', async () => {
       const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        makeFetchResponse({ translatedText: 'Bonjour', detectedSourceLanguage: 'en' }),
+        makeFetchResponse({
+          translatedText: 'Bonjour',
+          detectedSourceLanguage: 'en',
+        }),
       );
 
       const result = await service.translate('hello', 'fr');
@@ -180,9 +185,20 @@ describe('TranslationService', () => {
     });
 
     it('uses distinct cache keys for the same text to different targets', async () => {
-      const fetchSpy = jest.spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(makeFetchResponse({ translatedText: 'A', detectedSourceLanguage: 'en' }))
-        .mockResolvedValueOnce(makeFetchResponse({ translatedText: 'B', detectedSourceLanguage: 'en' }));
+      const fetchSpy = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          makeFetchResponse({
+            translatedText: 'A',
+            detectedSourceLanguage: 'en',
+          }),
+        )
+        .mockResolvedValueOnce(
+          makeFetchResponse({
+            translatedText: 'B',
+            detectedSourceLanguage: 'en',
+          }),
+        );
 
       await service.translate('hello', 'vi');
       await service.translate('hello', 'ja');
@@ -195,24 +211,35 @@ describe('TranslationService', () => {
   });
 
   describe('translate — error paths', () => {
-    it('throws 502 when GOOGLE_TRANSLATE_API_KEY is missing', async () => {
+    it('returns mock translation when GOOGLE_TRANSLATE_API_KEY is missing (dev fallback)', async () => {
       delete process.env.GOOGLE_TRANSLATE_API_KEY;
       const fetchSpy = jest.spyOn(globalThis, 'fetch');
 
-      try {
-        await service.translate('hello', 'vi');
-        fail('should have thrown');
-      } catch (e: any) {
-        expect(e).toBeInstanceOf(HttpException);
-        expect(e.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
-        expect(e.message).toBe('Translation service is not configured');
-      }
+      const result = await service.translate('hello', 'vi');
+
+      expect(result).toEqual({
+        translatedText: '[vi] hello',
+        sourceLang: 'auto',
+        cached: false,
+      });
       expect(fetchSpy).not.toHaveBeenCalled();
+      // Mock still writes to cache so second call hits cache
+      const key = service.buildKey('hello', 'vi');
+      const cachedRaw = redis.__store.get(key);
+      expect(cachedRaw).toBeDefined();
+      expect(JSON.parse(cachedRaw!)).toEqual({
+        translatedText: '[vi] hello',
+        sourceLang: 'auto',
+      });
     });
 
     it('throws 502 when provider responds !ok', async () => {
       jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        makeFetchResponse({ ok: false, status: 429, textBody: 'quota exceeded' }),
+        makeFetchResponse({
+          ok: false,
+          status: 429,
+          textBody: 'quota exceeded',
+        }),
       );
 
       try {
@@ -254,7 +281,10 @@ describe('TranslationService', () => {
 
     it('treats cache-write failure as non-fatal and still returns fresh translation', async () => {
       jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        makeFetchResponse({ translatedText: 'Hola', detectedSourceLanguage: 'en' }),
+        makeFetchResponse({
+          translatedText: 'Hola',
+          detectedSourceLanguage: 'en',
+        }),
       );
       const clientSet = redis.getClient().set as jest.Mock;
       clientSet.mockRejectedValueOnce(new Error('redis down'));
@@ -272,7 +302,10 @@ describe('TranslationService', () => {
       const key = service.buildKey('hello', 'vi');
       redis.__store.set(key, '{not valid json');
       const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        makeFetchResponse({ translatedText: 'Chào', detectedSourceLanguage: 'en' }),
+        makeFetchResponse({
+          translatedText: 'Chào',
+          detectedSourceLanguage: 'en',
+        }),
       );
 
       const result = await service.translate('hello', 'vi');
@@ -290,7 +323,10 @@ describe('TranslateRateLimitGuard', () => {
   let guard: TranslateRateLimitGuard;
   let redis: ReturnType<typeof makeMockRedis>;
 
-  const makeContext = (user?: { userId?: string; id?: string; sub?: string }, ip?: string): ExecutionContext =>
+  const makeContext = (
+    user?: { userId?: string; id?: string; sub?: string },
+    ip?: string,
+  ): ExecutionContext =>
     ({
       switchToHttp: () => ({
         getRequest: () => ({ user, ip }),
@@ -311,7 +347,10 @@ describe('TranslateRateLimitGuard', () => {
   it('allows requests at or below the limit (count <= 30)', async () => {
     redis.incrementWithExpiry.mockResolvedValue(30);
     expect(await guard.canActivate(makeContext({ userId: 'u1' }))).toBe(true);
-    expect(redis.incrementWithExpiry).toHaveBeenCalledWith('translate:rl:u1', 60);
+    expect(redis.incrementWithExpiry).toHaveBeenCalledWith(
+      'translate:rl:u1',
+      60,
+    );
   });
 
   it('throws 429 when count exceeds the limit', async () => {
@@ -328,7 +367,10 @@ describe('TranslateRateLimitGuard', () => {
   it('falls back to IP-based bucket when no user id is present', async () => {
     redis.incrementWithExpiry.mockResolvedValue(1);
     await guard.canActivate(makeContext(undefined, '1.2.3.4'));
-    expect(redis.incrementWithExpiry).toHaveBeenCalledWith('translate:rl:ip:1.2.3.4', 60);
+    expect(redis.incrementWithExpiry).toHaveBeenCalledWith(
+      'translate:rl:ip:1.2.3.4',
+      60,
+    );
   });
 
   it('fails open when Redis is unavailable', async () => {
@@ -367,7 +409,10 @@ describe('TranslateDto', () => {
   });
 
   it('transforms mixed-case targetLang to lower-case and accepts it', async () => {
-    const dto = plainToInstance(TranslateDto, { text: 'hi', targetLang: ' VI ' });
+    const dto = plainToInstance(TranslateDto, {
+      text: 'hi',
+      targetLang: ' VI ',
+    });
     const errs = await validate(dto);
     expect(errs).toEqual([]);
     expect(dto.targetLang).toBe('vi');

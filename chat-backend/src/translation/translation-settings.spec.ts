@@ -34,11 +34,15 @@ describe('UpdateSettingsDto (translation fields)', () => {
   });
 
   it('rejects invalid language code xx', async () => {
-    expect(await errorsFor({ preferredLanguage: 'xx' })).toContain('preferredLanguage');
+    expect(await errorsFor({ preferredLanguage: 'xx' })).toContain(
+      'preferredLanguage',
+    );
   });
 
   it('transforms " EN " → "en" and accepts it', async () => {
-    const dto = plainToInstance(UpdateSettingsDto, { preferredLanguage: ' EN ' });
+    const dto = plainToInstance(UpdateSettingsDto, {
+      preferredLanguage: ' EN ',
+    });
     const errs = await validate(dto);
     expect(errs.map((e) => e.property)).toEqual([]);
     expect(dto.preferredLanguage).toBe('en');
@@ -50,7 +54,9 @@ describe('UpdateSettingsDto (translation fields)', () => {
   // the DTO shape: missing required fields are rejected, but all fields here
   // are optional. Instead, assert that invalid preferredLanguage IS rejected.
   it('rejects invalid preferredLanguage code', async () => {
-    expect(await errorsFor({ preferredLanguage: 'not-a-code' })).toContain('preferredLanguage');
+    expect(await errorsFor({ preferredLanguage: 'not-a-code' })).toContain(
+      'preferredLanguage',
+    );
   });
 
   it('accepts empty object (all fields optional)', async () => {
@@ -77,10 +83,15 @@ describe('UsersService translation settings', () => {
             del: jest.fn(),
             setNXEX: jest.fn(),
             incrementWithExpiry: jest.fn(),
-            getClient: jest.fn().mockReturnValue({ set: jest.fn(), ttl: jest.fn() }),
+            getClient: jest
+              .fn()
+              .mockReturnValue({ set: jest.fn(), ttl: jest.fn() }),
           },
         },
-        { provide: PlivoService, useValue: { sendOtp: jest.fn(), verifyOtp: jest.fn() } },
+        {
+          provide: PlivoService,
+          useValue: { sendOtp: jest.fn(), verifyOtp: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -91,11 +102,18 @@ describe('UsersService translation settings', () => {
     it('only $sets defined fields (preferredLanguage)', async () => {
       const selectMock = jest.fn().mockResolvedValue({
         _id: 'u1',
-        settings: { preferredLanguage: 'en', autoTranslateEnabled: false, notificationsEnabled: true },
+        settings: {
+          preferredLanguage: 'en',
+          autoTranslateEnabled: false,
+          notificationsEnabled: true,
+        },
       });
       model.findByIdAndUpdate.mockReturnValue({ select: selectMock });
 
-      await service.updateSettings('u1', plainToInstance(UpdateSettingsDto, { preferredLanguage: 'en' }));
+      await service.updateSettings(
+        'u1',
+        plainToInstance(UpdateSettingsDto, { preferredLanguage: 'en' }),
+      );
 
       expect(model.findByIdAndUpdate).toHaveBeenCalledWith(
         'u1',
@@ -109,11 +127,18 @@ describe('UsersService translation settings', () => {
     it('only $sets defined fields (notificationsEnabled)', async () => {
       const selectMock = jest.fn().mockResolvedValue({
         _id: 'u1',
-        settings: { preferredLanguage: 'vi', autoTranslateEnabled: false, notificationsEnabled: false },
+        settings: {
+          preferredLanguage: 'vi',
+          autoTranslateEnabled: false,
+          notificationsEnabled: false,
+        },
       });
       model.findByIdAndUpdate.mockReturnValue({ select: selectMock });
 
-      await service.updateSettings('u1', plainToInstance(UpdateSettingsDto, { notificationsEnabled: false }));
+      await service.updateSettings(
+        'u1',
+        plainToInstance(UpdateSettingsDto, { notificationsEnabled: false }),
+      );
 
       expect(model.findByIdAndUpdate).toHaveBeenCalledWith(
         'u1',
@@ -126,11 +151,18 @@ describe('UsersService translation settings', () => {
       // DB returns the post-$set document; service then applies defaults.
       const selectMock = jest.fn().mockResolvedValue({
         _id: 'u1',
-        settings: { preferredLanguage: 'en', autoTranslateEnabled: true, notificationsEnabled: true },
+        settings: {
+          preferredLanguage: 'en',
+          autoTranslateEnabled: true,
+          notificationsEnabled: true,
+        },
       });
       model.findByIdAndUpdate.mockReturnValue({ select: selectMock });
 
-      const user = await service.updateSettings('u1', plainToInstance(UpdateSettingsDto, { autoTranslateEnabled: true }));
+      const user = await service.updateSettings(
+        'u1',
+        plainToInstance(UpdateSettingsDto, { autoTranslateEnabled: true }),
+      );
 
       expect(user.settings.autoTranslateEnabled).toBe(true);
       expect(user.settings.preferredLanguage).toBe('en');
@@ -149,7 +181,9 @@ describe('UsersService translation settings', () => {
     });
 
     it('fills partial settings (missing preferredLanguage/autoTranslateEnabled)', () => {
-      const user = { settings: { notificationsEnabled: false } } as unknown as { settings: any };
+      const user = { settings: { notificationsEnabled: false } } as unknown as {
+        settings: any;
+      };
       const result = service.applySettingsDefaults(user as any);
       expect(result.settings.preferredLanguage).toBe('vi');
       expect(result.settings.autoTranslateEnabled).toBe(false);
@@ -159,7 +193,9 @@ describe('UsersService translation settings', () => {
 
   describe('findByIdPublic privacy', () => {
     it('selects "-settings" (never exposes translation settings on public read)', async () => {
-      const selectMock = jest.fn().mockResolvedValue({ _id: 'u1', displayName: 'A' });
+      const selectMock = jest
+        .fn()
+        .mockResolvedValue({ _id: 'u1', displayName: 'A' });
       model.findById.mockReturnValue({ select: selectMock });
 
       const result = await service.findByIdPublic('u1');

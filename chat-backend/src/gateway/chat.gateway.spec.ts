@@ -74,9 +74,11 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
       create: jest.fn().mockResolvedValue({}),
     };
     usersService = {
-      findById: jest
-        .fn()
-        .mockResolvedValue({ displayName: 'Someone', phone: null, email: null }),
+      findById: jest.fn().mockResolvedValue({
+        displayName: 'Someone',
+        phone: null,
+        email: null,
+      }),
     };
 
     conversationsService = new ConversationsService(

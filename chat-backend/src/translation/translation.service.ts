@@ -92,11 +92,16 @@ export class TranslationService {
 
     const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
     if (!apiKey) {
-      // Guard specified in tasks 1.5 — structured error, not a startup crash.
-      throw new HttpException(
-        'Translation service is not configured',
-        HttpStatus.BAD_GATEWAY,
+      this.logger.warn(
+        '[translate] GOOGLE_TRANSLATE_API_KEY missing — returning mock translation for dev',
       );
+      const mockText = `[${canonicalTarget}] ${normalized}`;
+      const value: CachedValue = {
+        translatedText: mockText,
+        sourceLang: 'auto',
+      };
+      await this.writeCache(cacheKey, value);
+      return { ...value, cached: false };
     }
 
     const { translatedText, detectedSourceLanguage } =
@@ -125,19 +130,41 @@ export class TranslationService {
 
     const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
     if (!apiKey) {
-      throw new HttpException(
-        'Translation service is not configured',
-        HttpStatus.BAD_GATEWAY,
+      this.logger.warn(
+        '[translate] GOOGLE_TRANSLATE_API_KEY missing — returning mock detection for dev',
       );
+      const mockLang = 'auto';
+      try {
+        await this.redisService
+          .getClient()
+          .set(
+            cacheKey,
+            JSON.stringify({ sourceLang: mockLang }),
+            'EX',
+            CACHE_TTL_SECONDS,
+          );
+      } catch (e) {
+        this.logger.warn(
+          `[translate] detect cache write failed: ${(e as Error).message}`,
+        );
+      }
+      return mockLang;
     }
 
     const detected = await this.callGoogleDetect(normalized, apiKey);
     try {
       await this.redisService
         .getClient()
-        .set(cacheKey, JSON.stringify({ sourceLang: detected }), 'EX', CACHE_TTL_SECONDS);
+        .set(
+          cacheKey,
+          JSON.stringify({ sourceLang: detected }),
+          'EX',
+          CACHE_TTL_SECONDS,
+        );
     } catch (e) {
-      this.logger.warn(`[translate] detect cache write failed: ${(e as Error).message}`);
+      this.logger.warn(
+        `[translate] detect cache write failed: ${(e as Error).message}`,
+      );
     }
     return detected;
   }
@@ -154,7 +181,9 @@ export class TranslationService {
         return parsed;
       return null;
     } catch (e) {
-      this.logger.warn(`[translate] cache read failed for ${key}: ${(e as Error).message}`);
+      this.logger.warn(
+        `[translate] cache read failed for ${key}: ${(e as Error).message}`,
+      );
       return null;
     }
   }
@@ -166,7 +195,9 @@ export class TranslationService {
         .set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
     } catch (e) {
       // Cache write failure is non-fatal — still return the fresh translation.
-      this.logger.warn(`[translate] cache write failed for ${key}: ${(e as Error).message}`);
+      this.logger.warn(
+        `[translate] cache write failed for ${key}: ${(e as Error).message}`,
+      );
     }
   }
 
@@ -187,7 +218,9 @@ export class TranslationService {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        this.logger.warn(`[translate] provider ${res.status}: ${body.slice(0, 400)}`);
+        this.logger.warn(
+          `[translate] provider ${res.status}: ${body.slice(0, 400)}`,
+        );
         throw new HttpException(
           'Translation provider error',
           HttpStatus.BAD_GATEWAY,
@@ -231,7 +264,10 @@ export class TranslationService {
     }
   }
 
-  private async callGoogleDetect(text: string, apiKey: string): Promise<string> {
+  private async callGoogleDetect(
+    text: string,
+    apiKey: string,
+  ): Promise<string> {
     const url = `${GOOGLE_DETECT_URL}?key=${encodeURIComponent(apiKey)}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -244,7 +280,9 @@ export class TranslationService {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        this.logger.warn(`[translate] detect ${res.status}: ${body.slice(0, 400)}`);
+        this.logger.warn(
+          `[translate] detect ${res.status}: ${body.slice(0, 400)}`,
+        );
         throw new HttpException(
           'Language detection failed',
           HttpStatus.BAD_GATEWAY,

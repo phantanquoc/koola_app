@@ -366,7 +366,10 @@ export class UsersService {
       if (s.preferredLanguage === undefined || s.preferredLanguage === null) {
         s.preferredLanguage = 'vi';
       }
-      if (s.autoTranslateEnabled === undefined || s.autoTranslateEnabled === null) {
+      if (
+        s.autoTranslateEnabled === undefined ||
+        s.autoTranslateEnabled === null
+      ) {
         s.autoTranslateEnabled = false;
       }
     }

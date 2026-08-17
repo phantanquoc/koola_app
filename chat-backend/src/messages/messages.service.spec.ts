@@ -743,9 +743,9 @@ describe('MessagesService — searchMessages enrichment', () => {
 
     expect(res.items).toHaveLength(3);
     // One batched read each, regardless of page size.
-    expect(mockConversationsService.getConversationsByIds).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(
+      mockConversationsService.getConversationsByIds,
+    ).toHaveBeenCalledTimes(1);
     expect(mockUsersService.findByIds).toHaveBeenCalledTimes(1);
     // The single user query carries the de-duped id set (sender + other member).
     const idsArg = mockUsersService.findByIds.mock.calls[0][0] as string[];

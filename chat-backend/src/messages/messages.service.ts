@@ -522,7 +522,9 @@ export class MessagesService {
       const extraBefore = await this.messageModel
         .find({
           ...beforeQuery,
-          createdAt: { $lt: (beforeSlice[beforeSlice.length - 1] as any).createdAt },
+          createdAt: {
+            $lt: (beforeSlice[beforeSlice.length - 1] as any).createdAt,
+          },
         })
         .sort({ createdAt: -1 })
         .limit(afterDeficit + 1)

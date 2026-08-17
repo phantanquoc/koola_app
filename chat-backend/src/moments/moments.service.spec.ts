@@ -1042,9 +1042,7 @@ describe('MomentsService', () => {
 
     it('returns null thumbnailKey when story has none', async () => {
       storyModel.findById = jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue(
-          storyDoc({ thumbnailKey: null }),
-        ),
+        lean: jest.fn().mockResolvedValue(storyDoc({ thumbnailKey: null })),
       });
 
       const result = await service.getStoryById(validStoryId, viewerId);

@@ -30,10 +30,7 @@ export class TranslateRateLimitGuard implements CanActivate {
   constructor(private readonly redisService: RedisService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest() as {
-      user?: { userId?: string; id?: string; sub?: string };
-      ip?: string;
-    };
+    const req = context.switchToHttp().getRequest();
     const userId = req.user?.userId ?? req.user?.id ?? req.user?.sub;
     const bucketKey = userId
       ? `translate:rl:${userId}`
