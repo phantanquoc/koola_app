@@ -56,6 +56,26 @@ jest.mock('../../socket/SocketService', () => ({
   },
 }));
 
+// Mock @react-native-community/netinfo — controllable metered state for tests.
+const mockNetInfoListeners: Set<(state: { isConnectionExpensive: boolean }) => void> = new Set();
+const mockNetState = { isConnectionExpensive: false, isConnected: true };
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: {
+    fetch: jest.fn(() => Promise.resolve({ ...mockNetState })),
+    // Real NetInfoSubscription is the unsubscribe function itself (not { remove }).
+    addEventListener: jest.fn((cb: (state: { isConnectionExpensive: boolean }) => void) => {
+      mockNetInfoListeners.add(cb);
+      return () => { mockNetInfoListeners.delete(cb); };
+    }),
+  },
+}));
+
+// Simulate a network-state change through all registered NetInfo listeners.
+function simulateNetChange(state: { isConnectionExpensive: boolean }): void {
+  mockNetInfoListeners.forEach((cb) => cb(state));
+}
+
 // Mock mediaCacheService.getFromMemory and getOrDownload
 const mockGetFromMemory = jest.fn().mockReturnValue(null);
 const mockGetOrDownload = jest.fn().mockResolvedValue('file:///mock/path');
@@ -129,13 +149,76 @@ describe('mediaIndexService — evictIfNeeded with cap change (task 6.2)', () =>
   });
 });
 
-describe('mediaPreloader — data-saver skip (task 6.4)', () => {
+describe('mediaIndexService — breakdown by category (task 7.1)', () => {
+  let mediaIndexService: typeof import('../mediaIndexService');
+
+  beforeEach(() => {
+    jest.resetModules();
+    Object.keys(mmkvStore).forEach((k) => delete mmkvStore[k]);
+    mediaIndexService = require('../mediaIndexService');
+  });
+
+  it('categorizes entries by MIME type', () => {
+    mediaIndexService.set('a', { path: '/img/a.jpg', size: 100, mime: 'image/jpeg', addedAt: 1, lastAccess: 1 });
+    mediaIndexService.set('b', { path: '/vid/b.mp4', size: 200, mime: 'video/mp4', addedAt: 2, lastAccess: 2 });
+    mediaIndexService.set('c', { path: '/aud/c.mp3', size: 300, mime: 'audio/mpeg', addedAt: 3, lastAccess: 3 });
+
+    const result = mediaIndexService.breakdown();
+    expect(result.image).toBe(100);
+    expect(result.video).toBe(200);
+    expect(result.audio).toBe(300);
+    expect(result.other).toBe(0);
+  });
+
+  it('falls back to file extension for legacy entries without mime', () => {
+    mediaIndexService.set('a', { path: '/c/a.png', size: 10, addedAt: 1, lastAccess: 1 });
+    mediaIndexService.set('b', { path: '/c/b.mov', size: 20, addedAt: 2, lastAccess: 2 });
+    mediaIndexService.set('c', { path: '/c/c.m4a', size: 30, addedAt: 3, lastAccess: 3 });
+
+    const result = mediaIndexService.breakdown();
+    expect(result.image).toBe(10);
+    expect(result.video).toBe(20);
+    expect(result.audio).toBe(30);
+    expect(result.other).toBe(0);
+  });
+
+  it('buckets unknown extensions into other', () => {
+    mediaIndexService.set('a', { path: '/c/doc.pdf', size: 50, addedAt: 1, lastAccess: 1 });
+    mediaIndexService.set('b', { path: '/c/notes.txt', size: 25, addedAt: 2, lastAccess: 2 });
+
+    const result = mediaIndexService.breakdown();
+    expect(result.image).toBe(0);
+    expect(result.video).toBe(0);
+    expect(result.audio).toBe(0);
+    expect(result.other).toBe(75);
+  });
+
+  it('sums to the same total as getTotalCachedBytes', () => {
+    mediaIndexService.set('a', { path: '/c/a.webp', size: 5, addedAt: 1, lastAccess: 1 });
+    mediaIndexService.set('b', { path: '/c/b.webm', size: 15, mime: 'video/webm', addedAt: 2, lastAccess: 2 });
+    mediaIndexService.set('c', { path: '/c/c.bin', size: 99, addedAt: 3, lastAccess: 3 });
+
+    const result = mediaIndexService.breakdown();
+    const sum = result.image + result.video + result.audio + result.other;
+    expect(sum).toBe(mediaIndexService.getTotalCachedBytes());
+    expect(sum).toBe(119);
+  });
+
+  it('returns all zeros for an empty index', () => {
+    const result = mediaIndexService.breakdown();
+    expect(result).toEqual({ image: 0, video: 0, audio: 0, other: 0 });
+  });
+});
+
+describe('mediaPreloader — data-saver + metered gate (task 6.1)', () => {
   let mediaPreloader: typeof import('../mediaPreloader');
 
   beforeEach(() => {
     jest.resetModules();
     Object.keys(mmkvStore).forEach((k) => delete mmkvStore[k]);
     Object.keys(socketListeners).forEach((k) => delete socketListeners[k]);
+    mockNetInfoListeners.clear();
+    mockNetState.isConnectionExpensive = false;
     mockGetFromMemory.mockReturnValue(null);
     mockGetOrDownload.mockClear();
     mediaPreloader = require('../mediaPreloader');
@@ -146,37 +229,65 @@ describe('mediaPreloader — data-saver skip (task 6.4)', () => {
     try { mediaPreloader.wireMediaPreloader()(); } catch {}
   });
 
-  it('skips preload when data saver is enabled', async () => {
-    mediaPreloader.setDataSaver(true);
-    const unwire = mediaPreloader.wireMediaPreloader();
-
-    // Simulate new_message event with image
+  function emitNewMessage(): void {
     const handlers = socketListeners['new_message'];
-    expect(handlers).toBeDefined();
     handlers?.forEach((h) =>
       h({ message: { type: 'image', mediaUrl: 'uploads/test.jpg' } }),
     );
+  }
 
-    // Wait a tick
+  it('data saver on + metered → no enqueue', async () => {
+    mediaPreloader.setDataSaver(true);
+    const unwire = mediaPreloader.wireMediaPreloader();
+    simulateNetChange({ isConnectionExpensive: true });
+
+    emitNewMessage();
     await Promise.resolve();
 
     expect(mockGetOrDownload).not.toHaveBeenCalled();
     unwire();
   });
 
-  it('enqueues preload when data saver is disabled', async () => {
-    mediaPreloader.setDataSaver(false);
+  it('data saver on + unmetered → enqueue', async () => {
+    mediaPreloader.setDataSaver(true);
     const unwire = mediaPreloader.wireMediaPreloader();
+    simulateNetChange({ isConnectionExpensive: false });
 
-    const handlers = socketListeners['new_message'];
-    handlers?.forEach((h) =>
-      h({ message: { type: 'image', mediaUrl: 'uploads/test.jpg' } }),
-    );
-
-    // Wait for async download
+    emitNewMessage();
     await new Promise<void>((r) => setTimeout(() => r(), 10));
 
     expect(mockGetOrDownload).toHaveBeenCalledWith('uploads/test.jpg');
+    unwire();
+  });
+
+  it('data saver off + metered → enqueue', async () => {
+    mediaPreloader.setDataSaver(false);
+    const unwire = mediaPreloader.wireMediaPreloader();
+    simulateNetChange({ isConnectionExpensive: true });
+
+    emitNewMessage();
+    await new Promise<void>((r) => setTimeout(() => r(), 10));
+
+    expect(mockGetOrDownload).toHaveBeenCalledWith('uploads/test.jpg');
+    unwire();
+  });
+
+  it('network switch updates decision live without restart', async () => {
+    mediaPreloader.setDataSaver(true);
+    const unwire = mediaPreloader.wireMediaPreloader();
+
+    // Start metered — should skip
+    simulateNetChange({ isConnectionExpensive: true });
+    emitNewMessage();
+    await Promise.resolve();
+    expect(mockGetOrDownload).not.toHaveBeenCalled();
+
+    // Switch to unmetered — should now enqueue without rewiring
+    simulateNetChange({ isConnectionExpensive: false });
+    emitNewMessage();
+    await new Promise<void>((r) => setTimeout(() => r(), 10));
+    expect(mockGetOrDownload).toHaveBeenCalledWith('uploads/test.jpg');
+
     unwire();
   });
 

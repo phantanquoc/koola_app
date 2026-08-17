@@ -708,3 +708,24 @@ export function deleteRow(id: string): void {
 
 // Re-export constants for use in outboxProcessor
 export { MAX_RETRIES, WATCHDOG_SEND_MS, WATCHDOG_OTHER_MS };
+
+// ─── Done-row Reaper (Task 1.2) ──────────────────────────────────────────────
+
+/**
+ * Delete completed outbox rows older than `maxAgeMs` milliseconds.
+ *
+ * Only touches rows with state='done'. Rows in pending, in_flight, or
+ * dead_letter are never deleted — dead_letter rows are retained for user
+ * inspection / manual retry.
+ *
+ * Default maxAgeMs = 24 hours. Run during idle maintenance.
+ */
+export function deleteDoneOlderThan(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
+  const db = getDb();
+  const cutoff = Date.now() - maxAgeMs;
+  const result = db.execute(
+    `DELETE FROM outbox WHERE state = 'done' AND updated_at < ?`,
+    [cutoff],
+  );
+  return result.rowsAffected;
+}

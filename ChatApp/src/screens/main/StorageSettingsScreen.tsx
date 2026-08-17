@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Alert,
   Pressable,
@@ -7,7 +7,7 @@ import {
   Switch,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
@@ -23,6 +23,7 @@ import {
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import * as mediaIndexService from '../../services/media/mediaIndexService';
+import { getSqliteDatabaseSize } from '../../services/db/dbSize';
 import { isLocalFirstEnabled } from '../../config/featureFlags';
 import { isDataSaverEnabled, setDataSaver } from '../../services/media/mediaPreloader';
 
@@ -41,18 +42,29 @@ const StorageSettingsScreen: React.FC = () => {
   const [clearingCache, setClearingCache] = useState(false);
   const [capBytes, setCapBytesState] = useState(() => mediaIndexService.getCapBytes());
   const [dataSaver, setDataSaverState] = useState(() => isDataSaverEnabled());
+  // Per-category breakdown (task 7.3): image / video / audio / SQLite sizes.
+  const [categorySizes, setCategorySizes] = useState<mediaIndexService.MediaBreakdown>({
+    image: 0, video: 0, audio: 0, other: 0,
+  });
+  const [sqliteSize, setSqliteSize] = useState(0);
 
-  const refreshUsedBytes = useCallback(() => {
+  const refreshStorageStats = useCallback(() => {
     let total = 0;
     for (const [, entry] of mediaIndexService.iterate()) {
       total += entry.size;
     }
     setUsedBytes(total);
+    setCategorySizes(mediaIndexService.breakdown());
+    setSqliteSize(getSqliteDatabaseSize());
   }, []);
 
-  useEffect(() => {
-    refreshUsedBytes();
-  }, [refreshUsedBytes]);
+  // Refresh on mount and every time the screen gains focus so numbers stay
+  // current when the user navigates back from another settings page.
+  useFocusEffect(
+    useCallback(() => {
+      refreshStorageStats();
+    }, [refreshStorageStats]),
+  );
 
   function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -74,7 +86,7 @@ const StorageSettingsScreen: React.FC = () => {
             setClearingCache(true);
             try {
               await mediaIndexService.clearAll();
-              refreshUsedBytes();
+              refreshStorageStats();
             } catch (err) {
               Alert.alert('Lỗi', 'Không thể xóa bộ nhớ đệm');
             } finally {
@@ -98,7 +110,7 @@ const StorageSettingsScreen: React.FC = () => {
             const newCap = mediaIndexService.setCapBytes(CAP_OPTIONS_GB[i] * GB);
             setCapBytesState(newCap);
             mediaIndexService.evictIfNeeded(newCap).catch(() => {});
-            refreshUsedBytes();
+            refreshStorageStats();
           },
         })),
         { text: 'Hủy', style: 'cancel' },
@@ -152,6 +164,20 @@ const StorageSettingsScreen: React.FC = () => {
               ]}
             />
           </View>
+        </View>
+        {/* Per-category breakdown (task 7.3) */}
+        <KoolaDivider />
+        <View style={styles.breakdownRow}>
+          <KoolaText tone="muted" variant="caption">Hình ảnh: {formatBytes(categorySizes.image)}</KoolaText>
+        </View>
+        <View style={styles.breakdownRow}>
+          <KoolaText tone="muted" variant="caption">Video: {formatBytes(categorySizes.video)}</KoolaText>
+        </View>
+        <View style={styles.breakdownRow}>
+          <KoolaText tone="muted" variant="caption">Âm thanh: {formatBytes(categorySizes.audio)}</KoolaText>
+        </View>
+        <View style={styles.breakdownRow}>
+          <KoolaText tone="muted" variant="caption">SQLite: {formatBytes(sqliteSize)}</KoolaText>
         </View>
         <KoolaDivider />
         <Pressable
@@ -252,6 +278,12 @@ const makeStyles = (p: Palette) =>
     storageRow: {
       paddingHorizontal: koolaSpacing.lg,
       paddingVertical: 10,
+    },
+    breakdownRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: koolaSpacing.lg,
+      paddingVertical: 4,
     },
     meterTrack: {
       height: 6,

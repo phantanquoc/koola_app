@@ -249,7 +249,13 @@ export class MomentsService {
     storyId: string,
     viewerId: string,
   ): Promise<
-    StoryDocument & { mediaUrl: string; thumbnailUrl: string | null }
+    StoryDocument & {
+      mediaUrl: string;
+      thumbnailUrl: string | null;
+      mediaKey: string;
+      thumbnailKey: string | null;
+      musicKey: string | null;
+    }
   > {
     if (!Types.ObjectId.isValid(storyId)) {
       throw new NotFoundException('Story not found');
@@ -284,6 +290,25 @@ export class MomentsService {
         )
       : null;
 
+    // Resolve musicKey from musicRef → MusicTrack.audioKey when present.
+    // This lets the mobile client use getOrDownload(musicKey) for offline
+    // playback instead of re-streaming a presigned URL every view.
+    let musicKey: string | null = null;
+    if (s.musicRef?.trackId) {
+      try {
+        const track = await this.musicTrackModel
+          .findById(s.musicRef.trackId)
+          .lean();
+        if (track && (track as any).isActive) {
+          musicKey = (track as any).audioKey ?? null;
+        }
+      } catch {
+        // Track lookup failure is non-fatal — fall back to null so the
+        // client uses the existing presigned audio URL path.
+        musicKey = null;
+      }
+    }
+
     // Compute reactionCounts and myReaction
     const reactionCounts: Record<string, number> = {};
     let myReaction: string | null = null;
@@ -294,7 +319,16 @@ export class MomentsService {
       }
     }
 
-    return { ...s, mediaUrl, thumbnailUrl, reactionCounts, myReaction };
+    return {
+      ...s,
+      mediaUrl,
+      thumbnailUrl,
+      mediaKey: s.mediaKey,
+      thumbnailKey: s.thumbnailKey ?? null,
+      musicKey,
+      reactionCounts,
+      myReaction,
+    };
   }
 
   async deleteStory(storyId: string, authorId: string): Promise<void> {

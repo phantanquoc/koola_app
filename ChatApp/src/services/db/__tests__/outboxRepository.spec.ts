@@ -946,3 +946,101 @@ describe('deleteRow', () => {
     expect(repo.getDeadLetterRows().find((r) => r.id === id)).toBeUndefined();
   });
 });
+
+// ─── deleteDoneOlderThan (Task 1.2 — outbox reaper) ──────────────────────────
+
+describe('deleteDoneOlderThan', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const DAY_MS = 24 * HOUR_MS;
+
+  function makeDoneRow(id: string, updatedAtOffsetMs: number): void {
+    // Enqueue → markInFlight → markDone gives state='done', but markDone
+    // stamps updated_at = Date.now(). We then overwrite updated_at with a
+    // controlled value via direct UPDATE.
+    const realId = repo.enqueue('send_message', {
+      conversationId: 'conv_reap',
+      clientMessageId: `cmi_${id}`,
+      content: 'x',
+      type: 'text',
+    });
+    repo.markInFlight(realId);
+    repo.markDone(realId);
+    const desiredUpdatedAt = Date.now() + updatedAtOffsetMs;
+    (db as any).execute(
+      'UPDATE outbox SET id = ?, updated_at = ? WHERE id = ?',
+      [id, desiredUpdatedAt, realId],
+    );
+  }
+
+  function makeDeadLetterRow(id: string, updatedAtOffsetMs: number): void {
+    const realId = repo.enqueue('send_message', {
+      conversationId: 'conv_reap',
+      clientMessageId: `cmi_${id}`,
+      content: 'x',
+      type: 'text',
+    });
+    repo.markInFlight(realId);
+    repo.markDeadLetter(realId, { code: 'NETWORK', status: null, hint: 'err' });
+    const desiredUpdatedAt = Date.now() + updatedAtOffsetMs;
+    (db as any).execute(
+      'UPDATE outbox SET id = ?, updated_at = ? WHERE id = ?',
+      [id, desiredUpdatedAt, realId],
+    );
+  }
+
+  it('deletes done rows older than maxAgeMs', () => {
+    makeDoneRow('old_done', -25 * HOUR_MS); // 25 hours ago
+    const deleted = repo.deleteDoneOlderThan(DAY_MS);
+    expect(deleted).toBe(1);
+    expect(getRow('old_done')).toBeNull();
+  });
+
+  it('retains done rows newer than maxAgeMs', () => {
+    makeDoneRow('recent_done', -1 * HOUR_MS); // 1 hour ago
+    const deleted = repo.deleteDoneOlderThan(DAY_MS);
+    expect(deleted).toBe(0);
+    expect(getRow('recent_done')).not.toBeNull();
+    expect(getRow('recent_done')!.state).toBe('done');
+  });
+
+  it('never touches dead_letter rows regardless of age', () => {
+    makeDeadLetterRow('old_dead', -30 * DAY_MS); // 30 days ago
+    const deleted = repo.deleteDoneOlderThan(DAY_MS);
+    expect(deleted).toBe(0);
+    expect(getRow('old_dead')).not.toBeNull();
+    expect(getRow('old_dead')!.state).toBe('dead_letter');
+  });
+
+  it('never touches pending or in_flight rows', () => {
+    // pending
+    repo.enqueue('send_message', {
+      conversationId: 'conv_reap',
+      clientMessageId: 'cmi_pending',
+      content: 'x',
+      type: 'text',
+    });
+    // in_flight
+    const ifId = repo.enqueue('send_message', {
+      conversationId: 'conv_reap',
+      clientMessageId: 'cmi_inflight',
+      content: 'x',
+      type: 'text',
+    });
+    repo.markInFlight(ifId);
+
+    // Force their updated_at to be ancient so they would match the age filter
+    // if state were not checked.
+    (db as any).execute(
+      "UPDATE outbox SET updated_at = 0 WHERE state IN ('pending','in_flight')",
+    );
+
+    const deleted = repo.deleteDoneOlderThan(DAY_MS);
+    expect(deleted).toBe(0);
+    expect(allRows().filter((r) => r.state === 'pending').length).toBeGreaterThan(0);
+    expect(allRows().filter((r) => r.state === 'in_flight').length).toBeGreaterThan(0);
+  });
+
+  it('returns 0 when there are no qualifying rows', () => {
+    expect(repo.deleteDoneOlderThan(DAY_MS)).toBe(0);
+  });
+});

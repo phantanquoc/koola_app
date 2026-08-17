@@ -405,3 +405,59 @@ export function getTotalCachedBytes(): number {
   return total;
 }
 
+// ─── Breakdown (task 7.1) ──────────────────────────────────────────────────────
+
+export interface MediaBreakdown {
+  /** Bytes occupied by image/* entries (or .jpg/.jpeg/.png/.webp/.gif extension). */
+  image: number;
+  /** Bytes occupied by video/* entries (or .mp4/.mov/.webm extension). */
+  video: number;
+  /** Bytes occupied by audio/* entries (or .mp3/.m4a/.wav/.ogg/.aac extension). */
+  audio: number;
+  /** Bytes occupied by entries whose type cannot be determined from mime or path. */
+  other: number;
+}
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'mkv']);
+const AUDIO_EXTS = new Set(['mp3', 'm4a', 'wav', 'ogg', 'aac', 'flac']);
+
+/**
+ * Classify an entry by its MIME type first, falling back to the file extension
+ * extracted from the on-disk path. Returns one of 'image' | 'video' | 'audio' | 'other'.
+ */
+function classifyEntry(entry: MediaIndexEntry): 'image' | 'video' | 'audio' | 'other' {
+  const mime = (entry.mime ?? '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+
+  // Extension fallback — strip query strings / fragments and pull the last segment.
+  const path = entry.path || '';
+  const lastSeg = path.split('/').pop() ?? '';
+  const dot = lastSeg.lastIndexOf('.');
+  if (dot >= 0) {
+    const ext = lastSeg.slice(dot + 1).toLowerCase().split('?')[0].split('#')[0];
+    if (IMAGE_EXTS.has(ext)) return 'image';
+    if (VIDEO_EXTS.has(ext)) return 'video';
+    if (AUDIO_EXTS.has(ext)) return 'audio';
+  }
+  return 'other';
+}
+
+/**
+ * Sum cached bytes grouped by media category (image / video / audio / other).
+ *
+ * Used by StorageSettingsScreen to render a per-category breakdown beneath the
+ * used-vs-cap meter. Classification prefers the stored MIME type; when absent
+ * (legacy entries written before mime was recorded), falls back to the file
+ * extension of the on-disk path. Entries with neither are bucketed under `other`.
+ */
+export function breakdown(): MediaBreakdown {
+  const result: MediaBreakdown = { image: 0, video: 0, audio: 0, other: 0 };
+  indexMap.forEach((entry) => {
+    const bucket = classifyEntry(entry);
+    result[bucket] += entry.size;
+  });
+  return result;
+}

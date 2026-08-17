@@ -19,6 +19,7 @@
  */
 
 import { MMKV } from 'react-native-mmkv';
+import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { socketService } from '../socket/SocketService';
 import { getFromMemory, getOrDownload } from './mediaCacheService';
 
@@ -36,6 +37,9 @@ const settingsMmkv = new MMKV({ id: 'app-settings' });
 let _activeDownloads = 0;
 let _queue: string[] = [];
 let _unwireHandler: (() => void) | null = null;
+// Live network state from NetInfo subscription. Updated on every connectivity
+// change so the metered-network gate reacts without app restart.
+let _netState: { isConnectionExpensive: boolean } = { isConnectionExpensive: false };
 
 // ─── Data-saver helpers (task 6.4) ────────────────────────────────────────────
 
@@ -96,8 +100,9 @@ type NewMessageData = {
 };
 
 function handleNewMessage(data: unknown): void {
-  // Skip preload when data saver is on (task 6.4)
-  if (isDataSaverEnabled()) return;
+  // Skip preload only when data saver is on AND the connection is metered.
+  // When data saver is off, preload on all networks (existing behavior).
+  if (isDataSaverEnabled() && _netState.isConnectionExpensive) return;
 
   const msg = ((data as NewMessageData).message ?? data) as Record<string, unknown>;
   const type = String(msg.type ?? '');
@@ -122,10 +127,30 @@ export function wireMediaPreloader(): () => void {
   const handler = handleNewMessage as (...args: unknown[]) => void;
   socketService.on('new_message', handler);
 
+  // Subscribe to NetInfo so the metered-network gate updates live.
+  // Initial fetch seeds _netState before any events arrive.
+  let netUnsub: (() => void) | null = null;
+  NetInfo.fetch()
+    .then((state: NetInfoState) => {
+      _netState.isConnectionExpensive =
+        'isConnectionExpensive' in state && state.isConnectionExpensive === true;
+    })
+    .catch(() => {/* best-effort */});
+  // addEventListener returns a subscription function that IS the unsubscribe.
+  netUnsub = NetInfo.addEventListener((state: NetInfoState) => {
+    _netState.isConnectionExpensive =
+      'isConnectionExpensive' in state && state.isConnectionExpensive === true;
+  });
+
   _unwireHandler = () => {
     socketService.off('new_message', handler);
+    if (netUnsub) {
+      netUnsub();
+      netUnsub = null;
+    }
     _queue = [];
     _activeDownloads = 0;
+    _netState = { isConnectionExpensive: false };
     _unwireHandler = null;
   };
 

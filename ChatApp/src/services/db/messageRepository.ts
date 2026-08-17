@@ -812,3 +812,90 @@ export function wipeAll(): void {
   const db = getDb();
   db.execute('DELETE FROM messages');
 }
+
+// ─── Retention Prune (Task 1.1) ──────────────────────────────────────────────
+
+export interface PruneOptions {
+  maxAgeDays?: number;
+  minPerConversation?: number;
+}
+
+/**
+ * Prune old messages while preserving a per-conversation floor.
+ *
+ * Deletes messages with created_at < (now - maxAgeDays) EXCEPT for each
+ * conversation's newest minPerConversation rows. Runs inside a single
+ * transaction so the prune is atomic with respect to other writers.
+ *
+ * Conversations with fewer than minPerConversation messages are never touched,
+ * regardless of age.
+ *
+ * Implementation note: uses JS-side grouping and set computation because the
+ * test harness runs against an in-memory SQL engine that does not support
+ * HAVING or subqueries in NOT IN. On real SQLite this approach is still
+ * correct; the data volumes per run are bounded (idle maintenance pass).
+ */
+export function pruneOldMessages(opts: PruneOptions = {}): number {
+  const maxAgeDays = opts.maxAgeDays ?? 90;
+  const minPerConversation = opts.minPerConversation ?? 200;
+  const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+  const db = getDb();
+  let totalDeleted = 0;
+
+  db.transaction(() => {
+    // Step 1 — fetch all message ids + timestamps older than cutoff, grouped by
+    // conversation_id. We pull id + conversation_id only (no full row).
+    const oldRows = db.execute(
+      `SELECT id, conversation_id FROM messages WHERE created_at < ?`,
+      [cutoffMs],
+    );
+    const oldArray = oldRows.rows._array as Array<{ id: string; conversation_id: string }>;
+
+    if (oldArray.length === 0) return;
+
+    // Group old-row ids by conversation.
+    const convOldIds = new Map<string, string[]>();
+    for (const r of oldArray) {
+      let arr = convOldIds.get(r.conversation_id);
+      if (!arr) {
+        arr = [];
+        convOldIds.set(r.conversation_id, arr);
+      }
+      arr.push(r.id);
+    }
+
+    // Step 2 — for each conversation that has old rows, check whether its TOTAL
+    // row count exceeds the floor. If not, skip (never drop below floor).
+    // Then compute which old ids to keep (the newest minPerConversation of the
+    // entire conversation may include some old ones if the conversation is small).
+    for (const [convId, oldIds] of convOldIds) {
+      // Total message count for this conversation.
+      const totalResult = db.execute(
+        `SELECT id FROM messages WHERE conversation_id = ?`,
+        [convId],
+      );
+      const totalCount = totalResult.rows.length;
+      if (totalCount <= minPerConversation) continue;
+
+      // Fetch the newest minPerConversation ids for this conversation. These
+      // are protected from deletion regardless of age.
+      const keepResult = db.execute(
+        `SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?`,
+        [convId, minPerConversation],
+      );
+      const keepSet = new Set(
+        (keepResult.rows._array as Array<{ id: string }>).map((r) => r.id),
+      );
+
+      // Delete old ids that are NOT in the keep set.
+      for (const id of oldIds) {
+        if (keepSet.has(id)) continue;
+        const res = db.execute(`DELETE FROM messages WHERE id = ?`, [id]);
+        totalDeleted += res.rowsAffected;
+      }
+    }
+  });
+
+  return totalDeleted;
+}

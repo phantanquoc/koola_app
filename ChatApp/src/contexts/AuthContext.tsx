@@ -19,6 +19,7 @@ import { wireSyncTriggers } from '../services/sync/syncOrchestrator';
 import { wireMediaPreloader, isDataSaverEnabled, setDataSaver } from '../services/media/mediaPreloader';
 import { isLocalFirstEnabled } from '../config/featureFlags';
 import { pause as pauseOutboxProcessor, start as startOutboxProcessor, stop as stopOutboxProcessor } from '../services/sync/outboxProcessor';
+import { scheduleMaintenance, _resetForTesting as resetMaintenance } from '../services/db/storageMaintenance';
 import { navigationRef } from '../navigation/RootNavigator';
 import { momentsService } from '../services/moments/momentsService';
 import { clearAccountBadge } from '../services/push/accountBadgeStorage';
@@ -45,6 +46,11 @@ function wireLocalFirst(): void {
   setDataSaver(isDataSaverEnabled());
   // Phase 4: start outbox processor (registers NetInfo + AppState triggers)
   startOutboxProcessor();
+  // Schedule an idle maintenance pass (prune + reap + bounded vacuum).
+  // Idempotent within a session; debounced so rapid foreground toggles
+  // don't queue multiple passes. Runs via InteractionManager, never blocks
+  // first paint.
+  scheduleMaintenance();
 }
 
 /**
@@ -99,6 +105,8 @@ function unwireLocalFirst(): void {
   _unwireSyncTriggers = null;
   _unwireMediaPreloader?.();
   _unwireMediaPreloader = null;
+  // Allow the next login to schedule a fresh maintenance pass.
+  resetMaintenance();
 }
 
 interface AuthContextType {
@@ -216,6 +224,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         reconnect();
         // Refresh Moments feed so new stories appear without manual pull-to-refresh
         momentsService.refreshFeed().catch(() => {});
+        // Kick off idle maintenance when returning to foreground. Idempotent
+        // within a session; debounced and InteractionManager-gated so it won't
+        // jank the transition animation.
+        scheduleMaintenance();
       }
       appStateRef.current = nextState;
     },

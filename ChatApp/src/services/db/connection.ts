@@ -141,3 +141,13 @@ export function _setDbForTesting(db: DbHandle | null): void {
   _db = db;
   _raw = null;
 }
+
+/**
+ * Return the current DB handle if one is already open, or null otherwise.
+ * Unlike getDb(), this does NOT auto-open the database — useful for read-only
+ * diagnostics (e.g. DB size) where we'd rather return 0 than trigger a side
+ * effect at module import time.
+ */
+export function getDbIfOpen(): DbHandle | null {
+  return _db;
+}

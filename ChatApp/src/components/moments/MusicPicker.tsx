@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KoolaText, KoolaButton, koolaColors, koolaRadii, koolaSpacing } from '../../ui';
 import { momentsService } from '../../services/moments/momentsService';
 import type { MusicTrack, MusicRef } from '../../services/moments/momentsApi';
+import { getOrDownload } from '../../services/media/mediaCacheService';
 
 interface MusicPickerProps {
   visible: boolean;
@@ -71,8 +72,10 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
   }, [visible]);
 
   // Toggle preview for a track. Tapping the playing one stops it; tapping a
-  // different one switches. Uses the track's previewUrl (falls back to
-  // audioUrl) resolved by the backend when listing/fetching tracks.
+  // different one switches. Resolves the preview through the persistent cache
+  // so repeats play from disk (offline-safe). Falls back to presigned URL when
+  // the cache is cold or no key exists, and drops audio silently if nothing
+  // resolves.
   const handleTogglePreview = useCallback(
     async (track: MusicTrack) => {
       if (previewingId === track._id) {
@@ -80,18 +83,34 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
         setPreviewUrl(null);
         return;
       }
-      // Prefer the list's previewUrl; if absent, fetch full detail for audioUrl.
-      let url = track.previewUrl ?? track.audioUrl ?? null;
-      if (!url) {
+
+      let resolved: string | null = null;
+
+      // Try the persistent cache first using previewKey → audioKey as stable keys.
+      const cacheKey = track.previewKey ?? track.audioKey ?? null;
+      if (cacheKey) {
         try {
-          const detail = await momentsService.getMusicTrackById(track._id);
-          url = detail.previewUrl ?? detail.audioUrl ?? null;
+          resolved = await getOrDownload(cacheKey);
         } catch {
-          url = null;
+          resolved = null;
         }
       }
-      if (!url) return;
-      setPreviewUrl(url);
+
+      // Fall back to the list's presigned URLs; fetch full detail only if absent.
+      if (!resolved) {
+        resolved = track.previewUrl ?? track.audioUrl ?? null;
+        if (!resolved) {
+          try {
+            const detail = await momentsService.getMusicTrackById(track._id);
+            resolved = detail.previewUrl ?? detail.audioUrl ?? null;
+          } catch {
+            resolved = null;
+          }
+        }
+      }
+
+      if (!resolved) return;
+      setPreviewUrl(resolved);
       setPreviewingId(track._id);
     },
     [previewingId],

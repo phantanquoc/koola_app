@@ -891,3 +891,103 @@ describe('Phase C1: No-op write suppression', () => {
   });
 });
 
+// ─── Retention Prune Tests (Task 1.1) ────────────────────────────────────────
+
+describe('messageRepository.pruneOldMessages', () => {
+  it('keeps exactly minPerConversation newest rows when over floor and older than maxAgeDays', () => {
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    // 250 messages spanning 120 days → expect 200 kept, 50 dropped
+    const msgs = Array.from({ length: 250 }, (_, i) =>
+      makeMsg({
+        id: `prune_big_${i}`,
+        conversationId: 'conv_prune_big',
+        createdAt: now - (120 * DAY_MS) + i * (DAY_MS / 2),
+      }),
+    );
+    repo.upsertMany(msgs);
+
+    const deleted = repo.pruneOldMessages({ maxAgeDays: 90, minPerConversation: 200 });
+
+    const remaining = repo.list({
+      conversationId: 'conv_prune_big',
+      currentUserId: 'user_1',
+      limit: 1000,
+    });
+    expect(remaining.length).toBe(200);
+    expect(deleted).toBe(50);
+    // All remaining must be among the newest 200 by created_at
+    const sortedDesc = [...msgs].sort((a, b) =>
+      Number((b.createdAt as number) - (a.createdAt as number)),
+    );
+    const expectedIds = new Set(sortedDesc.slice(0, 200).map((m) => m.id));
+    for (const m of remaining) {
+      expect(expectedIds.has(m.id)).toBe(true);
+    }
+  });
+
+  it('does not touch conversations under the floor even if all messages are old', () => {
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    // 150 messages all 120 days old → none should be deleted (under floor)
+    const msgs = Array.from({ length: 150 }, (_, i) =>
+      makeMsg({
+        id: `prune_small_${i}`,
+        conversationId: 'conv_prune_small',
+        createdAt: now - 120 * DAY_MS + i,
+      }),
+    );
+    repo.upsertMany(msgs);
+
+    const deleted = repo.pruneOldMessages({ maxAgeDays: 90, minPerConversation: 200 });
+
+    const remaining = repo.list({
+      conversationId: 'conv_prune_small',
+      currentUserId: 'user_1',
+      limit: 1000,
+    });
+    expect(remaining.length).toBe(150);
+    expect(deleted).toBe(0);
+  });
+
+  it('runs inside a transaction (all-or-nothing across multiple conversations)', () => {
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    // Two conversations each with 250 old messages
+    const a = Array.from({ length: 250 }, (_, i) =>
+      makeMsg({
+        id: `txn_a_${i}`,
+        conversationId: 'conv_txn_a',
+        createdAt: now - 120 * DAY_MS + i,
+      }),
+    );
+    const b = Array.from({ length: 250 }, (_, i) =>
+      makeMsg({
+        id: `txn_b_${i}`,
+        conversationId: 'conv_txn_b',
+        createdAt: now - 120 * DAY_MS + i,
+      }),
+    );
+    repo.upsertMany([...a, ...b]);
+
+    repo.pruneOldMessages({ maxAgeDays: 90, minPerConversation: 200 });
+
+    expect(
+      repo.list({ conversationId: 'conv_txn_a', currentUserId: 'user_1', limit: 1000 }).length,
+    ).toBe(200);
+    expect(
+      repo.list({ conversationId: 'conv_txn_b', currentUserId: 'user_1', limit: 1000 }).length,
+    ).toBe(200);
+  });
+
+  it('returns 0 when no messages qualify for deletion', () => {
+    const now = Date.now();
+    repo.upsertMany([
+      makeMsg({ id: 'fresh_1', createdAt: now }),
+      makeMsg({ id: 'fresh_2', createdAt: now - 1000 }),
+    ]);
+    const deleted = repo.pruneOldMessages({ maxAgeDays: 90, minPerConversation: 200 });
+    expect(deleted).toBe(0);
+  });
+});
+

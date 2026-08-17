@@ -47,6 +47,7 @@ import { momentsService } from '../../services/moments/momentsService';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Story, ViewerEntry, MusicTrack } from '../../services/moments/momentsApi';
 import { viewsApi } from '../../services/moments/momentsApi';
+import { getOrDownload } from '../../services/media/mediaCacheService';
 
 type NavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 type ViewerRouteProp = RouteProp<ChatTabStackParamList, 'MomentViewer'>;
@@ -75,6 +76,10 @@ const MomentViewerScreen: React.FC = () => {
   const [viewers, setViewers] = useState<ViewerEntry[]>([]);
   const [toastMsg, setToastMsg] = useState('');
   const [trackInfo, setTrackInfo] = useState<MusicTrack | null>(null);
+  const [resolvedMediaUri, setResolvedMediaUri] = useState<string | null>(null);
+  // Resolved music audio URI for compose-at-playback. Prefers cached file://
+  // via currentStory.musicKey; falls back to trackInfo.audioUrl when cold/absent.
+  const [resolvedAudioUri, setResolvedAudioUri] = useState<string | null>(null);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,6 +110,67 @@ const MomentViewerScreen: React.FC = () => {
       .catch(() => { if (!cancelled) setTrackInfo(null); });
     return () => { cancelled = true; };
   }, [currentStory?.musicRef?.trackId]);
+
+  // --- Resolve music audio through persistent cache when musicKey is present ---
+  // Prefers cached file:// so repeated story views play offline from disk.
+  // Falls back to trackInfo.audioUrl when musicKey is absent (legacy) or cache fails.
+  useEffect(() => {
+    if (!currentStory?.musicRef) {
+      setResolvedAudioUri(null);
+      return;
+    }
+
+    const fallback = trackInfo?.audioUrl ?? null;
+
+    // No musicKey → use the presigned track audio URL directly (backward compat)
+    if (!currentStory.musicKey) {
+      setResolvedAudioUri(fallback);
+      return;
+    }
+
+    let cancelled = false;
+    getOrDownload(currentStory.musicKey)
+      .then((uri) => {
+        if (cancelled) return;
+        setResolvedAudioUri(uri ?? fallback);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResolvedAudioUri(fallback);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentStory?._id, currentStory?.musicRef, currentStory?.musicKey, trackInfo?.audioUrl]);
+
+  // --- Resolve story media via persistent cache when mediaKey is present ---
+  // Falls back to presigned mediaUrl when mediaKey is absent (legacy stories).
+  useEffect(() => {
+    if (!currentStory) {
+      setResolvedMediaUri(null);
+      return;
+    }
+
+    // No mediaKey → use presigned URL directly (backward compat)
+    if (!currentStory.mediaKey) {
+      setResolvedMediaUri(currentStory.mediaUrl ?? null);
+      return;
+    }
+
+    let cancelled = false;
+    // Try the persistent cache first; on miss download+caches and returns file://
+    getOrDownload(currentStory.mediaKey)
+      .then((uri) => {
+        if (cancelled) return;
+        setResolvedMediaUri(uri ?? currentStory.mediaUrl ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Download failed — fall back to presigned URL so playback still works
+        setResolvedMediaUri(currentStory.mediaUrl ?? null);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentStory?._id, currentStory?.mediaKey, currentStory?.mediaUrl]);
 
   // --- Load stories for author ---
   useEffect(() => {
@@ -422,7 +488,7 @@ const MomentViewerScreen: React.FC = () => {
       {/* Media */}
       {currentStory?.mediaType === 'video' ? (
         <Video
-          source={{ uri: currentStory.mediaUrl ?? '' }}
+          source={{ uri: resolvedMediaUri ?? '' }}
           style={styles.media}
           resizeMode="cover"
           paused={isPaused}
@@ -433,9 +499,9 @@ const MomentViewerScreen: React.FC = () => {
           repeat={false}
           accessibilityLabel="Video khoảnh khắc"
         />
-      ) : currentStory?.mediaUrl ? (
+      ) : resolvedMediaUri ? (
         <Image
-          source={{ uri: currentStory.mediaUrl }}
+          source={{ uri: resolvedMediaUri }}
           style={styles.media}
           resizeMode="cover"
           onLoad={handleMediaLoad}
@@ -445,11 +511,11 @@ const MomentViewerScreen: React.FC = () => {
       ) : null}
 
       {/* Parallel audio player (compose-at-playback). Hidden, audio-only. */}
-      {currentStory?.musicRef && trackInfo?.audioUrl ? (
+      {currentStory?.musicRef && resolvedAudioUri ? (
         <Video
           key={`audio-${currentStory._id}`}
           ref={audioRef}
-          source={{ uri: trackInfo.audioUrl }}
+          source={{ uri: resolvedAudioUri }}
           style={styles.hiddenAudio}
           paused={isPaused || viewerState !== 'loaded'}
           muted={false}

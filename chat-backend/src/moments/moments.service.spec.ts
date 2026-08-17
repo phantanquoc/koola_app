@@ -991,4 +991,145 @@ describe('MomentsService', () => {
       expect(notificationsMock.sendMentionPush).not.toHaveBeenCalled();
     });
   });
+
+  // ─── getStoryById — media keys in response ──────────────────────────────
+
+  describe('getStoryById — media keys in response', () => {
+    const validStoryId = '507f1f77bcf86cd799439011';
+    const authorId = new Types.ObjectId().toString();
+    const viewerId = authorId; // author always passes assertViewAccess
+
+    function storyDoc(overrides: Record<string, unknown> = {}) {
+      return {
+        _id: validStoryId,
+        authorId,
+        isActive: true,
+        expiresAt: new Date(Date.now() + 86400_000),
+        audienceScope: AudienceScope.PUBLIC,
+        mediaKey: 'stories/abc/media.mp4',
+        thumbnailKey: 'stories/abc/thumb.jpg',
+        mediaType: MediaType.VIDEO,
+        reactions: [],
+        mentions: [],
+        viewCount: 0,
+        musicRef: null,
+        ...overrides,
+      };
+    }
+
+    it('returns mediaKey equal to stored key alongside presigned mediaUrl', async () => {
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(storyDoc()),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.mediaKey).toBe('stories/abc/media.mp4');
+      expect(result.mediaUrl).toBeDefined();
+      expect(typeof result.mediaUrl).toBe('string');
+      expect(result.mediaUrl.length).toBeGreaterThan(0);
+    });
+
+    it('returns thumbnailKey from the persisted doc', async () => {
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(storyDoc()),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.thumbnailKey).toBe('stories/abc/thumb.jpg');
+    });
+
+    it('returns null thumbnailKey when story has none', async () => {
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          storyDoc({ thumbnailKey: null }),
+        ),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.thumbnailKey).toBeNull();
+      // mediaUrl must still be present
+      expect(result.mediaUrl).toBeDefined();
+    });
+
+    it('resolves musicKey from musicRef.trackId via MusicTrack lookup', async () => {
+      const trackId = new Types.ObjectId().toString();
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          storyDoc({
+            musicRef: { trackId, startMs: 0 },
+          }),
+        ),
+      });
+      musicTrackModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: trackId,
+          audioKey: 'music/tracks/full-track.mp3',
+          previewKey: 'music/tracks/preview-track.mp3',
+          isActive: true,
+        }),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.musicKey).toBe('music/tracks/full-track.mp3');
+      expect(musicTrackModel.findById).toHaveBeenCalledWith(trackId);
+    });
+
+    it('returns null musicKey when story has no musicRef', async () => {
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(storyDoc({ musicRef: null })),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.musicKey).toBeNull();
+      expect(musicTrackModel.findById).not.toHaveBeenCalled();
+    });
+
+    it('returns null musicKey when referenced track is inactive or missing', async () => {
+      const trackId = new Types.ObjectId().toString();
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          storyDoc({
+            musicRef: { trackId, startMs: 0 },
+          }),
+        ),
+      });
+      // Track not found
+      musicTrackModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(null),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.musicKey).toBeNull();
+      // Story itself should still resolve fine
+      expect(result.mediaKey).toBe('stories/abc/media.mp4');
+      expect(result.mediaUrl).toBeDefined();
+    });
+
+    it('swallows MusicTrack lookup errors and returns null musicKey', async () => {
+      const trackId = new Types.ObjectId().toString();
+      storyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          storyDoc({
+            musicRef: { trackId, startMs: 0 },
+          }),
+        ),
+      });
+      musicTrackModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockRejectedValue(new Error('DB timeout')),
+      });
+
+      const result = await service.getStoryById(validStoryId, viewerId);
+
+      expect(result.musicKey).toBeNull();
+      // Non-fatal: story still resolves with media fields intact
+      expect(result.mediaKey).toBe('stories/abc/media.mp4');
+      expect(result.mediaUrl).toBeDefined();
+    });
+  });
 });

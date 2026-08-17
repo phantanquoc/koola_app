@@ -206,26 +206,40 @@ export async function uploadFileToMinIO(
     path = path.replace('file://', '');
   }
 
-  // For content:// URIs (Android document picker), copy to temp first
+  // For content:// URIs (Android document picker), copy to temp first.
+  // Track the temp path so we can clean it up in the finally block below.
+  let tempPath: string | null = null;
   if (path.startsWith('content://')) {
     const stat = await BlobUtil.fs.stat(path);
-    const tempPath = `${BlobUtil.fs.dirs.CacheDir}/upload_${Date.now()}_${stat.filename || 'file'}`;
+    tempPath = `${BlobUtil.fs.dirs.CacheDir}/upload_${Date.now()}_${stat.filename || 'file'}`;
     await BlobUtil.fs.cp(path, tempPath);
     path = tempPath;
   }
 
-  const task = BlobUtil.fetch('PUT', uploadUrl, {
-    'Content-Type': mimeType,
-  }, BlobUtil.wrap(path));
+  try {
+    const task = BlobUtil.fetch('PUT', uploadUrl, {
+      'Content-Type': mimeType,
+    }, BlobUtil.wrap(path));
 
-  if (onProgress) {
-    task.uploadProgress((written: number, total: number) => {
-      const percent = total > 0 ? Math.round((written / total) * 100) : 0;
-      onProgress(percent);
-    });
+    if (onProgress) {
+      task.uploadProgress((written: number, total: number) => {
+        const percent = total > 0 ? Math.round((written / total) * 100) : 0;
+        onProgress(percent);
+      });
+    }
+
+    await task;
+  } finally {
+    // Best-effort cleanup of the temp file created from content:// URIs.
+    // Runs on both success and failure so temp files do not accumulate.
+    if (tempPath) {
+      try {
+        await BlobUtil.fs.unlink(tempPath);
+      } catch (e) {
+        console.warn('[mediaUploadService] Failed to unlink upload temp file:', tempPath, e);
+      }
+    }
   }
-
-  await task;
 }
 
 // ─── Full Upload Flow ────────────────────────────────────────────────────────

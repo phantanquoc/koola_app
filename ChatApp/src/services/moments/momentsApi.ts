@@ -55,6 +55,8 @@ export interface Story {
   mediaUrl?: string;
   /** Presigned thumbnail URL — returned by getStoryById for video stories */
   thumbnailUrl?: string;
+  /** Resolved music audio key from musicRef → MusicTrack — returned by getStoryById */
+  musicKey?: string | null;
   /** Aggregated reaction counts { '❤️': 3, '😂': 1 } */
   reactionCounts?: Record<string, number>;
   /** The calling viewer's own reaction emoji (if any) */
