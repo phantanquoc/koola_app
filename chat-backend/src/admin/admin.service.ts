@@ -13,6 +13,7 @@ import {
 import { MediaService } from '../media/media.service';
 import { ListUsersDto } from './dto/list-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { escapeRegExp } from '../common/utils/escape-regexp';
 
 /**
  * Safe projection — NEVER exposes passwordHash, fcmTokens, or refresh tokens.
@@ -205,7 +206,8 @@ export class AdminService {
     }
 
     if (dto.search && dto.search.trim().length > 0) {
-      const regex = new RegExp(dto.search.trim(), 'i');
+      const escaped = escapeRegExp(dto.search.trim());
+      const regex = new RegExp(escaped, 'i');
       filterParts.$or = [
         { displayName: regex },
         { email: regex },
@@ -244,9 +246,19 @@ export class AdminService {
 
   // ─── POST /admin/users/:id/ban ──────────────────────────────────────────────
 
-  async banUser(id: string): Promise<{ message: string }> {
+  async banUser(
+    id: string,
+    opts?: { reason?: string; durationDays?: number },
+  ): Promise<{ message: string }> {
+    const update: Record<string, unknown> = { isBanned: true };
+    if (opts?.reason) update['banReason'] = opts.reason;
+    if (opts?.durationDays && opts.durationDays > 0) {
+      update['bannedUntil'] = new Date(
+        Date.now() + opts.durationDays * 24 * 60 * 60 * 1000,
+      );
+    }
     const user = await this.userModel
-      .findByIdAndUpdate(id, { $set: { isBanned: true } }, { new: true })
+      .findByIdAndUpdate(id, { $set: update }, { new: true })
       .select('_id');
 
     if (!user) {
@@ -266,7 +278,14 @@ export class AdminService {
 
   async unbanUser(id: string): Promise<{ message: string }> {
     const user = await this.userModel
-      .findByIdAndUpdate(id, { $set: { isBanned: false } }, { new: true })
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: { isBanned: false },
+          $unset: { bannedUntil: '', banReason: '' },
+        },
+        { new: true },
+      )
       .select('_id');
 
     if (!user) {
@@ -274,5 +293,40 @@ export class AdminService {
     }
 
     return { message: 'User unbanned' };
+  }
+
+  async bulkApproveBusiness(ids: string[]): Promise<{ modified: number }> {
+    const res = await this.userModel.updateMany(
+      { _id: { $in: ids }, accountType: 'business' },
+      {
+        $set: { verificationStatus: 'verified' },
+        $unset: { rejectionReason: '' },
+      },
+    );
+    return {
+      modified:
+        (res as unknown as { modifiedCount: number }).modifiedCount ?? 0,
+    };
+  }
+
+  async bulkRejectBusiness(
+    ids: string[],
+    reason: string,
+  ): Promise<{ modified: number }> {
+    if (!reason || reason.trim().length === 0)
+      throw new BadRequestException('rejectionReason is required');
+    const res = await this.userModel.updateMany(
+      { _id: { $in: ids }, accountType: 'business' },
+      {
+        $set: {
+          verificationStatus: 'rejected',
+          rejectionReason: reason.trim(),
+        },
+      },
+    );
+    return {
+      modified:
+        (res as unknown as { modifiedCount: number }).modifiedCount ?? 0,
+    };
   }
 }

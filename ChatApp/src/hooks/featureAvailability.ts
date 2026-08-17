@@ -38,9 +38,11 @@ export const FEATURE_AVAILABILITY: Record<FeatureKey, FeatureAvailability> = {
   auth: 'ready',
 
   // ── Preview features (mock data, no backend) ────────────────────────────
-  shopping: 'preview',
-  services: 'preview',
   shorts: 'preview',
+
+  // ── Ready after commerce catalog ships ────────────────────────────────────
+  shopping: 'ready',
+  services: 'ready',
 
   // ── Unavailable features ────────────────────────────────────────────────
   emojiPicker: 'unavailable',

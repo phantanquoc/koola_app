@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './useAuth';
 import { initials } from './components/formatters';
 
@@ -13,28 +13,64 @@ interface NavItem {
 const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Tổng quan',
-    items: [{ to: '/', label: 'Dashboard', icon: '◎', end: true }],
+    items: [
+      { to: '/', label: 'Dashboard', icon: '◎', end: true },
+      { to: '/analytics', label: 'Analytics', icon: '◈' },
+    ],
+  },
+  {
+    label: 'Kiểm duyệt',
+    items: [
+      { to: '/conversations', label: 'Conversations', icon: '◫' },
+      { to: '/messages', label: 'Messages', icon: '✉' },
+      { to: '/moments', label: 'Moments', icon: '⬢' },
+      { to: '/music', label: 'Music', icon: '♫' },
+      { to: '/reports', label: 'Reports', icon: '⚑' },
+    ],
+  },
+  {
+    label: 'Catalog',
+    items: [
+      { to: '/products', label: 'Products', icon: '▣' },
+      { to: '/services', label: 'Services', icon: '⬣' },
+    ],
   },
   {
     label: 'Vận hành',
     items: [
       { to: '/businesses', label: 'Doanh nghiệp', icon: '▣' },
       { to: '/users', label: 'Người dùng', icon: '◌' },
+      { to: '/health', label: 'Health', icon: '♥' },
+      { to: '/broadcast', label: 'Broadcast', icon: '☄' },
+      { to: '/audit-logs', label: 'Audit log', icon: '≡' },
     ],
   },
 ];
 
 const routeTitles: Record<string, string> = {
   '/': 'Tổng quan vận hành',
+  '/analytics': 'Analytics',
   '/businesses': 'Doanh nghiệp chờ duyệt',
   '/users': 'Quản lý người dùng',
+  '/conversations': 'Hội thoại',
+  '/messages': 'Tin nhắn',
+  '/moments': 'Moments',
+  '/music': 'Music catalog',
+  '/reports': 'Báo cáo',
+  '/products': 'Sản phẩm',
+  '/services': 'Dịch vụ',
+  '/health': 'Sức khỏe hệ thống',
+  '/broadcast': 'Broadcast',
+  '/audit-logs': 'Audit log',
 };
 
 export default function AppLayout() {
   const { logout, identity } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const currentTitle = routeTitles[location.pathname] ?? 'Koola Admin';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [topSearch, setTopSearch] = useState('');
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
@@ -42,9 +78,21 @@ export default function AppLayout() {
   const adminInitial = initials(adminName, 'A');
   const adminRole = identity?.role ?? 'admin';
 
+  function handleTopSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = topSearch.trim();
+    if (!q) return;
+    // Heuristic: if q looks like email/phone, go to users; else messages search
+    if (q.includes('@') || /^[0-9+]+$/.test(q)) {
+      navigate(`/users?search=${encodeURIComponent(q)}`);
+    } else {
+      navigate(`/messages?q=${encodeURIComponent(q)}`);
+    }
+    setTopSearch('');
+  }
+
   return (
     <div className="admin-shell">
-      {/* Mobile nav overlay */}
       {mobileNavOpen && (
         <div
           className="mobile-nav-backdrop"
@@ -128,11 +176,17 @@ export default function AppLayout() {
             </div>
           </div>
           <div className="admin-topbar-actions">
-            {/* Command affordance rendered as non-interactive info —
-                no shortcut claim since search is not yet functional */}
-            <span className="admin-command-info" aria-hidden="true">
-              Search users, businesses...
-            </span>
+            <form onSubmit={handleTopSearch} style={{ display: 'flex', gap: 'var(--space-2)' }} role="search" aria-label="Tìm kiếm admin">
+              <input
+                className="input"
+                placeholder="Tìm users/messages..."
+                value={topSearch}
+                onChange={(e) => setTopSearch(e.target.value)}
+                aria-label="Tìm kiếm"
+                style={{ width: 220 }}
+              />
+              <button className="btn btn-secondary btn-sm" type="submit" aria-label="Tìm kiếm">Tìm</button>
+            </form>
           </div>
         </header>
 

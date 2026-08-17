@@ -101,6 +101,12 @@ export class User {
   @Prop({ default: false })
   isBanned: boolean;
 
+  @Prop({ type: String, default: null })
+  banReason: string | null;
+
+  @Prop({ type: Date, default: null })
+  bannedUntil: Date | null;
+
   /** Platform administration authority — set out-of-band only (see scripts/grant-admin.ts) */
   @Prop({ default: false })
   isPlatformAdmin: boolean;

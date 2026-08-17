@@ -21,6 +21,7 @@ import { MomentsModule } from './moments/moments.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { TranslationModule } from './translation/translation.module';
 import { AdminModule } from './admin/admin.module';
+import { CommerceModule } from './commerce/commerce.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { AdminModule } from './admin/admin.module';
     AccountsModule,
     TranslationModule,
     AdminModule,
+    CommerceModule,
   ],
   providers: [
     {
