@@ -3,9 +3,7 @@
 ## Purpose
 
 Provides a durable, SQLite-backed outbox table that is the single source-of-truth for client-initiated write intents on chat resources. The outbox decouples the UI send path from network availability: every write op is persisted locally first, then dispatched by a background worker with retry, coalesce, and ordering guarantees. This replaces the legacy AsyncStorage-based OfflineQueueService for all chat write operations.
-
 ## Requirements
-
 ### Requirement: Outbox Table as Single Source of Truth for Write Intents
 
 The mobile app SHALL maintain an `outbox` table in the on-device SQLite database (`koola.db`) that is the single durable source-of-truth for client-initiated write intents on chat resources. Every write op SHALL be represented as exactly one row in this table during its lifecycle (with op-specific coalesce semantics).
@@ -574,3 +572,31 @@ The mobile app SHALL include a developer-only outbox inspection panel (gated by 
 - **THEN** a Pause / Resume toggle SHALL be visible
 - **AND** tapping it SHALL call `outboxProcessor.pause()` or `resume()` accordingly
 - **AND** the toggle SHALL reflect the current paused state
+
+### Requirement: Completed Outbox Rows Are Reaped
+
+The outbox SHALL delete completed rows whose `state='done'` and `updated_at` is older than a configurable threshold (default 24 hours) during idle maintenance, so completed write intents do not accumulate forever. This addresses the unbounded growth of `done` rows carrying `payload_json`.
+
+#### Scenario: Stale done rows are deleted
+
+- **GIVEN** an outbox row has `state='done'` and `updated_at` more than 24 hours in the past
+- **WHEN** the outbox repository's reaper function runs
+- **THEN** the row SHALL be deleted from the `outbox` table
+
+#### Scenario: Recent done rows are retained for diagnosis
+
+- **GIVEN** an outbox row has `state='done'` and `updated_at` within the last 24 hours
+- **WHEN** the reaper runs
+- **THEN** the row SHALL NOT be deleted
+
+#### Scenario: Non-done rows are never reaped by this rule
+
+- **GIVEN** an outbox row with `state` in `pending`, `in_flight`, or `dead_letter`
+- **WHEN** the reaper runs
+- **THEN** the row SHALL NOT be deleted regardless of age
+
+#### Scenario: Reaping is exposed through the repository
+
+- **WHEN** the maintenance scheduler invokes reaping
+- **THEN** it SHALL call an `outboxRepository` function (not raw SQL from the scheduler)
+

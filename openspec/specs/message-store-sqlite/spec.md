@@ -5,9 +5,7 @@
 Provides an on-device SQLite database (`koola.db`) that is the canonical local read source for chat UI on mobile. ChatScreen and ConversationListScreen read exclusively from this database on the hot path; the network layer is consulted only by the sync engine, never directly by UI code. The database holds messages, conversations, and sync state, with a typed repository API so UI code never writes raw SQL.
 
 This capability replaces the MMKV `message-cache` as the primary local store once the `LOCAL_FIRST_SQLITE` flag is enabled and the one-time backfill from MMKV completes.
-
 ## Requirements
-
 ### Requirement: Local SQLite Database as Canonical Read Source
 
 The mobile app SHALL maintain an on-device SQLite database (`koola.db`) that is the canonical source of message and conversation data for the chat UI. ChatScreen and ConversationListScreen SHALL read exclusively from this database on the hot path; the network layer is consulted only by the sync engine, never directly by UI code.
@@ -229,3 +227,27 @@ The repository hot-path operations SHALL meet the following budgets on a mid-ran
 - **GIVEN** the app has just been launched and the database is cold
 - **WHEN** the user taps a conversation that contains cached data
 - **THEN** the first paint of ChatScreen SHALL show messages within 50 ms after navigation completes
+
+### Requirement: Message Retention Policy
+
+The local SQLite `messages` store SHALL enforce a retention policy during idle maintenance so the database does not grow without bound. The policy SHALL delete messages older than a configurable age (default 90 days) while never reducing any conversation below its most recent N messages (default 200). Deletion is local-only; the backend MongoDB remains canonical and is unaffected.
+
+#### Scenario: Old messages pruned past the age threshold
+
+- **GIVEN** a conversation has messages older than 90 days and more than 200 total messages
+- **WHEN** the message repository's retention function runs
+- **THEN** messages with `created_at` older than 90 days SHALL be deleted
+- **AND** the conversation SHALL retain at least its 200 most recent messages regardless of age
+
+#### Scenario: Small conversations keep all messages
+
+- **GIVEN** a conversation has 150 messages, some older than 90 days
+- **WHEN** the retention function runs
+- **THEN** no message in that conversation SHALL be deleted (the 200-message floor exceeds the count)
+
+#### Scenario: Retention is exposed through the repository
+
+- **WHEN** the maintenance scheduler invokes pruning
+- **THEN** it SHALL call a `messageRepository` function (not raw SQL from the scheduler)
+- **AND** the deletion SHALL occur within the repository's transaction wrapper
+
