@@ -7,16 +7,16 @@ import { TranslationService, buildTranslateKey3 } from './translation.service';
 import { TranslateRateLimitGuard } from './translate-throttler.guard';
 import { RedisService } from '../common/redis/redis.service';
 import { TranslateDto } from './dto/translate.dto';
+import { GoogleProvider } from './providers/google.provider';
+import { MyMemoryProvider } from './providers/mymemory.provider';
+import { LlmProvider } from './providers/llm.provider';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const makeMockRedis = () => {
   const store = new Map<string, string>();
-  // Stable client mock — getClient() must return the SAME object so the
-  // service's cache writes land in a mock we can inspect across calls.
   const clientSet = jest.fn(
     async (key: string, value: string, mode?: string, ttl?: number) => {
-      // Capture TTL assertion: mode === 'EX' and ttl === 2592000 (30 days).
       if (mode !== 'EX' || ttl !== 2592000) {
         throw new Error(
           `unexpected cache write args: ${String(mode)} ${String(ttl)}`,
@@ -62,21 +62,84 @@ const makeFetchResponse = (opts: {
   } as unknown as Response;
 };
 
+const makeMyMemoryResponse = (opts: {
+  ok?: boolean;
+  status?: number;
+  translatedText?: string;
+  responseStatus?: number;
+  quotaFinished?: boolean;
+  textBody?: string;
+}) => {
+  const ok = opts.ok ?? true;
+  return {
+    ok,
+    status: opts.status ?? (ok ? 200 : 429),
+    json: async () => ({
+      responseData: { translatedText: opts.translatedText ?? 'Hola MyMemory' },
+      responseStatus: opts.responseStatus ?? 200,
+      responseDetails: '',
+      quotaFinished: opts.quotaFinished ?? false,
+      matches: [],
+    }),
+    text: async () => opts.textBody ?? '',
+  } as unknown as Response;
+};
+
+const makeLlmAnthropicResponse = (opts: {
+  ok?: boolean;
+  status?: number;
+  translatedText?: string;
+  sourceLang?: string;
+  textBody?: string;
+}) => {
+  const ok = opts.ok ?? true;
+  return {
+    ok,
+    status: opts.status ?? (ok ? 200 : 429),
+    json: async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            translatedText: opts.translatedText ?? 'LLM translated',
+            sourceLang: opts.sourceLang ?? 'en',
+          }),
+        },
+      ],
+    }),
+    text: async () => opts.textBody ?? '',
+  } as unknown as Response;
+};
+
 const makeAbortError = (): Error => {
   const e = new Error('aborted');
   Object.defineProperty(e, 'name', { value: 'AbortError' });
   return e;
 };
 
-const originalEnv = process.env.GOOGLE_TRANSLATE_API_KEY;
+const originalEnv = {
+  GOOGLE_TRANSLATE_API_KEY: process.env.GOOGLE_TRANSLATE_API_KEY,
+  TRANSLATION_PROVIDER: process.env.TRANSLATION_PROVIDER,
+  MYMEMORY_EMAIL: process.env.MYMEMORY_EMAIL,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  TRANSLATION_LLM_ENABLED: process.env.TRANSLATION_LLM_ENABLED,
+};
 
 afterAll(() => {
-  if (originalEnv === undefined) delete process.env.GOOGLE_TRANSLATE_API_KEY;
-  else process.env.GOOGLE_TRANSLATE_API_KEY = originalEnv;
+  for (const [k, v] of Object.entries(originalEnv)) {
+    if (v === undefined) delete (process.env as Record<string, string | undefined>)[k];
+    else (process.env as Record<string, string>)[k] = v;
+  }
 });
 
 beforeEach(() => {
   process.env.GOOGLE_TRANSLATE_API_KEY = 'TEST-KEY';
+  delete process.env.TRANSLATION_PROVIDER;
+  delete process.env.MYMEMORY_EMAIL;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.TRANSLATION_LLM_ENABLED;
   jest.restoreAllMocks();
 });
 
@@ -85,21 +148,33 @@ beforeEach(() => {
 describe('TranslationService', () => {
   let service: TranslationService;
   let redis: ReturnType<typeof makeMockRedis>;
+  let googleProvider: GoogleProvider;
+  let myMemoryProvider: MyMemoryProvider;
+  let llmProvider: LlmProvider;
 
-  beforeEach(async () => {
+  const createService = async () => {
     redis = makeMockRedis();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TranslationService,
+        GoogleProvider,
+        MyMemoryProvider,
+        LlmProvider,
         { provide: RedisService, useValue: redis },
       ],
     }).compile();
     service = module.get(TranslationService);
+    googleProvider = module.get(GoogleProvider);
+    myMemoryProvider = module.get(MyMemoryProvider);
+    llmProvider = module.get(LlmProvider);
+  };
+
+  beforeEach(async () => {
+    await createService();
   });
 
   describe('normalize / key helpers', () => {
     it('trims whitespace and NFC-normalizes input', () => {
-      // e + combining acute → single é
       const decomposed = 'é';
       expect(service.normalize(`  ${decomposed}  `)).toBe('é');
     });
@@ -112,8 +187,8 @@ describe('TranslationService', () => {
     });
 
     it('produces the same key for composed vs decomposed unicode', () => {
-      const composed = 'é'; // é
-      const decomposed = 'é'; // e + combining acute
+      const composed = 'é';
+      const decomposed = 'é';
       expect(service.buildKey(composed, 'vi')).toBe(
         service.buildKey(decomposed, 'vi'),
       );
@@ -152,7 +227,6 @@ describe('TranslationService', () => {
         cached: false,
       });
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      // Cache write captured via getClient().set mock — asserted by TTL check inside mock.
       const clientSet = redis.getClient().set as jest.Mock;
       expect(clientSet).toHaveBeenCalledTimes(1);
       const [key, value, mode, ttl] = clientSet.mock.calls[0];
@@ -167,7 +241,6 @@ describe('TranslationService', () => {
 
     it('returns cached:true on hit without calling provider', async () => {
       const fetchSpy = jest.spyOn(globalThis, 'fetch');
-      // Pre-seed cache with canonical key
       const key = service.buildKey('hello', 'fr');
       redis.__store.set(
         key,
@@ -205,14 +278,37 @@ describe('TranslationService', () => {
 
       expect(fetchSpy).toHaveBeenCalledTimes(2);
       const clientSet = redis.getClient().set as jest.Mock;
-      const writtenKeys = clientSet.mock.calls.map((c: any[]) => c[0]);
+      const writtenKeys = clientSet.mock.calls.map((c: unknown[]) => c[0]);
       expect(new Set(writtenKeys).size).toBe(2);
+    });
+
+    it('cache is provider-agnostic: hit skips provider even with different TRANSLATION_PROVIDER', async () => {
+      // Seed via google
+      jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        makeFetchResponse({ translatedText: 'Bonjour', detectedSourceLanguage: 'en' }),
+      );
+      await service.translate('hello', 'fr');
+      jest.clearAllMocks();
+
+      // Now switch provider to mymemory, same key should be hit
+      process.env.TRANSLATION_PROVIDER = 'mymemory';
+      const fetchSpy = jest.spyOn(globalThis, 'fetch');
+      const key = service.buildKey('hello', 'fr');
+      // key already in store from previous call's write
+      expect(redis.__store.get(key)).toBeDefined();
+      const result = await service.translate('hello', 'fr');
+      expect(result.cached).toBe(true);
+      expect(result.translatedText).toBe('Bonjour');
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 
   describe('translate — error paths', () => {
-    it('returns mock translation when GOOGLE_TRANSLATE_API_KEY is missing (dev fallback)', async () => {
-      delete process.env.GOOGLE_TRANSLATE_API_KEY;
+    it('returns mock translation when all providers unconfigured (dev fallback)', async () => {
+      // Force all providers to report not configured
+      jest.spyOn(googleProvider, 'isConfigured').mockReturnValue(false);
+      jest.spyOn(myMemoryProvider, 'isConfigured').mockReturnValue(false);
+      jest.spyOn(llmProvider, 'isConfigured').mockReturnValue(false);
       const fetchSpy = jest.spyOn(globalThis, 'fetch');
 
       const result = await service.translate('hello', 'vi');
@@ -223,7 +319,6 @@ describe('TranslationService', () => {
         cached: false,
       });
       expect(fetchSpy).not.toHaveBeenCalled();
-      // Mock still writes to cache so second call hits cache
       const key = service.buildKey('hello', 'vi');
       const cachedRaw = redis.__store.get(key);
       expect(cachedRaw).toBeDefined();
@@ -233,49 +328,68 @@ describe('TranslationService', () => {
       });
     });
 
-    it('throws 502 when provider responds !ok', async () => {
-      jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        makeFetchResponse({
-          ok: false,
-          status: 429,
-          textBody: 'quota exceeded',
-        }),
-      );
+    it('mock is cached: second identical request returns cached:true without provider', async () => {
+      jest.spyOn(googleProvider, 'isConfigured').mockReturnValue(false);
+      jest.spyOn(myMemoryProvider, 'isConfigured').mockReturnValue(false);
+      jest.spyOn(llmProvider, 'isConfigured').mockReturnValue(false);
+
+      await service.translate('hello', 'vi');
+      const fetchSpy = jest.spyOn(globalThis, 'fetch');
+      const result2 = await service.translate('hello', 'vi');
+      expect(result2.cached).toBe(true);
+      expect(result2.translatedText).toBe('[vi] hello');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws 502 when provider responds !ok and fallback also fails', async () => {
+      // Google fails, MyMemory will also be attempted — make both fail
+      jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          makeFetchResponse({ ok: false, status: 429, textBody: 'quota exceeded' }),
+        )
+        .mockResolvedValueOnce(
+          makeMyMemoryResponse({ responseStatus: 429 }),
+        );
 
       try {
         await service.translate('hello', 'vi');
         fail('should have thrown');
-      } catch (e: any) {
-        expect(e.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
-        expect(e.message).toBe('Translation provider error');
+      } catch (e: unknown) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_GATEWAY);
+        expect((e as HttpException).message).toBe('Translation provider error');
       }
     });
 
-    it('throws 502 timeout when fetch aborts', async () => {
-      jest.spyOn(globalThis, 'fetch').mockRejectedValueOnce(makeAbortError());
+    it('throws 502 timeout when fetch aborts (both providers)', async () => {
+      jest.spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(makeAbortError())
+        .mockRejectedValueOnce(makeAbortError());
 
       try {
         await service.translate('hello', 'vi');
         fail('should have thrown');
-      } catch (e: any) {
-        expect(e.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
-        expect(e.message).toBe('Translation provider timed out');
+      } catch (e: unknown) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_GATEWAY);
+        expect((e as HttpException).message).toBe('Translation provider timed out');
       }
     });
 
-    it('throws 502 when provider returns empty translations array', async () => {
-      jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { translations: [] } }),
-        text: async () => '',
-      } as unknown as Response);
+    it('throws 502 when provider returns empty translations array (fallback also fails)', async () => {
+      jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: { translations: [] } }),
+          text: async () => '',
+        } as unknown as Response)
+        .mockResolvedValueOnce(
+          makeMyMemoryResponse({ translatedText: 'MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS', responseStatus: 200 }),
+        );
 
       try {
         await service.translate('hello', 'vi');
         fail('should have thrown');
-      } catch (e: any) {
-        expect(e.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
-        expect(e.message).toBe('Translation provider returned empty result');
+      } catch (e: unknown) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_GATEWAY);
       }
     });
 
@@ -313,6 +427,160 @@ describe('TranslationService', () => {
       expect(result.cached).toBe(false);
       expect(result.translatedText).toBe('Chào');
       expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('translate — provider selection and fallback (pluggable)', () => {
+    it('Google 429 fallback to MyMemory succeeds and caches MyMemory result', async () => {
+      const fetchSpy = jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          makeFetchResponse({ ok: false, status: 429, textBody: 'quota exceeded' }),
+        )
+        .mockResolvedValueOnce(
+          makeMyMemoryResponse({ translatedText: 'Xin chào MyMemory', responseStatus: 200 }),
+        );
+
+      const result = await service.translate('hello', 'vi');
+
+      expect(result).toEqual({
+        translatedText: 'Xin chào MyMemory',
+        sourceLang: 'auto',
+        cached: false,
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      // Cache should hold MyMemory result
+      const key = service.buildKey('hello', 'vi');
+      const cached = JSON.parse(redis.__store.get(key)!);
+      expect(cached).toEqual({ translatedText: 'Xin chào MyMemory', sourceLang: 'auto' });
+    });
+
+    it('Google timeout fallback to MyMemory succeeds', async () => {
+      const fetchSpy = jest.spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(makeAbortError())
+        .mockResolvedValueOnce(
+          makeMyMemoryResponse({ translatedText: 'Hola via fallback' }),
+        );
+
+      const result = await service.translate('hello', 'es');
+
+      expect(result.translatedText).toBe('Hola via fallback');
+      expect(result.cached).toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('both providers fail returns 502 and does not write cache', async () => {
+      jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(makeFetchResponse({ ok: false, status: 502, textBody: 'bad gateway' }))
+        .mockResolvedValueOnce(makeMyMemoryResponse({ ok: false, status: 502, textBody: 'bad gateway' }));
+
+      const key = service.buildKey('hello', 'vi');
+      try {
+        await service.translate('hello', 'vi');
+        fail('should have thrown');
+      } catch (e: unknown) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_GATEWAY);
+      }
+      expect(redis.__store.get(key)).toBeUndefined();
+    });
+
+    it('TRANSLATION_PROVIDER=mymemory direct path bypasses Google', async () => {
+      process.env.TRANSLATION_PROVIDER = 'mymemory';
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        makeMyMemoryResponse({ translatedText: 'Direct MyMemory', responseStatus: 200 }),
+      );
+
+      const result = await service.translate('hello', 'fr');
+
+      expect(result.translatedText).toBe('Direct MyMemory');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      // Ensure the fetch URL was MyMemory (contains mymemory)
+      const calledUrl = (fetchSpy.mock.calls[0][0] as string);
+      expect(calledUrl).toContain('mymemory');
+    });
+
+    it('TRANSLATION_PROVIDER=auto tries Google then MyMemory on failure', async () => {
+      process.env.TRANSLATION_PROVIDER = 'auto';
+      const fetchSpy = jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(makeFetchResponse({ ok: false, status: 429, textBody: 'quota' }))
+        .mockResolvedValueOnce(makeMyMemoryResponse({ translatedText: 'Auto fallback' }));
+
+      const result = await service.translate('hello', 'vi');
+      expect(result.translatedText).toBe('Auto fallback');
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('TRANSLATION_PROVIDER=llm without gate falls through to Google', async () => {
+      process.env.TRANSLATION_PROVIDER = 'llm';
+      // LLM gate false by default → should skip llm and use Google
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        makeFetchResponse({ translatedText: 'Google fallback from llm', detectedSourceLanguage: 'en' }),
+      );
+
+      const result = await service.translate('hello', 'vi');
+
+      expect(result.translatedText).toBe('Google fallback from llm');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(llmProvider.isConfigured()).toBe(false);
+    });
+
+    it('LLM gated true uses LLM provider directly', async () => {
+      process.env.TRANSLATION_PROVIDER = 'llm';
+      process.env.TRANSLATION_LLM_ENABLED = 'true';
+      process.env.ANTHROPIC_API_KEY = 'sk-test';
+
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        makeLlmAnthropicResponse({ translatedText: 'LLM hello', sourceLang: 'en' }),
+      );
+
+      const result = await service.translate('hello', 'vi');
+
+      expect(result.translatedText).toBe('LLM hello');
+      expect(result.sourceLang).toBe('en');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const calledUrl = fetchSpy.mock.calls[0][0] as string;
+      expect(calledUrl).toContain('anthropic');
+    });
+
+    it('LLM gated true but provider fails falls back to Google then MyMemory', async () => {
+      process.env.TRANSLATION_PROVIDER = 'llm';
+      process.env.TRANSLATION_LLM_ENABLED = 'true';
+      process.env.ANTHROPIC_API_KEY = 'sk-test';
+
+      const fetchSpy = jest.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(makeLlmAnthropicResponse({ ok: false, status: 429, textBody: 'llm quota' }) as unknown as Response)
+        .mockResolvedValueOnce(makeFetchResponse({ ok: false, status: 429, textBody: 'google quota' }))
+        .mockResolvedValueOnce(makeMyMemoryResponse({ translatedText: 'Final fallback' }));
+
+      const result = await service.translate('hello', 'vi');
+      expect(result.translatedText).toBe('Final fallback');
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it('Google success does not call MyMemory', async () => {
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        makeFetchResponse({ translatedText: 'Direct Google', detectedSourceLanguage: 'en' }),
+      );
+
+      const result = await service.translate('hello', 'vi');
+      expect(result.translatedText).toBe('Direct Google');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('isConfigured contracts: Google requires key, LLM requires gate+key, MyMemory always true', () => {
+      process.env.GOOGLE_TRANSLATE_API_KEY = '';
+      expect(googleProvider.isConfigured()).toBe(false);
+      process.env.GOOGLE_TRANSLATE_API_KEY = 'k';
+      expect(googleProvider.isConfigured()).toBe(true);
+
+      delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.TRANSLATION_LLM_ENABLED;
+      expect(llmProvider.isConfigured()).toBe(false);
+      process.env.TRANSLATION_LLM_ENABLED = 'true';
+      expect(llmProvider.isConfigured()).toBe(false);
+      process.env.ANTHROPIC_API_KEY = 'sk-xyz';
+      expect(llmProvider.isConfigured()).toBe(true);
+
+      expect(myMemoryProvider.isConfigured()).toBe(true);
     });
   });
 });
@@ -358,9 +626,9 @@ describe('TranslateRateLimitGuard', () => {
     try {
       await guard.canActivate(makeContext({ userId: 'u1' }));
       fail('should have thrown');
-    } catch (e: any) {
+    } catch (e: unknown) {
       expect(e).toBeInstanceOf(HttpException);
-      expect(e.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      expect((e as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
     }
   });
 

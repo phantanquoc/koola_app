@@ -3,18 +3,27 @@ import { RedisModule } from '../common/redis/redis.module';
 import { TranslationController } from './translation.controller';
 import { TranslationService } from './translation.service';
 import { TranslateRateLimitGuard } from './translate-throttler.guard';
+import { GoogleProvider } from './providers/google.provider';
+import { MyMemoryProvider } from './providers/mymemory.provider';
+import { LlmProvider } from './providers/llm.provider';
 
 /**
- * Isolated translation feature module (message-translation change).
+ * Isolated translation feature module (message-translation + pluggable provider).
  *
- * Note on tasks.md 1.4: there is no `CommonModule` in this codebase — the
- * Redis provider lives in the `@Global()` `RedisModule`. It is imported here
- * explicitly as well so the module reads self-contained even if the global
- * registration ever changes.
+ * TranslationService owns provider selection via TRANSLATION_PROVIDER env
+ * (default `google`) and falls back once Google→MyMemory on retriable errors.
+ * LlmProvider is gated by TRANSLATION_LLM_ENABLED + ANTHROPIC_API_KEY/OPENAI_API_KEY.
+ * No factory token — selection lives in the service so the wiring has no dead provider.
  */
 @Module({
   imports: [RedisModule],
   controllers: [TranslationController],
-  providers: [TranslationService, TranslateRateLimitGuard],
+  providers: [
+    GoogleProvider,
+    MyMemoryProvider,
+    LlmProvider,
+    TranslationService,
+    TranslateRateLimitGuard,
+  ],
 })
 export class TranslationModule {}
