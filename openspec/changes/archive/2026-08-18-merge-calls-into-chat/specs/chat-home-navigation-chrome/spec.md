@@ -1,36 +1,4 @@
-# chat-home-navigation-chrome Specification
-
-## Purpose
-TBD - created by archiving change redesign-chat-home-chrome. Update Purpose after archive.
-## Requirements
-### Requirement: Search-first Chat home header
-
-The Chat home header SHALL present universal search, QR scanning, and add in one shared command dock with visually separated touch targets.
-
-#### Scenario: User opens universal search
-
-- **WHEN** the user presses the search portion of the header
-- **THEN** the app SHALL navigate to the existing Universal Search screen
-
-#### Scenario: User opens QR scanning
-
-- **WHEN** the user presses the QR action
-- **THEN** the app SHALL open the existing QR scanner without first triggering universal search
-
-### Requirement: Accessible header actions
-
-Search, QR, and add actions SHALL expose descriptive accessibility labels and SHALL have non-overlapping touch targets of at least 48dp.
-
-QR and add SHALL use glyphs from the same icon family, size, and semantic primary color. The command dock SHALL use spacing rather than visible divider lines between its actions and SHALL be inset from the header content edges.
-
-The command dock SHALL default to a static neutral perimeter without a persistent semantic-primary outline or border animation. When a caller opts in via the animated dock border affordance, the dock MAY render a resting brand-gradient stroke plus a one-shot semantic-primary light trace that sweeps the perimeter once on first mount and does not repeat during the session. All other callers SHALL receive the static neutral default.
-
-The header SHALL NOT render a separator rule between the command dock area and the Chat sub-tab bar.
-
-#### Scenario: User activates add
-
-- **WHEN** the user presses the add action
-- **THEN** the existing group creation modal SHALL open
+## MODIFIED Requirements
 
 ### Requirement: Coherent Chat sub-tab states
 The Chat sub-tabs SHALL use icon-only controls from one visual family with distinct inactive and active treatments, semantic colors, selected accessibility state, descriptive accessibility labels, at least 48dp touch targets, restrained transition motion, and a short semantic-primary underline for the selected icon. They SHALL NOT render visible text labels or a persistent selected background pill.
@@ -63,4 +31,3 @@ The Chat home sub-tab bar SHALL contain exactly four tabs: Messages, Contacts, M
 #### Scenario: Deep-link to removed Calls tab fails at compile time
 - **WHEN** code attempts `navigation.navigate('Calls')` or references `ChatSubTabParamList['Calls']`
 - **THEN** type-checking SHALL fail
-

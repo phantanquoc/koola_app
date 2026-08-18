@@ -23,8 +23,10 @@ import { useCallInitiation } from './hooks/useCallInitiation';
 import { useMediaUpload } from './hooks/useMediaUpload';
 import { useDeadLetterActions } from './hooks/useDeadLetterActions';
 import { useChatHeaderState } from './hooks/useChatHeaderState';
+import { useInlineCallLogs } from './hooks/useInlineCallLogs';
 import ChatHeader from './components/ChatHeader';
 import MessageItem, { makeMessageItemStyles } from './components/MessageItem';
+import CallMessageCard from './components/CallMessageCard';
 import { MemoizedMessageList } from './components/MemoizedMessageList';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
@@ -238,6 +240,9 @@ const ChatScreen: React.FC = () => {
     hasEarlier,
   } = useMessages(conversationId, currentUserId);
 
+  // ─── Inline call logs — merged into timeline ──────────────────────────────
+  const { callLogs } = useInlineCallLogs(conversationId);
+
   // Stable ref to messages for use in callbacks that should NOT re-create on
   // every messages change (e.g. renderMessageImage gallery builder).
   const messagesRef = useRef<IMessage[]>(messages);
@@ -378,11 +383,33 @@ const ChatScreen: React.FC = () => {
   // end to end — a full-list invalidation per 40-row page for a pixel nothing
   // renders. The header avatar is unaffected: ChatHeader resolves it from
   // `otherAvatarKey` via UserAvatar.
-  const displayedMessages = React.useMemo(() => {
-    return (targetContextMessages && targetContextMessages.length > 0)
-      ? targetContextMessages
-      : messages;
-  }, [messages, targetContextMessages]);
+  // Inline call logs are merged here (newest-first) when no target snapshot is active.
+  type TimelineItem = IMessage & { __callEntry?: import('../../services/api/apiService').CallLogEntry };
+  const displayedMessages: TimelineItem[] = React.useMemo(() => {
+    if (targetContextMessages && targetContextMessages.length > 0) {
+      return targetContextMessages as TimelineItem[];
+    }
+    if (!callLogs || callLogs.length === 0) return messages as TimelineItem[];
+    const callItems: TimelineItem[] = callLogs.map((e) => ({
+      _id: `call:${e._id}`,
+      text: '',
+      createdAt: new Date(e.startedAt),
+      user: { _id: e.initiatorId } as IMessage['user'],
+      __callEntry: e,
+    } as TimelineItem));
+    const merged = [...(messages as TimelineItem[]), ...callItems];
+    merged.sort((a, b) => {
+      const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt as string | number | Date).getTime();
+      const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as string | number | Date).getTime();
+      if (tb !== ta) return tb - ta;
+      // tie-break: messages before call cards so text order is stable
+      const aIsCall = !!(a as TimelineItem).__callEntry;
+      const bIsCall = !!(b as TimelineItem).__callEntry;
+      if (aIsCall !== bIsCall) return aIsCall ? 1 : -1;
+      return 0;
+    });
+    return merged;
+  }, [messages, targetContextMessages, callLogs]);
 
   // ─── Scroll back to newest on own send ────────────────────────────────────
   // Sending never goes through GiftedChat: `onSend` is the stable `NOOP_SEND`
@@ -551,6 +578,17 @@ const ChatScreen: React.FC = () => {
   // per-row boolean, so only the affected row re-renders.
   const renderMessage = useCallback(
     (props: MessageProps<IMessage>) => {
+      const raw = props.currentMessage as IMessage & { __callEntry?: import('../../services/api/apiService').CallLogEntry };
+      if (raw?.__callEntry) {
+        return (
+          <CallMessageCard
+            entry={raw.__callEntry}
+            currentUserId={currentUserId}
+            conversationId={conversationId}
+            conversationType={conversation?.type}
+          />
+        );
+      }
       const id = String(props.currentMessage?._id ?? '');
       return (
         <MessageItem
@@ -571,6 +609,8 @@ const ChatScreen: React.FC = () => {
     },
     [
       chatTitle,
+      conversation?.type,
+      conversationId,
       currentUserId,
       getReactionPressHandler,
       handleRetryFailedMessage,

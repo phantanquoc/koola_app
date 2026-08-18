@@ -5,6 +5,7 @@ import { ActivityIndicator, LogBox, StatusBar, StyleSheet, Text, View } from 're
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import Toast from 'react-native-toast-message';
 import { koolaToastConfig, ThemeProvider, useTheme } from './ui';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -178,6 +179,7 @@ const App: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <BottomSheetModalProvider>
       <ThemeProvider>
         <ThemedStatusBar />
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
@@ -191,6 +193,7 @@ const App: React.FC = () => {
             renderers consume theme tokens without adding screen-local hosts. */}
         <Toast config={koolaToastConfig} />
       </ThemeProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 };

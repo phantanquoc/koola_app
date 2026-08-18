@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsMongoId, IsOptional, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryCallLogsDto {
@@ -14,4 +14,8 @@ export class QueryCallLogsDto {
   @Min(1)
   @Max(50)
   limit: number = 20;
+
+  @IsOptional()
+  @IsMongoId()
+  conversationId?: string;
 }

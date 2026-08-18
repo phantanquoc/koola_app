@@ -1,12 +1,16 @@
 import React, { useCallback, useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
-import { KoolaText, koolaRadii, useTheme } from '../ui';
+import { KoolaText, KoolaIconButton, koolaRadii, useTheme } from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
 import { formatShortTimestamp } from '../utils/formatViTimestamp';
+import { webrtcService } from '../services/webrtc/WebRTCService';
+import type { RootStackParamList } from '../navigation/types';
 
 interface Props {
   conversation: Conversation;
@@ -48,6 +52,22 @@ export function resolveConversationHeader(
   };
 }
 
+function resolveOtherUserId(
+  conversation: Conversation,
+  currentUserId: string | undefined,
+): string | null {
+  if (conversation.type === 'group') return null;
+  const other = (conversation.members || []).find((m: any) => {
+    const id = typeof m.userId === 'object' ? (m.userId as any)._id : m.userId;
+    return id !== currentUserId;
+  });
+  if (!other) return null;
+  const raw = (other as any).userId;
+  if (typeof raw === 'object' && raw !== null && '_id' in raw) return String((raw as any)._id);
+  if (typeof raw === 'string') return raw;
+  return null;
+}
+
 // ─── Message-type icon for preview line ──────────────────────────────────────
 function getPreviewIcon(preview: string): string | null {
   const lower = preview.toLowerCase();
@@ -61,6 +81,7 @@ function getPreviewIcon(preview: string): string | null {
 const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   const { user } = useAuth();
   const { tokens } = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { displayName, avatar, isOnline } = resolveConversationHeader(
     conversation,
     user?._id,
@@ -84,63 +105,152 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
 
   const itemStyles = useMemo(() => makeItemStyles(tokens.semantic), [tokens.semantic]);
 
-  return (
-    <Pressable
-      style={[
-        itemStyles.container,
-        isPressed && itemStyles.pressed,
-      ]}
-      onPressIn={() => setIsPressed(true)}
-      onPressOut={() => setIsPressed(false)}
-      android_ripple={{ color: tokens.semantic.surface.level0 }}
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={`Trò chuyện với ${displayName}`}>
-      <UserAvatar
-        displayName={displayName}
-        avatar={avatar}
-        size={48}
-        showOnline={isOnline}
-      />
+  const showQuickCall = conversation.type === 'direct' && !!resolveOtherUserId(conversation, user?._id);
 
-      <View style={itemStyles.content}>
-        <View style={itemStyles.topRow}>
-          <KoolaText
-            variant="label"
-            weight={unreadCount > 0 ? '800' : '700'}
-            numberOfLines={1}
-            style={itemStyles.name}>
-            {displayName}
-          </KoolaText>
-          <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
-            {timestamp}
-          </KoolaText>
+  const handleQuickCall = useCallback(() => {
+    const otherUserId = resolveOtherUserId(conversation, user?._id);
+    if (!otherUserId) {
+      Alert.alert('Lỗi', 'Không xác định được người nhận');
+      return;
+    }
+    if (!webrtcService.isConnected()) {
+      Alert.alert('Lỗi', 'Chưa kết nối, vui lòng thử lại.');
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      webrtcService.off('call_initiated', onInitiated);
+      webrtcService.off('call_busy', onBusy);
+      webrtcService.off('call_missed', onMissed);
+      webrtcService.off('error', onError);
+      clearTimeout(timer);
+    };
+    const onInitiated = (data: unknown) => {
+      if (settled) return;
+      settled = true;
+      const d = data as { sessionId?: string; iceServers?: { urls: string; username?: string; credential?: string }[] };
+      cleanup();
+      if (!d.sessionId) {
+        Alert.alert('Lỗi', 'Không thể khởi tạo cuộc gọi');
+        return;
+      }
+      const parent = (navigation as any).getParent?.();
+      // Prefer RootStack navigation for CallModal
+      const rootNav: NativeStackNavigationProp<RootStackParamList> =
+        parent ?? navigation as unknown as NativeStackNavigationProp<RootStackParamList>;
+      // Resolve remote user display for CallModal
+      const header = resolveConversationHeader(conversation, user?._id);
+      rootNav.navigate('CallModal', {
+        sessionId: d.sessionId,
+        callType: 'audio',
+        isInitiator: true,
+        iceServers: d.iceServers,
+        remoteUser: { id: otherUserId, displayName: header.displayName, avatar: header.avatar },
+      });
+    };
+    const onBusy = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      Alert.alert('Bận', 'Người dùng đang bận.');
+    };
+    const onMissed = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      Alert.alert('Không trả lời', 'Người dùng hiện không trực tuyến.');
+    };
+    const onError = (data: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const msg = (data as { message?: string })?.message || 'Cuộc gọi thất bại';
+      Alert.alert('Lỗi', msg);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      Alert.alert('Hết thời gian', 'Máy chủ không phản hồi.');
+    }, 15000);
+
+    webrtcService.on('call_initiated', onInitiated);
+    webrtcService.on('call_busy', onBusy);
+    webrtcService.on('call_missed', onMissed);
+    webrtcService.on('error', onError);
+
+    webrtcService.initiateCall(otherUserId, conversation._id, 'audio');
+  }, [conversation, user?._id, navigation]);
+
+  return (
+    <View style={[itemStyles.container, isPressed && itemStyles.pressed]}>
+      <Pressable
+        style={itemStyles.pressableContent}
+        onPressIn={() => setIsPressed(true)}
+        onPressOut={() => setIsPressed(false)}
+        android_ripple={{ color: tokens.semantic.surface.level0 }}
+        onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={`Trò chuyện với ${displayName}`}>
+        <UserAvatar
+          displayName={displayName}
+          avatar={avatar}
+          size={48}
+          showOnline={isOnline}
+        />
+
+        <View style={itemStyles.content}>
+          <View style={itemStyles.topRow}>
+            <KoolaText
+              variant="label"
+              weight={unreadCount > 0 ? '800' : '700'}
+              numberOfLines={1}
+              style={itemStyles.name}>
+              {displayName}
+            </KoolaText>
+            <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
+              {timestamp}
+            </KoolaText>
+          </View>
+          <View style={itemStyles.bottomRow}>
+            {previewIcon ? (
+              <Icon name={previewIcon} size={14} color={tokens.semantic.text.muted} style={itemStyles.previewIcon} />
+            ) : null}
+            <KoolaText
+              variant="caption"
+              tone={unreadCount > 0 ? 'ink' : 'muted'}
+              weight={unreadCount > 0 ? '600' : '400'}
+              numberOfLines={1}
+              style={itemStyles.preview}>
+              {lastMessagePreview}
+            </KoolaText>
+            {unreadCount > 0 ? (
+              <View style={itemStyles.badge}>
+                <KoolaText
+                  variant="caption"
+                  weight="800"
+                  style={itemStyles.badgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </KoolaText>
+              </View>
+            ) : null}
+          </View>
         </View>
-        <View style={itemStyles.bottomRow}>
-          {previewIcon ? (
-            <Icon name={previewIcon} size={14} color={tokens.semantic.text.muted} style={itemStyles.previewIcon} />
-          ) : null}
-          <KoolaText
-            variant="caption"
-            tone={unreadCount > 0 ? 'ink' : 'muted'}
-            weight={unreadCount > 0 ? '600' : '400'}
-            numberOfLines={1}
-            style={itemStyles.preview}>
-            {lastMessagePreview}
-          </KoolaText>
-          {unreadCount > 0 ? (
-            <View style={itemStyles.badge}>
-              <KoolaText
-                variant="caption"
-                weight="800"
-                style={itemStyles.badgeText}>
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </KoolaText>
-            </View>
-          ) : null}
-        </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {showQuickCall ? (
+        <KoolaIconButton
+          icon="call"
+          size={36}
+          iconSize={18}
+          tone="primary"
+          variant="soft"
+          onPress={handleQuickCall}
+          accessibilityLabel="Gọi"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={itemStyles.quickCallBtn}
+        />
+      ) : null}
+    </View>
   );
 };
 
@@ -154,6 +264,11 @@ function makeItemStyles(semantic: SemanticTokens) {
       paddingVertical: 10,
       paddingHorizontal: 16,
       backgroundColor: semantic.surface.level1,
+    },
+    pressableContent: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     pressed: {
       backgroundColor: semantic.surface.level0,
@@ -202,6 +317,9 @@ function makeItemStyles(semantic: SemanticTokens) {
     },
     badgeText: {
       color: semantic.text.primary,
+    },
+    quickCallBtn: {
+      marginLeft: 8,
     },
   });
 }

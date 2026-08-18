@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import apiClient, { conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
 import AddMemberModal from '../../components/AddMemberModal';
+import ConversationCallHistorySheet from '../../components/ConversationCallHistorySheet';
 import { useAuth } from '../../contexts/AuthContext';
 import { KoolaText, koolaColors } from '../../ui';
 import type { ChatTabStackParamList } from '../../navigation/types';
@@ -31,6 +32,7 @@ const GroupInfoScreen: React.FC = () => {
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [addingMember, setAddingMember] = useState(false);
+  const [callHistoryVisible, setCallHistoryVisible] = useState(false);
 
   const isAdmin = conversation?.members.some(
     (m) => memberUserId(m) === currentUser?._id && m.role === 'admin',
@@ -162,6 +164,18 @@ const GroupInfoScreen: React.FC = () => {
         )}
         <Text style={s.mCount}>{conversation.members.length} thành viên</Text>
       </View>
+      <Pressable
+        onPress={() => setCallHistoryVisible(true)}
+        android_ripple={{ color: '#f0f0f0' }}
+        style={({ pressed }) => [s.callHistoryRow, pressed && s.callHistoryRowPressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Lịch sử cuộc gọi">
+        <View style={s.callHistoryIconWrap}>
+          <MaterialIcons name="phone" size={20} color="#2196F3" />
+        </View>
+        <Text style={s.callHistoryLabel}>Lịch sử cuộc gọi</Text>
+        <MaterialIcons name="chevron-right" size={22} color="#999" />
+      </Pressable>
       <View style={s.secHdr}><Text style={s.secT}>Thành viên</Text>
         {isAdmin && <TouchableOpacity onPress={() => setAddingMember(true)}><Text style={s.addBtn}>+ Thêm</Text></TouchableOpacity>}
       </View>
@@ -197,6 +211,11 @@ const GroupInfoScreen: React.FC = () => {
             </View>);
         }} ItemSeparatorComponent={() => <View style={s.sep} />} />
       <TouchableOpacity style={s.leave} onPress={handleLeaveGroup}><Text style={s.leaveTxt}>Rời nhóm</Text></TouchableOpacity>
+      <ConversationCallHistorySheet
+        conversationId={conversationId}
+        isVisible={callHistoryVisible}
+        onClose={() => setCallHistoryVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -251,6 +270,25 @@ const s = StyleSheet.create({
   miRole: { fontSize: 12, color: '#999', marginTop: 2 },
   rmBtn: { color: '#ff4444', fontSize: 13, fontWeight: '600' },
   sep: { height: 1, backgroundColor: '#f0f0f0', marginLeft: 68 },
+  callHistoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f0f0f0',
+  },
+  callHistoryRowPressed: { opacity: 0.7 },
+  callHistoryIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  callHistoryLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: '#333' },
   leave: { margin: 16, paddingVertical: 14, backgroundColor: '#ff4444', borderRadius: 8, alignItems: 'center' },
   leaveTxt: { color: '#fff', fontSize: 16, fontWeight: '600' },
   err: { fontSize: 16, color: '#999', textAlign: 'center', marginTop: 60 },

@@ -630,4 +630,41 @@ export const accountDiscoveryApi = {
   },
 };
 
+// ─── Call Logs API ──────────────────────────────────────────────────────────
+export interface CallLogEntry {
+  _id: string;
+  sessionId: string;
+  initiatorId: string;
+  targetUserId: string;
+  conversationId: string;
+  callType: 'audio' | 'video';
+  status: 'ended' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled' | 'answered';
+  startedAt: string;
+  answeredAt: string | null;
+  endedAt: string | null;
+  duration: number;
+  initiatorName?: string;
+  initiatorAvatar?: string;
+  targetName?: string;
+  targetAvatar?: string;
+}
+
+export interface CallLogsResponse {
+  items: CallLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const callLogsApi = {
+  async getHistory(params: {
+    page?: number;
+    limit?: number;
+    conversationId?: string;
+  }): Promise<CallLogsResponse> {
+    const { data } = await apiClient.get('/call-logs', { params });
+    return data;
+  },
+};
+
 export default apiClient;

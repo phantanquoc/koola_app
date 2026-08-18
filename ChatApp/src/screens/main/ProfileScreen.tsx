@@ -13,6 +13,7 @@ import type {
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { conversationsApi, usersApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
+import ConversationCallHistorySheet from '../../components/ConversationCallHistorySheet';
 import type { User } from '../../types';
 import {
   KoolaBadge,
@@ -42,6 +43,8 @@ const ProfileScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
   const [coverUri, setCoverUri] = useState<string | null>(null);
+  const [callHistoryConversationId, setCallHistoryConversationId] = useState<string | null>(null);
+  const [callHistoryVisible, setCallHistoryVisible] = useState(false);
 
   // Resolve cover photo media key to a local URI for display
   useEffect(() => {
@@ -106,6 +109,16 @@ const ProfileScreen: React.FC = () => {
       setChatLoading(false);
     }
   }, [userId, navigation]);
+
+  const handleOpenCallHistory = useCallback(async () => {
+    try {
+      const { conversation } = await conversationsApi.startDirectChat(userId);
+      setCallHistoryConversationId(conversation._id);
+      setCallHistoryVisible(true);
+    } catch {
+      Alert.alert('Lỗi', 'Không thể tải lịch sử cuộc gọi');
+    }
+  }, [userId]);
 
   const renderHeader = () => (
     <View style={[styles.header, { paddingTop: insets.top }]}>
@@ -262,6 +275,22 @@ const ProfileScreen: React.FC = () => {
             value={profileUser.isOnline ? 'Có thể nhắn ngay' : 'Sẽ nhận tin nhắn khi quay lại'}
             palette={palette}
           />
+          <KoolaDivider />
+          <Pressable
+            onPress={handleOpenCallHistory}
+            android_ripple={{ color: palette.line }}
+            style={({ pressed }) => [infoRowStyles.infoRow, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Lịch sử cuộc gọi">
+            <View style={[infoRowStyles.infoIcon, { backgroundColor: palette.primarySoft }]}>
+              <MaterialIcons name="phone" size={19} color={palette.primary} />
+            </View>
+            <View style={infoRowStyles.infoCopy}>
+              <KoolaText variant="label">Lịch sử cuộc gọi</KoolaText>
+              <KoolaText variant="caption" tone="muted">Xem các cuộc gọi trong cuộc trò chuyện này</KoolaText>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
+          </Pressable>
         </KoolaSurface>
 
         <View style={styles.actionPanel}>
@@ -276,6 +305,11 @@ const ProfileScreen: React.FC = () => {
           />
         </View>
       </ScrollView>
+      <ConversationCallHistorySheet
+        conversationId={callHistoryConversationId}
+        isVisible={callHistoryVisible}
+        onClose={() => setCallHistoryVisible(false)}
+      />
     </View>
   );
 };

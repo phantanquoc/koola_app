@@ -76,15 +76,17 @@ export class CallLogsService {
     userId: string,
     page: number,
     limit: number,
+    conversationId?: string,
   ): Promise<{
     items: CallLogDocument[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter = {
-      $or: [{ initiatorId: userId }, { targetUserId: userId }],
-    };
+    const orFilter = { $or: [{ initiatorId: userId }, { targetUserId: userId }] };
+    const filter: Record<string, unknown> = conversationId
+      ? { $and: [orFilter, { conversationId }] }
+      : orFilter;
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([

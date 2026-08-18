@@ -17,6 +17,7 @@ export class CallLogsController {
       user.userId,
       query.page,
       query.limit,
+      query.conversationId,
     );
   }
 

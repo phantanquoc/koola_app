@@ -17,7 +17,6 @@ export type ChatSubTabParamList = {
   Messages: undefined;
   Contacts: undefined;
   Moments: undefined;
-  Calls: undefined;
   Shorts: undefined;
 };
 

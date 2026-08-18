@@ -20,7 +20,6 @@ import ConversationListScreen from './ConversationListScreen';
 import ContactsScreen from './ContactsScreen';
 import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
-import CallsScreen from './CallsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
@@ -42,7 +41,6 @@ const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
   Messages: { iconIdle: 'chat', iconActive: 'forum', label: 'Tin nhắn' },
   Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Tìm người' },
   Moments: { iconIdle: 'star-outline', iconActive: 'star', label: 'Khoảnh khắc' },
-  Calls: { iconIdle: 'phone', iconActive: 'phone-in-talk', label: 'Cuộc gọi' },
   Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
 };
 
@@ -229,14 +227,12 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
   const messagesUnread = useUnreadCount('Messages');
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
-  const callsUnread = useUnreadCount('Calls');
   const shortsUnread = useUnreadCount('Shorts');
 
   const unreadByRoute: Record<string, number> = {
     Messages: messagesUnread,
     Contacts: contactsUnread,
     Moments: momentsUnread,
-    Calls: callsUnread,
     Shorts: shortsUnread,
   };
 
@@ -312,7 +308,7 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 // Why a separate React.memo component: ChatHomeScreen re-renders on every
 // bottom-tab focus cycle (route.params dance, modal state toggles, header
 // press feedback). Without this boundary each of those re-renders walks the
-// entire nested TopTab.Navigator tree — 5 sub-tabs, each mounting its own
+// entire nested TopTab.Navigator tree — 4 sub-tabs, each mounting its own
 // screen component — even though none of that UI depends on the outer state.
 // Memoizing here confines those re-renders to the chrome layer above and
 // keeps the unfreeze-from-freezeOnBlur path from repainting the whole subtree
@@ -350,7 +346,7 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
   // `{ hiddenProgress }` object literal and forced every consumer subtree to
   // re-render even though the underlying shared value hadn't changed. That was
   // the dominant cost on the freezeOnBlur flush (4 state updates in rapid
-  // succession each rebuilt the context value and cascaded through 5 sub-tabs).
+  // succession each rebuilt the context value and cascaded through 4 sub-tabs).
   const visibilityValue = useMemo(() => ({ hiddenProgress }), [hiddenProgress]);
 
   // Deterministic Chat entry: subscribe to the emitter fired by MainNavigator's
@@ -388,7 +384,6 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
           <TopTab.Screen name="Messages" component={ConversationListScreen} />
           <TopTab.Screen name="Contacts" component={ContactsScreen} />
           <TopTab.Screen name="Moments" component={MomentsScreen} />
-          <TopTab.Screen name="Calls" component={CallsScreen} />
           <TopTab.Screen name="Shorts" component={ShortsScreen} />
         </TopTab.Navigator>
       </ChatSubTabVisibilityContext.Provider>
@@ -418,7 +413,7 @@ const ChatHomeScreen: React.FC = () => {
 
   // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
   // ChatHomeScreen is the only bottom tab holding a nested material-top-tabs
-  // (5 sub-tabs) + a large FlatList + a Reanimated sub-tab bar. With
+  // (4 sub-tabs) + a large FlatList + a Reanimated sub-tab bar. With
   // freezeOnBlur, returning to this tab unfreezes and re-renders that whole
   // subtree in one frame → jank ("đơ một nhịp"). Deferring the nested content
   // behind a shell frame spreads that cost, mirroring the proven D1 pattern on
@@ -479,11 +474,11 @@ const ChatHomeScreen: React.FC = () => {
 };
 
 // ─── Shell (first-mount / unfreeze placeholder) ───────────────────────────
-// Skeleton sub-tab bar strip (matching CustomTabBar's 5 icon slots at
+// Skeleton sub-tab bar strip (matching CustomTabBar's 4 icon slots at
 // CHAT_SUB_TAB_BAR_HEIGHT) + skeleton conversation rows (matching
 // ConversationListItem: 48px avatar, minHeight 72, hairline separators).
 const SHELL_ROW_KEYS = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'];
-const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3', 't4'];
+const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3'];
 
 const ChatHomeShell: React.FC<{ styles: ReturnType<typeof makeScreenStyles> }> = ({ styles }) => (
   <View style={styles.shellBody}>

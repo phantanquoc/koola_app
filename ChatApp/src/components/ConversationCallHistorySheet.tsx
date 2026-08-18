@@ -1,52 +1,33 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  FlatList,
-  Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
+  Pressable,
+  StyleSheet,
+  View,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { BottomSheetModal, BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import apiClient from '../../services/api/apiService';
-import { webrtcService } from '../../services/webrtc/WebRTCService';
-import { useAuth } from '../../contexts/AuthContext';
-import UserAvatar from '../../components/UserAvatar';
-import { KoolaText, KoolaEmptyState, useTheme } from '../../ui';
-import type { SemanticTokens } from '../../ui/tokens/semantic';
-import type { RootStackParamList } from '../../navigation/types';
-import { formatRelativeTimestamp } from '../../utils/formatViTimestamp';
+import { callLogsApi } from '../services/api/apiService';
+import type { CallLogEntry } from '../services/api/apiService';
+import { webrtcService } from '../services/webrtc/WebRTCService';
+import { useAuth } from '../contexts/AuthContext';
+import UserAvatar from './UserAvatar';
+import { KoolaText, KoolaEmptyState, useTheme } from '../ui';
+import type { SemanticTokens } from '../ui/tokens/semantic';
+import type { RootStackParamList } from '../navigation/types';
+import { formatRelativeTimestamp } from '../utils/formatViTimestamp';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface CallLogEntry {
-  _id: string;
-  sessionId: string;
-  initiatorId: string;
-  targetUserId: string;
-  conversationId: string;
-  callType: 'audio' | 'video';
-  status: 'ended' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
-  startedAt: string;
-  answeredAt: string | null;
-  endedAt: string | null;
-  duration: number;
-  initiatorName?: string;
-  initiatorAvatar?: string;
-  targetName?: string;
-  targetAvatar?: string;
+interface Props {
+  conversationId: string | null;
+  isVisible: boolean;
+  onClose: () => void;
 }
 
-interface CallLogsResponse {
-  items: CallLogEntry[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const PAGE_LIMIT = 20;
+const SNAP_POINTS = ['60%', '90%'];
 
 function formatDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return '';
@@ -62,6 +43,7 @@ function getStatusInfo(
 ): { icon: string; color: string; label: string } {
   switch (status) {
     case 'ended':
+    case 'answered':
       return {
         icon: isOutgoing ? 'call-made' : 'call-received',
         color: semantic.status.success,
@@ -94,15 +76,11 @@ function getStatusInfo(
   }
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
-const PAGE_LIMIT = 20;
-
-const CallsScreen: React.FC = () => {
+const ConversationCallHistorySheet: React.FC<Props> = ({ conversationId, isVisible, onClose }) => {
   const { user } = useAuth();
   const rootNav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { tokens } = useTheme();
-  const styles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
+  const sheetRef = useRef<React.ElementRef<typeof BottomSheetModal>>(null);
   const currentUserId = user?._id;
 
   const [logs, setLogs] = useState<CallLogEntry[]>([]);
@@ -111,16 +89,20 @@ const CallsScreen: React.FC = () => {
   const [hasMore, setHasMore] = useState(false);
   const pageRef = useRef(1);
 
-  const fetchCallLogs = useCallback(
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+
+  const fetchLogs = useCallback(
     async (reset = false) => {
+      if (!conversationId) return;
       const targetPage = reset ? 1 : pageRef.current;
       if (reset) setRefreshing(true);
       else setLoading(true);
-
       try {
-        const { data } = await apiClient.get<CallLogsResponse>(
-          `/call-logs?page=${targetPage}&limit=${PAGE_LIMIT}`,
-        );
+        const data = await callLogsApi.getHistory({
+          conversationId,
+          page: targetPage,
+          limit: PAGE_LIMIT,
+        });
         if (reset) {
           setLogs(data.items);
           pageRef.current = 2;
@@ -134,27 +116,32 @@ const CallsScreen: React.FC = () => {
         }
         setHasMore(data.items.length === PAGE_LIMIT && targetPage * PAGE_LIMIT < data.total);
       } catch {
-        // silently fail — user can pull to refresh
+        // silently fail
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [],
+    [conversationId],
   );
 
-  useFocusEffect(
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useCallback(() => {
-      fetchCallLogs(true);
-    }, []),
-  );
+  // Present / dismiss based on isVisible
+  useEffect(() => {
+    if (isVisible && conversationId) {
+      sheetRef.current?.present();
+      fetchLogs(true);
+    } else {
+      sheetRef.current?.dismiss();
+    }
+  }, [isVisible, conversationId, fetchLogs]);
+
+  const handleDismiss = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   const handleLoadMore = useCallback(() => {
-    if (!loading && hasMore) {
-      fetchCallLogs(false);
-    }
-  }, [loading, hasMore, fetchCallLogs]);
+    if (!loading && hasMore) fetchLogs(false);
+  }, [loading, hasMore, fetchLogs]);
 
   const handleCallBack = useCallback(
     (entry: CallLogEntry) => {
@@ -191,6 +178,8 @@ const CallsScreen: React.FC = () => {
           Alert.alert('Lỗi', 'Không thể khởi tạo cuộc gọi');
           return;
         }
+        // Dismiss sheet before navigating to CallModal
+        sheetRef.current?.dismiss();
         rootNav.navigate('CallModal', {
           sessionId: d.sessionId,
           callType: entry.callType,
@@ -239,14 +228,10 @@ const CallsScreen: React.FC = () => {
     [currentUserId, rootNav],
   );
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
-
   const renderItem = useCallback(
     ({ item }: { item: CallLogEntry }) => {
       const isOutgoing = item.initiatorId === currentUserId;
-      const remoteName = isOutgoing
-        ? item.targetName || 'User'
-        : item.initiatorName || 'User';
+      const remoteName = isOutgoing ? item.targetName || 'User' : item.initiatorName || 'User';
       const remoteAvatar = isOutgoing ? item.targetAvatar : item.initiatorAvatar;
       const statusInfo = getStatusInfo(item.status, isOutgoing, tokens.semantic);
       const duration = formatDuration(item.duration);
@@ -268,21 +253,22 @@ const CallsScreen: React.FC = () => {
               {remoteName}
             </KoolaText>
             <View style={styles.logMeta}>
-              <MaterialIcons
-                name={statusInfo.icon}
-                size={16}
-                color={statusInfo.color}
-              />
+              <MaterialIcons name={statusInfo.icon} size={16} color={statusInfo.color} />
               <KoolaText variant="caption" style={{ color: statusInfo.color, marginLeft: 4 }}>
                 {statusInfo.label}
               </KoolaText>
               {!!duration && (
-                <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}> · {duration}</KoolaText>
+                <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
+                  {' '}
+                  · {duration}
+                </KoolaText>
               )}
             </View>
           </View>
           <View style={styles.logRight}>
-            <KoolaText variant="caption" tone="muted">{timeAgo}</KoolaText>
+            <KoolaText variant="caption" tone="muted">
+              {timeAgo}
+            </KoolaText>
             <MaterialIcons
               name={item.callType === 'video' ? 'videocam' : 'call'}
               size={20}
@@ -301,7 +287,7 @@ const CallsScreen: React.FC = () => {
     return (
       <KoolaEmptyState
         icon="phone-missed"
-        title="Chưa có cuộc gọi nào"
+        title="Chưa có cuộc gọi nào trong cuộc trò chuyện này"
         message="Lịch sử cuộc gọi sẽ xuất hiện ở đây"
       />
     );
@@ -314,13 +300,21 @@ const CallsScreen: React.FC = () => {
         <ActivityIndicator size="small" color={tokens.semantic.action.primary} />
       </View>
     );
-  }, [loading, refreshing, tokens.semantic.action.primary, styles.footerLoader]);
+  }, [loading, refreshing, tokens.semantic.action.primary, styles]);
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
-        removeClippedSubviews={false}
+    <BottomSheetModal
+      ref={sheetRef}
+      snapPoints={SNAP_POINTS}
+      enablePanDownToClose
+      enableDismissOnClose
+      onDismiss={handleDismiss}>
+      <View style={styles.header}>
+        <KoolaText variant="heading" weight="700">
+          Lịch sử cuộc gọi
+        </KoolaText>
+      </View>
+      <BottomSheetFlatList
         data={logs}
         keyExtractor={(item) => item._id}
         renderItem={renderItem}
@@ -329,20 +323,21 @@ const CallsScreen: React.FC = () => {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
         refreshing={refreshing}
-        onRefresh={() => fetchCallLogs(true)}
+        onRefresh={() => fetchLogs(true)}
         contentContainerStyle={logs.length === 0 ? styles.emptyList : undefined}
       />
-    </View>
+    </BottomSheetModal>
   );
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
-const makeScreenStyles = (semantic: SemanticTokens) =>
+const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: semantic.bg.canvas,
+    header: {
+      paddingHorizontal: 16,
+      paddingTop: 4,
+      paddingBottom: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
     },
     logItem: {
       flexDirection: 'row',
@@ -380,4 +375,4 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
     },
   });
 
-export default CallsScreen;
+export default ConversationCallHistorySheet;

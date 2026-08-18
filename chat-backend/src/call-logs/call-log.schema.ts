@@ -65,4 +65,5 @@ export const CallLogSchema = SchemaFactory.createForClass(CallLog);
 CallLogSchema.index({ sessionId: 1 }, { unique: true });
 CallLogSchema.index({ initiatorId: 1 });
 CallLogSchema.index({ targetUserId: 1 });
+CallLogSchema.index({ conversationId: 1 });
 CallLogSchema.index({ startedAt: -1 });
