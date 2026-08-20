@@ -608,7 +608,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderId = client.data.user!.sub;
 
     const valid = await this.validateParticipant(sessionId, senderId);
-    if (!valid) return;
+    if (!valid) {
+      client.emit('error', {
+        code: 410,
+        message: 'Session has ended or you are no longer a participant',
+      });
+      return;
+    }
 
     const session = await this.callSessionService.getSession(sessionId);
     if (!session) return;
@@ -636,7 +642,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderId = client.data.user!.sub;
 
     const valid = await this.validateParticipant(sessionId, senderId);
-    if (!valid) return;
+    if (!valid) {
+      client.emit('error', {
+        code: 410,
+        message: 'Session has ended or you are no longer a participant',
+      });
+      return;
+    }
 
     const session = await this.callSessionService.getSession(sessionId);
     if (!session) return;
@@ -665,7 +677,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderId = client.data.user!.sub;
 
     const valid = await this.validateParticipant(sessionId, senderId);
-    if (!valid) return;
+    if (!valid) {
+      client.emit('error', {
+        code: 410,
+        message: 'Session has ended or you are no longer a participant',
+      });
+      return;
+    }
 
     const participants =
       await this.callSessionService.getParticipants(sessionId);

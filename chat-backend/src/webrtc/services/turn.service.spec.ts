@@ -159,4 +159,65 @@ describe('TurnService', () => {
     expect(servers.some((s) => s.urls.includes('google'))).toBe(false);
     expect(servers).toHaveLength(2);
   });
+
+  // ── COTURN_PUBLIC_HOST: peer-facing host split ─────────────────────────────
+
+  it('COTURN_PUBLIC_HOST overrides COTURN_IP in every client-facing ICE URL', () => {
+    const service = makeTurnService('test-secret-not-for-prod', 'test', {
+      COTURN_PUBLIC_HOST: 'turn.example.com',
+      COTURN_IP: '192.168.1.50',
+    });
+    const servers = service.getIceServers('user-123');
+
+    // Peer-facing entries use the public host.
+    expect(servers).toContainEqual({ urls: 'stun:turn.example.com:3478' });
+    const turn = servers.find((s) => s.urls.startsWith('turn:'));
+    expect(turn?.urls).toBe('turn:turn.example.com:3478');
+
+    // Neither the internal COTURN_IP nor localhost leaks into any URL.
+    for (const s of servers) {
+      expect(s.urls).not.toContain('192.168.1.50');
+      expect(s.urls).not.toContain('localhost');
+    }
+
+    // Public STUN fallback still prepended; TURN credentials still derive
+    // from the shared TURN_STATIC_SECRET regardless of advertised host.
+    expect(servers[0]).toEqual({ urls: 'stun:stun.l.google.com:19302' });
+    expect(turn?.username).toBeTruthy();
+    expect(turn?.credential).toBe(
+      crypto
+        .createHmac('sha1', 'test-secret-not-for-prod')
+        .update(turn!.username!)
+        .digest('base64'),
+    );
+  });
+
+  it('blank COTURN_PUBLIC_HOST falls back to COTURN_IP', () => {
+    for (const blank of ['', '   ']) {
+      const service = makeTurnService('test-secret-not-for-prod', 'test', {
+        COTURN_PUBLIC_HOST: blank,
+        COTURN_IP: '192.168.1.50',
+      });
+      const servers = service.getIceServers('user-123');
+      expect(servers).toContainEqual({ urls: 'stun:192.168.1.50:3478' });
+      expect(servers).toContainEqual(
+        expect.objectContaining({ urls: 'turn:192.168.1.50:3478' }),
+      );
+      expect(servers.some((s) => s.urls.includes('localhost'))).toBe(false);
+    }
+  });
+
+  it('keeps legacy localhost default when both COTURN_PUBLIC_HOST and COTURN_IP are unset', () => {
+    const service = makeTurnService('test-secret-not-for-prod', 'test', {
+      COTURN_IP: undefined,
+    });
+    const servers = service.getIceServers('user-123');
+    expect(servers).toContainEqual({ urls: 'stun:localhost:3478' });
+    expect(servers).toContainEqual(
+      expect.objectContaining({ urls: 'turn:localhost:3478' }),
+    );
+    // Public STUN fallback entries remain prepended.
+    expect(servers[0]).toEqual({ urls: 'stun:stun.l.google.com:19302' });
+    expect(servers[1]).toEqual({ urls: 'stun:stun1.l.google.com:19302' });
+  });
 });

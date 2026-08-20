@@ -627,6 +627,145 @@ describe('WebRTCService — 2-client call harness', () => {
     });
   });
 
+  // ── P1: Ghost ringback gated behind call_initiated ─────────────────────────
+
+  describe('P1 (call-reliability-p1): ringback gated behind call_initiated', () => {
+    async function flushHarnessMicrotasks(): Promise<void> {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+
+    const InCall = InCallManagerMock.default;
+
+    it('online path: startRingback is called exactly once after call_initiated, not during initiateCall', async () => {
+      InCall.startRingback.mockClear();
+      InCall.stopRingback.mockClear();
+
+      h.callerService.initiateCall('user-B', 'conv-1', 'audio');
+      expect(h.callerService.getCallState()).toBe('initiating');
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+
+      await h.waitForCallerEvent('call_initiated');
+      await flushHarnessMicrotasks();
+
+      expect(InCall.startRingback).toHaveBeenCalledTimes(1);
+      expect(InCall.stopRingback).not.toHaveBeenCalled();
+    });
+
+    it('busy callee (call_busy without call_initiated): no ghost tone — startRingback zero, stopRingback idempotent', async () => {
+      InCall.startRingback.mockClear();
+      InCall.stopRingback.mockClear();
+
+      // Simulate the server NEVER confirming the session: swallow the outbound
+      // call_initiate so the harness never delivers call_initiated. The caller
+      // is still 'initiating' when the busy reject lands.
+      (h.callerSocket as unknown as { emit: jest.Mock }).emit = jest.fn(() => true);
+      h.callerService.initiateCall('user-B', 'conv-1', 'audio');
+      expect(h.callerService.getCallState()).toBe('initiating');
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+
+      const busy = waitForServiceEvent(h.callerService, 'call_busy');
+      h.deliverToCallerSocket('call_busy', { targetUserId: 'user-B' });
+      await busy;
+      await flushHarnessMicrotasks();
+
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+      expect(InCall.stopRingback).toHaveBeenCalledTimes(1);
+    });
+
+    it('unreachable callee (call_missed without call_initiated): no ghost tone', async () => {
+      InCall.startRingback.mockClear();
+      InCall.stopRingback.mockClear();
+
+      // Same unconfirmed-session race: callee unreachable, server rejects with
+      // call_missed before ever sending call_initiated.
+      (h.callerSocket as unknown as { emit: jest.Mock }).emit = jest.fn(() => true);
+      h.callerService.initiateCall('user-B', 'conv-1', 'audio');
+      expect(h.callerService.getCallState()).toBe('initiating');
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+
+      const missed = waitForServiceEvent(h.callerService, 'call_missed');
+      h.deliverToCallerSocket('call_missed', {
+        sessionId: `no-session-${Date.now()}`,
+        reason: 'User unreachable',
+      });
+      await missed;
+      await flushHarnessMicrotasks();
+
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+      expect(InCall.stopRingback).toHaveBeenCalledTimes(1);
+    });
+
+    it('error 410 in initiating state: stopRingback is called (no ghost tone survives)', async () => {
+      InCall.startRingback.mockClear();
+      InCall.stopRingback.mockClear();
+
+      // Unconfirmed session; gateway surfaces a 410 (stale session) while the
+      // caller is still 'initiating'.
+      (h.callerSocket as unknown as { emit: jest.Mock }).emit = jest.fn(() => true);
+      h.callerService.initiateCall('user-B', 'conv-1', 'audio');
+      expect(h.callerService.getCallState()).toBe('initiating');
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+
+      const err = waitForServiceEvent(h.callerService, 'error');
+      h.deliverToCallerSocket('error', {
+        code: 410,
+        message: 'Session has ended or you are no longer a participant',
+      });
+      await err;
+      await flushHarnessMicrotasks();
+
+      expect(InCall.startRingback).not.toHaveBeenCalled();
+      expect(InCall.stopRingback).toHaveBeenCalledTimes(1);
+    });
+
+    it('error 410 after call_initiated: ringing tone started then stopped', async () => {
+      InCall.startRingback.mockClear();
+      InCall.stopRingback.mockClear();
+
+      h.callerService.initiateCall('user-B', 'conv-1', 'audio');
+      await h.waitForCallerEvent('call_initiated');
+      await flushHarnessMicrotasks();
+      expect(InCall.startRingback).toHaveBeenCalledTimes(1);
+      InCall.stopRingback.mockClear();
+
+      const err = waitForServiceEvent(h.callerService, 'error');
+      h.deliverToCallerSocket('error', {
+        code: 410,
+        message: 'Session has ended or you are no longer a participant',
+      });
+      await err;
+      await flushHarnessMicrotasks();
+
+      expect(InCall.stopRingback).toHaveBeenCalledTimes(1);
+    });
+
+    // Prove the grep invariant: initiateCall body has no startRingback, and
+    // setupSocketListeners gates exactly one startRingback behind call_initiated.
+    it('source invariant: initiateCall has no startRingback; setupSocketListeners calls it exactly once', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require('fs') as { readFileSync(p: string, e: string): string };
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require('path') as { join(...s: string[]): string };
+      const svcPath = path.join(__dirname, '..', 'WebRTCService.ts');
+      const src = fs.readFileSync(svcPath, 'utf8') as string;
+
+      // Extract initiateCall body (heuristic: from 'initiateCall(' to next '\n  }')
+      const initiateStart = src.indexOf('initiateCall(');
+      expect(initiateStart).toBeGreaterThan(-1);
+      const afterInitiate = src.slice(initiateStart, src.indexOf('\n  }\n', initiateStart) + 4);
+      expect(afterInitiate).not.toMatch(/startRingback/);
+
+      // setupSocketListeners: exactly one literal startRingback call.
+      const listenersStart = src.indexOf('private setupSocketListeners');
+      expect(listenersStart).toBeGreaterThan(-1);
+      const listenersBody = src.slice(listenersStart);
+      const hits = listenersBody.match(/startRingback/g) ?? [];
+      expect(hits.length).toBe(1);
+    });
+  });
+
   // ── 7.6: Safe-dispose on reconnect — held disconnected socket (see tasks.md) ──
 
   describe('7.6 Safe reconnect: held disconnected socket is disposed before creating a new one', () => {

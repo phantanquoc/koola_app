@@ -175,6 +175,10 @@ export class WebRTCService {
       // Server confirms session — capture sessionId so ICE restart can use it.
       const payload = data as { sessionId?: string } | null;
       if (payload?.sessionId) this.currentSessionId = payload.sessionId;
+      // P1: ringback is gated behind server confirmation. Starting it here
+      // ensures a rejected/unreachable call (call_busy / call_missed without
+      // call_initiated) never produces a transient ghost tone.
+      callAudioService.startRingback();
       this.emit('call_initiated', data);
     });
     this.socket.on('call_accepted', (data) => {
@@ -195,14 +199,24 @@ export class WebRTCService {
     });
     this.socket.on('call_declined', (data) => this.emit('call_declined', data));
     this.socket.on('call_ended', (data) => this.emit('call_ended', data));
-    this.socket.on('call_missed', (data) => this.emit('call_missed', data));
+    this.socket.on('call_missed', (data) => {
+      if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
+        callAudioService.stopRingback();
+      }
+      this.emit('call_missed', data);
+    });
     // Additional terminal/state events forwarded to subscribers (Task 11).
     // IncomingCallScreen listens for call_cancelled / call_timeout to dismiss
     // itself; ChatScreen caller-side listens for call_busy.
     this.socket.on('call_ringing', (data) => this.emit('call_ringing', data));
     this.socket.on('call_cancelled', (data) => this.emit('call_cancelled', data));
     this.socket.on('call_timeout', (data) => this.emit('call_timeout', data));
-    this.socket.on('call_busy', (data) => this.emit('call_busy', data));
+    this.socket.on('call_busy', (data) => {
+      if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
+        callAudioService.stopRingback();
+      }
+      this.emit('call_busy', data);
+    });
     this.socket.on('call_failed', (data) => this.emit('call_failed', data));
 
     this.socket.on('call_offer', async (data) => {
@@ -215,7 +229,16 @@ export class WebRTCService {
       await this.handleRemoteIceCandidate(data);
     });
 
-    this.socket.on('error', (data) => this.emit('error', data));
+    this.socket.on('error', (data) => {
+      const err = data as { code?: number } | null;
+      if (
+        err?.code === 410 &&
+        ['initiating', 'ringing', 'connecting'].includes(this.callState)
+      ) {
+        callAudioService.stopRingback();
+      }
+      this.emit('error', data);
+    });
   }
 
   // ─── Event Emitter ──────────────────────────────────────────────────────────
@@ -240,9 +263,9 @@ export class WebRTCService {
     this.currentCallType = callType;
     this.transition('initiating');
     this.socket?.emit('call_initiate', { targetUserId, conversationId, callType });
-    // Start ringback so the caller hears feedback while the callee rings.
-    // Stopped on call_accepted, or in cleanup() for any terminal path.
-    callAudioService.startRingback();
+    // P1: ringback is gated behind server confirmation (call_initiated).
+    // Starting it here would produce a ghost tone on immediate rejects
+    // (call_busy / call_missed without call_initiated).
   }
 
   acceptCall(sessionId: string, callType: 'audio' | 'video' = 'audio'): void {

@@ -9,6 +9,14 @@ export interface RTCIceServer {
 }
 
 /**
+ * Peer-facing ICE resolution: COTURN_PUBLIC_HOST (what both mobile peers can
+ * actually reach) -> COTURN_IP -> 'localhost'. Fallback chain is strict so an
+ * empty/blank public host never leaks a broken URL. COTURN_INTERNAL_HOST and
+ * COTURN_IP remain the backend's probe targets (CoturnHealthService) and are
+ * never advertised to clients — same split as MINIO_PUBLIC_HOST vs MINIO_ENDPOINT.
+ */
+
+/**
  * Public STUN fallback. Always prepended to the ICE server list so a call can
  * still gather server-reflexive candidates (and connect on same-LAN / simple
  * NAT) even when coturn is unreachable — e.g. coturn not running on Windows
@@ -22,14 +30,19 @@ const DEFAULT_PUBLIC_STUN = [
 
 @Injectable()
 export class TurnService {
-  private readonly coturnHost: string;
+  private readonly coturnPublicHost: string;
   private readonly coturnSecret: string;
   private readonly coturnPort: number;
   private readonly publicStunUrls: string[];
   private readonly ttl = 3600; // seconds
 
   constructor(private readonly configService: ConfigService) {
-    this.coturnHost = this.configService.get<string>('COTURN_IP', 'localhost');
+    const rawCoturnIp = this.configService.get<string>('COTURN_IP');
+    const rawPublicHost = this.configService.get<string>('COTURN_PUBLIC_HOST');
+    this.coturnPublicHost =
+      rawPublicHost?.trim() ||
+      rawCoturnIp?.trim() ||
+      'localhost';
     this.coturnSecret = this.configService.get<string>(
       'TURN_STATIC_SECRET',
       '',
@@ -77,9 +90,9 @@ export class TurnService {
     // coturn is down.
     return [
       ...this.publicStunUrls.map((urls) => ({ urls })),
-      { urls: `stun:${this.coturnHost}:${this.coturnPort}` },
+      { urls: `stun:${this.coturnPublicHost}:${this.coturnPort}` },
       {
-        urls: `turn:${this.coturnHost}:${this.coturnPort}`,
+        urls: `turn:${this.coturnPublicHost}:${this.coturnPort}`,
         username,
         credential: password,
       },
