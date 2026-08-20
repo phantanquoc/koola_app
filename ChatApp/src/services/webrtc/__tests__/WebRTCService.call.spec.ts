@@ -20,8 +20,22 @@
 // Override socket.io-client locally so this file does NOT use the global
 // singleton from jest/setup.js. callHarness injects its own FakeSocket
 // instances directly into each service, so socket.io-client is never
-// actually called from within the service under test.
-jest.mock('socket.io-client', () => jest.fn(() => null));
+// actually called from within the service under test — EXCEPT the 7.6
+// safe-reconnect tests, which call service.connect() and need io() to
+// return a trackable fake socket.
+jest.mock('socket.io-client', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const EventEmitter = require('events');
+  const ioMock = jest.fn(() => {
+    const s = new EventEmitter();
+    s.connected = false;
+    s.disconnect = jest.fn();
+    const origRemoveAll = s.removeAllListeners.bind(s);
+    s.removeAllListeners = jest.fn(() => origRemoveAll());
+    return s;
+  });
+  return { io: ioMock, __ioMock: ioMock };
+});
 
 // react-native-permissions — stub the entire module; WebRTCService uses it
 // for Android runtime permission checks which we bypass in tests.
@@ -610,6 +624,48 @@ describe('WebRTCService — 2-client call harness', () => {
       // This assertion FAILS because callState is never 'active':
       // callState must be 'active' for the ICE restart branch to execute
       expect(createOfferSpy).toHaveBeenCalledWith({ iceRestart: true });
+    });
+  });
+
+  // ── 7.6: Safe-dispose on reconnect — held disconnected socket (see tasks.md) ──
+
+  describe('7.6 Safe reconnect: held disconnected socket is disposed before creating a new one', () => {
+    it('connect(token) disposes a held disconnected socket before creating a new one', () => {
+      const svc = new WebRTCService() as unknown as {
+        connect: (t: string) => void;
+        socket: { connected: boolean; removeAllListeners: jest.Mock; disconnect: jest.Mock } | null;
+      };
+      // Stub io-dispatched listeners so construction does not explode
+      svc.connect('tok-1');
+      const firstSocket = svc.socket!;
+      firstSocket.connected = false;
+      const spyRemove = firstSocket.removeAllListeners;
+      const spyDisc = firstSocket.disconnect;
+
+      svc.connect('tok-2');
+      expect(spyRemove).toHaveBeenCalled();
+      expect(spyDisc).toHaveBeenCalled();
+      expect(svc.socket).not.toBe(firstSocket);
+      // New socket has listeners attached (connected flag irrelevant — just check distinct)
+      expect(typeof (svc.socket as unknown as { on: unknown }).on).toBe('function');
+      // Cleanup
+      (svc as unknown as { disconnect: () => void }).disconnect();
+    });
+
+    it('connect(token) early-returns when socket is already connected', () => {
+      const svc = new WebRTCService() as unknown as {
+        connect: (t: string) => void;
+        socket: { connected: boolean; removeAllListeners: jest.Mock; disconnect: jest.Mock } | null;
+      };
+      svc.connect('tok-1');
+      const firstSocket = svc.socket!;
+      firstSocket.connected = true;
+      const spyRemove = firstSocket.removeAllListeners;
+      spyRemove.mockClear();
+      svc.connect('tok-2');
+      expect(spyRemove).not.toHaveBeenCalled();
+      expect(svc.socket).toBe(firstSocket);
+      (svc as unknown as { disconnect: () => void }).disconnect();
     });
   });
 });

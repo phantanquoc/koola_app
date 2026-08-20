@@ -135,6 +135,9 @@ export async function consumePendingIncomingCall(): Promise<PendingIncomingCall 
   if (!raw) return null;
   try {
     const payload = JSON.parse(raw) as PendingIncomingCall;
+    if (payload.expiresAt != null && Date.now() > Number(payload.expiresAt)) {
+      return null;
+    }
     if (
       typeof payload._receivedAt !== 'number' ||
       Date.now() - payload._receivedAt > PENDING_TTL_MS

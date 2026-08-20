@@ -98,6 +98,11 @@ describe('WebrtcGateway — call log lifecycle', () => {
       getSession: jest.fn().mockResolvedValue(mockSession),
       markPushSent: jest.fn().mockResolvedValue(undefined),
       updateSessionState: jest.fn().mockResolvedValue(undefined),
+      updateDeadlineAt: jest.fn().mockResolvedValue(undefined),
+      setPendingCall: jest.fn().mockResolvedValue(undefined),
+      getPendingCall: jest.fn().mockResolvedValue(null),
+      delPendingCall: jest.fn().mockResolvedValue(undefined),
+      delPendingCallIfMatches: jest.fn().mockResolvedValue(undefined),
       getParticipants: jest.fn().mockResolvedValue([CALLER_ID, CALLEE_ID]),
       addParticipant: jest.fn().mockResolvedValue(true),
     };
@@ -458,9 +463,9 @@ describe('WebrtcGateway — call log lifecycle', () => {
     );
   });
 
-  // ── 6.11: online timeout → updateLog with status=missed ──────────────────
+  // ── 6.11: online deadlineAt → cron will handle timeout (no local timer) ──
 
-  it('online timeout callback (30s) → updateLog({status: missed, ...}) is called', async () => {
+  it('online call sets deadlineAt via updateDeadlineAt (cron handles timeout)', async () => {
     const callerSocket = makeAuthSocket(CALLER_ID);
 
     await gateway.handleCallInitiate(
@@ -474,17 +479,15 @@ describe('WebrtcGateway — call log lifecycle', () => {
       >[1],
     );
 
-    // Advance 30 seconds
-    await jest.advanceTimersByTimeAsync(30_000);
-
-    expect(mockCallLogsService.updateLog).toHaveBeenCalledWith(
+    expect(mockCallSessionService.updateDeadlineAt).toHaveBeenCalledWith(
       SESSION_ID,
-      expect.objectContaining({
-        status: 'missed',
-        duration: 0,
-        endedAt: expect.any(Date),
-      }),
+      expect.any(Number),
     );
+    // Deadline should be ~30s in the future
+    const deadlineArg = (mockCallSessionService.updateDeadlineAt as jest.Mock)
+      .mock.calls[0][1] as number;
+    expect(deadlineArg).toBeGreaterThan(Date.now());
+    expect(deadlineArg).toBeLessThanOrEqual(Date.now() + 31_000);
   });
 
   // ── 6.12: createLog throwing → gateway continues ─────────────────────────

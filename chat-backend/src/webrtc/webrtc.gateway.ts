@@ -62,11 +62,6 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(WebrtcGateway.name);
 
-  // In-memory timeout handles for unanswered calls.
-  // Used for both the online 30s timeout and the offline-push 25s grace timer.
-  // Only ONE timer is registered per sessionId at any time.
-  private callTimeouts = new Map<string, NodeJS.Timeout>();
-
   constructor(
     private readonly membershipService: MembershipService,
     private readonly usersService: UsersService,
@@ -114,6 +109,45 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `[WebrtcGateway] Client connected: ${client.id} (user: ${userId})`,
     );
     await client.join(`user:${userId}`);
+
+    try {
+      const raw = await this.callSessionService.getPendingCall(userId);
+      if (raw) {
+        let payload: Record<string, unknown> | null = null;
+        try {
+          payload = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          await this.callSessionService.delPendingCall(userId);
+          payload = null;
+        }
+        if (payload && typeof payload.sessionId === 'string') {
+          const sessionId = payload.sessionId;
+          const session = await this.callSessionService.getSession(sessionId);
+          const deadline = session
+            ? Number((session as unknown as Record<string, string>).deadlineAt)
+            : 0;
+          if (
+            session &&
+            session.state === 'initiated' &&
+            deadline > Date.now()
+          ) {
+            client.emit('incoming_call', payload);
+            await this.callSessionService.delPendingCall(userId);
+            this.logger.log(
+              `[WebrtcGateway] Replayed pending_call ${sessionId} to ${userId}`,
+            );
+          } else {
+            await this.callSessionService.delPendingCall(userId);
+          }
+        } else if (payload) {
+          await this.callSessionService.delPendingCall(userId);
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[WebrtcGateway] pending_call replay failed for ${userId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   async handleDisconnect(client: AuthSocket): Promise<void> {
@@ -137,9 +171,6 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // No more sockets — end the session
       await this.callSessionService.endSession(sessionId);
-
-      // Clear any pending timeout (online or offline-push grace)
-      this.clearCallTimeout(sessionId);
 
       // Update call log: ended (compute duration from answeredAt if active)
       const priorLog = await this.callLogsService
@@ -357,50 +388,26 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // 3. Mark pushSentAt in Redis for observability.
       await this.callSessionService.markPushSent(session.sessionId);
 
-      // 4. Start 25-second grace timer (keyed by sessionId — same Map as online timeout).
-      //    Only ONE timer is registered per sessionId; the online path is not reached
-      //    because we return after this block.
-      const graceHandle = setTimeout(() => {
-        this.callTimeouts.delete(session.sessionId);
-        void (async () => {
-          try {
-            const currentSession = await this.callSessionService.getSession(
-              session.sessionId,
-            );
-            if (currentSession && currentSession.state === 'initiated') {
-              await this.callSessionService.endSession(session.sessionId);
-              await this.callLogsService
-                .updateLog(session.sessionId, {
-                  status: 'missed',
-                  duration: 0,
-                  endedAt: new Date(),
-                })
-                .catch((err) =>
-                  this.logger.error(
-                    `[WebrtcGateway] updateLog (offline-push grace) failed: ${(err as Error).message}`,
-                  ),
-                );
-              this.io.to(`user:${callerId}`).emit('call_missed', {
-                sessionId: session.sessionId,
-                reason: 'No answer',
-              });
-              this.logger.log(
-                `[WebrtcGateway] Offline-push grace expired for session ${session.sessionId} — marked missed`,
-              );
-            }
-          } catch (err) {
-            this.logger.error(
-              `[WebrtcGateway] Grace timer error for session ${session.sessionId}: ${(err as Error).message}`,
-            );
-          }
-        })();
-      }, OFFLINE_PUSH_GRACE_MS);
-
-      this.callTimeouts.set(session.sessionId, graceHandle);
+      await this.callSessionService.updateDeadlineAt(
+        session.sessionId,
+        Date.now() + OFFLINE_PUSH_GRACE_MS,
+      );
+      await this.callSessionService.setPendingCall(
+        targetUserId,
+        {
+          sessionId: session.sessionId,
+          fromUserId: callerId,
+          fromUser: callerInfo,
+          callType,
+          conversationId,
+          iceServers,
+        },
+        OFFLINE_PUSH_GRACE_MS,
+      );
 
       this.logger.log(
         `[WebrtcGateway] call_initiate: ${callerId} → ${targetUserId} — offline push sent, ` +
-          `grace timer started (session: ${session.sessionId})`,
+          `grace deadline set (session: ${session.sessionId})`,
       );
       return;
     }
@@ -424,50 +431,10 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       remoteUser,
     });
 
-    // Start 30-second timeout for unanswered online calls
-    const timeoutHandle = setTimeout(() => {
-      this.callTimeouts.delete(session.sessionId);
-      void (async () => {
-        try {
-          const currentSession = await this.callSessionService.getSession(
-            session.sessionId,
-          );
-          if (currentSession && currentSession.state === 'initiated') {
-            await this.callSessionService.updateSessionState(
-              session.sessionId,
-              'missed',
-            );
-            await this.callLogsService
-              .updateLog(session.sessionId, {
-                status: 'missed',
-                duration: 0,
-                endedAt: new Date(),
-              })
-              .catch((err) =>
-                this.logger.error(
-                  `[WebrtcGateway] updateLog (timeout) failed: ${(err as Error).message}`,
-                ),
-              );
-            this.io.to(`user:${callerId}`).emit('call_missed', {
-              sessionId: session.sessionId,
-              reason: 'No answer',
-            });
-            this.io.to(targetRoom).emit('call_timeout', {
-              sessionId: session.sessionId,
-            });
-            this.logger.log(
-              `[WebrtcGateway] Session ${session.sessionId} timed out`,
-            );
-          }
-        } catch (err) {
-          this.logger.error(
-            `[WebrtcGateway] Online timeout error for session ${session.sessionId}: ${(err as Error).message}`,
-          );
-        }
-      })();
-    }, CALL_TIMEOUT_MS);
-
-    this.callTimeouts.set(session.sessionId, timeoutHandle);
+    await this.callSessionService.updateDeadlineAt(
+      session.sessionId,
+      Date.now() + CALL_TIMEOUT_MS,
+    );
 
     this.logger.log(
       `[WebrtcGateway] call_initiate: ${callerId} → ${targetUserId} (session: ${session.sessionId})`,
@@ -506,9 +473,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Clear timeout (online or offline-push grace timer)
-    this.clearCallTimeout(sessionId);
     await this.callSessionService.endSession(sessionId);
+    if (session.targetUserId) {
+      await this.callSessionService.delPendingCallIfMatches(
+        session.targetUserId,
+        sessionId,
+      );
+    }
 
     await this.callLogsService
       .updateLog(sessionId, {
@@ -621,7 +592,6 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // If 2+ participants, mark active and cancel timeout
     if (participants.length >= 2 && session.state === 'initiated') {
       await this.callSessionService.updateSessionState(sessionId, 'active');
-      this.clearCallTimeout(sessionId);
     }
   }
 
@@ -739,9 +709,6 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Clear timeout (online or offline-push grace timer)
-    this.clearCallTimeout(sessionId);
-
     // Register the callee as a session participant. createSession only adds the
     // initiator; without this the callee fails validateParticipant in
     // handleCallAnswer / handleIceCandidate, so its SDP answer and ICE
@@ -751,6 +718,12 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.callSessionService.addParticipant(sessionId, userId);
 
     await this.callSessionService.updateSessionState(sessionId, 'active');
+    if (session.targetUserId) {
+      await this.callSessionService.delPendingCallIfMatches(
+        session.targetUserId,
+        sessionId,
+      );
+    }
 
     // Update call log: answered
     await this.callLogsService
@@ -804,10 +777,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Clear timeout (online or offline-push grace timer)
-    this.clearCallTimeout(sessionId);
-
     await this.callSessionService.updateSessionState(sessionId, 'declined');
+    if (session.targetUserId) {
+      await this.callSessionService.delPendingCallIfMatches(
+        session.targetUserId,
+        sessionId,
+      );
+    }
 
     await this.callLogsService
       .updateLog(sessionId, {
@@ -852,10 +828,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Clear timeout (online or offline-push grace timer)
-    this.clearCallTimeout(sessionId);
-
     await this.callSessionService.endSession(sessionId);
+    if (session.targetUserId) {
+      await this.callSessionService.delPendingCallIfMatches(
+        session.targetUserId,
+        sessionId,
+      );
+    }
 
     // Compute duration from answeredAt if the call was ever active
     const priorLog = await this.callLogsService.findBySessionId(sessionId);
@@ -918,10 +897,13 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Clear any pending timeout (online or offline-push grace timer)
-    this.clearCallTimeout(sessionId);
-
     await this.callSessionService.endSession(sessionId);
+    if (session.targetUserId) {
+      await this.callSessionService.delPendingCallIfMatches(
+        session.targetUserId,
+        sessionId,
+      );
+    }
 
     // Compute duration from answeredAt if the call was ever active
     const log = await this.callLogsService.findBySessionId(sessionId);
@@ -1030,13 +1012,5 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return false;
     }
     return true;
-  }
-
-  private clearCallTimeout(sessionId: string): void {
-    const handle = this.callTimeouts.get(sessionId);
-    if (handle) {
-      clearTimeout(handle);
-      this.callTimeouts.delete(sessionId);
-    }
   }
 }

@@ -1,8 +1,5 @@
-# webrtc-offline-call-push Specification
+## MODIFIED Requirements
 
-## Purpose
-Deliver incoming-call signaling to callees who are offline on the `/webrtc` namespace: high-priority FCM data-only push to wake the device, a grace window before the call is marked missed, an immediate-missed fallback when no FCM tokens exist, and caller UX parity that never discloses callee presence.
-## Requirements
 ### Requirement: Offline callee FCM push delivery
 When a user initiates a call via `call_initiate` and the target user has no active socket connection to the `/webrtc` namespace AND has at least one FCM token registered, the backend SHALL send a high-priority FCM data-only message to every registered FCM token for the target user, record a per-session `deadlineAt` (createdAt + 25 s) as the grace expiry, write a `pending_call:<targetUserId>` replay entry scoped to that session with TTL equal to the grace window, and regard the pending entry as replayable only until its deadline.
 
@@ -88,4 +85,3 @@ The caller SHALL receive the same `call_initiated` event payload (including ICE 
 - **WHEN** the backend processes the event
 - **THEN** the caller receives exactly one of: `call_initiated` (followed later by `call_accepted`, `call_declined`, `call_cancelled`, or `call_missed`) OR `call_missed` immediately (no-tokens case) OR `call_busy` (existing busy case)
 - **AND** no event payload directly indicates callee online/offline state
-

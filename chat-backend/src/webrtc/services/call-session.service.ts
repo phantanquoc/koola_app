@@ -21,12 +21,17 @@ export interface CallSession {
   participantCount: number;
   /** ISO timestamp set when an FCM incoming-call push was sent for this session */
   pushSentAt?: string;
+  /** Epoch millis after which the session is eligible for missed timeout */
+  deadlineAt?: string;
 }
 
 const SESSION_TTL = 3600; // seconds
 const TIMEOUT_TTL = 60; // seconds
 const MAX_PARTICIPANTS = 8;
 const INITIATED_SESSIONS_KEY = 'initiated_sessions';
+
+export const CALL_TIMEOUT_MS = 30_000;
+export const OFFLINE_PUSH_GRACE_MS = 25_000;
 
 @Injectable()
 export class CallSessionService {
@@ -71,8 +76,11 @@ export class CallSessionService {
     targetUserId: string | null;
     conversationId: string;
     callType: CallType;
+    deadlineAt?: number;
   }): Promise<CallSession> {
     const sessionId = uuidv4();
+    const now = Date.now();
+    const deadlineAt = params.deadlineAt ?? now + CALL_TIMEOUT_MS;
     const session: CallSession = {
       sessionId,
       initiatorId: params.initiatorId,
@@ -82,6 +90,7 @@ export class CallSessionService {
       state: 'initiated',
       createdAt: new Date().toISOString(),
       participantCount: 1,
+      deadlineAt: String(deadlineAt),
     };
 
     const key = `call:${sessionId}`;
@@ -98,7 +107,7 @@ export class CallSessionService {
       this.redis.getClient().expire(participantsKey, SESSION_TTL),
       this.redis
         .getClient()
-        .zadd(INITIATED_SESSIONS_KEY, Date.now(), sessionId),
+        .zadd(INITIATED_SESSIONS_KEY, deadlineAt, sessionId),
     ]);
 
     // Index both users so hasExistingSession can find this session without KEYS/SCAN
@@ -119,6 +128,75 @@ export class CallSessionService {
     const data = await this.redis.getClient().hgetall(`call:${sessionId}`);
     if (!data || Object.keys(data).length === 0) return null;
     return data as unknown as CallSession;
+  }
+
+  async updateDeadlineAt(sessionId: string, deadlineAt: number): Promise<void> {
+    const key = `call:${sessionId}`;
+    await Promise.all([
+      this.redis.getClient().hset(key, 'deadlineAt', String(deadlineAt)),
+      this.redis
+        .getClient()
+        .zadd(INITIATED_SESSIONS_KEY, deadlineAt, sessionId),
+    ]);
+  }
+
+  async setPendingCall(
+    targetUserId: string,
+    payload: Record<string, unknown>,
+    ttlMs: number,
+  ): Promise<void> {
+    const key = `pending_call:${targetUserId}`;
+    await this.redis.getClient().set(key, JSON.stringify(payload), 'PX', ttlMs);
+  }
+
+  async getPendingCall(targetUserId: string): Promise<string | null> {
+    return this.redis.getClient().get(`pending_call:${targetUserId}`);
+  }
+
+  async delPendingCall(targetUserId: string): Promise<void> {
+    await this.redis.getClient().del(`pending_call:${targetUserId}`);
+  }
+
+  async delPendingCallIfMatches(
+    targetUserId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const raw = await this.getPendingCall(targetUserId);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { sessionId?: string };
+      if (parsed.sessionId === sessionId) {
+        await this.delPendingCall(targetUserId);
+      }
+    } catch {
+      await this.delPendingCall(targetUserId);
+    }
+  }
+
+  async tryClaimMissed(sessionId: string, now: number): Promise<boolean> {
+    const script = [
+      "local state = redis.call('HGET', KEYS[1], 'state')",
+      "local deadline = redis.call('HGET', KEYS[1], 'deadlineAt')",
+      "if state ~= 'initiated' then return 0 end",
+      'if not deadline then return 0 end',
+      'if tonumber(deadline) > tonumber(ARGV[1]) then return 0 end',
+      "redis.call('HSET', KEYS[1], 'state', 'missed')",
+      "redis.call('ZREM', KEYS[2], ARGV[2])",
+      "redis.call('DEL', KEYS[3])",
+      'return 1',
+    ].join('\n');
+    const result = await this.redis
+      .getClient()
+      .eval(
+        script,
+        3,
+        `call:${sessionId}`,
+        INITIATED_SESSIONS_KEY,
+        `call_timeout:${sessionId}`,
+        String(now),
+        sessionId,
+      );
+    return result === 1;
   }
 
   async updateSessionState(sessionId: string, state: CallState): Promise<void> {
@@ -289,32 +367,46 @@ export class CallSessionService {
    * and marks them as 'missed'. Returns the sessions that were cleaned up.
    * Used by CallSessionCronService as a safety-net for server-restart scenarios.
    */
-  async cleanupStaleSessions(): Promise<CallSession[]> {
-    const cutoff = Date.now() - TIMEOUT_TTL * 1000;
-    const staleSessionIds = await this.redis
+  async cleanupStaleSessions(now?: number): Promise<CallSession[]> {
+    const nowMs = now ?? Date.now();
+    const candidateIds = await this.redis
       .getClient()
-      .zrangebyscore(INITIATED_SESSIONS_KEY, 0, cutoff);
+      .zrangebyscore(INITIATED_SESSIONS_KEY, 0, nowMs);
 
     const cleaned: CallSession[] = [];
 
-    for (const sessionId of staleSessionIds) {
+    for (const sessionId of candidateIds) {
       const session = await this.getSession(sessionId);
 
-      // Session expired from Redis or already transitioned
-      if (!session || session.state !== 'initiated') {
+      if (!session) {
         await this.redis.getClient().zrem(INITIATED_SESSIONS_KEY, sessionId);
         continue;
       }
-
-      await this.updateSessionState(sessionId, 'missed');
-      if (session.initiatorId && session.targetUserId) {
+      if (session.state !== 'initiated') {
+        await this.redis.getClient().zrem(INITIATED_SESSIONS_KEY, sessionId);
+        continue;
+      }
+      const deadline = Number(
+        (session as unknown as Record<string, string>).deadlineAt,
+      );
+      if (!deadline || deadline > nowMs) {
+        continue;
+      }
+      const claimed = await this.tryClaimMissed(sessionId, nowMs);
+      if (!claimed) continue;
+      const updated = await this.getSession(sessionId);
+      const missedSession = updated ?? {
+        ...session,
+        state: 'missed' as CallState,
+      };
+      if (missedSession.initiatorId && missedSession.targetUserId) {
         await this.removeActiveCallIndex(
-          session.initiatorId,
-          session.targetUserId,
+          missedSession.initiatorId,
+          missedSession.targetUserId,
           sessionId,
         );
       }
-      cleaned.push(session);
+      cleaned.push(missedSession);
     }
 
     return cleaned;

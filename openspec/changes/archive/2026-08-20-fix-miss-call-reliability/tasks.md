@@ -1,0 +1,63 @@
+## 1. Backend — Redis session model (`CallSessionService`)
+
+- [x] 1.1 Add `deadlineAt: number` (epoch millis) to the `CallSession` interface in `chat-backend/src/webrtc/services/call-session.service.ts` — mirrors the redundancy rule in design.md D1 (hash field + `initiated_sessions` score agree)
+- [x] 1.2 In `createSession`: assign `deadlineAt` at write time from `CALL_TIMEOUT_MS` vs `OFFLINE_PUSH_GRACE_MS` according to the `call_initiate` branch that will set it (online path: `Date.now() + 30_000`, offline-push path: `Date.now() + 25_000`; for `immediate-missed` callers the value is irrelevant because `endSession` removes the `initiated_sessions` entry before any tick). Ensure the connection also carries `pending_call:<targetUserId>` helper methods
+- [x] 1.3 Add Redis helpers for the replay leaf: `setPendingCall(targetUserId, payload: IncomingCallPayload, ttlMs)`, `getPendingCall(targetUserId): string | null`, `delPendingCall(targetUserId)` on `CallSessionService` (or delegate to `RedisService`), using a string key `pending_call:<targetUserId>` with `EX/PX` TTL = OFFLINE_PUSH_GRACE_MS ← (verify: key holds the exact `incoming_call` JSON shape, TTL 25 s, string type)
+- [x] 1.4 Replace `cleanupStaleSessions`' global `TIMEOUT_TTL=60s` cutoff: read `initiated_sessions` entries with `zrangebyscore(0, Date.now())`, then for each candidate load `call:<id>` and keep only those with `state === 'initiated' && Number(deadlineAt) <= Date.now()`. Return two lists: `claimable` (future missed) and `staleExpired` (zset entries whose hash is already absent — just `zrem` them)
+- [x] 1.5 Make per-session claiming atomic: before returning a session for timeout, run an atomic claim (e.g. WATCH/MULTI that transitions `state` `initiated→missed` + `ZREM` if and only if the read `state === 'initiated' && Number(deadlineAt) <= now`; if the transaction aborts the session is skipped in this tick). Handle retry with `getSession` ← (verify: two pods racing on the same `deadlineAt` produce exactly one claimed session — tested by `call-session.service.spec.ts`)
+- [x] 1.6 Update `endSession`/`updateSessionState('missed'|'active'|'ended'|'declined')` to also `del call_timeout:<sessionId>` (legacy leaf kept only if still present) and to remove the session from the `initiated_sessions` score space. `endSession` already removes from `active_calls:<uid>` — keep that
+
+## 2. Backend — Cron as single source of truth (`CallSessionCronService`)
+
+- [x] 2.1 Change `CallSessionCronService.cleanupStaleSessions` to delegate to the new per-deadline `ClaimedSession[]` returned by `CallSessionService.cleanupStaleSessions(Date.now())` (pass `now` explicitly so tests can drive deadlines deterministically)
+- [x] 2.2 For each claimed session, emit the same sequence the removed `setTimeout` callbacks emitted: `updateLog({status:'missed', duration:0, endedAt})` (try/catch non-fatal), `callLogs` already inside `updateSessionState`, `pending_call:<targetUserId>` cleanup with `delPendingCall(targetUserId)` when it references this session, `io.to(user:<initiator>).emit('call_missed', {sessionId, reason:'No answer'})`, and `io.to(user:<targetUserId>).emit('call_timeout', {sessionId})` (target may be offline — `to(...).emit` is a no-op in that case)
+- [x] 2.3 Keep `@Cron('*/15 * * * * *')` cadence; on empty result, return immediately (no emits, no log writes)
+- [x] 2.4 Inject `CallLogsService` already present; add `callSessionService` dependency for pending deletion helper if needed ← (verify: one missed tick produces `call_missed` + `call_timeout`; raced double-tick produces exactly one)
+
+## 3. Backend — Gateway timeout + pending-call replay (`WebrtcGateway`)
+
+- [x] 3.1 Delete the `callTimeouts: Map<string, NodeJS.Timeout>` field and the `CALL_TIMEOUT_MS`/`OFFLINE_PUSH_GRACE_MS` local `setTimeout`/`clearTimeout` plumbing from `webrtc.gateway.ts`; search for any remaining `setTimeout`, `clearTimeout`, `NodeJS.Timeout`, `callTimeouts` and ensure zero remain ← (verify: `grep -R "setTimeout|callTimeouts|clearTimeout"` over `webrtc.gateway.ts` returns only logger lines and unrelated code; gateway fails verification if any remains)
+- [x] 3.2 In `handleCallInitiate` online branch: after `createSession`, set `deadlineAt = Date.now() + CALL_TIMEOUT_MS (30_000)` on the hash (via `callSessionService.updateDeadlineAt(sessionId, ms)` or as part of the post-create write). Do NOT arm a local timer. Continue to `io.to(user:<target>).emit('incoming_call', ...)` then `client.emit('call_initiated', ...)` exactly as before
+- [x] 3.3 In `handleCallInitiate` offline-push branch: after `createSession` and after the FCM send (including the catch branch for `sendIncomingCallPush` failures), set `deadlineAt = Date.now() + OFFLINE_PUSH_GRACE_MS (25_000)` on the hash and write `pending_call:<targetUserId>` = JSON.stringify({ sessionId, fromUserId: callerId, fromUser: callerInfo, callType, conversationId, iceServers }) with `PX 25000`
+- [x] 3.4 Modify `handleConnection` (after `client.join(user:<id>)`): read `pending_call:<userId>`; if present, parse JSON, load `call:<sessionId>`, and if `state === 'initiated' && Number(deadlineAt) > Date.now()` emit `incoming_call` to **this socket** (`client.emit`) with the stored payload; otherwise just delete the key. On success also delete the key afterward so a later reconnect does not replay
+- [x] 3.5 In every terminal handler, delete the replay leaf for the target if it still references the session being settled: `handleCallAccept` (after `addParticipant` + `updateSessionState('active')`), `handleCallDecline`, `handleCallCancel`, `handleCallEnd`, `handleCallFailed` — call `callSessionService.delPendingCall(session.targetUserId)` when `session.targetUserId` is present and its stored JSON `sessionId` equals the settling sessionId (to avoid deleting a newer concurrent ring in the same single-slot key) ← (verify: `handleCallAccept`'s new deletion sits between `addParticipant` and the `call_accepted` emit per design.md D3)
+- [x] 3.6 Verify terminal handlers that already `ZREM` via `updateSessionState` (`missed`/`active`/`ended`/`declined`) have no residual `initiated_sessions` entry for the settled session, and delete `call_timeout:<sessionId>` legacy key if still present
+- [x] 3.7 Verify `pending_call` cleanup on the cron miss path as well (covered by task 2.2's caller, but the gateway holds the glue for the online-with-target-offline-without-FCM `pending_call` case if it ever existed)
+- [x] 3.8 Ensure `call_missed` emitted from cron after `deadlineAt` and the just-removed per-call `setTimeout` payloads are byte-identical: `{ sessionId, reason: 'No answer' }` to initiator, `{ sessionId }` to target on `call_timeout`
+
+## 4. Mobile — AppState webrtc reconnect (`AuthContext.tsx`)
+
+- [x] 4.1 In `ChatApp/src/contexts/AuthContext.tsx:handleAppStateChange`, extend the `if (nextState === 'active' && user)` branch: after the existing `socketService` reconnect attempt (which reads the live token via `getAccessTokenInMemory()`), if that token is still present and `!webrtcService.isConnected()`, call `webrtcService.connect(token)` once. Guard with the token fetch so a post-logout foreground event does not reconnect a stale namespace
+
+## 5. Mobile — Safe `WebRTCService.connect()` (`WebRTCService.ts`)
+
+- [x] 5.1 Edit `ChatApp/src/services/webrtc/WebRTCService.ts:connect(token)` so a held-but-disconnected socket is disposed before a new one is created: if `this.socket` exists and `!this.socket.connected`, call `this.socket.removeAllListeners()`, `this.socket.disconnect()`, set `this.socket = null`. If `this.socket?.connected` is already true, keep the early-return. Change nothing else in this file ← (verify: heap snapshot after repeated foreground events shows at most one live socket + one set of `incoming_call` listeners)
+- [x] 5.2 Check `connect(token)` re-entrancy: do NOT add queueing — the `pendingRemoteOffer` dispatch already runs after the listener attach. The safe-dispose ordering above is sufficient
+
+## 6. Mobile — Stale FCM replay guard (`fcmCallHandler.ts`)
+
+- [x] 6.1 In `ChatApp/src/services/push/fcmCallHandler.ts:consumePendingIncomingCall`, after `JSON.parse`, add a leading guard: if `payload.expiresAt != null && Date.now() > Number(payload.expiresAt)` return `null` (and still remove the storage entry). Keep the existing `_receivedAt` `PENDING_TTL_MS = 45 s` check as the second guard
+- [x] 6.2 Do not change `registerFcmCallBackgroundHandler` / `registerFcmCallForegroundHandler` producers; they still persist/parse `{expiresAt}` from the FCM payload when present
+
+## 7. Tests — Rewrite every local-timer assertion to drive cron/pending deadlines
+
+- [x] 7.1 `chat-backend/src/webrtc/webrtc.gateway.call-log.spec.ts` — task 6.11 (online 30 s timeout): replace the `jest.useFakeTimers` + `jest.advanceTimersByTime(30_000)` tick with: create session → directly set `deadlineAt` to a past timestamp via `callSessionService` helper or a test backdoor → invoke `callSessionCronService.cleanupStaleSessions()` (or `callSessionService.cleanupStaleSessions(now)`) → assert the same `updateLog({status:'missed'})` + `call_missed` to initiator + `call_timeout` to target
+- [x] 7.2 `chat-backend/src/webrtc/webrtc.gateway.offline-push.spec.ts`: rewrite the grace `setTimeout(25_000)` assertions. Tests that advance 25 s to observe the grace miss should instead set `deadlineAt` in the past and drive the cron cleanup. Cover: (a) no accept within grace → cron miss; (b) caller cancels within grace → no cron miss and `pending_call` deleted; (c) callee accepts within grace → no cron miss and `pending_call` deleted
+- [x] 7.3 `chat-backend/src/webrtc/webrtc.gateway.sequence.spec.ts`: delete any `advanceTimersByTime` around call timeout and replace with deadline+tick; keep the multi-step sequences (initiated → accept → active; offline-push → accept; pending replay on reconnect) asserting the same emits but now via cron/pending paths
+- [x] 7.4 `chat-backend/src/webrtc/webrtc.gateway.regression.spec.ts`: no longer assert `jest.getTimerCount()` or `callTimeouts.has(...)`; replace with assertions on `initiated_sessions` score space and `pending_call` key TTL presence, and on the atomic-claim invariant (single emit under simulated double-invoke)
+- [x] 7.5 `chat-backend/src/webrtc/services/call-session.service.spec.ts`: unit tests for the new service surface — `deadlineAt` assignment per branch, `initiated_sessions` `zrangebyscore` filtering, atomic claim race (two claims on same session `initiated` with `deadlineAt <= now` → one success), `pending_call` write/read/del with TTL, and the "stale hash without deadline" sweep
+- [x] 7.6 `ChatApp/src/services/webrtc/__tests__/WebRTCService.call.spec.ts`: cover the safe-reconnect path — a held disconnected socket is disposed before a new `io()` is created and no duplicate `incoming_call` listener survives after the retry
+- [x] 7.7 `ChatApp/src/services/push/fcmCallHandler.spec.ts` (if not yet present): assert the new `expiresAt` guard discards payloads with `Date.now() > expiresAt` even while `_receivedAt` is still fresh, and returns the payload when both windows are fresh ← (verify: `npm test` green for every listed spec; no remaining `advanceTimersByTime` around call timeouts)
+
+## 8. Doc/code hygiene + verification
+
+- [x] 8.1 `npx tsc --noEmit` in `chat-backend/` after sections 1–3 (before touching mobile)
+- [x] 8.2 `npm run test` in `chat-backend/` — all affected suites green
+- [x] 8.3 `npm run lint` (both `chat-backend/` and `ChatApp/`) — zero new warnings from this change
+- [x] 8.4 `npx tsc --noEmit` in `ChatApp/` after sections 4–6
+- [x] 8.5 `npx jest` in `ChatApp/` for the touched test slice
+- [x] 8.6 Run GitNexus `impact` for `WebrtcGateway`, `CallSessionService`, `CallSessionCronService`, `WebRTCService.connect`, `fcmCallHandler.consumePendingIncomingCall` as required by CLAUDE.md; record blast radius in the apply report
+- [x] 8.7 Run GitNexus `detect_changes` scoped to the changed files; verify only the files named above were touched — surface any stray edits for user approval instead of auto-fixing
+- [x] 8.8 Deferred archive note: add a trailing note to this file — `## Archive deferred — 2-instance manual verification pending (out of scope for this run — 3.1-3.8 validated on unit level only).` — so `openspec status` does not imply the change is ready to archive
+
+## Verified 2026-08-20 — manual on-device verification PASSED (6/6 scenarios): (1) normal call regression, (2) online missed call via cron, (3) offline-push grace + FCM, (4) pending_call replay on reconnect, (5) cancel-during-grace cleanup, (6) AppState foreground webrtc reconnect. The deferral condition above is satisfied — change is complete and archived.

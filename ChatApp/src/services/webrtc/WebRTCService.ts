@@ -129,6 +129,11 @@ export class WebRTCService {
 
   connect(token: string): void {
     if (this.socket?.connected) return;
+    if (this.socket && !this.socket.connected) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
 
     this.socket = io(`${ENV.WS_URL}/webrtc`, {
       query: { token },

@@ -99,6 +99,11 @@ describe('WebrtcGateway — offline-push branch', () => {
       }),
       markPushSent: jest.fn().mockResolvedValue(undefined),
       updateSessionState: jest.fn().mockResolvedValue(undefined),
+      updateDeadlineAt: jest.fn().mockResolvedValue(undefined),
+      setPendingCall: jest.fn().mockResolvedValue(undefined),
+      getPendingCall: jest.fn().mockResolvedValue(null),
+      delPendingCall: jest.fn().mockResolvedValue(undefined),
+      delPendingCallIfMatches: jest.fn().mockResolvedValue(undefined),
     };
 
     mockCallNotificationsService = {
@@ -185,7 +190,7 @@ describe('WebrtcGateway — offline-push branch', () => {
 
   // ── 7.3: offline callee with tokens ──────────────────────────────────────
 
-  it('emits call_initiated to caller, calls push service, marks pushSentAt, and registers grace timer', async () => {
+  it('emits call_initiated to caller, calls push service, marks pushSentAt, and sets deadline + pending_call', async () => {
     const callerSocket = makeAuthSocket(CALLER_ID);
 
     await gateway.handleCallInitiate(
@@ -228,11 +233,16 @@ describe('WebrtcGateway — offline-push branch', () => {
       SESSION_ID,
     );
 
-    // Grace timer registered in callTimeouts Map
-    const timeouts = (
-      gateway as unknown as { callTimeouts: Map<string, NodeJS.Timeout> }
-    ).callTimeouts;
-    expect(timeouts.has(SESSION_ID)).toBe(true);
+    // Deadline + pending_call set (replaces grace timer)
+    expect(mockCallSessionService.updateDeadlineAt).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(Number),
+    );
+    expect(mockCallSessionService.setPendingCall).toHaveBeenCalledWith(
+      CALLEE_ID,
+      expect.objectContaining({ sessionId: SESSION_ID }),
+      expect.any(Number),
+    );
 
     // Session NOT ended yet
     expect(mockCallSessionService.endSession).not.toHaveBeenCalled();
@@ -276,22 +286,16 @@ describe('WebrtcGateway — offline-push branch', () => {
       mockCallNotificationsService.sendIncomingCallPush,
     ).not.toHaveBeenCalled();
 
-    // No grace timer
-    const timeouts = (
-      gateway as unknown as { callTimeouts: Map<string, NodeJS.Timeout> }
-    ).callTimeouts;
-    expect(timeouts.has(SESSION_ID)).toBe(false);
-
-    // Session state updated to missed
+    // No pending timer — session already marked missed (single-host deadline path)
     expect(mockCallSessionService.updateSessionState).toHaveBeenCalledWith(
       SESSION_ID,
       'missed',
     );
   });
 
-  // ── 7.5: grace timer fires → call_missed ─────────────────────────────────
+  // ── 7.5: offline push sets deadline+pending (cron will fire missed later) ──
 
-  it('emits call_missed to caller and ends session when grace timer fires after 25s', async () => {
+  it('sets deadline ~25s and pending_call; does NOT auto-end session (cron owns timeout)', async () => {
     const callerSocket = makeAuthSocket(CALLER_ID);
 
     await gateway.handleCallInitiate(
@@ -305,36 +309,28 @@ describe('WebrtcGateway — offline-push branch', () => {
       >[1],
     );
 
-    // Confirm timer is registered
-    const timeouts = (
-      gateway as unknown as { callTimeouts: Map<string, NodeJS.Timeout> }
-    ).callTimeouts;
-    expect(timeouts.has(SESSION_ID)).toBe(true);
-
-    // Fast-forward 25 seconds
-    await jest.advanceTimersByTimeAsync(25_000);
-
-    // Session ended
-    expect(mockCallSessionService.endSession).toHaveBeenCalledWith(SESSION_ID);
-
-    // call_missed emitted to caller with 'No answer'
-    expect(mockIo.to).toHaveBeenCalledWith(`user:${CALLER_ID}`);
-    const toChain = mockIo.to.mock.results[mockIo.to.mock.results.length - 1]
-      .value as {
-      emit: jest.Mock;
-    };
-    expect(toChain.emit).toHaveBeenCalledWith(
-      'call_missed',
-      expect.objectContaining({ sessionId: SESSION_ID, reason: 'No answer' }),
+    // deadline + pending_call set (cron is single source for timeout)
+    expect(mockCallSessionService.updateDeadlineAt).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(Number),
     );
+    expect(mockCallSessionService.setPendingCall).toHaveBeenCalledTimes(1);
 
-    // Timer removed from Map
-    expect(timeouts.has(SESSION_ID)).toBe(false);
+    // Gate: deadline is ~25s from now (OFFLINE_PUSH_GRACE_MS)
+    const deadlineCalls = (mockCallSessionService.updateDeadlineAt as jest.Mock)
+      .mock.calls as Array<[string, number]>;
+    const deadlineArg = deadlineCalls[0][1];
+    const delta = deadlineArg - Date.now();
+    expect(delta).toBeGreaterThan(20_000);
+    expect(delta).toBeLessThan(30_000);
+
+    // Session NOT ended synchronously — cron will emit call_missed later
+    expect(mockCallSessionService.endSession).not.toHaveBeenCalled();
   });
 
-  // ── 7.6: caller cancels during grace → timer cleared ─────────────────────
+  // ── 7.6: caller cancels during pending window → pending_call cleaned ─────
 
-  it('clears grace timer and emits call_cancelled when caller cancels during grace window', async () => {
+  it('cleans pending_call and emits call_cancelled when caller cancels after offline push', async () => {
     const callerSocket = makeAuthSocket(CALLER_ID);
 
     // Start the offline-push flow
@@ -349,19 +345,20 @@ describe('WebrtcGateway — offline-push branch', () => {
       >[1],
     );
 
-    const timeouts = (
-      gateway as unknown as { callTimeouts: Map<string, NodeJS.Timeout> }
-    ).callTimeouts;
-    expect(timeouts.has(SESSION_ID)).toBe(true);
+    // Deadline + pending_call was set
+    expect(mockCallSessionService.setPendingCall).toHaveBeenCalledTimes(1);
 
-    // Caller cancels within grace window
+    // Caller cancels
     await gateway.handleCallCancel(
       { sessionId: SESSION_ID },
       callerSocket as unknown as Parameters<typeof gateway.handleCallCancel>[1],
     );
 
-    // Timer cleared
-    expect(timeouts.has(SESSION_ID)).toBe(false);
+    // pending_call cleaned (guarded by sessionId)
+    expect(mockCallSessionService.delPendingCallIfMatches).toHaveBeenCalledWith(
+      CALLEE_ID,
+      SESSION_ID,
+    );
 
     // Session ended
     expect(mockCallSessionService.endSession).toHaveBeenCalledWith(SESSION_ID);

@@ -11,6 +11,8 @@
 // Mock uuid before any module loads it (pure-ESM in v13+)
 jest.mock('uuid', () => ({ v4: () => 'test-session-id' }));
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { WebrtcGateway } from './webrtc.gateway';
 
 describe('WebrtcGateway — regression: all expected methods present', () => {
@@ -63,5 +65,34 @@ describe('WebrtcGateway — regression: all expected methods present', () => {
       expect(methodType).toBe('function');
     }
     expect(subscribeHandlers).toHaveLength(11);
+  });
+});
+
+describe('WebrtcGateway — regression: no in-process timers (7.4)', () => {
+  const gatewayPath = path.join(__dirname, 'webrtc.gateway.ts');
+
+  it('source no longer contains callTimeouts Map or in-process setTimeout/clearTimeout', () => {
+    const src = fs.readFileSync(gatewayPath, 'utf8');
+    expect(src).not.toMatch(/callTimeouts/);
+    expect(src).not.toMatch(/\bsetTimeout\s*\(/);
+    expect(src).not.toMatch(/\bclearTimeout\s*\(/);
+    expect(src).not.toMatch(/NodeJS\.Timeout/);
+  });
+
+  it('prototype has no callTimeouts field; @Cron remains the single timeout source', () => {
+    const cronPath = path.join(
+      __dirname,
+      'services',
+      'call-session-cron.service.ts',
+    );
+    const cronSrc = fs.readFileSync(cronPath, 'utf8');
+    // Every-15s tick must remain — it is the replacement for per-call timers.
+    expect(cronSrc).toMatch(/@Cron\s*\(\s*['"]\*\/15/);
+    // Instance must not have leaked a Map at construction time.
+    const anyProto = WebrtcGateway.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(anyProto.callTimeouts).toBeUndefined();
   });
 });

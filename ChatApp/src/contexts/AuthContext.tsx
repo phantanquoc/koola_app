@@ -220,6 +220,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (token && !socketService.isConnected()) {
             socketService.connect(token);
           }
+          if (token && !webrtcService.isConnected()) {
+            webrtcService.connect(token);
+          }
         };
         reconnect();
         // Refresh Moments feed so new stories appear without manual pull-to-refresh

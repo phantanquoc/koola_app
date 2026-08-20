@@ -20,7 +20,7 @@ export class CallSessionCronService {
       ReturnType<CallSessionService['cleanupStaleSessions']>
     >;
     try {
-      cleaned = await this.callSessionService.cleanupStaleSessions();
+      cleaned = await this.callSessionService.cleanupStaleSessions(Date.now());
     } catch (err) {
       // Redis may be reconnecting — skip this tick silently
       this.logger.debug(
@@ -44,12 +44,25 @@ export class CallSessionCronService {
           );
         });
 
-      // Notify both parties via socket so they know the call timed out
-      // (covers crash-recovery path where the in-memory timeout never fired)
+      // Clean pending_call for this target if it references this session
+      if (session.targetUserId) {
+        try {
+          await this.callSessionService.delPendingCallIfMatches(
+            session.targetUserId,
+            session.sessionId,
+          );
+        } catch {
+          // non-fatal
+        }
+      }
+
       try {
         this.webrtcGateway.io
           .to(`user:${session.initiatorId}`)
-          .emit('call_missed', { sessionId: session.sessionId });
+          .emit('call_missed', {
+            sessionId: session.sessionId,
+            reason: 'No answer',
+          });
 
         if (session.targetUserId) {
           this.webrtcGateway.io

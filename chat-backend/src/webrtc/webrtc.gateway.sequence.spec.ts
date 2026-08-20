@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /**
  * webrtc.gateway.sequence.spec.ts
  *
@@ -135,6 +137,11 @@ function buildCallSessionMock(
           participantStore.add(userId);
           return true;
         }),
+      updateDeadlineAt: jest.fn().mockResolvedValue(undefined),
+      setPendingCall: jest.fn().mockResolvedValue(undefined),
+      getPendingCall: jest.fn().mockResolvedValue(null),
+      delPendingCall: jest.fn().mockResolvedValue(undefined),
+      delPendingCallIfMatches: jest.fn().mockResolvedValue(undefined),
     },
   };
 }
