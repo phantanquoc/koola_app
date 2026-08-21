@@ -96,6 +96,9 @@ ChatApp/ui.xml
 # Built APKs + raw measurement output (APKs are ~138MB each; the CSVs worth
 # keeping are copied into docs/perf-measurements/ instead).
 build-artifacts/
+# Archived perf APKs (local-only; see apk-archive/README.md).
+apk-archive/*.apk
+apk-archive/*.json
 
 # Scratch dirs from audit tooling
 .tmp_audit/

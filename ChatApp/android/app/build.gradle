@@ -2,10 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
+project.ext.envConfigFiles = [
+    perf: ".env.perf",
+]
 // Injects .env into BuildConfig, which is where react-native-config reads its
 // values from via reflection. Without this, Config.* is undefined in any build
 // where __DEV__ is false and src/config/env.ts throws at module load.
 // ENVFILE=<path> selects a different file (see .env.perf).
+// NOTE: envConfigFiles MUST be set BEFORE the apply, because dotenv.gradle
+// calls loadDotEnv() at apply time.
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
