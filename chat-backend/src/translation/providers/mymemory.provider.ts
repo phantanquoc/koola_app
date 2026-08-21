@@ -49,7 +49,9 @@ export class MyMemoryProvider implements TranslationProvider {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        this.logger.warn(`[translate] mymemory ${res.status}: ${body.slice(0, 400)}`);
+        this.logger.warn(
+          `[translate] mymemory ${res.status}: ${body.slice(0, 400)}`,
+        );
         throw new HttpException(
           'Translation provider error',
           HttpStatus.BAD_GATEWAY,

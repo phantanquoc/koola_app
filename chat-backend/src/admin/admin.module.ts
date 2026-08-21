@@ -24,7 +24,10 @@ import {
 } from '../conversations/conversation.schema';
 import { Message, MessageSchema } from '../messages/message.schema';
 import { Story, StorySchema } from '../moments/schemas/story.schema';
-import { MusicTrack, MusicTrackSchema } from '../moments/schemas/music-track.schema';
+import {
+  MusicTrack,
+  MusicTrackSchema,
+} from '../moments/schemas/music-track.schema';
 import {
   AudienceList,
   AudienceListSchema,

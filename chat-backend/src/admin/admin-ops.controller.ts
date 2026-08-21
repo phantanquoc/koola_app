@@ -131,7 +131,11 @@ export class AdminOpsController {
     }
     return {
       status:
-        !mongoUp || !redisUp ? 'error' : !coturnUp || !minioUp ? 'degraded' : 'ok',
+        !mongoUp || !redisUp
+          ? 'error'
+          : !coturnUp || !minioUp
+            ? 'degraded'
+            : 'ok',
       timestamp: checkedAt,
       checks: {
         mongodb: { status: mongoUp ? 'up' : 'down', checkedAt },
@@ -144,7 +148,10 @@ export class AdminOpsController {
 
   @Post('broadcast')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async broadcast(
     @Body() dto: BroadcastDto,
     @CurrentUser() u: { actorId: string },

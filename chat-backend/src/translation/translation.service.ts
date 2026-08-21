@@ -108,7 +108,9 @@ export class TranslationService {
 
     // Filter chain to configured providers; for 'mymemory' pref with unconfigured
     // mymemory we intentionally keep empty to surface 502 (not fallthrough).
-    const pref = (process.env.TRANSLATION_PROVIDER || 'google').toLowerCase().trim();
+    const pref = (process.env.TRANSLATION_PROVIDER || 'google')
+      .toLowerCase()
+      .trim();
     let configuredChain: TranslationProvider[];
     if (pref === 'mymemory') {
       configuredChain = chain.filter((p) => p.isConfigured());
@@ -265,7 +267,9 @@ export class TranslationService {
   }
 
   private buildProviderChain(): TranslationProvider[] {
-    const pref = (process.env.TRANSLATION_PROVIDER || 'google').toLowerCase().trim();
+    const pref = (process.env.TRANSLATION_PROVIDER || 'google')
+      .toLowerCase()
+      .trim();
     if (pref === 'mymemory') {
       return [this.myMemoryProvider];
     }
@@ -292,9 +296,7 @@ export class TranslationService {
     canonicalTarget: string,
     normalized: string,
   ): Promise<TranslateResult> {
-    this.logger.warn(
-      '[translate] returning mock fallback for non-production',
-    );
+    this.logger.warn('[translate] returning mock fallback for non-production');
     const mockText = `[${canonicalTarget}] ${normalized}`;
     const value: CachedValue = { translatedText: mockText, sourceLang: 'auto' };
     await this.writeCache(cacheKey, value);

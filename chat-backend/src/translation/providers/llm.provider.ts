@@ -16,7 +16,8 @@ export class LlmProvider implements TranslationProvider {
   isConfigured(): boolean {
     const gate = process.env.TRANSLATION_LLM_ENABLED === 'true';
     if (!gate) return false;
-    const hasKey = !!process.env.ANTHROPIC_API_KEY || !!process.env.OPENAI_API_KEY;
+    const hasKey =
+      !!process.env.ANTHROPIC_API_KEY || !!process.env.OPENAI_API_KEY;
     return hasKey;
   }
 
@@ -40,7 +41,11 @@ export class LlmProvider implements TranslationProvider {
 
     try {
       if (anthropicKey) {
-        return await this.callAnthropic(prompt, anthropicKey, controller.signal);
+        return await this.callAnthropic(
+          prompt,
+          anthropicKey,
+          controller.signal,
+        );
       }
       if (openaiKey) {
         return await this.callOpenAI(prompt, openaiKey, controller.signal);
@@ -90,7 +95,9 @@ export class LlmProvider implements TranslationProvider {
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      this.logger.warn(`[translate] llm anthropic ${res.status}: ${body.slice(0, 400)}`);
+      this.logger.warn(
+        `[translate] llm anthropic ${res.status}: ${body.slice(0, 400)}`,
+      );
       throw new HttpException(
         'Translation provider error',
         HttpStatus.BAD_GATEWAY,
@@ -131,7 +138,9 @@ export class LlmProvider implements TranslationProvider {
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      this.logger.warn(`[translate] llm openai ${res.status}: ${body.slice(0, 400)}`);
+      this.logger.warn(
+        `[translate] llm openai ${res.status}: ${body.slice(0, 400)}`,
+      );
       throw new HttpException(
         'Translation provider error',
         HttpStatus.BAD_GATEWAY,
@@ -151,7 +160,10 @@ export class LlmProvider implements TranslationProvider {
     return this.parseLlmJson(textBlock);
   }
 
-  private parseLlmJson(raw: string): { translatedText: string; sourceLang: string } {
+  private parseLlmJson(raw: string): {
+    translatedText: string;
+    sourceLang: string;
+  } {
     // Model should return JSON like {"translatedText":"...","sourceLang":"en"}
     // Be tolerant: extract JSON object substring.
     const trimmed = raw.trim();
@@ -160,10 +172,14 @@ export class LlmProvider implements TranslationProvider {
         translatedText?: string;
         sourceLang?: string;
       };
-      if (typeof parsed.translatedText === 'string' && parsed.translatedText.trim()) {
+      if (
+        typeof parsed.translatedText === 'string' &&
+        parsed.translatedText.trim()
+      ) {
         return {
           translatedText: parsed.translatedText,
-          sourceLang: typeof parsed.sourceLang === 'string' ? parsed.sourceLang : 'auto',
+          sourceLang:
+            typeof parsed.sourceLang === 'string' ? parsed.sourceLang : 'auto',
         };
       }
     } catch {
@@ -178,10 +194,16 @@ export class LlmProvider implements TranslationProvider {
           translatedText?: string;
           sourceLang?: string;
         };
-        if (typeof parsed.translatedText === 'string' && parsed.translatedText.trim()) {
+        if (
+          typeof parsed.translatedText === 'string' &&
+          parsed.translatedText.trim()
+        ) {
           return {
             translatedText: parsed.translatedText,
-            sourceLang: typeof parsed.sourceLang === 'string' ? parsed.sourceLang : 'auto',
+            sourceLang:
+              typeof parsed.sourceLang === 'string'
+                ? parsed.sourceLang
+                : 'auto',
           };
         }
       } catch {

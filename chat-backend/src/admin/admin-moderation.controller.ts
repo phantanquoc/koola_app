@@ -117,7 +117,10 @@ export class AdminModerationController {
 
   @Post('messages/:id/soft-delete')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async softDeleteMessage(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -164,7 +167,10 @@ export class AdminModerationController {
 
   @Post('stories/:id/takedown')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async takedownStory(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -213,7 +219,10 @@ export class AdminModerationController {
 
   @Post('reports/:id/resolve')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async resolveReport(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -238,7 +247,10 @@ export class AdminModerationController {
 
   @Post('reports/:id/dismiss')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async dismissReport(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -282,7 +294,10 @@ export class AdminModerationController {
 
   @Post('music-tracks')
   @HttpCode(HttpStatus.CREATED)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async createMusicTrack(
     @Body() dto: CreateMusicTrackDto,
     @CurrentUser() u: { actorId: string },
@@ -316,7 +331,10 @@ export class AdminModerationController {
   }
 
   @Patch('music-tracks/:id')
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async updateMusicTrack(
     @Param('id') id: string,
     @Body() dto: UpdateMusicTrackDto,
@@ -342,7 +360,10 @@ export class AdminModerationController {
 
   @Delete('music-tracks/:id')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async deleteMusicTrack(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },

@@ -47,7 +47,10 @@ export class AdminCommerceController {
 
   @Post('products')
   @HttpCode(HttpStatus.CREATED)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async createProduct(
     @Body() dto: CreateProductDto,
     @CurrentUser() u: { actorId: string },
@@ -66,7 +69,10 @@ export class AdminCommerceController {
   }
 
   @Patch('products/:id')
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async updateProduct(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
@@ -88,7 +94,10 @@ export class AdminCommerceController {
 
   @Delete('products/:id')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async deleteProduct(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -115,7 +124,10 @@ export class AdminCommerceController {
 
   @Post('stores')
   @HttpCode(HttpStatus.CREATED)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async createStore(
     @Body() dto: CreateStoreDto,
     @CurrentUser() u: { actorId: string },
@@ -134,7 +146,10 @@ export class AdminCommerceController {
   }
 
   @Patch('stores/:id')
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async updateStore(
     @Param('id') id: string,
     @Body() dto: UpdateStoreDto,
@@ -156,7 +171,10 @@ export class AdminCommerceController {
 
   @Delete('stores/:id')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async deleteStore(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
@@ -183,7 +201,10 @@ export class AdminCommerceController {
 
   @Post('services')
   @HttpCode(HttpStatus.CREATED)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async createService(
     @Body() dto: CreateServiceDto,
     @CurrentUser() u: { actorId: string },
@@ -202,7 +223,10 @@ export class AdminCommerceController {
   }
 
   @Patch('services/:id')
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async updateService(
     @Param('id') id: string,
     @Body() dto: UpdateServiceDto,
@@ -224,7 +248,10 @@ export class AdminCommerceController {
 
   @Delete('services/:id')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
   async deleteService(
     @Param('id') id: string,
     @CurrentUser() u: { actorId: string },
