@@ -292,6 +292,20 @@ const ConversationListScreen: React.FC = () => {
               updatedAt: c.updatedAt,
             }));
             conversationRepository.upsertMany(inputs);
+            // Warm call_logs for top conversations (fire-and-forget, off UI path).
+            // Ensures ChatScreen's first frame already has call cards for recently
+            // visited conversations, even before ChatScreen's own background sync.
+            if (reset) {
+              void (async () => {
+                try {
+                  const { syncCallLogsOnOpen } = await import('../../services/sync/syncOrchestrator');
+                  const topIds = data.conversations.slice(0, 10).map((c) => c._id);
+                  for (const cid of topIds) {
+                    void syncCallLogsOnOpen(cid).catch(() => {});
+                  }
+                } catch {}
+              })();
+            }
           } catch (e) {
             console.warn('[ConversationListScreen] SQLite seed failed:', e);
           }

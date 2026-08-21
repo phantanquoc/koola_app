@@ -217,7 +217,15 @@ export class WebRTCService {
       }
       this.emit('call_busy', data);
     });
-    this.socket.on('call_failed', (data) => this.emit('call_failed', data));
+    this.socket.on('call_failed', (data) => {
+      if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
+        callAudioService.stopRingback();
+      }
+      this.emit('call_failed', data);
+    });
+    // Call-log realtime → socketEventRouter SQLite bridge
+    this.socket.on('call_log_created', (data) => this.emit('call_log_created', data));
+    this.socket.on('call_log_updated', (data) => this.emit('call_log_updated', data));
 
     this.socket.on('call_offer', async (data) => {
       await this.handleRemoteOffer(data);
@@ -259,6 +267,11 @@ export class WebRTCService {
   // ─── Call Actions ───────────────────────────────────────────────────────────
 
   initiateCall(targetUserId: string, conversationId: string, callType: 'audio' | 'video'): void {
+    if (this.callState !== 'idle') {
+      console.warn('[WebRTC] initiateCall blocked: already in', this.callState);
+      this.emit('call_busy', { targetUserId });
+      return;
+    }
     this.isInitiator = true;
     this.currentCallType = callType;
     this.transition('initiating');

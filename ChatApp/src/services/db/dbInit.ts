@@ -21,6 +21,7 @@ import { runMigrations } from './migrations';
 import * as messageRepository from './messageRepository';
 import * as conversationRepository from './conversationRepository';
 import * as syncStateRepository from './syncStateRepository';
+import * as callLogRepository from './callLogRepository';
 import { wipeAll as wipeOutbox } from './outboxRepository';
 import { clearAll as clearBroadcaster } from './invalidationBroadcaster';
 import { isLocalFirstEnabled } from '../../config/featureFlags';
@@ -117,6 +118,7 @@ export async function wipeAllData(): Promise<void> {
   try {
     messageRepository.wipeAll();
     conversationRepository.wipeAll();
+    callLogRepository.wipeAll();
     syncStateRepository.clearAll();
     clearBroadcaster();
 

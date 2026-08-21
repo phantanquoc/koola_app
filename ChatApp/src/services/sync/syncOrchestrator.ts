@@ -21,9 +21,11 @@
  */
 
 import { AppState, AppStateStatus } from 'react-native';
-import { messagesApi } from '../api/apiService';
+import { messagesApi, callLogsApi, type CallLogEntry } from '../api/apiService';
 import * as messageRepository from '../db/messageRepository';
 import * as syncStateRepository from '../db/syncStateRepository';
+import * as callLogRepository from '../db/callLogRepository';
+import type { CallLogInput } from '../db/callLogRepository';
 import { asyncStorage } from '../storage/asyncStorage';
 import { socketService } from '../socket/SocketService';
 import { scheduleTick as outboxScheduleTick } from './outboxProcessor';
@@ -303,4 +305,46 @@ export function wireSyncTriggers(): () => void {
     _isRunning = false;
     _migrationDone = false;
   };
+}
+
+// ─── Call-log background sync ────────────────────────────────────────────────
+
+export async function syncCallLogsOnOpen(conversationId: string, opts: { force?: boolean } = {}): Promise<void> {
+  if (!conversationId) return;
+  const key = 'call_logs:' + conversationId;
+  if (!opts.force) {
+    const last = syncStateRepository.getValue(key);
+    if (last) {
+      const lastMs = Number(last);
+      if (!Number.isNaN(lastMs) && Date.now() - lastMs < FRESHNESS_WINDOW_MS) return;
+    }
+  }
+  try {
+    let page = 1;
+    const limit = 50;
+    while (true) {
+      const data = await callLogsApi.getHistory({ conversationId, page, limit });
+      if (data.items.length > 0) {
+        const inputs: CallLogInput[] = data.items.map((e: CallLogEntry) => ({
+          id: String(e._id ?? (e as unknown as Record<string, unknown>).id),
+          sessionId: String(e.sessionId ?? ''),
+          conversationId: String(e.conversationId ?? conversationId),
+          initiatorId: String(e.initiatorId ?? ''),
+          targetUserId: String(e.targetUserId ?? ''),
+          callType: (e.callType ?? 'audio') as CallLogInput['callType'],
+          status: (e.status ?? 'ended') as CallLogInput['status'],
+          startedAt: e.startedAt,
+          answeredAt: e.answeredAt ?? null,
+          endedAt: e.endedAt ?? null,
+          duration: e.duration ?? 0,
+        }));
+        callLogRepository.upsertMany(inputs);
+      }
+      if (data.items.length < limit || page * limit >= data.total) break;
+      page += 1;
+    }
+    syncStateRepository.setValue(key, String(Date.now()));
+  } catch (err) {
+    console.warn('[syncCallLogsOnOpen] failed:', err);
+  }
 }

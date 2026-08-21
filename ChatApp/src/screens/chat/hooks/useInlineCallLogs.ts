@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
-import { callLogsApi } from '../../../services/api/apiService';
+import { useCallback, useEffect, useState } from 'react';
 import type { CallLogEntry } from '../../../services/api/apiService';
-import { webrtcService } from '../../../services/webrtc/WebRTCService';
+import * as callLogRepository from '../../../services/db/callLogRepository';
+import type { CallLogInput } from '../../../services/db/callLogRepository';
+import { syncCallLogsOnOpen } from '../../../services/sync/syncOrchestrator';
 
 export interface UseInlineCallLogsResult {
   callLogs: CallLogEntry[];
@@ -15,163 +15,103 @@ export interface UseInlineCallLogsResult {
 
 const LIMIT = 50;
 
-/**
- * Terminal call events from webrtcService. The backend persists/updates the
- * call log before emitting any of these (webrtc.gateway createLog/updateLog),
- * so a reset fetch right after one fires will include the finished call's
- * inline card.
- */
-const TERMINAL_CALL_EVENTS = [
-  'call_ended',
-  'call_missed',
-  'call_declined',
-  'call_cancelled',
-  'call_busy',
-  'call_failed',
-  'call_timeout',
-] as const;
+function toEntry(row: CallLogInput): CallLogEntry {
+  return {
+    _id: row.id,
+    sessionId: row.sessionId,
+    initiatorId: row.initiatorId,
+    targetUserId: row.targetUserId,
+    conversationId: row.conversationId,
+    callType: row.callType,
+    status: row.status,
+    startedAt: new Date(row.startedAt as number).toISOString(),
+    answeredAt: row.answeredAt != null ? new Date(row.answeredAt as number).toISOString() : null,
+    endedAt: row.endedAt != null ? new Date(row.endedAt as number).toISOString() : null,
+    duration: row.duration ?? 0,
+  };
+}
 
-/**
- * Trailing debounce for terminal-event refreshes. A single call can emit
- * several terminal events back-to-back (e.g. call_failed followed by
- * call_ended as the state machine unwinds); without coalescing each one
- * would trigger its own full reset fetch.
- */
-const TERMINAL_REFRESH_DEBOUNCE_MS = 350;
+function readFromDb(conversationId: string, limit = LIMIT): CallLogEntry[] {
+  if (!conversationId) return [];
+  try {
+    const rows = callLogRepository.list({ conversationId, limit });
+    return rows.map(toEntry);
+  } catch {
+    return [];
+  }
+}
 
-export function useInlineCallLogs(conversationId: string, transitionDone = true): UseInlineCallLogsResult {
-  const [callLogs, setCallLogs] = useState<CallLogEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+export function useInlineCallLogs(
+  conversationId: string,
+  _transitionDone = true,
+): UseInlineCallLogsResult {
+  const [callLogs, setCallLogs] = useState<CallLogEntry[]>(() => readFromDb(conversationId));
   const [hasMore, setHasMore] = useState(false);
-  const pageRef = useRef(1);
-  const mountedRef = useRef(true);
-  const hasInitialFetchedRef = useRef(false);
-  const lastConvIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
 
-  const fetchPage = useCallback(async (reset: boolean) => {
-    if (!conversationId) return;
-    if (reset) {
-      pageRef.current = 1;
-      setRefreshing(true);
-    } else {
-      setLoading(true);
+  const reload = useCallback(() => {
+    if (!conversationId) {
+      setCallLogs([]);
+      setHasMore(false);
+      return;
     }
     try {
-      const page = pageRef.current;
-      const data = await callLogsApi.getHistory({
-        conversationId,
-        page,
-        limit: LIMIT,
-      });
-      if (!mountedRef.current) return;
-      if (reset) {
-        setCallLogs(data.items);
-        pageRef.current = 2;
-      } else {
-        setCallLogs((prev) => {
-          const seen = new Set(prev.map((l) => l._id));
-          const next = data.items.filter((l) => !seen.has(l._id));
-          return [...prev, ...next];
-        });
-        pageRef.current += 1;
-      }
-      setHasMore(data.items.length === LIMIT && page * LIMIT < data.total);
-    } catch (err) {
-      console.warn('[useInlineCallLogs] fetch failed:', err);
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      // Single LIMIT+1 query determines both page and hasMore
+      const rows = callLogRepository.list({ conversationId, limit: LIMIT + 1 });
+      setHasMore(rows.length > LIMIT);
+      setCallLogs(rows.slice(0, LIMIT).map(toEntry));
+    } catch {
+      setCallLogs([]);
+      setHasMore(false);
     }
   }, [conversationId]);
 
-  const refresh = useCallback(async () => {
-    await fetchPage(true);
-  }, [fetchPage]);
-
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
-    await fetchPage(false);
-  }, [fetchPage, loading, hasMore]);
-
-  // Fetch on mount / conversation change — deferred until native transition ends.
-  // The slide_from_right (150ms, react-native-screens) does NOT create an
-  // InteractionManager handle, so deferring via InteractionManager would still
-  // fire mid-animation. ChatScreen gates via `transitionDone` (transitionEnd +
-  // 350ms fallback). Reset state on conversation switch immediately, but only
-  // fetch when transitionDone is true.
+  // Re-read synchronously when conversation changes (initializer only runs once)
   useEffect(() => {
-    const convChanged = lastConvIdRef.current !== conversationId;
-    if (convChanged) {
-      setCallLogs([]);
-      pageRef.current = 1;
-      setHasMore(false);
-      hasInitialFetchedRef.current = false;
-      lastConvIdRef.current = conversationId;
-    }
-    if (!transitionDone) return;
-    if (hasInitialFetchedRef.current) return;
-    void fetchPage(true).then(() => { hasInitialFetchedRef.current = true; });
-  }, [conversationId, transitionDone]); // eslint-disable-line react-hooks/exhaustive-deps
+    reload();
+  }, [reload]);
 
-  // Refresh on focus (covers return from background, after call_ended, etc.)
-  // Skip the very first focus that coincides with mount to avoid double fetch.
-  // Kept as a fallback — the primary inline-card refresh after a call is the
-  // terminal-event subscription below. useFocusEffect is relied on only for
-  // app-background → foreground return under presentation:'fullScreenModal'.
-  useFocusEffect(
-    useCallback(() => {
-      if (!conversationId) return;
-      if (!hasInitialFetchedRef.current) return;
-      void fetchPage(true);
-    }, [conversationId, fetchPage]),
-  );
-
-  // Subscribe to terminal webrtc call events and do a reset fetch when any
-  // fires. ChatScreen never blurs when CallModal/IncomingCallModal mounted as
-  // presentation:'fullScreenModal', so useFocusEffect alone never re-fires
-  // after the call — this is the real fix for BUG 1. Identical fetch to
-  // `refresh` but debounced so a burst of terminal events emits one reset.
-  // Effect re-registers (off old + on new) whenever fetchPage identity
-  // changes, so the listener never captures a stale conversationId.
+  // Subscribe to SQLite invalidations
   useEffect(() => {
     if (!conversationId) return;
+    const unsub = callLogRepository.subscribe(conversationId, () => {
+      reload();
+    });
+    return unsub;
+  }, [conversationId, reload]);
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Background sync off the critical path (never blocks first paint)
+  useEffect(() => {
+    if (!conversationId) return;
+    void syncCallLogsOnOpen(conversationId);
+  }, [conversationId]);
 
-    const scheduleFetch = () => {
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        void fetchPage(true);
-      }, TERMINAL_REFRESH_DEBOUNCE_MS);
-    };
-
-    // A single bound reference shared by every event. Re-created on each
-    // effect invocation so `off` can match it; never recreated mid-registration.
-    const handler = () => {
-      scheduleFetch();
-    };
-
-    for (const ev of TERMINAL_CALL_EVENTS) {
-      webrtcService.on(ev, handler);
-    }
-
-    return () => {
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-      for (const ev of TERMINAL_CALL_EVENTS) {
-        webrtcService.off(ev, handler);
+  const loadMore = useCallback(async () => {
+    if (!hasMore || callLogs.length === 0) return;
+    const oldest = new Date(callLogs[callLogs.length - 1].startedAt).getTime();
+    try {
+      const older = callLogRepository.listBefore({ conversationId, before: oldest, limit: LIMIT });
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
       }
-    };
-  }, [conversationId, fetchPage]);
+      setCallLogs((prev) => [...prev, ...older.map(toEntry)]);
+      if (older.length < LIMIT) setHasMore(false);
+      else {
+        const lastOldest = older[older.length - 1].startedAt as number;
+        const check = callLogRepository.list({ conversationId, limit: 1, before: lastOldest });
+        setHasMore(check.length > 0);
+      }
+    } catch (err) {
+      console.warn('[useInlineCallLogs] loadMore failed:', err);
+    }
+  }, [conversationId, callLogs, hasMore]);
 
-  return { callLogs, loading, refreshing, refresh, hasMore, loadMore };
+  const refresh = useCallback(async () => {
+    await syncCallLogsOnOpen(conversationId, { force: true });
+    reload();
+  }, [conversationId, reload]);
+
+  return { callLogs, loading: false, refreshing: false, refresh, hasMore, loadMore };
 }
 
 export default useInlineCallLogs;

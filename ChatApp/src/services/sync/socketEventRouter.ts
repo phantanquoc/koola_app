@@ -15,8 +15,11 @@
  */
 
 import { socketService } from '../socket/SocketService';
+import { webrtcService } from '../webrtc/WebRTCService';
 import * as messageRepository from '../db/messageRepository';
 import * as conversationRepository from '../db/conversationRepository';
+import * as callLogRepository from '../db/callLogRepository';
+import type { CallLogInput } from '../db/callLogRepository';
 import type { SocketEvent } from '../db/messageRepository';
 import { momentsService, type MomentsEvent } from '../moments/momentsService';
 
@@ -85,6 +88,68 @@ function makeNewMessageHandler(): EventCallback {
   };
 }
 
+
+function normalizeCallLog(payload: unknown): CallLogInput | null {
+  const r =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const id = String((r._id ?? r.id ?? r.sessionId ?? '') as string);
+  if (!id) return null;
+  return {
+    id,
+    sessionId: String((r.sessionId ?? id) as string),
+    conversationId: String((r.conversationId ?? '') as string),
+    initiatorId: String((r.initiatorId ?? r.fromUserId ?? '') as string),
+    targetUserId: String((r.targetUserId ?? '') as string),
+    callType: ((r.callType as string) ?? 'audio') as CallLogInput['callType'],
+    status: ((r.status as string) ?? 'ended') as CallLogInput['status'],
+    startedAt: (r.startedAt ?? r.createdAt ?? Date.now()) as string | number | Date,
+    answeredAt: (r.answeredAt ?? null) as string | null,
+    endedAt: (r.endedAt ?? null) as string | null,
+    duration: Number((r.duration as number) ?? 0),
+  };
+}
+
+function makeCallLogHandler(): EventCallback {
+  return (data: unknown) => {
+    try {
+      const raw = data as Record<string, unknown> | null;
+      const payload =
+        raw && typeof raw === 'object' && 'callLog' in raw
+          ? (raw as Record<string, unknown>).callLog
+          : raw;
+      const input = normalizeCallLog(payload);
+      if (!input || !input.conversationId) return;
+      callLogRepository.upsertMany([input]);
+    } catch (err) {
+      console.warn('[socketEventRouter] call_log error:', err);
+    }
+  };
+}
+
+// Bridge /webrtc namespace call-log events into SQLite.
+// SocketService is on /chat; webrtcService is on /webrtc — socketEventRouter
+// only listens on /chat, so we also subscribe to webrtcService.
+let _webrtcUnwire: (() => void) | null = null;
+
+function wireWebrtcCallLogs(): void {
+  if (_webrtcUnwire) return;
+  const h = makeCallLogHandler();
+  webrtcService.on('call_log_created', h);
+  webrtcService.on('call_log_updated', h);
+  _webrtcUnwire = () => {
+    webrtcService.off('call_log_created', h);
+    webrtcService.off('call_log_updated', h);
+    _webrtcUnwire = null;
+  };
+}
+
+function unwireWebrtcCallLogs(): void {
+  _webrtcUnwire?.();
+  _webrtcUnwire = null;
+}
+
 let _handlers: Array<{ event: string; handler: EventCallback }> | null = null;
 
 // ─── Moments Event Handler ────────────────────────────────────────────────────
@@ -121,11 +186,16 @@ export function wireSocketEvents(): () => void {
     { event: 'story.deleted', handler: makeMomentsHandler('story.deleted') },
     { event: 'story.mention', handler: makeMomentsHandler('story.mention') },
     { event: 'story.reaction', handler: makeMomentsHandler('story.reaction') },
+    { event: 'call_log_created', handler: makeCallLogHandler() },
+    { event: 'call_log_updated', handler: makeCallLogHandler() },
   ];
 
   for (const { event, handler } of _handlers) {
     socketService.on(event, handler);
   }
+
+  // Also bridge /webrtc call-log events (different namespace from /chat)
+  wireWebrtcCallLogs();
 
   return () => {
     if (!_handlers) return;
@@ -133,5 +203,6 @@ export function wireSocketEvents(): () => void {
       socketService.off(event, handler);
     }
     _handlers = null;
+    unwireWebrtcCallLogs();
   };
 }

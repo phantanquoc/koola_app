@@ -125,6 +125,31 @@ CREATE INDEX IF NOT EXISTS idx_outbox_in_flight
   ON outbox (state, in_flight_at)
   WHERE state = 'in_flight';
   `,
+
+  // Migration 003 — call_logs table
+  `
+CREATE TABLE IF NOT EXISTS call_logs (
+  id              TEXT PRIMARY KEY NOT NULL,
+  session_id      TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  initiator_id    TEXT NOT NULL,
+  target_user_id  TEXT NOT NULL,
+  call_type       TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  started_at      INTEGER NOT NULL,
+  answered_at     INTEGER,
+  ended_at        INTEGER,
+  duration        INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER,
+  updated_at      INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_call_logs_conv_started
+  ON call_logs (conversation_id, started_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_call_logs_session
+  ON call_logs (session_id);
+  `,
 ];
 
 const CURRENT_VERSION = MIGRATIONS.length;

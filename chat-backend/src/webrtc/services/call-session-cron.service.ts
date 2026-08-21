@@ -69,6 +69,26 @@ export class CallSessionCronService {
             .to(`user:${session.targetUserId}`)
             .emit('call_timeout', { sessionId: session.sessionId });
         }
+
+        // Realtime sync: missed timeout should also update inline cards via SQLite
+        try {
+          const log = await this.callLogsService.findBySessionId(session.sessionId);
+          if (log) {
+            const raw = log as unknown as Record<string, unknown>;
+            const payload: Record<string, unknown> =
+              typeof (log as unknown as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+                ? (log as unknown as { toObject: () => Record<string, unknown> }).toObject()
+                : { ...raw };
+            if (payload._id != null && typeof payload._id !== 'string') payload._id = String(payload._id);
+            const initiatorId = String((payload.initiatorId as string) ?? (raw.initiatorId as string) ?? '');
+            const targetId = String((payload.targetUserId as string) ?? (raw.targetUserId as string) ?? '');
+            if (initiatorId) { try { this.webrtcGateway.io.to(`user:${initiatorId}`).emit('call_log_updated', payload); } catch {} }
+            if (targetId) { try { this.webrtcGateway.io.to(`user:${targetId}`).emit('call_log_updated', payload); } catch {} }
+            try { this.webrtcGateway.io.to(`conversation:${String((payload.conversationId as string) ?? (raw.conversationId as string) ?? '')}`).emit('call_log_updated', payload); } catch {}
+            if (initiatorId) { try { this.webrtcGateway.io.to(`user:${initiatorId}`).emit('call_log_created', payload); } catch {} }
+            if (targetId) { try { this.webrtcGateway.io.to(`user:${targetId}`).emit('call_log_created', payload); } catch {} }
+          }
+        } catch {}
       } catch (err) {
         this.logger.warn(
           `[CallCron] Failed to emit socket events for ${session.sessionId}: ${(err as Error).message}`,

@@ -199,6 +199,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
 
+      void this.emitCallLogUpdate(sessionId);
+
       this.logger.log(
         `[WebrtcGateway] Auto-ended session ${sessionId} due to disconnect`,
       );
@@ -254,6 +256,17 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    // Check if initiator is already in a call — emit call_busy to self (spec 6.5/#526)
+    const initiatorActiveSessions =
+      await this.callSessionService.getActiveSessionIds(callerId);
+    if (initiatorActiveSessions && initiatorActiveSessions.length > 0) {
+      client.emit('call_busy', { targetUserId });
+      this.logger.log(
+        `[WebrtcGateway] call_busy: ${callerId} → ${targetUserId} (initiator has active session)`,
+      );
+      return;
+    }
+
     // Check if target user has an active call — emit call_busy (spec 6.5/6.14)
     const targetActiveSessions =
       await this.callSessionService.getActiveSessionIds(targetUserId);
@@ -303,6 +316,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callType: callType as CallLogType,
         status: 'missed',
       });
+      // Realtime: notify both parties' SQLite so inline cards appear without REST
+      void this.emitCallLogUpdate(session.sessionId);
     } catch (err) {
       this.logger.error(
         `[WebrtcGateway] createLog failed for session ${session.sessionId}: ${(err as Error).message}`,
@@ -499,6 +514,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .to(`user:${session.targetUserId}`)
         .emit('call_cancelled', { sessionId });
     }
+
+    void this.emitCallLogUpdate(sessionId);
 
     this.logger.log(
       `[WebrtcGateway] call_cancel: session ${sessionId} by ${callerId}`,
@@ -765,6 +782,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(`user:${session.initiatorId}`)
       .emit('call_accepted', { sessionId });
 
+    void this.emitCallLogUpdate(sessionId);
+
     this.logger.log(`[WebrtcGateway] call_accepted: session ${sessionId}`);
   }
 
@@ -819,6 +838,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId,
       reason: 'User declined',
     });
+
+    void this.emitCallLogUpdate(sessionId);
 
     this.logger.log(`[WebrtcGateway] call_declined: session ${sessionId}`);
   }
@@ -875,6 +896,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const pid of participants) {
       this.io.to(`user:${pid}`).emit('call_ended', { sessionId });
     }
+
+    void this.emitCallLogUpdate(sessionId);
 
     this.logger.log(`[WebrtcGateway] call_ended: session ${sessionId}`);
   }
@@ -939,6 +962,8 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const pid of allPartyIds) {
       this.io.to(`user:${pid}`).emit('call_ended', { sessionId });
     }
+
+    void this.emitCallLogUpdate(sessionId);
 
     this.logger.log(
       `[WebrtcGateway] call_failed: session ${sessionId} by ${userId}`,
@@ -1011,6 +1036,50 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         code: 401,
         message: 'Invalid or expired token',
       });
+    }
+  }
+
+
+  private async emitCallLogUpdate(sessionId: string): Promise<void> {
+    try {
+      const log = await this.callLogsService.findBySessionId(sessionId);
+      if (!log) return;
+      const raw = (log as unknown as Record<string, unknown>);
+      const payload: Record<string, unknown> =
+        typeof (log as unknown as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+          ? (log as unknown as { toObject: () => Record<string, unknown> }).toObject()
+          : { ...raw };
+      // Normalize _id for client (ObjectId → string)
+      if (payload._id != null && typeof payload._id !== 'string') {
+        payload._id = String(payload._id);
+      }
+      if (payload.sessionId == null && (raw as Record<string, unknown>).sessionId) {
+        payload.sessionId = (raw as Record<string, unknown>).sessionId;
+      }
+      // Emit on /webrtc namespace to user rooms (SocketService is on /chat,
+      // but WebRTCService is on /webrtc — see socketEventRouter wiring).
+      // Also emit conversation:-scoped for future ChatGateway bridging.
+      const initiatorId = String((payload.initiatorId as string) ?? (raw.initiatorId as string) ?? '');
+      const targetId = String((payload.targetUserId as string) ?? (raw.targetUserId as string) ?? '');
+      const conversationId = String((payload.conversationId as string) ?? (raw.conversationId as string) ?? '');
+      if (initiatorId) {
+        try { this.io.to(`user:${initiatorId}`).emit('call_log_updated', payload); } catch {}
+      }
+      if (targetId) {
+        try { this.io.to(`user:${targetId}`).emit('call_log_updated', payload); } catch {}
+      }
+      if (conversationId) {
+        try { this.io.to(`conversation:${conversationId}`).emit('call_log_updated', payload); } catch {}
+      }
+      // Back-compat: also emit call_log_created for clients that distinguish create vs update
+      if (initiatorId) {
+        try { this.io.to(`user:${initiatorId}`).emit('call_log_created', payload); } catch {}
+      }
+      if (targetId) {
+        try { this.io.to(`user:${targetId}`).emit('call_log_created', payload); } catch {}
+      }
+    } catch (err) {
+      this.logger.warn('[WebrtcGateway] emitCallLogUpdate failed: ' + (err as Error).message);
     }
   }
 

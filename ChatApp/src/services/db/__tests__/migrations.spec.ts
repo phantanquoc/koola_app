@@ -3,8 +3,8 @@
  *
  * Unit tests for the migration runner.
  * Covers:
- *   (a) v0→v2 fresh install — all tables + indexes created
- *   (b) v1→v2 upgrade — existing messages/conversations rows preserved
+ *   (a) v0→v3 fresh install — all tables + indexes created
+ *   (b) v1→v3 upgrade — existing messages/conversations rows preserved
  *   (c) Running migrations twice is idempotent
  */
 
@@ -54,7 +54,7 @@ function getSchemaVersion(): number {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('migrations — v0→v2 fresh install', () => {
+describe('migrations — v0→v3 fresh install', () => {
   it('creates all core tables', () => {
     runMigrations();
     expect(tableExists('schema_version')).toBe(true);
@@ -77,9 +77,16 @@ describe('migrations — v0→v2 fresh install', () => {
     expect(indexExists('idx_outbox_in_flight')).toBe(true);
   });
 
-  it('sets schema_version to 2', () => {
+  it('creates call_logs table and hot-path indexes', () => {
     runMigrations();
-    expect(getSchemaVersion()).toBe(2);
+    expect(tableExists('call_logs')).toBe(true);
+    expect(indexExists('idx_call_logs_conv_started')).toBe(true);
+    expect(indexExists('idx_call_logs_session')).toBe(true);
+  });
+
+  it('sets schema_version to 3', () => {
+    runMigrations();
+    expect(getSchemaVersion()).toBe(3);
   });
 
   it('outbox table accepts valid state values', () => {
@@ -120,7 +127,7 @@ describe('migrations — v0→v2 fresh install', () => {
   });
 });
 
-describe('migrations — v1→v2 upgrade preserves existing rows', () => {
+describe('migrations — v2→v3 upgrade preserves existing rows', () => {
   it('preserves messages and conversations rows after upgrade', () => {
     // Simulate v1 state: run only migration 1 by manually setting version to 1
     // We do this by running all migrations (which gives v2), but we test the
@@ -140,7 +147,7 @@ describe('migrations — v1→v2 upgrade preserves existing rows', () => {
       ['conv1', 'direct', '[]', now, 0, 0, 0, now],
     );
 
-    // Re-run migrations (should be no-op since already at v2)
+    // Re-run migrations (should be no-op since already at v3)
     runMigrations();
 
     // Rows must still exist
@@ -156,14 +163,14 @@ describe('migrations — idempotency', () => {
   it('running migrations twice does not throw or duplicate tables', () => {
     runMigrations();
     expect(() => runMigrations()).not.toThrow();
-    expect(getSchemaVersion()).toBe(2);
+    expect(getSchemaVersion()).toBe(3);
   });
 
   it('running migrations three times is still idempotent', () => {
     runMigrations();
     runMigrations();
     runMigrations();
-    expect(getSchemaVersion()).toBe(2);
+    expect(getSchemaVersion()).toBe(3);
     expect(tableExists('outbox')).toBe(true);
   });
 });
