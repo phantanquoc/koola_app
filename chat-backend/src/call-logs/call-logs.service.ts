@@ -83,7 +83,9 @@ export class CallLogsService {
     page: number;
     limit: number;
   }> {
-    const orFilter = { $or: [{ initiatorId: userId }, { targetUserId: userId }] };
+    const orFilter = {
+      $or: [{ initiatorId: userId }, { targetUserId: userId }],
+    };
     const filter: Record<string, unknown> = conversationId
       ? { $and: [orFilter, { conversationId }] }
       : orFilter;

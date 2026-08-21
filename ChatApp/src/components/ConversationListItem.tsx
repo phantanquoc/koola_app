@@ -58,12 +58,19 @@ function resolveOtherUserId(
 ): string | null {
   if (conversation.type === 'group') return null;
   const other = (conversation.members || []).find((m: any) => {
-    const id = typeof m.userId === 'object' ? (m.userId as any)._id : m.userId;
-    return id !== currentUserId;
+    if (!m || m.userId == null) return false;
+    const rawId = m.userId;
+    const id =
+      rawId !== null && typeof rawId === 'object'
+        ? (rawId as any)?._id
+        : rawId;
+    if (id == null) return false;
+    return String(id) !== String(currentUserId ?? '');
   });
   if (!other) return null;
   const raw = (other as any).userId;
-  if (typeof raw === 'object' && raw !== null && '_id' in raw) return String((raw as any)._id);
+  if (raw != null && typeof raw === 'object' && '_id' in raw)
+    return String((raw as any)._id);
   if (typeof raw === 'string') return raw;
   return null;
 }
