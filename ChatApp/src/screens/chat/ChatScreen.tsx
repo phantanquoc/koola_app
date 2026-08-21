@@ -580,12 +580,18 @@ const ChatScreen: React.FC = () => {
     (props: MessageProps<IMessage>) => {
       const raw = props.currentMessage as IMessage & { __callEntry?: import('../../services/api/apiService').CallLogEntry };
       if (raw?.__callEntry) {
+        // GiftedChat's nextMessage = the item rendered below this one in the
+        // inverted list. Threaded through so the card can group its avatar
+        // exactly like MessageItem's text bubbles do.
         return (
           <CallMessageCard
             entry={raw.__callEntry}
             currentUserId={currentUserId}
             conversationId={conversationId}
             conversationType={conversation?.type}
+            otherAvatarKey={otherAvatarKey}
+            otherDisplayName={chatTitle}
+            nextMessage={(props.nextMessage ?? null) as TimelineItem | null}
           />
         );
       }
