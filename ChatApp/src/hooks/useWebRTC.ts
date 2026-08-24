@@ -107,11 +107,24 @@ export function useWebRTC(params: UseWebRTCParams) {
     };
 
     const handleCallDeclined = () => {
+      webrtcService.cleanup();
       setCallState('ended');
+      if (timerRef.current) clearInterval(timerRef.current);
       onCallEnded?.();
     };
 
     const handlePeerDisconnected = () => {
+      webrtcService.cleanup();
+      setCallState('ended');
+      if (timerRef.current) clearInterval(timerRef.current);
+      onCallEnded?.();
+    };
+
+    // A Cancel while B is still ringing dismisses B, but the caller A also needs
+    // to leave ringing. useWebRTC wasn't listening to call_cancelled, so A
+    // stayed in ringing/idle with ringback already stopped but UI not dismissed.
+    const handleCallCancelled = () => {
+      webrtcService.cleanup();
       setCallState('ended');
       if (timerRef.current) clearInterval(timerRef.current);
       onCallEnded?.();
@@ -140,6 +153,7 @@ export function useWebRTC(params: UseWebRTCParams) {
     webrtcService.on('call_accepted', handleCallAccepted);
     webrtcService.on('call_ended', handleCallEnded);
     webrtcService.on('call_declined', handleCallDeclined);
+    webrtcService.on('call_cancelled', handleCallCancelled);
     webrtcService.on('peer_disconnected', handlePeerDisconnected);
     webrtcService.on('call_missed', handleMissedOrTimeout);
     webrtcService.on('call_timeout', handleMissedOrTimeout);
@@ -150,6 +164,7 @@ export function useWebRTC(params: UseWebRTCParams) {
       webrtcService.off('call_accepted', handleCallAccepted);
       webrtcService.off('call_ended', handleCallEnded);
       webrtcService.off('call_declined', handleCallDeclined);
+      webrtcService.off('call_cancelled', handleCallCancelled);
       webrtcService.off('peer_disconnected', handlePeerDisconnected);
       webrtcService.off('call_missed', handleMissedOrTimeout);
       webrtcService.off('call_timeout', handleMissedOrTimeout);

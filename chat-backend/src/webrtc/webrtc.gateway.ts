@@ -428,7 +428,23 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     // ── Online path ──────────────────────────────────────────────────────────
-    // Target online — send incoming call
+    // Target online — send incoming call. Also write pending_call so a
+    // backgrounded callee whose AppState reconnect fires later (or whose
+    // incoming_call was missed while backgrounded) can still replay via
+    // handleConnection or explicit call_sync.
+    await this.callSessionService.setPendingCall(
+      targetUserId,
+      {
+        sessionId: session.sessionId,
+        fromUserId: callerId,
+        fromUser: callerInfo,
+        callType,
+        conversationId,
+        iceServers,
+      },
+      CALL_TIMEOUT_MS,
+    );
+
     this.io.to(targetRoom).emit('incoming_call', {
       sessionId: session.sessionId,
       fromUserId: callerId,
@@ -454,6 +470,43 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(
       `[WebrtcGateway] call_initiate: ${callerId} → ${targetUserId} (session: ${session.sessionId})`,
     );
+  }
+
+  @UseGuards(WsAuthGuard)
+  @SubscribeMessage('call_sync')
+  async handleCallSync(
+    @ConnectedSocket() client: AuthSocket,
+  ): Promise<void> {
+    const userId = client.data.user?.sub;
+    if (!userId) return;
+    try {
+      const raw = await this.callSessionService.getPendingCall(userId);
+      if (!raw) return;
+      let payload: Record<string, unknown> | null = null;
+      try {
+        payload = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        await this.callSessionService.delPendingCall(userId);
+        return;
+      }
+      if (!payload || typeof payload.sessionId !== 'string') {
+        await this.callSessionService.delPendingCall(userId);
+        return;
+      }
+      const sessionId = payload.sessionId;
+      const session = await this.callSessionService.getSession(sessionId);
+      const deadline = session
+        ? Number((session as unknown as Record<string, string>).deadlineAt)
+        : 0;
+      if (session && session.state === 'initiated' && deadline > Date.now()) {
+        client.emit('incoming_call', payload);
+        this.logger.log(`[WebrtcGateway] call_sync replayed ${sessionId} to ${userId}`);
+      } else {
+        await this.callSessionService.delPendingCall(userId);
+      }
+    } catch (err) {
+      this.logger.warn(`[WebrtcGateway] call_sync failed for ${userId}: ${(err as Error).message}`);
+    }
   }
 
   // ─── Call Cancel ─────────────────────────────────────────────────────────────

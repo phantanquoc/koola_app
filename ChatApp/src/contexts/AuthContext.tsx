@@ -222,6 +222,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           if (token && !webrtcService.isConnected()) {
             webrtcService.connect(token);
+            // Give the new socket a moment to handshake before sync
+            setTimeout(() => { try { webrtcService.emitSync(); } catch {} }, 800);
+          } else if (token) {
+            // Already connected but may have missed incoming_call while backgrounded
+            try { webrtcService.emitSync(); } catch {}
           }
         };
         reconnect();

@@ -167,6 +167,11 @@ export class WebRTCService {
 
   // ─── Socket Listeners ───────────────────────────────────────────────────────
 
+  /** Emit call_sync to retrieve any pending incoming_call missed while backgrounded */
+  emitSync(): void {
+    try { this.socket?.emit('call_sync'); } catch {}
+  }
+
   private setupSocketListeners(): void {
     if (!this.socket) return;
 
@@ -200,9 +205,11 @@ export class WebRTCService {
     this.socket.on('call_declined', (data) => this.emit('call_declined', data));
     this.socket.on('call_ended', (data) => this.emit('call_ended', data));
     this.socket.on('call_missed', (data) => {
+      const wasInitiating = this.callState === 'initiating';
       if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
         callAudioService.stopRingback();
       }
+      if (wasInitiating) this.cleanup();
       this.emit('call_missed', data);
     });
     // Additional terminal/state events forwarded to subscribers (Task 11).
@@ -212,15 +219,19 @@ export class WebRTCService {
     this.socket.on('call_cancelled', (data) => this.emit('call_cancelled', data));
     this.socket.on('call_timeout', (data) => this.emit('call_timeout', data));
     this.socket.on('call_busy', (data) => {
+      const wasInitiating = this.callState === 'initiating';
       if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
         callAudioService.stopRingback();
       }
+      if (wasInitiating) this.cleanup();
       this.emit('call_busy', data);
     });
     this.socket.on('call_failed', (data) => {
+      const wasInitiating = this.callState === 'initiating';
       if (['initiating', 'ringing', 'connecting'].includes(this.callState)) {
         callAudioService.stopRingback();
       }
+      if (wasInitiating) this.cleanup();
       this.emit('call_failed', data);
     });
     // Call-log realtime → socketEventRouter SQLite bridge
@@ -239,12 +250,14 @@ export class WebRTCService {
 
     this.socket.on('error', (data) => {
       const err = data as { code?: number } | null;
+      const wasInitiating = this.callState === 'initiating';
       if (
         err?.code === 410 &&
         ['initiating', 'ringing', 'connecting'].includes(this.callState)
       ) {
         callAudioService.stopRingback();
       }
+      if (wasInitiating && err?.code === 410) this.cleanup();
       this.emit('error', data);
     });
   }
@@ -679,16 +692,19 @@ export class WebRTCService {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+    // Fully reset SDP/ICE buffers so a stale offer/candidate from the previous
+    // call cannot bleed into the next one (the background replay case reuses
+    // the same singleton service).
+    this.remoteDescriptionSet = false;
+    this.pendingIceCandidates = [];
+    this.offerPending = false;
+    this.pendingRemoteOffer = null;
     // Reset state-machine fields. Transition through 'ended' → 'idle' so any
     // subscribers see the call closing rather than vanishing silently.
     this.isInitiator = false;
     this.iceRestartCount = 0;
     this.currentSessionId = null;
     this.currentCallType = 'audio';
-    this.remoteDescriptionSet = false;
-    this.pendingIceCandidates = [];
-    this.offerPending = false;
-    this.pendingRemoteOffer = null;
     // Walk the state machine down to 'idle' only if a call was actually in
     // progress. Calling cleanup() while already 'idle' (defensive cleanup on
     // unmount / disconnect / logout with no active call) is a no-op — avoids

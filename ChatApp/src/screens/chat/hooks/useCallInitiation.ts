@@ -81,7 +81,7 @@ export function useCallInitiation({
       const cleanup = () => {
         webrtcService.off('call_initiated', onInitiated);
         webrtcService.off('call_missed', onMissed);
-        webrtcService.off('call_busy', onError);
+        webrtcService.off('call_busy', onBusy);
         webrtcService.off('error', onError);
         clearTimeout(timer);
       };
@@ -109,6 +109,12 @@ export function useCallInitiation({
           iceServers: servers,
         });
       };
+      const onBusy = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        Alert.alert('Bận', 'Người dùng đang bận.');
+      };
       const onMissed = () => {
         if (settled) return;
         settled = true;
@@ -134,8 +140,8 @@ export function useCallInitiation({
       }, CALL_TIMEOUT_MS);
 
       webrtcService.on('call_initiated', onInitiated);
+      webrtcService.on('call_busy', onBusy);
       webrtcService.on('call_missed', onMissed);
-      webrtcService.on('call_busy', onError);
       webrtcService.on('error', onError);
 
       webrtcService.initiateCall(otherUserId, conversationId, callType);

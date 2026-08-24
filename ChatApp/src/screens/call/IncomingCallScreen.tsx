@@ -39,27 +39,26 @@ const IncomingCallScreen: React.FC = () => {
 
   // Task 8.7 & 8.8: Listen for call_cancelled and call_timeout
   useEffect(() => {
-    const handleCancelled = () => {
+    const dismiss = () => {
       callAudioService.stop();
       if (navigation.canGoBack()) {
         navigation.goBack();
+      } else {
+        navigation.navigate('Main' as never);
       }
     };
 
-    const handleTimeout = () => {
-      callAudioService.stop();
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
-    };
-
-    webrtcService.on('call_cancelled', handleCancelled);
-    webrtcService.on('call_timeout', handleTimeout);
+    webrtcService.on('call_cancelled', dismiss);
+    webrtcService.on('call_timeout', dismiss);
+    webrtcService.on('call_missed', dismiss);
+    webrtcService.on('call_ended', dismiss);
 
     return () => {
       // Task 8.9: Remove listeners on unmount
-      webrtcService.off('call_cancelled', handleCancelled);
-      webrtcService.off('call_timeout', handleTimeout);
+      webrtcService.off('call_cancelled', dismiss);
+      webrtcService.off('call_timeout', dismiss);
+      webrtcService.off('call_missed', dismiss);
+      webrtcService.off('call_ended', dismiss);
     };
   }, [navigation]);
 
