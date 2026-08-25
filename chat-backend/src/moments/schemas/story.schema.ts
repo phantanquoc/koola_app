@@ -157,6 +157,11 @@ StorySchema.index({ audienceListId: 1 });
 // Feed query: compound index for the $or feed query
 StorySchema.index({ authorId: 1, expiresAt: 1, isActive: 1 });
 
+// Feed query: the $or visibility filter branches on audienceScope (PUBLIC /
+// CONNECTIONS / CUSTOM). A dedicated scope index lets each branch resolve via
+// index instead of scanning; low cardinality but every story carries the field.
+StorySchema.index({ audienceScope: 1 });
+
 // Idempotency: at most one story per (author, clientStoryId). Partial filter
 // so the many stories created WITHOUT a clientStoryId don't collide on null.
 StorySchema.index(

@@ -64,7 +64,7 @@ describe('MessagesService — reply validation', () => {
   const mockTypingService = {
     startTyping: jest.fn(),
     stopTyping: jest.fn(),
-    setTypingStopCallback: jest.fn(),
+    getTypingUsers: jest.fn(),
   };
 
   const mockNotificationsService = {
@@ -368,7 +368,7 @@ describe('MessagesService — setReaction', () => {
   const mockTypingService = {
     startTyping: jest.fn(),
     stopTyping: jest.fn(),
-    setTypingStopCallback: jest.fn(),
+    getTypingUsers: jest.fn(),
   };
 
   const mockNotificationsService = {
@@ -547,7 +547,7 @@ describe('MessagesService — searchMessages enrichment', () => {
   const mockTypingService = {
     startTyping: jest.fn(),
     stopTyping: jest.fn(),
-    setTypingStopCallback: jest.fn(),
+    getTypingUsers: jest.fn(),
   };
 
   const mockNotificationsService = {
@@ -558,11 +558,16 @@ describe('MessagesService — searchMessages enrichment', () => {
     findByIds: jest.fn(),
   };
 
-  // find(filter).sort().limit().lean() → resolves to the given raw docs
+  // find(filter).sort().skip().limit().select().lean() → resolves to the raw docs.
+  // `populate` is exposed on the chain so tests can assert it is NEVER called
+  // (task 2.5 — senderId has no ref, populating it was a bogus query).
   function mockFindReturns(rawItems: unknown[]) {
     mockMessageModel.find.mockReturnValue({
       sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      populate: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue(rawItems),
     });
   }
@@ -775,8 +780,28 @@ describe('MessagesService — searchMessages enrichment', () => {
 
     expect(res.total).toBe(42);
     expect(res.items).toHaveLength(1); // page trimmed to limit
-    // Cursor is base64 of the last item ON THE PAGE ('first'), not the overflow row.
-    expect(res.nextCursor).toBe(Buffer.from('first').toString('base64'));
+    // Relevance sort cannot be keyset-paginated, so the cursor is an
+    // offset pointer: base64(JSON { o: offset + limit }) — here 0 + 1.
+    expect(res.nextCursor).toBe(
+      Buffer.from(JSON.stringify({ o: 1 })).toString('base64'),
+    );
+  });
+
+  it('task 2.5 — issues no populate on the search chain and keeps senderId a string', async () => {
+    mockFindReturns([makeRawMsg()]);
+
+    const res = await service.searchMessages(requesterId, 'chào', 20);
+
+    // Message.senderId is a plain String (no ref) — populating was a bogus
+    // query; guard that the fixed path never calls populate again.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const chain = mockMessageModel.find.mock.results[0].value as {
+      populate: jest.Mock;
+    };
+    expect(chain.populate).not.toHaveBeenCalled();
+    // Response shape: senderId stays a plain string, never an object.
+    expect(typeof res.items[0].senderId).toBe('string');
+    expect(res.items[0].senderId).toBe(senderId);
   });
 
   it('returns empty (no cursor) when the user has no conversations', async () => {

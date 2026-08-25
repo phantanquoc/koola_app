@@ -108,6 +108,7 @@ describe('12.2 TTL behavior', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -244,6 +245,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -363,6 +365,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -490,6 +493,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -739,6 +743,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
             getClient: jest.fn().mockReturnValue(makeRedisClientMock()),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
         {

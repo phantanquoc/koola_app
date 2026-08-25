@@ -10,6 +10,7 @@ import { tap } from 'rxjs/operators';
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    if (process.env.NODE_ENV === 'production') return next.handle();
     const req = context.switchToHttp().getRequest();
     const { method, url } = req;
     const now = Date.now();

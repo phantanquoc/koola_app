@@ -61,17 +61,6 @@ export class ChatGateway
       '[ChatGateway] WebSocket Gateway initialized on /chat namespace',
     );
 
-    // Wire TypingService auto-stop callback → broadcast user_typing stop
-    this.typingService.setTypingStopCallback(
-      (convId: string, userId: string) => {
-        this.io.to(`conversation:${convId}`).emit('user_typing', {
-          conversationId: convId,
-          userId,
-          isTyping: false,
-        });
-      },
-    );
-
     // Wire blurhash callback → broadcast message_updated with blurhash
     this.messagesService.setBlurhashCallback(
       (
@@ -434,32 +423,38 @@ export class ChatGateway
 
   @UseGuards(WsAuthGuard)
   @SubscribeMessage('typing_start')
-  handleTypingStart(
+  async handleTypingStart(
     @MessageBody('conversationId') conversationId: string,
     @ConnectedSocket() client: AuthSocket,
-  ): void {
+  ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
-    this.typingService.startTyping(conversationId, userId);
-    this.io.to(`conversation:${conversationId}`).emit('user_typing', {
-      conversationId,
-      userId,
-      isTyping: true,
-    });
+    await this.typingService.startTyping(conversationId, userId);
+    this.io
+      .to(`conversation:${conversationId}`)
+      .except(`user:${userId}`)
+      .emit('user_typing', {
+        conversationId,
+        userId,
+        isTyping: true,
+      });
   }
 
   @UseGuards(WsAuthGuard)
   @SubscribeMessage('typing_stop')
-  handleTypingStop(
+  async handleTypingStop(
     @MessageBody('conversationId') conversationId: string,
     @ConnectedSocket() client: AuthSocket,
-  ): void {
+  ): Promise<void> {
     const userId = (client.data as AuthSocketData).user?.sub ?? '';
-    this.typingService.stopTyping(conversationId, userId);
-    this.io.to(`conversation:${conversationId}`).emit('user_typing', {
-      conversationId,
-      userId,
-      isTyping: false,
-    });
+    await this.typingService.stopTyping(conversationId, userId);
+    this.io
+      .to(`conversation:${conversationId}`)
+      .except(`user:${userId}`)
+      .emit('user_typing', {
+        conversationId,
+        userId,
+        isTyping: false,
+      });
   }
 
   // ─── Reactions ────────────────────────────────────────────────────────────

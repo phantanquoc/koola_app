@@ -406,10 +406,18 @@ export class MomentsService {
       baseFilter.authorId = { $gt: cursor };
     }
 
+    // Sort must match the { authorId: 1, createdAt: -1 } index (story.schema.ts)
+    // so the $or + sort resolves via index rather than an in-memory sort.
+    // Over-fetch by limit * 10 because pagination is over AUTHORS, not stories:
+    // a page of `limit` authors may hold up to `limit * activeStoriesPerAuthor`
+    // stories, and a story cap below that would silently drop authors from the
+    // page. 10x is a safe ceiling for expected stories-per-author within 25h
+    // expiry. The per-author group arrays are reversed below to restore
+    // chronological (oldest-first) playback order for the viewer.
     const stories = await this.storyModel
       .find(baseFilter)
-      .sort({ authorId: 1, createdAt: 1 })
-      .limit(limit * 10) // fetch more to group
+      .sort({ authorId: 1, createdAt: -1 })
+      .limit(limit * 10)
       .lean();
 
     // Group by author
@@ -418,6 +426,14 @@ export class MomentsService {
       const key = (s as any).authorId;
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push(s as StoryDocument);
+    }
+
+    // The query returns each author's stories newest-first (createdAt: -1); the
+    // story viewer plays oldest-first, so flip each group back to chronological.
+    // This keeps lastStoryId (last element) == the NEWEST story, matching the
+    // prior createdAt-ascending behaviour.
+    for (const authorStories of grouped.values()) {
+      authorStories.reverse();
     }
 
     // Resolve the viewer's "seen" set in a SINGLE query instead of one
@@ -686,6 +702,21 @@ export class MomentsService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async flushViewCounts(): Promise<void> {
+    // Multi-instance guard (task 7.2): only one pod flushes per tick. TTL 90s
+    // covers the 60s period plus slack so a slightly slow tick still holds
+    // the lock; a skipped tick is harmless — counts stay in Redis until the
+    // next flush.
+    const acquired = await this.redisService.tryAcquireLock(
+      'lock:moments-flush-views',
+      90,
+    );
+    if (!acquired) {
+      this.logger.debug(
+        '[MomentsService] flushViewCounts lock held by another instance — skipping.',
+      );
+      return;
+    }
+
     const redis = this.redisService.getClient();
     // Read the dirty-set instead of `KEYS moments:story:*:views` (blocking).
     const storyIds = await redis.smembers(REDIS_DIRTY_STORIES_KEY);
@@ -1462,6 +1493,18 @@ export class MomentsService {
 
   @Cron('0 2 * * *') // daily at 2 AM
   async detectOrphanMedia(): Promise<void> {
+    // Multi-instance guard (task 7.2): only one pod runs this daily sweep.
+    const acquired = await this.redisService.tryAcquireLock(
+      'lock:moments-orphan-media',
+      3000,
+    );
+    if (!acquired) {
+      this.logger.debug(
+        '[MomentsService] detectOrphanMedia lock held by another instance — skipping.',
+      );
+      return;
+    }
+
     // Find stories with expiresAt: null but mediaKey still under stories/
     const highlights = await this.storyModel
       .find({

@@ -30,3 +30,6 @@ UserConversationSchema.index(
   { unique: true },
 );
 UserConversationSchema.index({ conversationId: 1 });
+// Conversation list: per-user memberships sorted by joinedAt desc (getConversationList
+// pagination). Covers { userId } equality + joinedAt sort without a blocking sort.
+UserConversationSchema.index({ userId: 1, joinedAt: -1 });

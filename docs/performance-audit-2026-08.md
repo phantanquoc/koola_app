@@ -12,6 +12,57 @@ Phương pháp: phân tích tĩnh, mọi phát hiện đã đọc code xác minh
 
 ---
 
+> **Cập nhật vòng 3 (2026-08-25) — ĐỢT FIX `perf-audit-fix-and-scale-ready`.** Đã trace lại code sống, khoá scope, và implement đợt sửa đầu tiên nhắm vào backend hot-path + sẵn sàng scale ngang 5–10 instance. **Microservice tách ra để sau** (chỉ ghi nhận bounded context, không implement). Dưới đây là mapping trạng thái từng mục.
+
+**A. ĐÃ SỬA trong đợt này (change `perf-audit-fix-and-scale-ready`):**
+
+| Mục | Vấn đề | Cách sửa | File |
+|---|---|---|---|
+| 1.1 | `populate('senderId')` trên `String` không `ref` — query rác vào chính `messages` | Bỏ toàn bộ `populate('senderId')`; `senderId` giữ nguyên `string`. Thêm comment guard + test khẳng định không populate | `messages.service.ts` (7 chỗ), `conversations.service.ts` (getConversationDetails), `membership.service.ts` |
+| 2.1 | `verifyMember` populate toàn bộ member chỉ để trả boolean (**CRITICAL**) | Đổi sang `.select('members').lean()` — chỉ đọc mảng members, không populate user | `membership.service.ts:19-33` |
+| 2.2 | `getConversationList` load không giới hạn + sort `joinedAt` không index | `find().sort({joinedAt:-1}).skip().limit().select('conversationId unreadCount').lean()` + count song song qua `Promise.all`; thêm index `{userId:1, joinedAt:-1}` | `conversations.service.ts:336-379`, `user-conversation.schema.ts` |
+| 2.4 | Feed Moments `$or` + `audienceScope` không index + sort sai chiều index | Đổi sort thành `{authorId:1, createdAt:-1}` khớp index; thêm index `audienceScope`; gộp N+1 `countDocuments` view thành 1 query `storyViewModel.find({storyGroupId:{$in}})`; giữ `limit*10` nhưng có comment giải thích (phân trang theo AUTHOR, không theo story) | `moments.service.ts:409-452`, `story.schema.ts:163` |
+| 2.6 | `Jimp.read+resize+encode` blurhash block event loop | Đổi `jimp` → `sharp` (libvips-native, off-event-loop resize). Vẫn fire-and-forget; lỗi sharp → skip blurhash + warn | `messages.service.ts:275-305`, `scripts/backfill-blurhash.ts`, `package.json` |
+| 2.7 | Gửi 1 message fetch conversation 4 lần tuần tự | `Promise.all([updateLastMessage, incrementUnreadCount])` — 2 đọc độc lập chạy song song; `verifyMember` giữ làm gate | `messages.service.ts:216-221` |
+| 2.8 | `$text` search sort `createdAt` blocking + `countDocuments` lặp lại | Sort bằng `{score:{$meta:'textScore'}}` (dùng được text index), `.lean()` + `.select()`, `count` chạy song song trang qua `Promise.all` | `messages.service.ts:1049-1067` |
+| 6.2 | `ThrottlerModule` in-memory → N×60 khi scale | Storage Redis qua `RedisService.incrementWithExpiry` (Lua INCR+EXPIRE, 1 RTT); quota global | `common/redis/redis-throttler.storage.ts` (mới), `app.module.ts:46-63` |
+| 6.3 | 6 cron không distributed lock | Thêm `tryAcquireLock(setNXEX)` cho 4 cron còn lại: `media-cron`, `media-cleanup` (cùng `0 3 * * *` → key lock **riêng** để không chặn nhau), `moments flushViewCounts`, `moments detectOrphanMedia`. `call-session-cron` đã nguyên tử từ trước — không đụng | `redis.service.ts:83-93`, `media-cron.service.ts`, `media-cleanup.service.ts`, `moments.service.ts:703-717, 1494-1505` |
+| 6.4 | `LoggingInterceptor` `console.log` mọi request | Gate `if (process.env.NODE_ENV === 'production') return next.handle()` | `logging.interceptor.ts:13` |
+| 6.5 | `MongooseModule.forRoot(URI)` không `autoIndex:false`/`maxPoolSize` | `{ autoIndex: false, maxPoolSize: 20 }` + script tạo index một lần `scripts/create-indexes.ts` | `app.module.ts:37-40`, `scripts/create-indexes.ts` (mới) |
+| 6.6 | Không `compression` | Thêm `compression()` + `helmet()` vào `main.ts` | `main.ts:74-75`, `package.json` |
+
+**B. MỚI PHÁT HIỆN + SỬA trong đợt này (không có trong audit gốc):**
+
+| Vấn đề | Cách sửa | File |
+|---|---|---|
+| `RedisIoAdapter` tự `new Redis()` riêng — 2 pool Redis mỗi instance | Adapter nhận `RedisService` qua constructor, tái dùng client chung; không `quit()` client share | `main.ts:16-56` |
+| `TypingService` dùng `Map<Timeout>` in-memory — cross-instance không thấy nhau | Chuyển sang Redis `typing:<conv>:<user> EX 5` (setEX/del, TTL tự hết hạn) | `typing.service.ts` |
+| **BUG user báo:** chữ "đang nhập" hiện cả người gửi lẫn người nhận | Gateway emit `user_typing` với `.except(user:<senderId>)` — loại mọi socket của chính người gửi | `chat.gateway.ts:424-458` |
+| `getTypingUsers` dùng lệnh `KEYS` (block toàn bộ Redis, O(N) keyspace) | Đổi sang `SCAN` tăng dần theo cursor (`RedisService.scanKeys`) | `redis.service.ts:70-96`, `typing.service.ts:41-43` |
+
+**C. ĐÃ SỬA từ TRƯỚC (đợt này không đụng lại, xác nhận còn nguyên):**
+
+| Mục | Vấn đề | Ghi nhận |
+|---|---|---|
+| 5.1 | `callTimeouts` in-memory trong webrtc gateway | Đã chuyển `deadlineAt` + ZSET `initiated_sessions` + claim nguyên tử (Lua); `call-session-cron` tick 15s là nguồn timeout duy nhất |
+| 5.3 | `moments.gateway` `io.emit('story.new')` global | Đã đổi `resolvePermittedViewers` trả `getConnectedUserIds` — fanout O(connections) |
+| — | admin ReDoS `new RegExp(userInput)` | Cả `admin-moderation.controller` và `admin.service` đã `escapeRegExp` |
+| — | `health @SkipThrottle()` + Coturn probe loopback | `@SkipThrottle({short:true,long:true})` đúng tên; tách `COTURN_INTERNAL_HOST` khỏi `COTURN_IP` |
+
+**D. CÒN MỞ (ngoài scope đợt này — ghi lại để không quên):**
+
+- **Mobile (đợt này chỉ sửa backend):** 1.2 token-refresh stampede (`apiService`), 1.3 mark-read query không giới hạn, 1.4 hai đường mark-read song song, 3.1 AuthContext `useMemo`, 3.2–3.12 render, toàn bộ mục 4.x SQLite, 5.4 reconnect jitter.
+- **Backend còn lại:** 2.3 presence storm (`handleConnection`/`handleDisconnect` broadcast O(số conv)), 2.5 `assertViewAccess` N+1 theo từng story (đã gộp view trong `getFeed` nhưng bản thân `assertViewAccess` chưa đổi), 2.9 notification FCM tuần tự, 2.10 promote N+1, 2.11 `$size:2`, 2.12 cron drain, 2.13 call-logs sort, 2.14 `$regex` không neo, 5.2 ICE candidate Redis, 5.5 webrtc disconnect tuần tự.
+- **Nền tảng:** 6.1 observability (`prom-client`/`pino`/`otel`/`k6`) — đợt này chỉ gate log, chưa thêm metrics/tracing; 6.7 ProGuard.
+
+**E. Kiểm tra đã chạy cho đợt này:**
+- `npm run build` (tsc) xanh.
+- Jest targeted: `messages.service.spec`, `chat.gateway.spec`, `messages-around.service.spec`, `messages-sync.service.spec` — 36 test pass.
+- Trace tay từng vùng sửa bằng context engine + đọc file trực tiếp; xác nhận `senderId` vẫn `string`, typing receiver-only, lock key riêng cho 2 cron 03:00, sort feed khớp index.
+- **Giới hạn (kế thừa vòng 1):** vẫn chưa có MongoDB chạy để chạy `explain()` thật cho các index mới; chưa đo thiết bị. Các index thêm vào là suy luận đúng từ query shape, cần xác nhận `explain()` khi có DB.
+
+---
+
 ## 1. Ba vấn đề vừa là bug đúng-sai, không chỉ là chậm
 
 Đây là nhóm cần xử lý trước, vì chúng gây lỗi người dùng thấy được chứ không chỉ tốn tài nguyên.

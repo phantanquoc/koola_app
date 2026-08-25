@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   Logger,
 } from '@nestjs/common';
+import * as os from 'os';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -64,6 +65,51 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async del(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  /**
+   * Incremental SCAN for a pattern. Replaces the blocking `KEYS` command which
+   * scans the entire keyspace in one call. Safe even if the pattern matches
+   * many keys — iterates in small batches via cursor. Used only for the tiny,
+   * bounded `typing:<conv>:*` keyspace today.
+   */
+  async scanKeys(pattern: string, countHint = 100): Promise<string[]> {
+    const out: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await this.client.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        String(countHint),
+      );
+      cursor = next;
+      out.push(...batch);
+    } while (cursor !== '0');
+    return out;
+  }
+
+  /** @deprecated Use scanKeys — KEYS blocks Redis. Kept for backwards compat. */
+  async keys(pattern: string): Promise<string[]> {
+    return this.scanKeys(pattern);
+  }
+
+  /** Plain SET with EX TTL (no NX). */
+  async setEX(key: string, value: string, seconds: number): Promise<void> {
+    await this.client.set(key, value, 'EX', seconds);
+  }
+
+  /**
+   * Cron mutual-exclusion helper — thin wrapper over SET NX EX.
+   * Distinct lock keys (e.g. `lock:media-cron` vs `lock:media-cleanup`)
+   * prevent same-schedule crons from blocking each other.
+   * Value is the pod identity so logs/debugging can attribute the holder.
+   * Keep this narrow (`key, ttl → boolean`) to reserve a BullMQ upgrade path.
+   */
+  async tryAcquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    const podId = `${os.hostname()}-${process.pid}`;
+    return this.setNXEX(key, podId, ttlSeconds);
   }
 
   /**

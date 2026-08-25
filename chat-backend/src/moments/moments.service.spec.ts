@@ -61,6 +61,9 @@ const redisMock = {
   }),
   get: jest.fn().mockResolvedValue(null),
   del: jest.fn().mockResolvedValue(undefined),
+  setEX: jest.fn().mockResolvedValue(undefined),
+  scanKeys: jest.fn().mockResolvedValue([]),
+  tryAcquireLock: jest.fn().mockResolvedValue(true),
 };
 
 describe('MomentsService', () => {

@@ -339,37 +339,41 @@ export class ConversationsService {
     limit = 20,
   ): Promise<{ conversations: any[]; hasMore: boolean; total: number }> {
     const skip = (page - 1) * limit;
+    const userIdObj = new Types.ObjectId(userId);
 
-    // Get user's conversation IDs
-    const userConvs = await this.userConversationModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .sort({ joinedAt: -1 });
-
-    const convIds = userConvs.map((uc) => uc.conversationId);
-    const userConvMap = new Map(
-      userConvs.map((uc) => [uc.conversationId.toString(), uc]),
-    );
-
-    const [conversations, total] = await Promise.all([
-      this.conversationModel
-        .find({ _id: { $in: convIds } })
-        .sort({ lastMessageAt: -1 })
+    // Membership window is paginated on the { userId, joinedAt } index and the
+    // total is counted in parallel — both reads are bounded by `limit`/index.
+    // (The unique (userId, conversationId) index guarantees one row per
+    // conversation, so countDocuments({userId}) == conversation count.)
+    const [userConvs, total] = await Promise.all([
+      this.userConversationModel
+        .find({ userId: userIdObj })
+        .sort({ joinedAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate(
-          'members.userId',
-          '_id phone email displayName avatar isOnline',
-        ),
-      this.conversationModel.countDocuments({ _id: { $in: convIds } }),
+        .select('conversationId unreadCount')
+        .lean(),
+      this.userConversationModel.countDocuments({ userId: userIdObj }),
     ]);
 
-    const result = conversations.map((conv) => {
-      const uc = userConvMap.get(conv._id.toString());
-      return {
-        ...conv.toObject(),
-        unreadCount: uc?.unreadCount ?? 0,
-      };
-    });
+    const convIds = userConvs.map((uc) => uc.conversationId);
+    const unreadMap = new Map(
+      userConvs.map((uc) => [uc.conversationId.toString(), uc.unreadCount ?? 0]),
+    );
+
+    const conversations = await this.conversationModel
+      .find({ _id: { $in: convIds } })
+      .sort({ lastMessageAt: -1 })
+      .populate(
+        'members.userId',
+        '_id phone email displayName avatar isOnline',
+      )
+      .lean();
+
+    const result = conversations.map((conv) => ({
+      ...conv,
+      unreadCount: unreadMap.get(conv._id.toString()) ?? 0,
+    }));
 
     return { conversations: result, hasMore: skip + limit < total, total };
   }
@@ -398,11 +402,12 @@ export class ConversationsService {
       userId: new Types.ObjectId(userId),
     });
 
+    // senderId is a plain String (no ref) — no populate; clients resolve
+    // display names from their own user cache / users endpoint.
     const messages = await this.messageModel
       .find({ conversationId, deleted: false })
       .sort({ createdAt: -1 })
-      .limit(20)
-      .populate('senderId', '_id phone email displayName avatar');
+      .limit(20);
 
     return {
       conversation: { ...conv.toObject(), unreadCount: uc?.unreadCount ?? 0 },

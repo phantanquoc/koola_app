@@ -97,9 +97,16 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
       to: jest.fn().mockReturnValue({ emit: roomEmit }),
     };
 
-    // afterInit also registers typing/blurhash/new-message/pin/unpin callbacks;
-    // stub just enough for those setters to exist.
-    const typingService = { setTypingStopCallback: jest.fn() };
+    // afterInit registers blurhash/new-message/membership-revoked callbacks;
+    // stub just enough for those setters to exist. TypingService is injected
+    // (constructor arg) but afterInit no longer wires any typing callback —
+    // typing state lives in Redis now (task 8.1), so the stub only needs the
+    // public API surface to type-check as `any` here.
+    const typingService = {
+      startTyping: jest.fn(),
+      stopTyping: jest.fn(),
+      getTypingUsers: jest.fn(),
+    };
     const messagesService = {
       setBlurhashCallback: jest.fn(),
       setNewMessageEmitCallback: jest.fn(),

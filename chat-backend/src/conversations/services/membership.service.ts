@@ -12,30 +12,24 @@ export class MembershipService {
 
   /**
    * Verify that userId is a member of the given conversation.
-   * Returns the populated conversation document.
-   * Throws NotFoundException('Conversation not found') if either the
-   * conversation does not exist or the user is not a member.
+   * Throws NotFoundException('Conversation not found') if the conversation
+   * does not exist OR if the user is not a member — both cases return 404 to
+   * mask membership (non-members must not learn the conversation exists).
    */
   async verifyMember(
     userId: string,
     conversationId: string,
-  ): Promise<ConversationDocument> {
+  ): Promise<void> {
     const conv = await this.conversationModel
       .findById(conversationId)
-      .populate(
-        'members.userId',
-        '_id phone email displayName avatar isOnline',
-      );
+      .select('members')
+      .lean();
     if (!conv) throw new NotFoundException('Conversation not found');
 
-    const isMember = conv.members.some(
-      (m) =>
-        m.userId?.toString() === userId ||
-        (m.userId as any)?._id?.toString() === userId,
+    const isMember = (conv.members as any[]).some(
+      (m: any) => m.userId?.toString() === userId,
     );
     if (!isMember) throw new NotFoundException('Conversation not found');
-
-    return conv;
   }
 
   /**

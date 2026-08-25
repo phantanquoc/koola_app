@@ -82,12 +82,7 @@ export class MessagesService {
     private typingService: TypingService,
     private notificationsService: NotificationsService,
     private usersService: UsersService,
-  ) {
-    // Wire TypingService 5s timeout → emitTypingStop
-    this.typingService.setTypingStopCallback((convId, userId) => {
-      // This will be called by gateway module via emitTypingStop
-    });
-  }
+  ) {}
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -196,8 +191,8 @@ export class MessagesService {
       }
     }
 
-    // Stop typing when message is sent
-    this.typingService.stopTyping(conversationId, senderId);
+    // Stop typing when message is sent (distributed state, awaited).
+    await this.typingService.stopTyping(conversationId, senderId);
 
     // Create message
     const message = await this.messageModel.create({
@@ -218,12 +213,12 @@ export class MessagesService {
       metadata: null,
     });
 
-    // Update conversation last message
+    // Update conversation last message + unread counts in parallel
     const preview = this.buildPreview(dto.content ?? '', dto.type);
-    await this.conversationsService.updateLastMessage(conversationId, preview);
-
-    // Increment unread count for all other members
-    await this.unreadService.incrementUnreadCount(conversationId, [senderId]);
+    await Promise.all([
+      this.conversationsService.updateLastMessage(conversationId, preview),
+      this.unreadService.incrementUnreadCount(conversationId, [senderId]),
+    ]);
 
     // Fire-and-forget: generate blurhash for image messages
     if (dto.type === MessageType.IMAGE && dto.mediaUrl) {
@@ -274,31 +269,34 @@ export class MessagesService {
   }
 
   /**
-   * Encode a blurhash from raw image buffer using jimp.
+   * Encode a blurhash from raw image buffer using sharp (off-event-loop resize).
    * Exposed for reuse by backfill scripts.
    */
   async encodeBlurhash(
     buffer: Buffer,
   ): Promise<{ blurhash: string; width: number; height: number }> {
-    const Jimp = require('jimp');
+    const sharp = require('sharp') as typeof import('sharp');
     const { encode } = require('blurhash') as typeof import('blurhash');
 
-    const image = await Jimp.read(buffer);
-    const width = image.getWidth();
-    const height = image.getHeight();
+    const metadata = await sharp(buffer).metadata();
+    const width = metadata.width ?? 1;
+    const height = metadata.height ?? 1;
 
     const COMPONENT_X = 4;
     const COMPONENT_Y = 3;
     const THUMB_W = 32;
     const THUMB_H = Math.max(1, Math.round(THUMB_W * (height / (width || 1))));
 
-    image.resize(THUMB_W, THUMB_H);
+    const { data, info } = await sharp(buffer)
+      .resize(THUMB_W, THUMB_H, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-    const { data, width: bw, height: bh } = image.bitmap;
     const blurhash = encode(
       new Uint8ClampedArray(data),
-      bw,
-      bh,
+      info.width,
+      info.height,
       COMPONENT_X,
       COMPONENT_Y,
     );
@@ -310,32 +308,37 @@ export class MessagesService {
     messageId: string,
     mediaKey: string,
   ): Promise<void> {
-    // Download from MinIO
-    const stream = await minioClient.getObject(BUCKET, mediaKey);
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
-    }
-    const buffer = Buffer.concat(chunks);
+    try {
+      // Download from MinIO
+      const stream = await minioClient.getObject(BUCKET, mediaKey);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk));
+      }
+      const buffer = Buffer.concat(chunks);
 
-    const { blurhash, width, height } = await this.encodeBlurhash(buffer);
+      const { blurhash, width, height } = await this.encodeBlurhash(buffer);
 
-    // Update message in DB
-    await this.messageModel.updateOne(
-      { _id: messageId },
-      { $set: { blurhash, imageWidth: width, imageHeight: height } },
-    );
-
-    // Broadcast via socket if callback set
-    const message = await this.messageModel.findById(messageId).lean();
-    if (message && this.blurhashCallback) {
-      this.blurhashCallback(
-        messageId,
-        message.conversationId,
-        blurhash,
-        width,
-        height,
+      // Update message in DB
+      await this.messageModel.updateOne(
+        { _id: messageId },
+        { $set: { blurhash, imageWidth: width, imageHeight: height } },
       );
+
+      // Broadcast via socket if callback set
+      const message = await this.messageModel.findById(messageId).lean();
+      if (message && this.blurhashCallback) {
+        this.blurhashCallback(
+          messageId,
+          message.conversationId,
+          blurhash,
+          width,
+          height,
+        );
+      }
+    } catch (err) {
+      console.warn('[MessagesService] blurhash encode failed, skipping:', err);
+      return;
     }
   }
 
@@ -398,11 +401,12 @@ export class MessagesService {
       }
     }
 
+    // senderId is a plain String (no ref) — no populate; clients resolve
+    // display names from their own user cache / users endpoint.
     const messages = await this.messageModel
       .find(query)
       .sort({ createdAt: -1 })
       .limit(limit + 1)
-      .populate('senderId', '_id phone email displayName avatar')
       .lean();
 
     const hasMore = messages.length > limit;
@@ -474,11 +478,11 @@ export class MessagesService {
       deleted: false,
       deletedFor: { $ne: userId },
     };
+    // senderId is a plain String (no ref) — no populate (see listMessages).
     const beforeMessages = await this.messageModel
       .find(beforeQuery)
       .sort({ createdAt: -1 })
       .limit(half + 1)
-      .populate('senderId', '_id phone email displayName avatar')
       .lean();
 
     const hasBefore = beforeMessages.length > half;
@@ -502,7 +506,6 @@ export class MessagesService {
       .find(afterQuery)
       .sort({ createdAt: 1 })
       .limit(afterLimit + 1)
-      .populate('senderId', '_id phone email displayName avatar')
       .lean();
 
     const hasAfter = afterMessages.length > afterLimit;
@@ -528,7 +531,6 @@ export class MessagesService {
         })
         .sort({ createdAt: -1 })
         .limit(afterDeficit + 1)
-        .populate('senderId', '_id phone email displayName avatar')
         .lean();
       finalHasBefore = extraBefore.length > afterDeficit;
       const extraSlice = finalHasBefore
@@ -537,10 +539,8 @@ export class MessagesService {
       finalBeforeSlice = [...beforeSlice, ...extraSlice];
     }
 
-    // Populate target for consistent output
     const populatedTarget = await this.messageModel
       .findById(targetMessageId)
-      .populate('senderId', '_id phone email displayName avatar')
       .lean();
 
     // Assemble: before (ascending) + target + after (ascending)
@@ -822,21 +822,19 @@ export class MessagesService {
 
   // ─── Typing ─────────────────────────────────────────────────────────────────
 
-  emitTyping(convId: string, userId: string): void {
-    this.typingService.startTyping(convId, userId);
+  async emitTyping(convId: string, userId: string): Promise<void> {
+    await this.typingService.startTyping(convId, userId);
   }
 
-  emitTypingStop(convId: string, userId: string): TypingPayload {
-    this.typingService.stopTyping(convId, userId);
+  async emitTypingStop(convId: string, userId: string): Promise<TypingPayload> {
+    await this.typingService.stopTyping(convId, userId);
     return { conversationId: convId, userId };
   }
 
   // ─── Query Helpers ─────────────────────────────────────────────────────────
 
   async findById(messageId: string): Promise<MessageDocument | null> {
-    return this.messageModel
-      .findById(messageId)
-      .populate('senderId', '_id phone email displayName avatar');
+    return this.messageModel.findById(messageId);
   }
 
   async findByClientMessageId(
@@ -920,7 +918,6 @@ export class MessagesService {
       .find(query)
       .sort({ updatedAt: 1 })
       .limit(limit + 1)
-      .populate('senderId', '_id phone email displayName avatar')
       .lean();
 
     const hasMore = messages.length > limit;
@@ -1005,7 +1002,10 @@ export class MessagesService {
   /**
    * Full-text search across messages in conversations where the user is a
    * member. Uses MongoDB $text index on `content`. Excludes deleted messages.
-   * Cursor is an opaque base64-encoded message _id; paginates by createdAt DESC.
+   * Results are ranked by text relevance (`textScore`); the cursor is an
+   * opaque base64-encoded offset (`{o: N}`) — relevance sort cannot be
+   * keyset-paginated. Mobile only ever fetches the first page, so offset
+   * pagination is safe and adds no extra queries.
    */
   async searchMessages(
     userId: string,
@@ -1029,28 +1029,30 @@ export class MessagesService {
       $text: { $search: q },
     };
 
+    let offset = 0;
     if (cursor) {
       try {
-        const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
-        const cursorDoc = (await this.messageModel
-          .findById(decoded)
-          .select('createdAt')
-          .lean()) as { createdAt?: Date } | null;
-        if (cursorDoc?.createdAt) {
-          filter.createdAt = { $lt: cursorDoc.createdAt };
+        const decoded = JSON.parse(
+          Buffer.from(cursor, 'base64').toString('utf-8'),
+        ) as { o?: unknown };
+        if (typeof decoded?.o === 'number' && decoded.o >= 0) {
+          offset = Math.floor(decoded.o);
         }
       } catch {
-        // invalid cursor → ignore
+        // invalid cursor → ignore (start at 0)
       }
     }
 
     // Lean read — the whole page is remapped to MessageSearchItem below, so a
-    // hydrated document buys nothing. Typed so createdAt/_id are safe to touch.
+    // hydrated document buys nothing. Projection covers exactly the fields the
+    // response needs. Typed so createdAt/_id are safe to touch.
     const [rawItems, total] = await Promise.all([
       this.messageModel
         .find(filter)
-        .sort({ createdAt: -1 })
+        .sort({ score: { $meta: 'textScore' } })
+        .skip(offset)
         .limit(limit + 1)
+        .select('conversationId senderId content type createdAt')
         .lean<
           Array<{
             _id: Types.ObjectId;
@@ -1068,9 +1070,7 @@ export class MessagesService {
     const pageItems = hasMore ? rawItems.slice(0, limit) : rawItems;
     const nextCursor =
       hasMore && pageItems.length > 0
-        ? Buffer.from(pageItems[pageItems.length - 1]._id.toString()).toString(
-            'base64',
-          )
+        ? Buffer.from(JSON.stringify({ o: offset + limit })).toString('base64')
         : null;
 
     const items = await this.enrichSearchResults(pageItems, userId);

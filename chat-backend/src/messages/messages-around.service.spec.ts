@@ -91,7 +91,7 @@ describe('MessagesService — getMessagesAround', () => {
   const mockTypingService = {
     startTyping: jest.fn(),
     stopTyping: jest.fn(),
-    setTypingStopCallback: jest.fn(),
+    getTypingUsers: jest.fn(),
   };
 
   const mockNotificationsService = {
@@ -167,6 +167,14 @@ describe('MessagesService — getMessagesAround', () => {
     expect(result.messages.length).toBe(21);
     // Target is in the middle
     expect((result.messages[10] as any)._id).toBe(mockTargetId);
+
+    // Task 2.5 — senderId is a plain String (no ref), so the around path must
+    // NOT populate it (the old code did, which was a bogus query). Assert the
+    // exposed chain methods were never invoked and senderId stays a string.
+    expect(beforeChain.populate).not.toHaveBeenCalled();
+    expect(afterChain.populate).not.toHaveBeenCalled();
+    expect(typeof (result.messages[0] as any).senderId).toBe('string');
+    expect((result.messages[0] as any).senderId).toBe('user2');
   });
 
   it('returns hasBefore=false when fewer messages exist before target (backfills from after)', async () => {

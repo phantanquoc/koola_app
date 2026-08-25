@@ -1,31 +1,49 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { INestApplicationContext, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import Redis from 'ioredis';
+import compression from 'compression';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { RedisService } from './common/redis/redis.service';
 import { getAllowedOrigins } from './common/cors';
 import { startDevEnvWatcher } from './dev-env-watcher';
 import { minioClient, BUCKET, ensureBucketExists } from './media/minio-client';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
+  private readonly redisService: RedisService;
+
+  constructor(app: INestApplicationContext, redisService: RedisService) {
+    super(app);
+    this.redisService = redisService;
+  }
 
   async connectToRedis(): Promise<void> {
-    const pubClient = new Redis(
-      process.env.REDIS_URL || 'redis://localhost:6379',
-    );
+    // Reuse the single shared ioredis client owned by RedisService so the
+    // process holds exactly ONE Redis connection — the Socket.IO adapter must
+    // not open its own pool (task 4.3). RedisService connects in
+    // onModuleInit, which runs during NestFactory.create() before this
+    // adapter is wired, so pubClient is already 'ready' here. The adapter
+    // never quits the shared client; lifecycle stays with RedisService.
+    const pubClient = this.redisService.getClient();
     const subClient = pubClient.duplicate();
 
-    pubClient.on('error', (err) =>
+    pubClient.on('error', (err: Error) =>
       console.error('[RedisIO] Pub client error:', err),
     );
-    subClient.on('error', (err) =>
+    subClient.on('error', (err: Error) =>
       console.error('[RedisIO] Sub client error:', err),
     );
+
+    // duplicate() inherits lazyConnect from the shared client's options —
+    // connect explicitly before handing it to the adapter.
+    if (subClient.status === 'wait') {
+      await subClient.connect();
+    }
 
     this.adapterConstructor = createAdapter(pubClient, subClient);
   }
@@ -40,13 +58,22 @@ class RedisIoAdapter extends IoAdapter {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // WebSocket adapter with Redis
-  const redisAdapter = new RedisIoAdapter(app);
+  // WebSocket adapter with Redis — reuses the shared RedisService client
+  // (single Redis pool per instance, task 4.3).
+  const redisAdapter = new RedisIoAdapter(app, app.get(RedisService));
   await redisAdapter.connectToRedis();
   app.useWebSocketAdapter(redisAdapter);
 
   // Global prefix
   app.setGlobalPrefix('api');
+
+  // HTTP middleware — gzip JSON feed/sync responses (task 5.1) and baseline
+  // security headers via helmet defaults (task 5.2). This is a REST+WS API
+  // backend, so helmet's browser-oriented defaults (CSP, etc.) are harmless
+  // for API consumers while still providing header hardening for the Swagger
+  // UI served at /api/docs.
+  app.use(helmet());
+  app.use(compression());
 
   // CORS — restrict to configured origins. NODE_ENV=production requires
   // FRONTEND_URL to be set (comma-separated list of allowed origins).

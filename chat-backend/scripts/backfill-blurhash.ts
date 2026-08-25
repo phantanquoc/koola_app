@@ -29,25 +29,30 @@ const minioClient = new Minio.Client({
 async function encodeBlurhash(
   buffer: Buffer,
 ): Promise<{ blurhash: string; width: number; height: number }> {
-  const Jimp = require('jimp');
+  // sharp (off-event-loop native decode) replaced jimp — mirrors
+  // MessagesService.encodeBlurhash so the backfill produces identical hashes.
+  const sharp = require('sharp') as typeof import('sharp');
   const { encode } = require('blurhash') as typeof import('blurhash');
 
-  const image = await Jimp.read(buffer);
-  const width = image.getWidth();
-  const height = image.getHeight();
+  const metadata = await sharp(buffer).metadata();
+  const width = metadata.width ?? 1;
+  const height = metadata.height ?? 1;
 
   const COMPONENT_X = 4;
   const COMPONENT_Y = 3;
   const THUMB_W = 32;
   const THUMB_H = Math.max(1, Math.round(THUMB_W * (height / (width || 1))));
 
-  image.resize(THUMB_W, THUMB_H);
+  const { data, info } = await sharp(buffer)
+    .resize(THUMB_W, THUMB_H, { fit: 'fill' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
-  const { data, width: bw, height: bh } = image.bitmap;
   const blurhash = encode(
     new Uint8ClampedArray(data),
-    bw,
-    bh,
+    info.width,
+    info.height,
     COMPONENT_X,
     COMPONENT_Y,
   );

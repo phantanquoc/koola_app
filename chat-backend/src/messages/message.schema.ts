@@ -146,3 +146,8 @@ MessageSchema.index(
   { content: 'text' },
   { default_language: 'none', name: 'content_text' },
 ); // full-text search; default_language 'none' preserves diacritics
+// Hot message-list query: { conversationId, deleted: false, deletedFor: { $ne: userId } }
+// sorted by createdAt desc. conversationId equality + deleted equality let the index
+// also serve the sort. The `$ne` on the multikey `deletedFor` array cannot be answered
+// efficiently by an index and remains a residual (cheap, post-index) filter.
+MessageSchema.index({ conversationId: 1, deleted: 1, createdAt: -1 });

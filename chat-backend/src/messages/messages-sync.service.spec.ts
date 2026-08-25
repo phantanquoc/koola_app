@@ -98,7 +98,7 @@ describe('MessagesService — syncMessages (tombstone-inclusive)', () => {
   const mockTypingService = {
     startTyping: jest.fn(),
     stopTyping: jest.fn(),
-    setTypingStopCallback: jest.fn(),
+    getTypingUsers: jest.fn(),
   };
 
   const mockNotificationsService = {
