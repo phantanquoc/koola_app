@@ -17,6 +17,8 @@ interface KoolaButtonProps extends Omit<PressableProps, 'children'> {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: string;
+  /** Icon rendered after the title (e.g. arrow-forward for CTAs). */
+  trailingIcon?: string;
   className?: string;
 }
 
@@ -72,6 +74,7 @@ export const KoolaButton: React.FC<KoolaButtonProps> = ({
   size = 'md',
   loading = false,
   icon,
+  trailingIcon,
   disabled,
   className,
   style,
@@ -130,6 +133,13 @@ export const KoolaButton: React.FC<KoolaButtonProps> = ({
             numberOfLines={1}>
             {title}
           </KoolaText>
+          {trailingIcon ? (
+            <MaterialIcons
+              name={trailingIcon}
+              size={20}
+              color={iconColor[variant]}
+            />
+          ) : null}
         </View>
       )}
     </Pressable>

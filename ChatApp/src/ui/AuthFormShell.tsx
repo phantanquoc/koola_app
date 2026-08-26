@@ -15,6 +15,13 @@ interface AuthFormShellProps {
   children: React.ReactNode;
   /** Extra bottom padding to ensure primary action is reachable. Default 24. */
   bottomClearance?: number;
+  /**
+   * Optional decorative layer rendered behind the scroll content (e.g. a
+   * gradient). When provided, the shell's own canvas background is made
+   * transparent so the layer shows through. Pointer events are disabled on
+   * the layer so it never intercepts taps.
+   */
+  background?: React.ReactNode;
 }
 
 /**
@@ -37,6 +44,7 @@ interface AuthFormShellProps {
 export const AuthFormShell: React.FC<AuthFormShellProps> = ({
   children,
   bottomClearance = 24,
+  background,
 }) => {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
@@ -45,12 +53,17 @@ export const AuthFormShell: React.FC<AuthFormShellProps> = ({
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, background ? { backgroundColor: 'transparent' } : null]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}>
+      {background ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {background}
+        </View>
+      ) : null}
       <ScrollView
         ref={scrollRef}
-        style={styles.flex}
+        style={[styles.flex, background ? { backgroundColor: 'transparent' } : null]}
         contentContainerStyle={[
           styles.content,
           {
@@ -79,6 +92,6 @@ const makeStyles = (p: Palette) =>
     content: {
       flexGrow: 1,
       justifyContent: 'center',
-      paddingHorizontal: 20,
+      paddingHorizontal: 24,
     },
   });

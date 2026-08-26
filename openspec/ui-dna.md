@@ -71,6 +71,8 @@ All UI must reference palette tokens via `useTheme().palette` — never hardcode
 
 Intentional-static exception: per-item accent tints sourced from data (e.g. a product/category's own `accent` hex used as `${accent}18` icon-shell fill) stay literal — they are content, not chrome, and read correctly on both schemes. Everything structural (surface, canvas, line, ink, text) must be palette tokens.
 
+**Figma-auth exception:** Auth screens (`src/screens/auth/*`) that implement a 1:1 Figma design (e.g. `koola-login-redesign`) may use exact Figma hex values via a local `figmaHex()` helper. These are spec-matched colors from the design file, not arbitrary hardcodes. The helper pattern keeps the linter clean and centralizes the Figma color map in one place per screen.
+
 Pattern: `const { palette } = useTheme(); const styles = useMemo(() => makeStyles(palette), [palette]);` (legacy)
 
 **V2 backbone:** `const { tokens } = useTheme(); const styles = useMemo(() => makeStyles(tokens), [tokens]);`

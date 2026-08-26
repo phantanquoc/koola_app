@@ -1,10 +1,13 @@
 import React, { forwardRef, useMemo, useState } from 'react';
 import {
   Pressable,
+  StyleProp,
   StyleSheet,
   TextInput,
   TextInputProps,
+  TextStyle,
   View,
+  ViewStyle,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText } from './KoolaText';
@@ -17,6 +20,10 @@ export interface KoolaTextInputProps extends TextInputProps {
   icon?: string;
   /** Explicit accessible label for screen readers (falls back to `label` then `placeholder`). */
   accessibilityLabel?: string;
+  /** Extra style applied to the outer input shell (the View wrapping the TextInput). */
+  shellStyle?: StyleProp<ViewStyle>;
+  /** Override style for the label text (fontSize, fontWeight, color, etc.). */
+  labelStyle?: StyleProp<TextStyle>;
 }
 
 const makeStyles = (p: Palette) =>
@@ -70,6 +77,8 @@ export const KoolaTextInput = forwardRef<TextInput, KoolaTextInputProps>(
       placeholderTextColor,
       secureTextEntry,
       accessibilityLabel: a11yLabel,
+      shellStyle,
+      labelStyle,
       ...props
     },
     ref,
@@ -88,12 +97,12 @@ export const KoolaTextInput = forwardRef<TextInput, KoolaTextInputProps>(
     return (
       <View style={styles.wrapper}>
         {label ? (
-          <KoolaText variant="caption" tone="muted" weight="700" style={styles.label}>
+          <KoolaText variant="caption" tone="muted" weight="700" style={[styles.label, labelStyle]}>
             {label}
           </KoolaText>
         ) : null}
         <View
-          style={[styles.inputShell, error ? styles.inputError : null]}>
+          style={[styles.inputShell, shellStyle, error ? styles.inputError : null]}>
           {icon ? (
             <MaterialIcons name={icon} size={20} color={palette.faint} />
           ) : null}
