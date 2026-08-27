@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import UserAvatar from '../../../components/UserAvatar';
 import {
   KoolaText,
@@ -40,10 +41,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onStartCall,
 }) => {
   const { tokens, resolvedScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
 
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <KoolaIconButton
         icon="arrow-back"
         tone="primary"

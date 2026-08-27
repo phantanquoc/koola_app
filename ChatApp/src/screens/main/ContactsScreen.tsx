@@ -4,9 +4,9 @@ import {
   FlatList,
   ActivityIndicator,
   StyleSheet,
-  SafeAreaView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { ContactsScreenNavigationProp } from '../../navigation/types';
 import { conversationsApi } from '../../services/api/apiService';
@@ -84,7 +84,7 @@ const ContactsScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <ContactSearchBar onSearch={handleSearch} />
 
       <FlatList

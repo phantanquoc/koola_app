@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Animated as NativeAnimated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Svg, {
   Defs,
@@ -42,6 +43,7 @@ const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
   showBottomHairline = false,
 }) => {
   const { tokens } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const [searchPressed, setSearchPressed] = React.useState(false);
   const [qrPressed, setQrPressed] = React.useState(false);
@@ -54,7 +56,7 @@ const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
   }, []);
 
   return (
-    <View style={[styles.container, showBottomHairline && styles.containerHairline]}>
+    <View style={[styles.container, { paddingTop: insets.top + 6 }, showBottomHairline && styles.containerHairline]}>
       <View style={styles.headerRow}>
         <View style={styles.logoSlot}>
           <KoolaLogo key={logoReplayKey} showMark={false} variant="extruded" font="sora" wordmarkSize={22} animation={logoAnimation} />

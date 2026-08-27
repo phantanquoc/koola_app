@@ -57,11 +57,11 @@ function navigateToIncomingCall(params: IncomingCallNavParams): void {
 
 /** StatusBar that follows the active theme palette */
 const ThemedStatusBar: React.FC = () => {
-  const { palette, resolvedScheme } = useTheme();
+  const { resolvedScheme } = useTheme();
   return (
     <StatusBar
-      translucent={false}
-      backgroundColor={palette.surface}
+      translucent={true}
+      backgroundColor="transparent"
       barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
     />
   );
