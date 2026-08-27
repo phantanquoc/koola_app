@@ -125,7 +125,7 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
 
   return (
     <View style={styles.root}>
-      <AuthFormShell>
+      <AuthFormShell background={<View style={StyleSheet.absoluteFill} />}>
         <View style={styles.scrollContent}>
           <View style={styles.hero}>
             <Image

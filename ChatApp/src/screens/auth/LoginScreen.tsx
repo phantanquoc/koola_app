@@ -154,7 +154,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.root}>
-      <AuthFormShell>
+      <AuthFormShell background={<View style={StyleSheet.absoluteFill} />}>
         {/* All sections in one column with 28px gap — matches Figma main-scroll-container */}
         <View style={styles.scrollContent}>
           {/* Brand header — Figma 2:14 */}

@@ -10,15 +10,15 @@ import MomentComposerScreen from '../screens/moments/MomentComposerScreen';
 import MomentViewerScreen from '../screens/moments/MomentViewerScreen';
 import HighlightsScreen from '../screens/moments/HighlightsScreen';
 import AudienceListEditorScreen from '../screens/moments/AudienceListEditorScreen';
-import { useTheme } from '../ui';
+// useTheme no longer needed for contentStyle
 
 const Stack = createNativeStackNavigator<ChatTabStackParamList>();
 
 const ChatTabStack: React.FC = () => {
-  const { palette } = useTheme();
+  // palette unused after contentStyle -> transparent (prevents canvas/surface flash during slide)
   const contentStyle = useMemo(
-    () => ({ backgroundColor: palette.canvas }),
-    [palette.canvas],
+    () => ({ backgroundColor: 'transparent' }),
+    [],
   );
 
   return (

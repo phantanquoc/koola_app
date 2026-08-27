@@ -123,7 +123,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.root}>
-      <AuthFormShell>
+      <AuthFormShell background={<View style={StyleSheet.absoluteFill} />}>
         <View style={styles.scrollContent}>
           <View style={styles.hero}>
             <Image
