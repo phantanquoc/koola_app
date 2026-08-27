@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Alert,
+  Image,
   Pressable,
   StyleSheet,
   View,
@@ -12,15 +13,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../services/api/apiService';
 import {
   AuthFormShell,
-  KoolaBadge,
   KoolaButton,
-  KoolaLogo,
   KoolaOtpInput,
-  KoolaSurface,
   KoolaText,
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
+import { FIGMA, figmaHex } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerify'>;
 
@@ -28,11 +27,11 @@ const OTP_EXPIRY = 300;
 const RESEND_COOLDOWN = 45;
 const MAX_ATTEMPTS = 5;
 
-const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
+const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
   const { email } = route.params;
   const { verifyOtp } = useAuth();
-  const { palette } = useTheme();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { palette, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(palette, resolvedScheme), [palette, resolvedScheme]);
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -125,87 +124,209 @@ const OtpVerifyScreen: React.FC<Props> = ({ route }) => {
   const resendDisabled = resending || resendCooldown > 0;
 
   return (
-    <AuthFormShell>
-      <KoolaSurface variant="raised" style={styles.form}>
-        <View style={styles.header}>
-          <KoolaLogo markSize={32} showMark showWordmark={false} />
-          <KoolaBadge label="Bao mat" tone="primary" />
-          <KoolaText variant="title" align="center">
-            Xác thực OTP
-          </KoolaText>
-          <KoolaText variant="body" tone="muted" align="center">
-            Nhập mã 6 số đã gửi đến {email}
-          </KoolaText>
+    <View style={styles.root}>
+      <AuthFormShell>
+        <View style={styles.scrollContent}>
+          <View style={styles.hero}>
+            <Image
+              source={require('../../assets/logo_koola.png')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="Koola"
+            />
+            <KoolaText style={styles.tagline}>
+              A good solution - An effective product
+            </KoolaText>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <KoolaText style={styles.cardTitle}>Xác thực OTP</KoolaText>
+              <KoolaText style={styles.cardSubtitle}>
+                Nhập mã 6 số đã gửi đến {email}
+              </KoolaText>
+            </View>
+
+            <KoolaOtpInput
+              value={otp}
+              onChange={(v) => { setOtp(v); setOtpError(''); }}
+              autoFocus
+              error={otpError}
+            />
+
+            <KoolaText
+              align="center"
+              tone={countdown > 0 ? 'muted' : 'danger'}
+              weight="700">
+              {countdown > 0
+                ? `Mã hết hạn sau: ${formatTime(countdown)}`
+                : 'Mã đã hết hạn'}
+            </KoolaText>
+
+            {attempts > 0 && attempts < MAX_ATTEMPTS ? (
+              <KoolaText
+                align="center"
+                style={styles.warningText}
+                weight="700">
+                Còn {MAX_ATTEMPTS - attempts} lần thử
+              </KoolaText>
+            ) : null}
+
+            <KoolaButton
+              title="Xác thực"
+              trailingIcon="arrow-forward"
+              loading={loading}
+              onPress={handleVerify}
+              disabled={loading || countdown <= 0}
+              style={styles.primaryButton}
+            />
+
+            <Pressable
+              style={styles.resendButton}
+              onPress={handleResend}
+              disabled={resendDisabled}
+              hitSlop={{ top: 4, bottom: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Gui lai ma xac thuc"
+              accessibilityState={{ disabled: resendDisabled }}>
+              <KoolaText
+                tone={resendDisabled ? 'faint' : 'primary'}
+                weight="800"
+                align="center">
+                {resending
+                  ? 'Dang gui lai...'
+                  : resendCooldown > 0
+                    ? `Gui lai ma (${resendCooldown}s)`
+                    : 'Gui lai ma'}
+              </KoolaText>
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={styles.footer}
+            onPress={() => navigation.navigate('Login')}
+            hitSlop={{ top: 6, bottom: 6 }}
+            accessibilityRole="link"
+            accessibilityLabel="Quay lai dang nhap">
+            <KoolaText style={styles.footerText}>
+              Đã có tài khoản?{' '}
+              <KoolaText style={styles.footerLink}>Đăng nhập</KoolaText>
+            </KoolaText>
+          </Pressable>
         </View>
-
-        <KoolaOtpInput
-          value={otp}
-          onChange={(v) => { setOtp(v); setOtpError(''); }}
-          autoFocus
-          error={otpError}
-        />
-
-        <KoolaText
-          align="center"
-          tone={countdown > 0 ? 'muted' : 'danger'}
-          weight="700">
-          {countdown > 0
-            ? `Mã hết hạn sau: ${formatTime(countdown)}`
-            : 'Mã đã hết hạn'}
-        </KoolaText>
-
-        {attempts > 0 && attempts < MAX_ATTEMPTS ? (
-          <KoolaText
-            align="center"
-            style={styles.warningText}
-            weight="700">
-            Còn {MAX_ATTEMPTS - attempts} lần thử
-          </KoolaText>
-        ) : null}
-
-        <KoolaButton
-          title="Xác thực"
-          icon="verified-user"
-          loading={loading}
-          onPress={handleVerify}
-          disabled={loading || countdown <= 0}
-        />
-
-        <Pressable
-          style={styles.resendButton}
-          onPress={handleResend}
-          disabled={resendDisabled}
-          hitSlop={{ top: 4, bottom: 4 }}
-          accessibilityRole="button"
-          accessibilityLabel="Gui lai ma xac thuc"
-          accessibilityState={{ disabled: resendDisabled }}>
-          <KoolaText
-            tone={resendDisabled ? 'faint' : 'primary'}
-            weight="800"
-            align="center">
-            {resending
-              ? 'Dang gui lai...'
-              : resendCooldown > 0
-                ? `Gui lai ma (${resendCooldown}s)`
-                : 'Gui lai ma'}
-          </KoolaText>
-        </Pressable>
-      </KoolaSurface>
-    </AuthFormShell>
+      </AuthFormShell>
+    </View>
   );
 };
 
-// --- Styles ---
-
-const makeStyles = (p: Palette) =>
+const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
   StyleSheet.create({
-    form: {
-      padding: 20,
-      gap: 16,
+    root: {
+      flex: 1,
+      backgroundColor: p.canvas,
     },
-    header: {
+    scrollContent: {
+      gap: FIGMA.sectionGap,
+    },
+    hero: {
       alignItems: 'center',
+      paddingTop: 8,
+      paddingBottom: 4,
       gap: 8,
+    },
+    logo: {
+      width: 140,
+      height: 97,
+      alignSelf: 'center',
+    },
+    tagline: {
+      fontSize: 13,
+      color: figmaHex('tagline'),
+      fontWeight: '400',
+      opacity: 0.9,
+      textAlign: 'center' as const,
+    },
+    card: {
+      backgroundColor: p.surface,
+      borderRadius: FIGMA.cardRadius,
+      padding: FIGMA.cardPadding,
+      gap: FIGMA.cardGap,
+      shadowColor: figmaHex('shadow'),
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: scheme === 'dark' ? 0.18 : 0.07,
+      shadowRadius: 16,
+      elevation: 6,
+      borderWidth: scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
+      borderColor: scheme === 'dark' ? p.line : 'transparent',
+    },
+    cardHeader: {
+      gap: 6,
+      alignItems: 'center',
+    },
+    cardTitle: {
+      fontSize: FIGMA.cardTitleSize,
+      lineHeight: Math.round(FIGMA.cardTitleSize * 1.2),
+      fontWeight: '700',
+      color: figmaHex('cardTitle'),
+      textAlign: 'center',
+    },
+    cardSubtitle: {
+      fontSize: FIGMA.cardSubtitleSize,
+      lineHeight: Math.round(FIGMA.cardSubtitleSize * 1.4),
+      fontWeight: '400',
+      color: figmaHex('cardSubtitle'),
+      textAlign: 'center',
+    },
+    fieldGroup: {
+      gap: 14,
+    },
+    inputLabel: {
+      fontSize: FIGMA.inputLabelSize,
+      fontWeight: '600',
+      color: figmaHex('inputLabel'),
+    },
+    inputShell: {
+      minHeight: FIGMA.inputShellHeight,
+      borderRadius: FIGMA.inputShellRadius,
+      borderWidth: 1.5,
+      borderColor: scheme === 'dark' ? p.line : figmaHex('inputEdge'),
+      backgroundColor: scheme === 'dark' ? p.canvas : figmaHex('inputBg'),
+      paddingHorizontal: 16,
+    },
+    primaryButton: {
+      minHeight: FIGMA.buttonHeight,
+      borderRadius: FIGMA.buttonRadius,
+      backgroundColor: figmaHex('buttonBg'),
+      shadowColor: figmaHex('buttonBg'),
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 10,
+      elevation: 4,
+    },
+    forgotLink: {
+      alignSelf: 'flex-end',
+      paddingTop: 2,
+      paddingBottom: 2,
+    },
+    forgotText: {
+      fontSize: FIGMA.linkSize,
+      fontWeight: '600',
+      color: figmaHex('link'),
+    },
+    footer: {
+      paddingTop: 8,
+      paddingBottom: 8,
+    },
+    footerText: {
+      fontSize: FIGMA.footerTextSize,
+      color: figmaHex('footerText'),
+      fontWeight: '400',
+      textAlign: 'center',
+    },
+    footerLink: {
+      fontSize: FIGMA.footerTextSize,
+      color: figmaHex('link'),
+      fontWeight: '700',
     },
     warningText: {
       color: p.warning,

@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Alert,
+  Image,
+  Pressable,
   StyleSheet,
   TextInput,
   View,
@@ -11,16 +13,14 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   AuthFormShell,
-  KoolaBadge,
   KoolaButton,
-  KoolaLogo,
   KoolaOtpInput,
-  KoolaSurface,
   KoolaText,
   KoolaTextInput,
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
+import { FIGMA, figmaHex } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ResetPassword'>;
 
@@ -29,8 +29,8 @@ type Step = 'otp' | 'newPassword';
 const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
   const { email } = route.params;
   const { verifyResetOtp, resetPassword } = useAuth();
-  const { palette } = useTheme();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { palette, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(palette, resolvedScheme), [palette, resolvedScheme]);
 
   const [step, setStep] = useState<Step>('otp');
   const [otp, setOtp] = useState('');
@@ -124,92 +124,225 @@ const ResetPasswordScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   return (
-    <AuthFormShell>
-      <KoolaSurface variant="raised" style={styles.form}>
-        <View style={styles.header}>
-          <KoolaLogo markSize={32} showMark showWordmark={false} />
-          <KoolaBadge label="Bao mat" tone="primary" />
-          <KoolaText variant="title" align="center">
-            {step === 'otp' ? 'Nhập mã xác thực' : 'Đặt mật khẩu mới'}
-          </KoolaText>
-          <KoolaText variant="body" tone="muted" align="center">
-            {step === 'otp'
-              ? `Nhập mã 6 số đã gửi đến ${email}`
-              : 'Nhập mật khẩu mới (ít nhất 8 ký tự)'}
-          </KoolaText>
+    <View style={styles.root}>
+      <AuthFormShell>
+        <View style={styles.scrollContent}>
+          <View style={styles.hero}>
+            <Image
+              source={require('../../assets/logo_koola.png')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="Koola"
+            />
+            <KoolaText style={styles.tagline}>
+              A good solution - An effective product
+            </KoolaText>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <KoolaText style={styles.cardTitle}>
+                {step === 'otp' ? 'Nhập mã xác thực' : 'Đặt mật khẩu mới'}
+              </KoolaText>
+              <KoolaText style={styles.cardSubtitle}>
+                {step === 'otp'
+                  ? `Nhập mã 6 số đã gửi đến ${email}`
+                  : 'Nhập mật khẩu mới (ít nhất 8 ký tự)'}
+              </KoolaText>
+            </View>
+
+            {step === 'otp' ? (
+              <>
+                <KoolaOtpInput
+                  value={otp}
+                  onChange={(v) => { setOtp(v); setOtpError(''); }}
+                  autoFocus
+                  error={otpError}
+                />
+
+                <KoolaButton
+                  title="Xác thực"
+                  trailingIcon="arrow-forward"
+                  loading={loading}
+                  onPress={handleVerifyOtp}
+                  style={styles.primaryButton}
+                />
+              </>
+            ) : (
+              <>
+                <View style={styles.fieldGroup}>
+                  <KoolaTextInput
+                    ref={passwordRef}
+                    label="Mật khẩu mới"
+                    icon="lock-outline"
+                    placeholder="Ít nhất 8 ký tự"
+                    value={newPassword}
+                    onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
+                    secureTextEntry
+                    error={passwordError}
+                    shellStyle={styles.inputShell}
+                    labelStyle={styles.inputLabel}
+                    placeholderTextColor={figmaHex('inputPlaceholder')}
+                    accessibilityLabel="Mat khau moi"
+                    returnKeyType="next"
+                    onSubmitEditing={() => confirmRef.current?.focus()}
+                    blurOnSubmit={false}
+                  />
+
+                  <KoolaTextInput
+                    ref={confirmRef}
+                    label="Xác nhận mật khẩu"
+                    icon="lock-outline"
+                    placeholder="Nhập lại mật khẩu"
+                    value={confirmPassword}
+                    onChangeText={(t) => { setConfirmPassword(t); setConfirmError(''); }}
+                    secureTextEntry
+                    error={confirmError}
+                    shellStyle={styles.inputShell}
+                    labelStyle={styles.inputLabel}
+                    placeholderTextColor={figmaHex('inputPlaceholder')}
+                    accessibilityLabel="Xac nhan mat khau"
+                    returnKeyType="go"
+                    onSubmitEditing={handleResetPassword}
+                  />
+                </View>
+
+                <KoolaButton
+                  title="Đặt lại mật khẩu"
+                  trailingIcon="arrow-forward"
+                  loading={loading}
+                  onPress={handleResetPassword}
+                  style={styles.primaryButton}
+                />
+              </>
+            )}
+          </View>
+
+          <Pressable
+            style={styles.footer}
+            onPress={() => navigation.navigate('Login')}
+            hitSlop={{ top: 6, bottom: 6 }}
+            accessibilityRole="link"
+            accessibilityLabel="Quay lai dang nhap">
+            <KoolaText style={styles.footerText}>
+              Đã có tài khoản?{' '}
+              <KoolaText style={styles.footerLink}>Đăng nhập</KoolaText>
+            </KoolaText>
+          </Pressable>
         </View>
-
-        {step === 'otp' ? (
-          <>
-            <KoolaOtpInput
-              value={otp}
-              onChange={(v) => { setOtp(v); setOtpError(''); }}
-              autoFocus
-              error={otpError}
-            />
-
-            <KoolaButton
-              title="Xác thực"
-              icon="verified-user"
-              loading={loading}
-              onPress={handleVerifyOtp}
-            />
-          </>
-        ) : (
-          <>
-            <KoolaTextInput
-              ref={passwordRef}
-              label="Mật khẩu mới"
-              icon="lock-outline"
-              placeholder="Ít nhất 8 ký tự"
-              value={newPassword}
-              onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
-              secureTextEntry
-              error={passwordError}
-              accessibilityLabel="Mat khau moi"
-              returnKeyType="next"
-              onSubmitEditing={() => confirmRef.current?.focus()}
-              blurOnSubmit={false}
-            />
-
-            <KoolaTextInput
-              ref={confirmRef}
-              label="Xác nhận mật khẩu"
-              icon="lock-outline"
-              placeholder="Nhập lại mật khẩu"
-              value={confirmPassword}
-              onChangeText={(t) => { setConfirmPassword(t); setConfirmError(''); }}
-              secureTextEntry
-              error={confirmError}
-              accessibilityLabel="Xac nhan mat khau"
-              returnKeyType="go"
-              onSubmitEditing={handleResetPassword}
-            />
-
-            <KoolaButton
-              title="Đặt lại mật khẩu"
-              icon="lock-reset"
-              loading={loading}
-              onPress={handleResetPassword}
-            />
-          </>
-        )}
-      </KoolaSurface>
-    </AuthFormShell>
+      </AuthFormShell>
+    </View>
   );
 };
 
-// --- Styles ---
-
-const makeStyles = (_p: Palette) =>
+const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
   StyleSheet.create({
-    form: {
-      padding: 20,
-      gap: 16,
+    root: {
+      flex: 1,
+      backgroundColor: p.canvas,
     },
-    header: {
+    scrollContent: {
+      gap: FIGMA.sectionGap,
+    },
+    hero: {
       alignItems: 'center',
+      paddingTop: 8,
+      paddingBottom: 4,
       gap: 8,
+    },
+    logo: {
+      width: 140,
+      height: 97,
+      alignSelf: 'center',
+    },
+    tagline: {
+      fontSize: 13,
+      color: figmaHex('tagline'),
+      fontWeight: '400',
+      opacity: 0.9,
+      textAlign: 'center' as const,
+    },
+    card: {
+      backgroundColor: p.surface,
+      borderRadius: FIGMA.cardRadius,
+      padding: FIGMA.cardPadding,
+      gap: FIGMA.cardGap,
+      shadowColor: figmaHex('shadow'),
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: scheme === 'dark' ? 0.18 : 0.07,
+      shadowRadius: 16,
+      elevation: 6,
+      borderWidth: scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
+      borderColor: scheme === 'dark' ? p.line : 'transparent',
+    },
+    cardHeader: {
+      gap: 6,
+      alignItems: 'center',
+    },
+    cardTitle: {
+      fontSize: FIGMA.cardTitleSize,
+      lineHeight: Math.round(FIGMA.cardTitleSize * 1.2),
+      fontWeight: '700',
+      color: figmaHex('cardTitle'),
+      textAlign: 'center',
+    },
+    cardSubtitle: {
+      fontSize: FIGMA.cardSubtitleSize,
+      lineHeight: Math.round(FIGMA.cardSubtitleSize * 1.4),
+      fontWeight: '400',
+      color: figmaHex('cardSubtitle'),
+      textAlign: 'center',
+    },
+    fieldGroup: {
+      gap: 14,
+    },
+    inputLabel: {
+      fontSize: FIGMA.inputLabelSize,
+      fontWeight: '600',
+      color: figmaHex('inputLabel'),
+    },
+    inputShell: {
+      minHeight: FIGMA.inputShellHeight,
+      borderRadius: FIGMA.inputShellRadius,
+      borderWidth: 1.5,
+      borderColor: scheme === 'dark' ? p.line : figmaHex('inputEdge'),
+      backgroundColor: scheme === 'dark' ? p.canvas : figmaHex('inputBg'),
+      paddingHorizontal: 16,
+    },
+    primaryButton: {
+      minHeight: FIGMA.buttonHeight,
+      borderRadius: FIGMA.buttonRadius,
+      backgroundColor: figmaHex('buttonBg'),
+      shadowColor: figmaHex('buttonBg'),
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 10,
+      elevation: 4,
+    },
+    forgotLink: {
+      alignSelf: 'flex-end',
+      paddingTop: 2,
+      paddingBottom: 2,
+    },
+    forgotText: {
+      fontSize: FIGMA.linkSize,
+      fontWeight: '600',
+      color: figmaHex('link'),
+    },
+    footer: {
+      paddingTop: 8,
+      paddingBottom: 8,
+    },
+    footerText: {
+      fontSize: FIGMA.footerTextSize,
+      color: figmaHex('footerText'),
+      fontWeight: '400',
+      textAlign: 'center',
+    },
+    footerLink: {
+      fontSize: FIGMA.footerTextSize,
+      color: figmaHex('link'),
+      fontWeight: '700',
     },
   });
 
