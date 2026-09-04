@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '../ui';
 import type { ChatTabStackParamList } from './types';
 import ChatHomeScreen from '../screens/main/ChatHomeScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
@@ -10,11 +11,12 @@ import MomentComposerScreen from '../screens/moments/MomentComposerScreen';
 import MomentViewerScreen from '../screens/moments/MomentViewerScreen';
 import HighlightsScreen from '../screens/moments/HighlightsScreen';
 import AudienceListEditorScreen from '../screens/moments/AudienceListEditorScreen';
-// useTheme no longer needed for contentStyle
 
 const Stack = createNativeStackNavigator<ChatTabStackParamList>();
 
 const ChatTabStack: React.FC = () => {
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   // palette unused after contentStyle -> transparent (prevents canvas/surface flash during slide)
   const contentStyle = useMemo(
     () => ({ backgroundColor: 'transparent' }),
@@ -27,6 +29,7 @@ const ChatTabStack: React.FC = () => {
         headerShown: false,
         animation: 'none',
         contentStyle,
+        statusBarStyle: isDark ? 'light' : 'dark',
       }}>
       <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
       <Stack.Screen

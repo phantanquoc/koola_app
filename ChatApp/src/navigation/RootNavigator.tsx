@@ -77,7 +77,11 @@ const RootNavigator: React.FC = () => {
   // crashed with "Cannot remove child at index N … childCount may be incorrect".
   return (
     <NavigationContainer ref={navigationRef} linking={linking} theme={navTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          statusBarStyle: isDark ? 'light' : 'dark',
+        }}>
         {isAuthenticated ? (
           <>
             <Stack.Screen name="Main" component={MainNavigator} />
