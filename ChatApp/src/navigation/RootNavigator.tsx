@@ -80,7 +80,9 @@ const RootNavigator: React.FC = () => {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
+          statusBarTranslucent: true,
           statusBarStyle: isDark ? 'light' : 'dark',
+          navigationBarTranslucent: true,
         }}>
         {isAuthenticated ? (
           <>

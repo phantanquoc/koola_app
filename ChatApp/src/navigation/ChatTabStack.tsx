@@ -17,6 +17,7 @@ const Stack = createNativeStackNavigator<ChatTabStackParamList>();
 const ChatTabStack: React.FC = () => {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
+
   // palette unused after contentStyle -> transparent (prevents canvas/surface flash during slide)
   const contentStyle = useMemo(
     () => ({ backgroundColor: 'transparent' }),
@@ -29,6 +30,8 @@ const ChatTabStack: React.FC = () => {
         headerShown: false,
         animation: 'none',
         contentStyle,
+        statusBarTranslucent: true,
+        navigationBarTranslucent: true,
         statusBarStyle: isDark ? 'light' : 'dark',
       }}>
       <Stack.Screen name="ChatHome" component={ChatHomeScreen} />

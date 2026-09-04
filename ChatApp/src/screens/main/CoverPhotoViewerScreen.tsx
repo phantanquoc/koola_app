@@ -49,13 +49,11 @@ const CoverPhotoViewerScreen: React.FC = () => {
       StatusBar.setBarStyle('light-content');
       if (Platform.OS === 'android') {
         StatusBar.setBackgroundColor('#000');
-        StatusBar.setTranslucent(false);
       }
       return () => {
         StatusBar.setBarStyle('dark-content');
         if (Platform.OS === 'android') {
           StatusBar.setBackgroundColor('#ffffff');
-          StatusBar.setTranslucent(false);
         }
       };
     }, []),

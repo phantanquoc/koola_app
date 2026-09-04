@@ -1,3 +1,16 @@
+diff --git a/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js b/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
+index 4fc42d2..651867c 100644
+--- a/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
++++ b/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
+@@ -279,7 +279,7 @@ function GiftedChat(props) {
+     </GiftedChatContext.Provider>);
+ }
+ function GiftedChatWrapper(props) {
+-    return (<KeyboardProvider>
++    return (<KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
+       <GiftedChat {...props}/>
+     </KeyboardProvider>);
+ }
 diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
 index 2615e91..b49c75c 100644
 --- a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
@@ -125,3 +138,16 @@ index 964b436..24cb3d8 100644
      </View>);
  }
  export default MessageContainer;
+diff --git a/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx b/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
+index 3e0bcd0..c852a99 100644
+--- a/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
++++ b/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
+@@ -449,7 +449,7 @@ function GiftedChat<TMessage extends IMessage = IMessage> (
+ 
+ function GiftedChatWrapper<TMessage extends IMessage = IMessage> (props: GiftedChatProps<TMessage>) {
+   return (
+-    <KeyboardProvider>
++    <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
+       <GiftedChat<TMessage> {...props} />
+     </KeyboardProvider>
+   )

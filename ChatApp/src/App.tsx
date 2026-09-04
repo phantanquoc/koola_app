@@ -183,7 +183,10 @@ const App: React.FC = () => {
       <ThemeProvider>
         <ThemedStatusBar />
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-          <KeyboardProvider>
+          <KeyboardProvider
+            statusBarTranslucent
+            navigationBarTranslucent
+            preserveEdgeToEdge>
             <AuthProvider>
               <AppInner />
             </AuthProvider>

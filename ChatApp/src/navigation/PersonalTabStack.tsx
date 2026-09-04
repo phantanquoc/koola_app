@@ -17,6 +17,8 @@ const PersonalTabStack: React.FC = () => {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
+        statusBarTranslucent: true,
+        navigationBarTranslucent: true,
         statusBarStyle: isDark ? 'light' : 'dark',
       }}>
       <Stack.Screen name="PersonalHome" component={SettingsScreen} />
