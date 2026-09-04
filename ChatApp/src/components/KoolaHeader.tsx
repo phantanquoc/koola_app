@@ -29,6 +29,13 @@ interface KoolaHeaderProps {
   animatedDockBorder?: boolean;
   trailingActions?: HeaderAction[];
   showBottomHairline?: boolean;
+  /**
+   * Stacked layout: brand logo centered on its own row (row 1) with the full-width
+   * command dock (search + QR + add) beneath it (row 2). Default (false) keeps the
+   * original inline layout — logo left, dock filling the rest of the same row.
+   * Opt-in per call site so the other home tabs (Services/Shopping/Connect) stay inline.
+   */
+  stackedLayout?: boolean;
 }
 
 const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
@@ -41,10 +48,11 @@ const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
   animatedDockBorder = false,
   trailingActions,
   showBottomHairline = false,
+  stackedLayout = false,
 }) => {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+  const styles = useMemo(() => makeStyles(tokens.semantic, stackedLayout), [tokens.semantic, stackedLayout]);
   const [searchPressed, setSearchPressed] = React.useState(false);
   const [qrPressed, setQrPressed] = React.useState(false);
   const [addPressed, setAddPressed] = React.useState(false);
@@ -56,7 +64,7 @@ const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
   }, []);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 6 }, showBottomHairline && styles.containerHairline]}>
+    <View style={[styles.container, { paddingTop: insets.top + (stackedLayout ? 2 : 6) }, showBottomHairline && styles.containerHairline]}>
       <View style={styles.headerRow}>
         <View style={styles.logoSlot}>
           <KoolaLogo key={logoReplayKey} showMark={false} variant="extruded" font="sora" wordmarkSize={22} animation={logoAnimation} />
@@ -151,7 +159,7 @@ const KoolaHeaderInner: React.FC<KoolaHeaderProps> = ({
 };
 
 
-const makeStyles = (semantic: SemanticTokens) =>
+const makeStyles = (semantic: SemanticTokens, stacked: boolean) =>
   StyleSheet.create({
     container: {
       // Header sits directly above the white top-tab bar (palette.surface) and
@@ -168,18 +176,27 @@ const makeStyles = (semantic: SemanticTokens) =>
       borderBottomColor: semantic.border.subtle,
     },
     headerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      minHeight: 48,
+      flexDirection: stacked ? 'column' : 'row',
+      alignItems: stacked ? 'stretch' : 'center',
+      minHeight: stacked ? 0 : 48,
     },
-    logoSlot: {
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-      marginRight: 10,
-      flexShrink: 0,
-    },
+    logoSlot: stacked
+      ? {
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingTop: 0,
+          paddingBottom: 4,
+          flexShrink: 0,
+        }
+      : {
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          marginRight: 10,
+          flexShrink: 0,
+        },
     commandDock: {
-      flex: 1,
+      flex: stacked ? 0 : 1,
+      marginHorizontal: stacked ? 20 : 0,
       height: 44,
       borderRadius: 16,
       backgroundColor: 'transparent',

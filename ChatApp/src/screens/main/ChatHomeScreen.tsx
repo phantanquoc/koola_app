@@ -448,7 +448,7 @@ const ChatHomeScreen: React.FC = () => {
 
   return (
     <View style={screenStyles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder />
+      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder stackedLayout />
       {!contentReady ? (
         // Interactive shell: KoolaHeader (command dock) stays live above; the
         // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
