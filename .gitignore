@@ -115,3 +115,12 @@ docs/report-assets/
 .claude/settings.local.json
 .codex/config.toml
 opencode.json
+
+# Session debug artifacts: screencaps / uiautomator dumps live at repo root only
+# (scoped to root so legit asset PNGs under ChatApp/ and admin-web/ stay tracked)
+/*.png
+/*.xml
+__plumb_*.bin
+.tmp_recover_*
+.tmp_backup_nav/
+.cmp/
