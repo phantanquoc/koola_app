@@ -6,9 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { koolaLightField, koolaSpacing, useTheme } from '../../ui';
-import { LightFieldBackground } from './components/personal/LightFieldBackground';
-import { NotchHeader } from '../../components/NotchHeader';
+import { koolaSpacing, useTheme } from '../../ui';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
 import { PersonalProfileCard } from './components/personal/PersonalProfileCard';
@@ -41,15 +39,7 @@ const SettingsScreen: React.FC = () => {
   };
 
   return (
-    <View
-      style={[
-        styles.root,
-        { backgroundColor: koolaLightField[resolvedScheme].base },
-      ]}>
-      <LightFieldBackground />
-
-      {/* Sculpted notch header — overlay; content scrolls underneath, visible through the side cutouts */}
-      <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />
+    <View style={styles.root}>
 
       <ScrollView
         style={styles.scroll}
@@ -63,8 +53,8 @@ const SettingsScreen: React.FC = () => {
           avatar={user?.avatar || undefined}
           onEdit={() => navigation.navigate('EditProfile')}
           onSwitchAccount={() => navigation.navigate('AccountList')}
+          onUpgradeBusiness={() => navigation.navigate('UpgradeAccount')}
         />
-
         <PersonalWalletCard />
 
         {/* Account information — polished Figma 92:51 card */}

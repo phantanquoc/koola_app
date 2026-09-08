@@ -25,7 +25,6 @@ import {
 import type { ThemeMode } from '../../ui/theme';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { KoolaSegmentedControlOption } from '../../ui/KoolaSegmentedControl';
-import { LightFieldBackground } from './components/personal/LightFieldBackground';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
 
@@ -106,9 +105,7 @@ const SettingsDetailScreen: React.FC = () => {
   }, [preferredLanguage]);
 
   return (
-    <View style={[styles.root, { backgroundColor: tokens.semantic.bg.canvas }]}>
-      <LightFieldBackground />
-
+    <View style={styles.root}>
       {/* Local header (screens in this stack draw their own; headerShown is off) */}
       <View style={[styles.headerRow, { paddingTop: insets.top + koolaSpacing.md }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Quay lại">

@@ -2,10 +2,12 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, Filter, FeDropShadow } from 'react-native-svg';
-import { KoolaLogo, useTheme } from '../ui';
+import { KoolaLogo, KoolaText, useTheme } from '../ui';
 
 export interface NotchHeaderProps {
   style?: StyleProp<ViewStyle>;
+  /** When set, renders centered title instead of KOOLA logo */
+  title?: string;
 }
 
 const TAB_WIDTH = 180;
@@ -40,7 +42,7 @@ function buildNotchPath(width: number, insetsTop: number): { d: string; h: numbe
   return { d, h: tabY, wingY, tabY };
 }
 
-export const NotchHeader: React.FC<NotchHeaderProps> = ({ style }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title }) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { tokens, resolvedScheme } = useTheme();
@@ -65,7 +67,11 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style }) => {
 
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { top: 0, height: h }]}>
         <View style={{ position: 'absolute', left: 0, right: 0, top: tabCenterY - 13, alignItems: 'center' }}>
-          <KoolaLogo showMark={false} showWordmark variant="flat" wordmarkSize={20} />
+{title ? (
+            <KoolaText variant="label" weight="700" style={{ color: tokens.semantic.text.primary }}>{title}</KoolaText>
+          ) : (
+            <KoolaLogo showMark={false} showWordmark variant="flat" wordmarkSize={20} />
+          )}
         </View>
       </View>
     </View>

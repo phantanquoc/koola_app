@@ -50,6 +50,7 @@ export type PersonalTabStackParamList = {
   StorageSettings: undefined;
   AccountList: undefined;
   SettingsDetail: undefined;
+  UpgradeAccount: undefined;
 };
 
 // ─── Shopping Tab Stack ───────────────────────────────────────────────────────

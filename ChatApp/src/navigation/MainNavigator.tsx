@@ -48,8 +48,7 @@ export function useTabDockSuppression(): () => () => void {
 }
 
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
-const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true };
-
+const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true };
 export const TAB_BAR_FLOATING_INSET = 86;
 
 const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
