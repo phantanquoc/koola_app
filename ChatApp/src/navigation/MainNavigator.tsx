@@ -427,6 +427,15 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     transform: [{ translateY: 8 * (1 - reveal.value) }],
   }));
 
+  const travelStyle = useAnimatedStyle(() => {
+    const count = state.routes.length || TAB_COUNT;
+    const PAD = 10;
+    const itemWidth = count > 0 ? (dockWidth - PAD * 2) / count : 0;
+    return {
+      transform: [{ translateX: PAD + indicatorX.value * itemWidth + (itemWidth - TAB_ICON_BOX_SIZE) / 2 }],
+    };
+  });
+
   if (isHidden) return null;
 
   return (
@@ -441,17 +450,8 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         <View style={styles.tabDock} onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}>
           <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
           {/* Traveling border — one frame that glides between tabs */}
-          {(() => {
-            const travelStyle = useAnimatedStyle(() => {
-              const count = state.routes.length || TAB_COUNT;
-              const PAD = 10;
-              const itemWidth = count > 0 ? (dockWidth - PAD * 2) / count : 0;
-              return {
-                transform: [{ translateX: PAD + indicatorX.value * itemWidth + (itemWidth - TAB_ICON_BOX_SIZE) / 2 }],
-              };
-            });
-            return dockWidth > 0 ? (
-              <Animated.View pointerEvents="none" style={[styles.travelBorder, travelStyle]}>
+          {dockWidth > 0 ? (
+            <Animated.View pointerEvents="none" style={[styles.travelBorder, travelStyle]}>
               <Svg width={TAB_ICON_BOX_SIZE} height={TAB_ICON_BOX_SIZE}>
                 <Defs>
                   <SvgLinearGradient id="travelBorderGrad" x1="0" y1="0" x2="1" y2="1">
@@ -471,9 +471,8 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                   strokeWidth={1.7}
                 />
               </Svg>
-              </Animated.View>
-            ) : null;
-          })()}
+            </Animated.View>
+          ) : null}
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
             const meta = TAB_META[routeName];
