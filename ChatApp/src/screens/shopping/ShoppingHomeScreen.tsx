@@ -260,7 +260,7 @@ const ShoppingHomeScreen: React.FC = () => {
     () => makeStyles(semantic, resolvedScheme),
     [semantic, resolvedScheme],
   );
-  const notchPad = insets.top + 4 + 30 + 4;
+  const notchPad = insets.top + 4 + 22 + 4;
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeSort, setActiveSort] = useState<string | null>(null);

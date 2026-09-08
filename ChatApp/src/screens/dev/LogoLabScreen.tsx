@@ -14,6 +14,9 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { KoolaLogo, type KoolaLogoVariant, type KoolaLogoFont, type KoolaLogoAnimation } from '../../ui/KoolaLogo';
 import { KoolaText, KoolaSurface, useTheme } from '../../ui';
+import { getNotchPreset, NOTCH_PRESETS, setNotchPreset, subscribeNotchPreset, type NotchPresetId } from './notchVariants';
+import { NotchHeader } from '../../components/NotchHeader';
+import SvgPreview, { Path as SvgPath } from 'react-native-svg';
 import type { Palette } from '../../ui/theme';
 
 const VARIANTS: { key: KoolaLogoVariant; label: string }[] = [
@@ -54,6 +57,8 @@ const ANIM_OPTIONS: { key: KoolaLogoAnimation; label: string }[] = [
 
 const LogoLabScreen: React.FC = () => {
   const { palette } = useTheme();
+  const notchPresetId = React.useSyncExternalStore(subscribeNotchPreset, getNotchPreset, getNotchPreset) as NotchPresetId;
+  const [notchDark, setNotchDark] = useState(false);
   const s = useMemo(() => makeStyles(palette), [palette]);
 
   const [darkBg, setDarkBg] = useState(false);
@@ -149,6 +154,63 @@ const LogoLabScreen: React.FC = () => {
         >
           <KoolaText variant="label" tone="primary">Phát lại animation</KoolaText>
         </Pressable>
+      </KoolaSurface>
+
+      {/* ─── Notch variants (DEV, 3 mẫu) ─────────────────────────── */}
+      <KoolaSurface variant="raised" style={s.variantCard}>
+        <KoolaText variant="label">Notch header — 3 mẫu (chọn để áp dụng toàn app)</KoolaText>
+        <KoolaText variant="caption" tone="muted" style={{ marginTop: 4 }}>Đang dùng: <KoolaText variant="caption" weight="700">{NOTCH_PRESETS[notchPresetId].label}</KoolaText></KoolaText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <KoolaText variant="caption">Xem nền:</KoolaText>
+          <Pressable style={[s.chipBtn, !notchDark && s.chipBtnActive]} onPress={() => setNotchDark(false)}><KoolaText variant="caption" weight={!notchDark ? '700' : '500'}>Sáng</KoolaText></Pressable>
+          <Pressable style={[s.chipBtn, notchDark && s.chipBtnActive]} onPress={() => setNotchDark(true)}><KoolaText variant="caption" weight={notchDark ? '700' : '500'}>Tối</KoolaText></Pressable>
+        </View>
+        {(Object.keys(NOTCH_PRESETS) as NotchPresetId[]).map((pid) => {
+          const pr = NOTCH_PRESETS[pid];
+          const active = notchPresetId === pid;
+          return (
+            <View key={pid} style={[s.variantCard, { marginTop: 10, marginHorizontal: 0 }]}>
+              <View style={s.controlRow}><KoolaText variant="label">{pr.label}</KoolaText><KoolaText variant="caption" tone={active ? 'primary' : 'muted'}>{active ? 'Đang dùng' : ''}</KoolaText></View>
+              <KoolaText variant="caption" tone="muted">{pr.subtitle}</KoolaText>
+              <View style={{ height: 72, borderRadius: 12, overflow: 'hidden', marginTop: 8, backgroundColor: notchDark ? '#0F1419' : '#F7F9FC', borderWidth: 1, borderColor: notchDark ? 'rgba(255,255,255,0.08)' : '#E5EAF1' }}>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  <KoolaText variant="caption" tone="muted">Preview (mini)</KoolaText>
+                </View>
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+                  {(() => {
+                    const W = 340; const wingY = 4; const tabY = wingY + pr.tabDrop; const cx = W/2; const hw = pr.tabWidth/2; const r = pr.fillet;
+                    const xl0 = cx - hw - r; const xlm = cx - hw; const xlf = cx - hw + r; const xrf = cx + hw - r; const xrm = cx + hw; const xr0 = cx + hw + r;
+                    const midY = (wingY + tabY)/2; const dy = (tabY-wingY)*pr.dyFactor;
+                    const d = `M 0 0 L ${W} 0 L ${W} ${wingY} L ${xr0} ${wingY} C ${xr0 - r*pr.hx} ${wingY} ${xrm + r*pr.hy} ${midY - dy} ${xrm} ${midY} C ${xrm - r*pr.hy} ${midY + dy} ${xrf + r*pr.bottomHx} ${tabY} ${xrf} ${tabY} L ${xlf} ${tabY} C ${xlf - r*pr.bottomHx} ${tabY} ${xlm + r*pr.hy} ${midY + dy} ${xlm} ${midY} C ${xlm - r*pr.hy} ${midY - dy} ${xl0 + r*pr.hx} ${wingY} ${xl0} ${wingY} L 0 ${wingY} Z`;
+
+                    return (
+                      <View style={{ height: tabY }}>
+                        <SvgPreview width={W} height={tabY} style={{ position: 'absolute', top: 0, left: 0 }}>
+                          <SvgPath d={d} fill={notchDark ? '#1C2026' : '#FFFFFF'} stroke={notchDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,114,188,0.07)'} strokeWidth={1} />
+                        </SvgPreview>
+                        <View style={{ position: 'absolute', left: 0, right: 0, top: (wingY + tabY)/2 - 8, alignItems: 'center' }}>
+                          <KoolaText variant="label" weight="700" style={{ fontSize: 11 }}>KOOLA</KoolaText>
+                        </View>
+                      </View>
+                    );
+                  })()}
+                </View>
+              </View>
+              <Pressable style={[s.chipBtn, active && s.chipBtnActive, { marginTop: 8, alignSelf: 'flex-start' }]} onPress={() => setNotchPreset(pid)}>
+                <KoolaText variant="caption" weight={active ? '700' : '600'}>{active ? 'Đã chọn' : 'Áp dụng toàn app'}</KoolaText>
+              </Pressable>
+            </View>
+          );
+        })}
+        <View style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: notchDark ? 'rgba(255,255,255,0.08)' : '#E5EAF1', backgroundColor: notchDark ? '#0F1419' : '#F7F9FC' }}>
+          <KoolaText variant="caption" weight="600" style={{ padding: 8 }}>Preview notch đang áp dụng (live):</KoolaText>
+          <View style={{ height: 64 }}>
+            {/* Live NotchHeader in a clipped box — shows real component */}
+            <View style={{ flex: 1, overflow: 'hidden' as never }}>
+              <NotchHeader />
+            </View>
+          </View>
+        </View>
       </KoolaSurface>
 
       {/* ─── Animation showcase (extruded 3D) ─────────────────── */}

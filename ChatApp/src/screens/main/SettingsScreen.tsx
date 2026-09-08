@@ -45,7 +45,7 @@ const SettingsScreen: React.FC = () => {
         style={styles.scroll}
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: insets.top + 4 + 30 + koolaSpacing.lg, paddingBottom: tabBarInset },
+          { paddingTop: insets.top + 4 + 22 + koolaSpacing.lg, paddingBottom: tabBarInset },
         ]}
         showsVerticalScrollIndicator={false}>
         <PersonalProfileCard
