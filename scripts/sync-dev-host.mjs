@@ -22,6 +22,8 @@ import { networkInterfaces } from 'node:os';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_CONFIG = resolve(REPO, 'ChatApp/dev-config.json');
 const BACKEND_ENV = resolve(REPO, 'chat-backend/.env');
+const PERF_ENV = resolve(REPO, 'ChatApp/.env.perf');
+const INFRA_ENV = resolve(REPO, 'infra-local/.env');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -175,8 +177,29 @@ async function main() {
   atomicWrite(BACKEND_ENV, patched);
   console.log(`✓ chat-backend/.env → MINIO_PUBLIC_HOST=${ip}`);
 
-  console.log(`\n🎉 Done. Both mobile and backend now point to ${ip}.`);
-  console.log('   Backend dev-env-watcher will pick up the change automatically.');
+  // ─── Patch ChatApp/.env.perf (perf build variant) ────────────────────────
+  if (existsSync(PERF_ENV)) {
+    const perfContent = readFileSync(PERF_ENV, 'utf8');
+    atomicWrite(PERF_ENV, patchEnv(perfContent, {
+      PROD_API_URL: `http://${ip}:3000/api`,
+      PROD_WS_URL: `http://${ip}:3000`,
+    }));
+    console.log(`✓ ChatApp/.env.perf → PROD_API_URL/PROD_WS_URL=${ip}`);
+  }
+
+  // ─── Patch infra-local/.env (coturn + minio public host in compose) ──────
+  // Changes only take effect after `docker compose up -d` recreates the stack.
+  if (existsSync(INFRA_ENV)) {
+    const infraContent = readFileSync(INFRA_ENV, 'utf8');
+    atomicWrite(INFRA_ENV, patchEnv(infraContent, {
+      COTURN_IP: ip,
+      MINIO_PUBLIC_HOST: ip,
+    }));
+    console.log(`✓ infra-local/.env → COTURN_IP/MINIO_PUBLIC_HOST=${ip}`);
+    console.log('  (recreate the stack: cd infra-local && docker compose up -d)');
+  }
+
+  console.log(`\n🎉 Done. Mobile + backend now point to ${ip}.`);
   console.log('   Mobile: restart Metro if already running (Ctrl+C → npm start).');
 }
 

@@ -1,9 +1,8 @@
 # Local dev override — NOT for prod.
-# Makes the backend emit presigned MinIO URLs pointing at localhost:9000 so a
-# physical device reached over USB (adb reverse tcp:9000) can load media.
-# Works for the emulator too (adb reverse tcp:9000). Delete this file to revert
-# to the compose default (10.0.2.2, emulator-only).
+# MINIO_PUBLIC_HOST must be an address the DEVICE can reach directly over WiFi.
+# Re-run `npm run dev:sync-host` (repo root) when the host's LAN IP changes.
+# If using USB-only (adb reverse tcp:9000) instead of WiFi, set to localhost.
 services:
   backend:
     environment:
-      MINIO_PUBLIC_HOST: localhost
+      MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-localhost}
