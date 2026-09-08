@@ -12,6 +12,7 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -165,12 +166,11 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
     opacity: focusProgress.value,
   }));
 
-  // Gradient border + glyph: cam → xanh. Light dùng cam đậm hơn để nổi trên nền trắng.
+  // Glyph gradient keeps cam→xanh notion; border is now a single traveling frame owned by the tab bar
   const instanceId = React.useId();
   const cleanId = instanceId.replace(/:/g, '_');
   const gradFrom = resolvedScheme === 'light' ? '#FF8A1A' : '#FF9A3D';
   const gradTo = resolvedScheme === 'light' ? '#2563EB' : '#4D8DF7';
-  const gradId = `tabIconBorder-${cleanId}-${resolvedScheme}`;
   const glyphGradId = `tabIconGlyph-${cleanId}-${resolvedScheme}`;
 
   const glyphChar = React.useMemo(() => {
@@ -204,28 +204,6 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
           boxStyle,
         ]}
       />
-      {/* Gradient border — square with rounded corners, animates in on focus */}
-      <Animated.View pointerEvents="none" style={[styles.iconBorderWrap, borderStyle]}>
-        <Svg width={TAB_ICON_BOX_SIZE} height={TAB_ICON_BOX_SIZE}>
-          <Defs>
-            <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0" stopColor={gradFrom} />
-              <Stop offset="1" stopColor={gradTo} />
-            </SvgLinearGradient>
-          </Defs>
-          <Rect
-            x={0.9}
-            y={0.9}
-            width={TAB_ICON_BOX_SIZE - 1.8}
-            height={TAB_ICON_BOX_SIZE - 1.8}
-            rx={TAB_ICON_BOX_RADIUS}
-            ry={TAB_ICON_BOX_RADIUS}
-            fill="none"
-            stroke={`url(#${gradId})`}
-            strokeWidth={1.7}
-          />
-        </Svg>
-      </Animated.View>
       <Animated.View pointerEvents="none" style={[styles.glyphWrap, wrapperStyle]}>
         <View style={styles.glyphStack}>
           {/* Muted glyph — visible when unfocused, fades out on focus */}
@@ -389,6 +367,8 @@ const TabDockBackground: React.FC<TabDockBackgroundProps> = React.memo(({
   </>
 ));
 
+const TAB_COUNT = 5;
+
 const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   state,
   descriptors,
@@ -399,6 +379,12 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
+  const [dockWidth, setDockWidth] = React.useState(0);
+  const indicatorX = useSharedValue(state.index);
+  // Spring the indicator whenever the focused index changes
+  React.useEffect(() => {
+    indicatorX.value = withSpring(state.index, { damping: 20, stiffness: 420, mass: 0.45 });
+  }, [state.index, indicatorX]);
 
   // Soft vertical gradient for the dock fill. Light: white → faint blue.
   const gradientStops = React.useMemo(() => {
@@ -452,8 +438,42 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         revealStyle,
       ]}>
       <View style={[styles.shadowWrap, dockElevation]}>
-        <View style={styles.tabDock}>
+        <View style={styles.tabDock} onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}>
           <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
+          {/* Traveling border — one frame that glides between tabs */}
+          {(() => {
+            const travelStyle = useAnimatedStyle(() => {
+              const count = state.routes.length || TAB_COUNT;
+              const PAD = 10;
+              const itemWidth = count > 0 ? (dockWidth - PAD * 2) / count : 0;
+              return {
+                transform: [{ translateX: PAD + indicatorX.value * itemWidth + (itemWidth - TAB_ICON_BOX_SIZE) / 2 }],
+              };
+            });
+            return dockWidth > 0 ? (
+              <Animated.View pointerEvents="none" style={[styles.travelBorder, travelStyle]}>
+              <Svg width={TAB_ICON_BOX_SIZE} height={TAB_ICON_BOX_SIZE}>
+                <Defs>
+                  <SvgLinearGradient id="travelBorderGrad" x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0" stopColor={resolvedScheme === 'light' ? '#FF8A1A' : '#FF9A3D'} />
+                    <Stop offset="1" stopColor={resolvedScheme === 'light' ? '#2563EB' : '#4D8DF7'} />
+                  </SvgLinearGradient>
+                </Defs>
+                <Rect
+                  x={0.9}
+                  y={0.9}
+                  width={TAB_ICON_BOX_SIZE - 1.8}
+                  height={TAB_ICON_BOX_SIZE - 1.8}
+                  rx={TAB_ICON_BOX_RADIUS}
+                  ry={TAB_ICON_BOX_RADIUS}
+                  fill="none"
+                  stroke="url(#travelBorderGrad)"
+                  strokeWidth={1.7}
+                />
+              </Svg>
+              </Animated.View>
+            ) : null;
+          })()}
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
             const meta = TAB_META[routeName];
@@ -677,8 +697,16 @@ const styles = StyleSheet.create({
   iconBoxDark: {
     backgroundColor: 'rgba(77,141,247,0.14)',
   },
-  iconBorderWrap: {
-    ...StyleSheet.absoluteFillObject,
+  travelBorder: {
+    position: 'absolute',
+    top: 6,
+    left: 0,
+    width: TAB_ICON_BOX_SIZE,
+    height: TAB_ICON_BOX_SIZE,
+  },
+  glyphWrap: {
+    width: TAB_ICON_BOX_SIZE,
+    height: TAB_ICON_BOX_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
