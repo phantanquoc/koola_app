@@ -13,10 +13,12 @@ export type ShoppingProduct = {
   originalPrice?: string;
   badge?: string;
   rating: number;
+  soldCount: number;
   sold: string;
   delivery: string;
   accent: string;
   icon: string;
+  tags: string[];
 };
 
 export type ShoppingStore = {
@@ -39,6 +41,9 @@ export const shoppingCategories: ShoppingCategory[] = [
   { id: 'beauty', label: 'Làm đẹp', icon: 'spa' },
 ];
 
+export const shoppingSortChips = ['Được mua nhiều nhất', 'Đánh giá cao'] as const;
+export const shoppingAttributeChips = ['Organic', 'Chứng nhận', 'Đã xác minh'] as const;
+
 export const shoppingProducts: ShoppingProduct[] = [
   {
     id: 'p1',
@@ -49,10 +54,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     originalPrice: '119.000đ',
     badge: 'Giao 2h',
     rating: 4.8,
+    soldCount: 1200,
     sold: '1.2k',
     delivery: 'Miễn phí gần bạn',
     accent: '#10B981',
     icon: 'eco',
+    tags: ['Organic', 'Không đường', 'Chính hãng'],
   },
   {
     id: 'p2',
@@ -62,10 +69,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     price: '45.000đ',
     badge: 'Bán chạy',
     rating: 4.7,
+    soldCount: 860,
     sold: '860',
     delivery: '25 phút',
     accent: '#F97316',
     icon: 'restaurant',
+    tags: ['Không đường', 'Chính hãng'],
   },
   {
     id: 'p3',
@@ -76,10 +85,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     originalPrice: '319.000đ',
     badge: '-22%',
     rating: 4.6,
+    soldCount: 540,
     sold: '540',
     delivery: 'Hôm nay',
     accent: '#2563EB',
     icon: 'headphones',
+    tags: ['Chính hãng', 'Chứng nhận'],
   },
   {
     id: 'p4',
@@ -89,10 +100,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     price: '159.000đ',
     badge: 'Hot',
     rating: 4.5,
+    soldCount: 430,
     sold: '430',
     delivery: 'Giao trong ngày',
     accent: '#14B8A6',
     icon: 'home',
+    tags: ['Đã xác minh', 'Chính hãng', 'Chứng nhận'],
   },
   {
     id: 'p5',
@@ -103,10 +116,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     originalPrice: '169.000đ',
     badge: 'Deal',
     rating: 4.9,
+    soldCount: 2100,
     sold: '2.1k',
     delivery: 'Freeship',
     accent: '#EC4899',
     icon: 'spa',
+    tags: ['Chính hãng'],
   },
   {
     id: 'p6',
@@ -116,10 +131,12 @@ export const shoppingProducts: ShoppingProduct[] = [
     price: '168.000đ',
     badge: 'Hàng mới',
     rating: 4.8,
+    soldCount: 980,
     sold: '980',
     delivery: 'Giao 4h',
     accent: '#F59E0B',
     icon: 'rice-bowl',
+    tags: ['Organic', 'Đã xác minh'],
   },
 ];
 

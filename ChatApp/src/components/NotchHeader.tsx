@@ -2,9 +2,9 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, Filter, FeDropShadow } from 'react-native-svg';
-import { KoolaLogo, useTheme } from '../../../../ui';
+import { KoolaLogo, useTheme } from '../ui';
 
-export interface PersonalNotchHeaderProps {
+export interface NotchHeaderProps {
   style?: StyleProp<ViewStyle>;
 }
 
@@ -40,7 +40,7 @@ function buildNotchPath(width: number, insetsTop: number): { d: string; h: numbe
   return { d, h: tabY, wingY, tabY };
 }
 
-export const PersonalNotchHeader: React.FC<PersonalNotchHeaderProps> = ({ style }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style }) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { tokens, resolvedScheme } = useTheme();

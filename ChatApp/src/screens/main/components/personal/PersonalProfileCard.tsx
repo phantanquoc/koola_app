@@ -23,10 +23,10 @@ export interface PersonalProfileCardProps {
 
 const AVATAR_SIZE = 70;
 
-/** Horizontal banner gradient stops per scheme (Figma `#EDF0FF → #DEE4F5`). */
+/** Premium upgrade banner: soft indigo→blue tint, with warm edge highlight on light. */
 const UPGRADE_GRADIENT_STOPS: Record<'light' | 'dark', [string, string]> = {
-  light: ['#EDF0FF', '#DEE4F5'],
-  dark: ['#252B33', '#2B323D'],
+  light: ['#F8FAFF', '#EEF2FF'],
+  dark: ['#1A2230', '#1E2C40'],
 };
 
 export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
@@ -35,7 +35,7 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
   onEdit,
   onSwitchAccount,
   onUpgradeBusiness,
-  tierLabel = 'Hạng Titan',
+  tierLabel = 'Titan',
 }) => {
   const { tokens, resolvedScheme } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
@@ -52,33 +52,33 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
           <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel="Chỉnh sửa hồ sơ" style={({ pressed }) => [pressed && styles.pressed]}>
             <KoolaText variant="heading" weight="800" numberOfLines={1} style={styles.name}>{displayName}</KoolaText>
           </Pressable>
-          {/* Tier pill + switch account */}
+          {/* Tier + Tài khoản — single row, equal accent pills */}
           <View style={styles.row2}>
             <View style={styles.tierPill}>
-              <KoolaText variant="caption" weight="600" style={styles.tierPillText} numberOfLines={1}>{tierLabel}</KoolaText>
-              <View style={styles.tierStar}><MaterialIcons name="star" size={10} color="#B8941A" /></View>
+              <View style={styles.tierIconWrap}><MaterialIcons name="workspace-premium" size={12} color="#64748B" /></View>
+              <KoolaText variant="caption" weight="700" style={styles.tierPillText} numberOfLines={1}>{tierLabel}</KoolaText>
             </View>
             <Pressable onPress={onSwitchAccount} hitSlop={8} accessibilityRole="button" accessibilityLabel="Chuyển tài khoản" style={({ pressed }) => [pressed && styles.pressed]}>
-              {/* Button chrome lives on this inner View (RN 0.76 drops layout in Pressable style-as-function). */}
               <View style={styles.switchBtn}>
-                <MaterialIcons name="swap-horiz" size={15} color={tokens.semantic.action.primary} />
-                <KoolaText variant="caption" weight="600" numberOfLines={1} style={styles.switchLabel}>Chuyển tài khoản</KoolaText>
+                <MaterialIcons name="swap-horiz" size={14} color="#64748B" />
+                <KoolaText variant="caption" weight="700" numberOfLines={1} style={styles.switchLabel}>Chuyển tài khoản</KoolaText>
               </View>
             </Pressable>
           </View>
         </View>
       </View>
-      {/* Edit-info button filling the gap before the upgrade banner */}
+      {/* Edit-info — subtle outlined button with icon */}
       <View style={styles.editBtnSlot}>
         <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel="Chỉnh sửa thông tin tài khoản" style={({ pressed }) => [pressed && styles.pressed]}>
-          {/* Button chrome lives on this inner View, not on the Pressable. */}
           <View style={styles.editBtn}>
-            <KoolaText variant="caption" weight="500" numberOfLines={1} style={styles.editBtnLabel}>Chỉnh sửa thông tin tài khoản</KoolaText>
+            <MaterialIcons name="edit" size={14} color={tokens.semantic.text.muted} />
+            <KoolaText variant="caption" weight="600" numberOfLines={1} style={styles.editBtnLabel}>Chỉnh sửa thông tin tài khoản</KoolaText>
+            <MaterialIcons name="chevron-right" size={14} color={tokens.semantic.text.faint} />
           </View>
         </Pressable>
       </View>
       {/* Upgrade banner: gradient bg + icon well + two-line copy + CTA pill */}
-      <Pressable onPress={onUpgradeBusiness} accessibilityRole="button" accessibilityLabel="Nâng cấp tài khoản doanh nghiệp" style={({ pressed }) => [pressed && styles.pressed]}>
+      <Pressable onPress={onUpgradeBusiness} accessibilityRole="button" accessibilityLabel="Nâng cấp tài khoản doanh nghiệp" style={({ pressed }) => [styles.upgradePressable, pressed && styles.pressed]}>
         {/* Banner layout lives on this inner View, not on the Pressable. */}
         <View style={styles.upgradeBanner}>
           {/* Gradient layer is padding-free so absoluteFill reaches the card edges; content padding lives on the row below. */}
@@ -93,11 +93,10 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
           </Svg>
           <View style={styles.upgradeBannerContent}>
             <View style={styles.upgradeIconCircle}>
-              <MaterialIcons name="trending-up" size={15} color={tokens.semantic.action.primary} />
+              <MaterialIcons name="rocket-launch" size={13} color="#3B82F6" />
             </View>
             <View style={styles.upgradeTextCol}>
-              <KoolaText variant="caption" weight="600" numberOfLines={1} style={styles.upgradeTitle}>Nâng cấp tài khoản doanh nghiệp</KoolaText>
-              <KoolaText variant="caption" numberOfLines={1} style={styles.upgradeSub}>Mở rộng quản lý & bảo mật</KoolaText>
+              <KoolaText variant="caption" weight="600" numberOfLines={1} style={styles.upgradeSubLarge}>Mở rộng quản lý & bảo mật</KoolaText>
             </View>
             <View style={styles.ctaPill}>
               <KoolaText variant="caption" weight="600" numberOfLines={1} style={styles.ctaLabel}>Nâng cấp</KoolaText>
@@ -114,25 +113,27 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
   return StyleSheet.create({
     outer: { padding: 0, overflow: 'hidden' },
     topSection: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg, paddingTop: koolaSpacing.lg, paddingBottom: 0 },
-    infoColumn: { flex: 1, marginLeft: koolaSpacing.md - 4, justifyContent: 'center' },
+    infoColumn: { flex: 1, minWidth: 0, marginLeft: koolaSpacing.md - 4, justifyContent: 'center' },
     pressed: { opacity: koolaOpacity.pressed },
     name: { textTransform: 'uppercase', letterSpacing: 0.15 },
-    row2: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-    tierPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingLeft: 10, paddingRight: 6, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? semantic.surface.level2 : semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
-    tierPillText: { color: semantic.text.primary },
-    tierStar: { width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: scheme === 'light' ? '#FFF6CC' : 'rgba(255,246,204,0.18)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(196,154,26,0.28)', marginLeft: 6 },
-    switchBtn: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: 10, borderRadius: koolaRadii.pill, backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, flexWrap: 'nowrap' as const, minWidth: 0 },
-    switchLabel: { color: semantic.action.primary },
-    editBtnSlot: { marginHorizontal: koolaSpacing.lg, marginTop: koolaSpacing.md - 6, marginBottom: koolaSpacing.md - 4 },
-    editBtn: { height: 36, borderRadius: koolaRadii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
+    row2: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap' as const, gap: 8, marginTop: 8, minWidth: 0, width: '100%' as const },
+    tierPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: 30, paddingHorizontal: 12, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? '#FFFFFF' : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? '#E5EAF1' : 'rgba(255,255,255,0.10)' },
+    tierIconWrap: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: scheme === 'light' ? '#F1F5F9' : 'rgba(255,255,255,0.08)' },
+    tierPillText: { color: semantic.text.primary, fontSize: 11 },
+    switchBtn: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 30, paddingHorizontal: 12, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? '#FFFFFF' : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? '#E5EAF1' : 'rgba(255,255,255,0.10)' },
+    switchLabel: { color: semantic.text.primary, fontSize: 11 },
+    editBtnSlot: { marginHorizontal: koolaSpacing.lg, marginTop: koolaSpacing.md, marginBottom: koolaSpacing.md - 2 },
+    editBtn: { height: 38, borderRadius: koolaRadii.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: scheme === 'light' ? '#FFFFFF' : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? '#E5EAF1' : 'rgba(255,255,255,0.10)', paddingHorizontal: 12 },
     editBtnLabel: { color: semantic.text.primary },
-    upgradeBanner: { height: 56, overflow: 'hidden' },
-    upgradeBannerContent: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, paddingRight: koolaSpacing.md - 4 },
-    upgradeIconCircle: { flexShrink: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.surface.level1, borderWidth: StyleSheet.hairlineWidth, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.08)', marginRight: koolaSpacing.md - 4 },
-    upgradeTextCol: { flex: 1, marginRight: koolaSpacing.md - 6 },
+    upgradePressable: { alignSelf: 'stretch', width: '100%' },
+    upgradeBanner: { width: '100%', alignSelf: 'stretch', minHeight: 52, overflow: 'hidden', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: scheme === 'light' ? 'rgba(37,99,235,0.08)' : 'rgba(255,255,255,0.06)' },
+    upgradeBannerContent: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg, paddingVertical: 8, gap: 8, width: '100%' },
+    upgradeIconCircle: { flexShrink: 0, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(37,99,235,0.12)', shadowColor: '#2563EB', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 1 },
+    upgradeTextCol: { flex: 1, minWidth: 0, justifyContent: 'center' },
     upgradeTitle: { color: semantic.text.primary },
-    upgradeSub: { color: semantic.text.muted, marginTop: 2 },
-    ctaPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', backgroundColor: semantic.action.primary, borderRadius: koolaRadii.pill, paddingLeft: koolaSpacing.md - 4, paddingRight: koolaSpacing.md - 6, paddingVertical: 7 },
-    ctaLabel: { color: semantic.text.onAction, marginRight: 2 },
+    upgradeSub: { color: semantic.text.muted, marginTop: 2, fontSize: 11 },
+    upgradeSubLarge: { color: semantic.text.primary, fontSize: 12, lineHeight: 15 },
+    ctaPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 0, backgroundColor: '#2563EB', borderRadius: koolaRadii.pill, paddingLeft: 12, paddingRight: 9, paddingVertical: 7, shadowColor: '#2563EB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6, elevation: 2 },
+    ctaLabel: { color: '#FFFFFF', marginRight: 2 },
   });
 }

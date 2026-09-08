@@ -7,7 +7,7 @@ import {
 import { getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -47,8 +47,8 @@ export function useTabDockSuppression(): () => () => void {
   return React.useContext(TabDockSuppressionContext).suppressTabDock;
 }
 
-const FULLSCREEN_CHAT_ROUTES = new Set(['Chat', 'MomentViewer', 'MomentComposer']);
-const FULLSCREEN_PERSONAL_ROUTES = new Set(['EditProfile', 'StorageSettings']);
+const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
+const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true };
 
 export const TAB_BAR_FLOATING_INSET = 86;
 
@@ -112,13 +112,13 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
     const focused = getFocusedRouteNameFromRoute(
       route as RouteProp<MainTabParamList, 'ChatTab'>,
     ) ?? 'ChatHome';
-    return FULLSCREEN_CHAT_ROUTES.has(focused);
+    return !!FULLSCREEN_CHAT_ROUTES[focused];
   }
   if (route.name === 'PersonalTab') {
     const focused = getFocusedRouteNameFromRoute(
       route as RouteProp<MainTabParamList, 'PersonalTab'>,
     ) ?? 'PersonalHome';
-    return FULLSCREEN_PERSONAL_ROUTES.has(focused);
+    return !!FULLSCREEN_PERSONAL_ROUTES[focused];
   }
   return false;
 }
@@ -126,11 +126,12 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /**
- * Icon host — a rounded pill that fades in behind the focused glyph (the modern
- * "selected tab" pattern) instead of the old glow ring. Size drives both the
- * resting glyph box and the pill, so they never drift apart.
+ * Icon host — square box with rounded corners + orange→blue gradient border.
+ * Replaces the old pill. Size drives both the resting glyph box and the box,
+ * so they never drift apart. Radius 11 gives a "squircle" square, not a circle.
  */
-const TAB_ICON_PILL_SIZE = 28;
+const TAB_ICON_BOX_SIZE = 32;
+const TAB_ICON_BOX_RADIUS = 11;
 
 /** Tiny upward nudge on focus — reads as "selected", not "moving". */
 const TAB_ICON_FOCUS_LIFT = -1;
@@ -155,13 +156,42 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
   const wrapperStyle = useAnimatedStyle(() => {
     const press = pressProgress.value;
     return {
-      transform: [
-        { translateY: TAB_ICON_FOCUS_LIFT * focusProgress.value },
-        { scale: 1 - 0.08 * press },
-      ],
+      transform: [{ scale: 1 - 0.08 * press }],
     };
   });
-  const pillStyle = useAnimatedStyle(() => ({
+  const boxStyle = useAnimatedStyle(() => ({
+    opacity: focusProgress.value,
+  }));
+  const borderStyle = useAnimatedStyle(() => ({
+    opacity: focusProgress.value,
+  }));
+
+  // Gradient border + glyph: cam → xanh. Light dùng cam đậm hơn để nổi trên nền trắng.
+  const instanceId = React.useId();
+  const cleanId = instanceId.replace(/:/g, '_');
+  const gradFrom = resolvedScheme === 'light' ? '#FF8A1A' : '#FF9A3D';
+  const gradTo = resolvedScheme === 'light' ? '#2563EB' : '#4D8DF7';
+  const gradId = `tabIconBorder-${cleanId}-${resolvedScheme}`;
+  const glyphGradId = `tabIconGlyph-${cleanId}-${resolvedScheme}`;
+
+  const glyphChar = React.useMemo(() => {
+    const map: Record<string, number> = {
+      'chat-bubble': 0xe0ca,
+      'chat-bubble-outline': 0xe0cb,
+      'shopping-cart': 0xe8cc,
+      handshake: 0xebcb,
+      category: 0xe574,
+      person: 0xe7fd,
+      'person-outline': 0xe7ff,
+    };
+    const cp = map[name] ?? 0xe3c9;
+    return String.fromCharCode(cp);
+  }, [name]);
+
+  const mutedStyle = useAnimatedStyle(() => ({
+    opacity: 1 - focusProgress.value,
+  }));
+  const glyphGradStyle = useAnimatedStyle(() => ({
     opacity: focusProgress.value,
   }));
 
@@ -170,17 +200,61 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
       <Animated.View
         pointerEvents="none"
         style={[
-          styles.iconPill,
-          resolvedScheme === 'light' ? styles.iconPillLight : styles.iconPillDark,
-          pillStyle,
+          styles.iconBox,
+          resolvedScheme === 'light' ? styles.iconBoxLight : styles.iconBoxDark,
+          boxStyle,
         ]}
       />
-      <Animated.View style={wrapperStyle}>
-        <MaterialIcons
-          name={name}
-          size={17}
-          color={isFocused ? palette.primary : palette.muted}
-        />
+      {/* Gradient border — square with rounded corners, animates in on focus */}
+      <Animated.View pointerEvents="none" style={[styles.iconBorderWrap, borderStyle]}>
+        <Svg width={TAB_ICON_BOX_SIZE} height={TAB_ICON_BOX_SIZE}>
+          <Defs>
+            <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0" stopColor={gradFrom} />
+              <Stop offset="1" stopColor={gradTo} />
+            </SvgLinearGradient>
+          </Defs>
+          <Rect
+            x={0.9}
+            y={0.9}
+            width={TAB_ICON_BOX_SIZE - 1.8}
+            height={TAB_ICON_BOX_SIZE - 1.8}
+            rx={TAB_ICON_BOX_RADIUS}
+            ry={TAB_ICON_BOX_RADIUS}
+            fill="none"
+            stroke={`url(#${gradId})`}
+            strokeWidth={1.7}
+          />
+        </Svg>
+      </Animated.View>
+      <Animated.View pointerEvents="none" style={[styles.glyphWrap, wrapperStyle]}>
+        <View style={styles.glyphStack}>
+          {/* Muted glyph — visible when unfocused, fades out on focus */}
+          <Animated.View pointerEvents="none" style={[styles.glyphLayer, mutedStyle]}>
+            <MaterialIcons name={name} size={22} color={palette.muted} />
+          </Animated.View>
+          {/* Gradient glyph — fades in on focus (cam → xanh) */}
+          <Animated.View pointerEvents="none" style={[styles.glyphLayer, glyphGradStyle]}>
+            <Svg width={24} height={24} viewBox="0 0 24 24">
+              <Defs>
+                <SvgLinearGradient id={glyphGradId} x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0" stopColor={gradTo} />
+                  <Stop offset="1" stopColor={gradFrom} />
+                </SvgLinearGradient>
+              </Defs>
+              <SvgText
+                x="12"
+                y="12"
+                textAnchor="middle"
+                alignmentBaseline="central"
+                fontFamily="MaterialIcons"
+                fontSize={22}
+                fill={`url(#${glyphGradId})`}>
+                {glyphChar}
+              </SvgText>
+            </Svg>
+          </Animated.View>
+        </View>
       </Animated.View>
     </View>
   );
@@ -589,20 +663,36 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   iconHost: {
-    width: TAB_ICON_PILL_SIZE,
-    height: TAB_ICON_PILL_SIZE,
+    width: TAB_ICON_BOX_SIZE,
+    height: TAB_ICON_BOX_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconPill: {
+  iconBox: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: koolaRadii.pill,
+    borderRadius: TAB_ICON_BOX_RADIUS,
   },
-  iconPillLight: {
-    backgroundColor: 'rgba(37,99,235,0.10)',
+  iconBoxLight: {
+    backgroundColor: 'rgba(37,99,235,0.08)',
   },
-  iconPillDark: {
-    backgroundColor: 'rgba(77,141,247,0.18)',
+  iconBoxDark: {
+    backgroundColor: 'rgba(77,141,247,0.14)',
+  },
+  iconBorderWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glyphStack: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glyphLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // One size for all five labels. Active/inactive is carried by weight + tone
   // only — differing fontSizes made the longest label ("Trò chuyện") the one that

@@ -5,11 +5,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
-  KoolaBadge,
   KoolaSkeleton,
   KoolaText,
   koolaRadii,
@@ -22,181 +22,224 @@ import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { PreviewBanner } from '../../components/PreviewBanner';
 import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
+import { NotchHeader } from '../../components/NotchHeader';
 import {
+  shoppingAttributeChips,
   shoppingCategories,
   shoppingProducts,
-  shoppingStores,
+  shoppingSortChips,
   type ShoppingProduct,
-  type ShoppingStore,
 } from './shoppingMockData';
 
-import KoolaHeader from '../../components/KoolaHeader';
+/**
+ * Shopping home — single-column product list (Figma frame 64:2).
+ * Header is owned by NotchHeader (shared with Personal); this screen owns
+ * search, filter card, and the product list. Search + filter operate honestly
+ * on the mock data; mock-only actions stay honest via coming-soon toast.
+ */
 
 type Styles = ReturnType<typeof makeStyles>;
 
-const PromoBand: React.FC<{ palette: Palette; styles: Styles }> = ({
-  palette,
-  styles,
-}) => (
-  <View style={styles.promoBand}>
-    <View style={styles.promoIcon}>
-      <MaterialIcons name="bolt" size={24} color={palette.warm} />
-    </View>
-    <View style={styles.promoCopy}>
-      <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 2 }}>
-        Deal nhanh quanh bạn
-      </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={2}>
-        Mua tạp hóa, đồ ăn và vật dụng giao trong ngày
-      </KoolaText>
-    </View>
-    <KoolaBadge label="Xem trước" tone="warning" />
+/** Live text search + tapped sort/attribute chips, applied to mock data. */
+function filterAndSortProducts(
+  query: string,
+  activeAttr: string | null,
+  activeSort: string | null,
+): ShoppingProduct[] {
+  let list = shoppingProducts.slice();
+  const q = query.trim().toLowerCase();
+  if (q) {
+    list = list.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.shop.toLowerCase().includes(q) ||
+        p.tags.some((t) => t.toLowerCase().includes(q)),
+    );
+  }
+  if (activeAttr) {
+    list = list.filter((p) => p.tags.includes(activeAttr));
+  }
+  if (activeSort === 'Được mua nhiều nhất') {
+    list = list.slice().sort((a, b) => b.soldCount - a.soldCount);
+  } else if (activeSort === 'Đánh giá cao') {
+    list = list.slice().sort((a, b) => b.rating - a.rating);
+  }
+  return list;
+}
+
+// ── Search bar (pill with search input + cart & bell actions) ─────────────────
+const SearchBar: React.FC<{
+  palette: Palette;
+  styles: Styles;
+  value: string;
+  onChangeText: (t: string) => void;
+  onCartPress: () => void;
+  onBellPress: () => void;
+}> = ({ palette, styles, value, onChangeText, onCartPress, onBellPress }) => (
+  <View style={styles.searchBar}>
+    <MaterialIcons name="search" size={20} color={palette.primary} style={styles.searchIcon} />
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      placeholder="Tìm kiếm sản phẩm..."
+      placeholderTextColor={palette.faint}
+      style={styles.searchInput}
+      returnKeyType="search"
+      underlineColorAndroid="transparent"
+      accessibilityLabel="Tìm kiếm sản phẩm"
+    />
+    {value.length > 0 ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Xóa tìm kiếm"
+        onPress={() => onChangeText('')}
+        hitSlop={8}
+        style={styles.searchClear}>
+        <MaterialIcons name="close" size={16} color={palette.faint} />
+      </Pressable>
+    ) : null}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Giỏ hàng"
+      android_ripple={{ color: palette.line }}
+      onPress={onCartPress}
+      hitSlop={8}
+      style={styles.searchAction}>
+      <MaterialIcons name="shopping-cart" size={20} color={palette.primary} />
+    </Pressable>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Thông báo"
+      android_ripple={{ color: palette.line }}
+      onPress={onBellPress}
+      hitSlop={8}
+      style={styles.searchAction}>
+      <MaterialIcons name="notifications-none" size={22} color={palette.primary} />
+    </Pressable>
   </View>
 );
 
-const QuickActions: React.FC<{
+// ── Filter card (left LỌC block + two rows of pills) ─────────────────────────
+const FilterCard: React.FC<{
   palette: Palette;
   styles: Styles;
-  onComingSoon: () => void;
-}> = ({ palette, styles, onComingSoon }) => {
-  const actions = [
-    { label: 'Siêu thị', icon: 'local-grocery-store', color: palette.accent },
-    { label: 'Ăn uống', icon: 'restaurant', color: palette.warm },
-    { label: 'Freeship', icon: 'local-shipping', color: palette.primary },
-    { label: 'Deal sốc', icon: 'local-offer', color: palette.danger },
-  ];
-
-  return (
-    <View style={styles.quickGrid}>
-      {actions.map((action) => (
-        <Pressable
-          key={action.label}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-          android_ripple={{ color: palette.line }}
-          onPress={onComingSoon}
-          style={styles.quickAction}>
-          <View style={[styles.quickIcon, { backgroundColor: `${action.color}18` }]}>
-            <MaterialIcons name={action.icon} size={22} color={action.color} />
-          </View>
-          <KoolaText variant="caption" weight="700" align="center" numberOfLines={1}>
-            {action.label}
-          </KoolaText>
-        </Pressable>
-      ))}
+  activeSort: string | null;
+  activeAttr: string | null;
+  onToggleSort: (label: string) => void;
+  onToggleAttr: (label: string) => void;
+}> = ({ palette, styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
+  <View style={styles.filterCard}>
+    <View style={styles.filterLeft}>
+      <MaterialIcons name="filter-list" size={18} color={palette.surface} />
+      <KoolaText variant="caption" weight="800" tone="surface" style={styles.filterLabel}>
+        LỌC
+      </KoolaText>
     </View>
-  );
-};
+    <View style={styles.filterRight}>
+      <View style={styles.pillRow}>
+        {shoppingSortChips.map((label) => {
+          const selected = activeSort === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              android_ripple={{ color: palette.line }}
+              onPress={() => onToggleSort(label)}
+              style={[styles.pill, selected && styles.pillSelected]}>
+              <KoolaText variant="caption" weight="800" tone={selected ? 'primary' : 'muted'} numberOfLines={1}>
+                {label}
+              </KoolaText>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={[styles.pillRow, styles.pillRowLast]}>
+        {shoppingAttributeChips.map((label) => {
+          const selected = activeAttr === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              android_ripple={{ color: palette.line }}
+              onPress={() => onToggleAttr(label)}
+              style={[styles.pill, selected && styles.pillSelected]}>
+              <KoolaText variant="caption" weight="800" tone={selected ? 'primary' : 'muted'} numberOfLines={1}>
+                {label}
+              </KoolaText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  </View>
+);
 
-const ProductCard: React.FC<{
+// ── Single-column product row (thumbnail + meta + price + cart) ───────────────
+const ProductRow: React.FC<{
   item: ShoppingProduct;
-  favorite: boolean;
-  onToggleFavorite: (id: string) => void;
-  onAdd: () => void;
-  onOpen: () => void;
   palette: Palette;
   styles: Styles;
-}> = React.memo(({ item, favorite, onToggleFavorite, onAdd, onOpen, palette, styles }) => (
+  onOpen: () => void;
+  onAdd: () => void;
+}> = React.memo(({ item, palette, styles, onOpen, onAdd }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={item.title}
+    android_ripple={{ color: palette.line }}
     onPress={onOpen}
-    style={styles.productCard}>
-    <View style={[styles.productMedia, { backgroundColor: `${item.accent}16` }]}>
-      <MaterialIcons name={item.icon} size={34} color={item.accent} />
-      {item.badge && (
+    style={styles.productRowCard}>
+    <View style={[styles.productThumb, { backgroundColor: `${item.accent}16` }]}>
+      <MaterialIcons name={item.icon} size={30} color={item.accent} />
+      {item.badge ? (
         <View style={styles.productBadge}>
           <KoolaText variant="caption" weight="800" tone="surface" numberOfLines={1}>
             {item.badge}
           </KoolaText>
         </View>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={favorite ? 'Bỏ yêu thích' : 'Yêu thích'}
-        onPress={() => onToggleFavorite(item.id)}
-        style={styles.favoriteButton}>
-        <MaterialIcons
-          name={favorite ? 'favorite' : 'favorite-border'}
-          size={18}
-          color={favorite ? palette.danger : palette.muted}
-        />
-      </Pressable>
+      ) : null}
     </View>
-    <View style={styles.productBody}>
-      <KoolaText variant="label" weight="800" numberOfLines={2} style={styles.productTitle}>
+    <View style={styles.productMeta}>
+      <KoolaText variant="label" weight="800" numberOfLines={1} style={styles.productTitle}>
         {item.title}
       </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 6 }}>
+      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.productShop}>
         {item.shop}
       </KoolaText>
-      <View style={styles.metaRow}>
-        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaRowIcon} />
-        <KoolaText variant="caption" tone="faint" numberOfLines={1}>
-          Dữ liệu mẫu
-        </KoolaText>
-      </View>
       <View style={styles.priceRow}>
-        <View style={styles.priceTextWrap}>
-          <KoolaText variant="label" weight="800" style={styles.priceText} numberOfLines={1}>
-            {item.price}
-          </KoolaText>
-          {item.originalPrice && (
-            <KoolaText variant="caption" tone="faint" style={styles.strikeText} numberOfLines={1}>
-              {item.originalPrice}
-            </KoolaText>
-          )}
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Thêm ${item.title}`}
-          onPress={onAdd}
-          style={styles.addButton}>
-          <MaterialIcons name="add" size={18} color={palette.surface} />
-        </Pressable>
-      </View>
-      <View style={styles.deliveryPill}>
-        <MaterialIcons name="schedule" size={13} color={palette.primary} style={styles.deliveryPillIcon} />
-        <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
-          {item.delivery}
+        <KoolaText variant="label" weight="800" style={styles.priceText} numberOfLines={1}>
+          {item.price}
         </KoolaText>
+        {item.originalPrice ? (
+          <KoolaText variant="caption" tone="faint" style={styles.strikeText} numberOfLines={1}>
+            {item.originalPrice}
+          </KoolaText>
+        ) : null}
+      </View>
+      <View style={styles.tagRow}>
+        {item.tags.slice(0, 3).map((tag) => (
+          <View key={tag} style={styles.tagChip}>
+            <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+              {tag}
+            </KoolaText>
+          </View>
+        ))}
       </View>
     </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Thêm ${item.title} vào giỏ`}
+      android_ripple={{ color: palette.primarySoft }}
+      onPress={onAdd}
+      hitSlop={8}
+      style={styles.rowCartBtn}>
+      <MaterialIcons name="shopping-cart" size={18} color={palette.primary} />
+    </Pressable>
   </Pressable>
 ));
-
-const StoreRow: React.FC<{
-  store: ShoppingStore;
-  palette: Palette;
-  styles: Styles;
-  onOpen: () => void;
-}> = ({ store, palette, styles, onOpen }) => (
-  <Pressable
-    accessibilityRole="button"
-    accessibilityLabel={store.name}
-    android_ripple={{ color: palette.line }}
-    onPress={onOpen}
-    style={styles.storeRow}>
-    <View style={[styles.storeIcon, { backgroundColor: `${store.accent}18` }]}>
-      <MaterialIcons name={store.icon} size={22} color={store.accent} />
-    </View>
-    <View style={styles.storeCopy}>
-      <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 3 }}>
-        {store.name}
-      </KoolaText>
-      <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 3 }}>
-        {store.category}
-      </KoolaText>
-      <View style={styles.metaRow}>
-        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaRowIcon} />
-        <KoolaText variant="caption" tone="faint" numberOfLines={1}>
-          Dữ liệu mẫu · {store.distance}
-        </KoolaText>
-      </View>
-    </View>
-    <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
-  </Pressable>
-);
 
 const ShoppingHomeScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
@@ -206,8 +249,10 @@ const ShoppingHomeScreen: React.FC = () => {
     () => makeStyles(palette, resolvedScheme),
     [palette, resolvedScheme],
   );
+  const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
-  const [favoriteIds] = useState<Set<string>>(new Set());
+  const [activeSort, setActiveSort] = useState<string | null>(null);
+  const [activeAttr, setActiveAttr] = useState<string | null>(null);
 
   // ─── First-mount defer: paint shell immediately, defer heavy FlatList ─────
   const [contentReady, setContentReady] = useState(false);
@@ -235,45 +280,45 @@ const ShoppingHomeScreen: React.FC = () => {
     [notify],
   );
 
-  const products = useMemo(
-    () =>
-      activeCategory === 'all'
-        ? shoppingProducts
-        : shoppingProducts.filter((product) => product.category === activeCategory),
-    [activeCategory],
-  );
-
-  const toggleFavorite = useCallback((_id: string) => {
-    // Shopping is in preview mode — favorite toggle must not fabricate state
-    if (shoppingIsPreview) {
-      notify(`${AVAILABILITY_LABELS.preview} — không thể lưu yêu thích thật`);
+  const products = useMemo(() => {
+    let list = filterAndSortProducts(query, activeAttr, activeSort);
+    if (activeCategory !== 'all') {
+      list = list.filter((p) => p.category === activeCategory);
     }
-  }, [notify, shoppingIsPreview]);
+    return list;
+  }, [query, activeAttr, activeSort, activeCategory]);
+
+  const toggleSort = useCallback((label: string) => {
+    setActiveSort((prev) => (prev === label ? null : label));
+  }, []);
+
+  const toggleAttr = useCallback((label: string) => {
+    setActiveAttr((prev) => (prev === label ? null : label));
+  }, []);
 
   const renderHeader = () => (
     <View>
-      <KoolaHeader
-        searchPlaceholder="Tìm sản phẩm, cửa hàng..."
-        onSearchPress={handleComingSoon}
-        trailingActions={[{ icon: 'shopping-cart', accessibilityLabel: 'Giỏ hàng', onPress: handleComingSoon }]}
-      />
+      <NotchHeader />
       <View style={styles.contentInset}>
         {shoppingIsPreview && (
-          <PreviewBanner message="Mua sắm đang ở chế độ xem trước. Sản phẩm và cửa hàng là dữ liệu mẫu." />
+          <PreviewBanner message="Mua sắm đang ở chế độ xem trước. Sản phẩm là dữ liệu mẫu." />
         )}
-        <PromoBand palette={palette} styles={styles} />
-        <QuickActions palette={palette} styles={styles} onComingSoon={handleComingSoon} />
-        <View style={styles.sectionHeader}>
-          <View>
-            <KoolaText variant="heading" weight="800">
-              Gợi ý mua sắm
-            </KoolaText>
-            <KoolaText variant="caption" tone="muted">
-              Sản phẩm nổi bật, cửa hàng gần bạn và deal trong ngày
-            </KoolaText>
-          </View>
-          <KoolaBadge label={`${products.length} món`} tone="primary" />
-        </View>
+        <SearchBar
+          palette={palette}
+          styles={styles}
+          value={query}
+          onChangeText={setQuery}
+          onCartPress={handleComingSoon}
+          onBellPress={handleComingSoon}
+        />
+        <FilterCard
+          palette={palette}
+          styles={styles}
+          activeSort={activeSort}
+          activeAttr={activeAttr}
+          onToggleSort={toggleSort}
+          onToggleAttr={toggleAttr}
+        />
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -309,45 +354,29 @@ const ShoppingHomeScreen: React.FC = () => {
     </View>
   );
 
-  const renderFooter = () => (
-    <View style={styles.footer}>
-      <View style={styles.sectionHeader}>
-        <View>
-          <KoolaText variant="heading" weight="800">
-            Cửa hàng gần bạn
-          </KoolaText>
-          <KoolaText variant="caption" tone="muted">
-            Ưu tiên khoảng cách gần và giao nhanh
-          </KoolaText>
-        </View>
-      </View>
-      <View style={styles.storeList}>
-        {shoppingStores.map((store) => (
-          <StoreRow
-            key={store.id}
-            store={store}
-            palette={palette}
-            styles={styles}
-            onOpen={handleComingSoon}
-          />
-        ))}
-      </View>
+  const renderEmpty = () => (
+    <View style={styles.emptyWrap}>
+      <MaterialIcons name="search-off" size={36} color={palette.faint} />
+      <KoolaText variant="label" weight="700" tone="muted" style={{ marginTop: 10 }}>
+        Không tìm thấy sản phẩm
+      </KoolaText>
+      <KoolaText variant="caption" tone="faint" align="center" style={{ marginTop: 4 }}>
+        Thử từ khóa khác hoặc bỏ bớt bộ lọc
+      </KoolaText>
     </View>
   );
 
   const renderItem = useCallback(
     ({ item }: { item: ShoppingProduct }) => (
-      <ProductCard
+      <ProductRow
         item={item}
-        favorite={favoriteIds.has(item.id)}
-        onToggleFavorite={toggleFavorite}
-        onAdd={handlePreviewAdd}
         onOpen={handleComingSoon}
+        onAdd={handlePreviewAdd}
         palette={palette}
         styles={styles}
       />
     ),
-    [favoriteIds, toggleFavorite, handlePreviewAdd, handleComingSoon, palette, styles],
+    [handleComingSoon, handlePreviewAdd, palette, styles],
   );
 
   return (
@@ -355,31 +384,18 @@ const ShoppingHomeScreen: React.FC = () => {
       {!contentReady ? (
         // Interactive shell: header chrome + skeleton placeholders sized to real layout
         <View style={styles.screen}>
-          <KoolaHeader
-            searchPlaceholder="Tìm sản phẩm, cửa hàng..."
-            onSearchPress={handleComingSoon}
-            trailingActions={[{ icon: 'shopping-cart', accessibilityLabel: 'Giỏ hàng', onPress: handleComingSoon }]}
-          />
+          <NotchHeader />
           <View style={styles.contentInset}>
-            {/* PromoBand skeleton */}
-            <KoolaSkeleton width="100%" height={86} radius={koolaRadii.md} />
-            {/* QuickActions skeleton row */}
-            <View style={styles.quickGrid}>
-              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={78} height={78} radius={koolaRadii.md} />
+            <KoolaSkeleton width="100%" height={44} radius={koolaRadii.pill} />
+            <KoolaSkeleton width="100%" height={76} radius={koolaRadii.md} style={{ marginTop: 10 }} />
+            <View style={{ flexDirection: 'row', marginTop: 10 }}>
+              <KoolaSkeleton width={92} height={36} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={92} height={36} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={92} height={36} radius={koolaRadii.pill} />
             </View>
-            {/* Section header skeleton */}
-            <View style={{ marginTop: 18, marginBottom: 10 }}>
-              <KoolaSkeleton width="50%" height={20} />
-              <KoolaSkeleton width="70%" height={12} style={{ marginTop: 6 }} />
-            </View>
-            {/* Product card skeleton row */}
-            <View style={styles.productRow}>
-              <KoolaSkeleton height={276} radius={koolaRadii.md} style={{ flex: 1, marginHorizontal: 5 }} />
-              <KoolaSkeleton height={276} radius={koolaRadii.md} style={{ flex: 1, marginHorizontal: 5 }} />
-            </View>
+            {[0, 1, 2].map((i) => (
+              <KoolaSkeleton key={i} width="100%" height={92} radius={koolaRadii.md} style={{ marginTop: 10 }} />
+            ))}
           </View>
         </View>
       ) : (
@@ -387,7 +403,6 @@ const ShoppingHomeScreen: React.FC = () => {
           // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
           removeClippedSubviews={false}
           data={products}
-          numColumns={2}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           initialNumToRender={8}
@@ -395,8 +410,7 @@ const ShoppingHomeScreen: React.FC = () => {
           windowSize={7}
           updateCellsBatchingPeriod={50}
           ListHeaderComponent={renderHeader}
-          ListFooterComponent={renderFooter}
-          columnWrapperStyle={styles.productRow}
+          ListEmptyComponent={renderEmpty}
           contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
           showsVerticalScrollIndicator={false}
           style={styles.screen}
@@ -408,76 +422,98 @@ const ShoppingHomeScreen: React.FC = () => {
 };
 
 const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
-  const bandShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
+  const cardShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
   return StyleSheet.create({
     screen: {
       flex: 1,
       backgroundColor: p.canvas,
     },
-    listContent: {},
+    listContent: {
+      paddingHorizontal: 12,
+    },
     contentInset: {
       paddingHorizontal: 12,
-      paddingTop: 12,
+      paddingTop: 8,
     },
-    promoBand: {
-      minHeight: 86,
-      borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+    searchBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      padding: 12,
-      ...bandShadow,
-    },
-    promoIcon: {
-      width: 46,
-      height: 46,
-      borderRadius: koolaRadii.sm,
-      backgroundColor: p.warningSoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    },
-    promoCopy: {
-      flex: 1,
-      marginRight: 12,
-    },
-    quickGrid: {
-      flexDirection: 'row',
-      marginTop: 12,
-      marginRight: -8,
-    },
-    quickAction: {
-      flex: 1,
-      minHeight: 78,
-      borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
-      alignItems: 'center',
-      justifyContent: 'center',
+      height: 44,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: p.level0,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
-      overflow: 'hidden',
+      paddingHorizontal: 12,
+      marginBottom: 10,
+    },
+    searchIcon: {
       marginRight: 8,
     },
-    quickIcon: {
-      width: 36,
-      height: 36,
+    searchInput: {
+      flex: 1,
+      fontSize: 14,
+      color: p.ink,
+      paddingVertical: 0,
+    },
+    searchClear: {
+      marginRight: 2,
+      padding: 2,
+    },
+    searchAction: {
+      marginLeft: 10,
+      padding: 2,
+    },
+    filterCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: koolaRadii.md,
+      backgroundColor: p.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      padding: 10,
+      marginBottom: 10,
+      ...cardShadow,
+    },
+    filterLeft: {
+      width: 56,
+      height: 56,
       borderRadius: koolaRadii.sm,
+      backgroundColor: p.primary,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 7,
+      marginRight: 10,
     },
-    sectionHeader: {
-      marginTop: 18,
-      marginBottom: 10,
+    filterLabel: {
+      marginTop: 2,
+    },
+    filterRight: {
+      flex: 1,
+    },
+    pillRow: {
       flexDirection: 'row',
-      alignItems: 'flex-end',
-      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      marginBottom: 6,
+    },
+    pillRowLast: {
+      marginBottom: 0,
+    },
+    pill: {
+      borderRadius: koolaRadii.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: p.level0,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.line,
+      marginRight: 6,
+      marginBottom: 2,
+    },
+    pillSelected: {
+      backgroundColor: p.primarySoft,
+      borderColor: p.primary,
     },
     categoryRow: {
       paddingRight: 12,
-      paddingBottom: 6,
+      paddingBottom: 8,
     },
     categoryButton: {
       minHeight: 36,
@@ -494,124 +530,81 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       backgroundColor: p.primary,
       borderColor: p.primary,
     },
-    productRow: {
-      paddingHorizontal: 7,
-    },
-    productCard: {
-      flex: 1,
-      minHeight: 276,
-      marginBottom: 10,
-      marginHorizontal: 5,
+    productRowCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
       borderRadius: koolaRadii.md,
       backgroundColor: p.surface,
-      overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
+      padding: 10,
+      marginBottom: 10,
+      overflow: 'hidden',
     },
-    productMedia: {
-      height: 104,
+    productThumb: {
+      width: 72,
+      height: 72,
+      borderRadius: koolaRadii.sm,
       alignItems: 'center',
       justifyContent: 'center',
+      marginRight: 10,
     },
     productBadge: {
       position: 'absolute',
-      left: 8,
-      top: 8,
-      maxWidth: 86,
+      left: 4,
+      top: 4,
+      maxWidth: 64,
       borderRadius: koolaRadii.xs,
       backgroundColor: p.ink,
-      paddingHorizontal: 7,
-      paddingVertical: 3,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
     },
-    favoriteButton: {
-      position: 'absolute',
-      right: 8,
-      top: 8,
-      width: 30,
-      height: 30,
-      borderRadius: koolaRadii.pill,
-      backgroundColor: p.surface,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    productBody: {
-      padding: 10,
+    productMeta: {
+      flex: 1,
+      marginRight: 8,
     },
     productTitle: {
-      minHeight: 40,
-      marginBottom: 6,
+      marginBottom: 2,
     },
-    metaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 6,
-    },
-    metaRowIcon: {
-      marginRight: 4,
+    productShop: {
+      marginBottom: 4,
     },
     priceRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 6,
-    },
-    priceTextWrap: {
-      flex: 1,
-      marginRight: 8,
+      marginBottom: 4,
     },
     priceText: {
-      color: p.danger,
+      color: p.primary,
+      marginRight: 6,
     },
     strikeText: {
       textDecorationLine: 'line-through',
     },
-    addButton: {
-      width: 34,
-      height: 34,
-      borderRadius: koolaRadii.sm,
-      backgroundColor: p.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    deliveryPill: {
-      minHeight: 26,
-      borderRadius: koolaRadii.sm,
-      paddingHorizontal: 8,
+    tagRow: {
       flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: p.primarySoft,
+      flexWrap: 'wrap',
     },
-    deliveryPillIcon: {
+    tagChip: {
+      borderRadius: koolaRadii.xs,
+      backgroundColor: p.level0,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
       marginRight: 4,
+      marginTop: 2,
     },
-    footer: {
-      paddingHorizontal: 12,
-      paddingBottom: 12,
-    },
-    storeList: {},
-    storeRow: {
-      minHeight: 78,
-      borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
-      padding: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-      overflow: 'hidden',
-    },
-    storeIcon: {
-      width: 44,
-      height: 44,
+    rowCartBtn: {
+      width: 36,
+      height: 36,
       borderRadius: koolaRadii.sm,
+      backgroundColor: p.primarySoft,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 10,
     },
-    storeCopy: {
-      flex: 1,
-      marginRight: 10,
+    emptyWrap: {
+      alignItems: 'center',
+      paddingTop: 48,
+      paddingBottom: 24,
     },
   });
 };

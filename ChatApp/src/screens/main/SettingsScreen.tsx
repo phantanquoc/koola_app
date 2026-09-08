@@ -8,7 +8,7 @@ import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { koolaLightField, koolaSpacing, useTheme } from '../../ui';
 import { LightFieldBackground } from './components/personal/LightFieldBackground';
-import { PersonalNotchHeader } from './components/personal/PersonalNotchHeader';
+import { NotchHeader } from '../../components/NotchHeader';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
 import { PersonalProfileCard } from './components/personal/PersonalProfileCard';
@@ -49,7 +49,7 @@ const SettingsScreen: React.FC = () => {
       <LightFieldBackground />
 
       {/* Sculpted notch header — overlay; content scrolls underneath, visible through the side cutouts */}
-      <PersonalNotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />
+      <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />
 
       <ScrollView
         style={styles.scroll}
