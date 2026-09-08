@@ -22,7 +22,13 @@ import ConnectTabStack from './ConnectTabStack';
 import SupportTabStack from './SupportTabStack';
 import PersonalTabStack from './PersonalTabStack';
 import { requestChatHomeReset } from './chatTabReset';
-import { KoolaText, koolaDarkShadows, koolaShadows, useTheme } from '../ui';
+import {
+  KoolaText,
+  koolaDarkShadows,
+  koolaRadii,
+  koolaShadows,
+  useTheme,
+} from '../ui';
 import type { Palette } from '../ui/theme';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -46,15 +52,10 @@ const FULLSCREEN_PERSONAL_ROUTES = new Set(['EditProfile', 'StorageSettings']);
 
 export const TAB_BAR_FLOATING_INSET = 86;
 
-const TAB_DOCK_HEIGHT = 66; // dock minHeight only — no extra paddings counted twice
+const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
 // Extra clearance ABOVE the floating dock so scrollable lists can't push their
-// last item into the area covered by the translucent glass dock. The dock fill
-// is intentionally translucent (so the surface reads as glass), which means
-// any row that sits beneath the dock — including its white background and
-// hairline divider — bleeds through and reads as a faint horizontal band
-// across the dock middle. A 16px buffer keeps the bottom row clearly above
-// the dock so nothing is composited under the glass.
-const TAB_DOCK_BOTTOM_BUFFER = 16;
+// last item into the area covered by the dock.
+const TAB_DOCK_BOTTOM_BUFFER = 12;
 
 /**
  * Returns the actual pixel clearance needed at the bottom of any
@@ -63,7 +64,7 @@ const TAB_DOCK_BOTTOM_BUFFER = 16;
  */
 export function useTabBarBottomInset(): number {
   const insets = useSafeAreaInsets();
-  return TAB_DOCK_HEIGHT + Math.max(insets.bottom, 8) + TAB_DOCK_BOTTOM_BUFFER;
+  return TAB_DOCK_HEIGHT + Math.max(insets.bottom, 4) + TAB_DOCK_BOTTOM_BUFFER;
 }
 
 type TabName = keyof MainTabParamList;
@@ -124,41 +125,60 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+/**
+ * Icon host — a rounded pill that fades in behind the focused glyph (the modern
+ * "selected tab" pattern) instead of the old glow ring. Size drives both the
+ * resting glyph box and the pill, so they never drift apart.
+ */
+const TAB_ICON_PILL_SIZE = 28;
+
+/** Tiny upward nudge on focus — reads as "selected", not "moving". */
+const TAB_ICON_FOCUS_LIFT = -1;
+
 interface TabIcon3DProps {
   name: string;
   isFocused: boolean;
+  focusProgress: SharedValue<number>;
   pressProgress: SharedValue<number>;
   palette: Palette;
+  resolvedScheme: 'light' | 'dark';
 }
 
-const TabIcon3D: React.FC<TabIcon3DProps> = ({ name, isFocused, pressProgress, palette }) => {
-  const progress = useSharedValue(isFocused ? 1 : 0);
-
-  React.useEffect(() => {
-    progress.value = withTiming(isFocused ? 1 : 0, {
-      duration: 150,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [isFocused, progress]);
-
+const TabIcon3D: React.FC<TabIcon3DProps> = ({
+  name,
+  isFocused,
+  focusProgress,
+  pressProgress,
+  palette,
+  resolvedScheme,
+}) => {
   const wrapperStyle = useAnimatedStyle(() => {
-    const p = progress.value;
-    const press = pressProgress.value; // 0..1 quick punch
+    const press = pressProgress.value;
     return {
       transform: [
-        { translateY: -3 * p },
-        { scale: (1 + 0.08 * p) * (1 - 0.12 * press) },
+        { translateY: TAB_ICON_FOCUS_LIFT * focusProgress.value },
+        { scale: 1 - 0.08 * press },
       ],
-      opacity: 0.78 + 0.22 * p,
     };
   });
+  const pillStyle = useAnimatedStyle(() => ({
+    opacity: focusProgress.value,
+  }));
 
   return (
-    <View style={styles.iconWell}>
+    <View style={styles.iconHost}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.iconPill,
+          resolvedScheme === 'light' ? styles.iconPillLight : styles.iconPillDark,
+          pillStyle,
+        ]}
+      />
       <Animated.View style={wrapperStyle}>
         <MaterialIcons
           name={name}
-          size={20}
+          size={17}
           color={isFocused ? palette.primary : palette.muted}
         />
       </Animated.View>
@@ -174,6 +194,7 @@ interface TabBarItemProps {
   onPress: () => void;
   onLongPress: () => void;
   palette: Palette;
+  resolvedScheme: 'light' | 'dark';
 }
 
 const TabBarItemComponent: React.FC<TabBarItemProps> = ({
@@ -184,11 +205,19 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
   onPress,
   onLongPress,
   palette,
+  resolvedScheme,
 }) => {
   const press = useSharedValue(0);
+  const focus = useSharedValue(isFocused ? 1 : 0);
+
+  React.useEffect(() => {
+    focus.value = withTiming(isFocused ? 1 : 0, {
+      duration: 150,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isFocused, focus]);
 
   const handlePressIn = React.useCallback(() => {
-    // Quick punch-in
     press.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
   }, [press]);
 
@@ -212,20 +241,18 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={[
-        styles.tabItem,
-        isFocused ? styles.tabItemActive : styles.tabItemInactive,
-        itemAnimStyle,
-      ]}>
+      style={[styles.tabItem, itemAnimStyle]}>
       <TabIcon3D
         name={isFocused ? meta.focusedIcon : meta.icon}
         isFocused={isFocused}
+        focusProgress={focus}
         pressProgress={press}
         palette={palette}
+        resolvedScheme={resolvedScheme}
       />
       <KoolaText
         variant="caption"
-        weight={isFocused ? '800' : '700'}
+        weight={isFocused ? '700' : '600'}
         tone={isFocused ? 'primary' : 'muted'}
         numberOfLines={1}
         // The dock is fixed-size chrome, so labels must not scale with the OS font
@@ -250,7 +277,8 @@ const TabBarItem = React.memo(
     previous.isFocused === next.isFocused &&
     previous.accessibilityLabel === next.accessibilityLabel &&
     previous.label === next.label &&
-    previous.palette === next.palette
+    previous.palette === next.palette &&
+    previous.resolvedScheme === next.resolvedScheme
   ),
 );
 
@@ -283,20 +311,6 @@ const TabDockBackground: React.FC<TabDockBackgroundProps> = React.memo(({
         <Rect width="100%" height="100%" fill="url(#tabFill)" />
       </Svg>
     </View>
-    <View pointerEvents="none" style={styles.tabDockTint} />
-    <View pointerEvents="none" style={styles.tabTopSheen}>
-      <Svg width="100%" height="100%" preserveAspectRatio="none">
-        <Defs>
-          <SvgLinearGradient id="tabSheen" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0.85" />
-            <Stop offset="1" stopColor={resolvedScheme === 'dark' ? '#2A323C' : '#FFFFFF'} stopOpacity="0" />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect width="100%" height="100%" fill="url(#tabSheen)" />
-      </Svg>
-    </View>
-    <View pointerEvents="none" style={[styles.tabEdgeShineLeft, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
-    <View pointerEvents="none" style={[styles.tabEdgeShineRight, resolvedScheme === 'dark' && styles.tabEdgeShineDark]} />
     <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' && styles.tabInnerEdgeDark]} />
     <View pointerEvents="none" style={styles.tabBottomHairline} />
   </>
@@ -313,19 +327,19 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
 
-  // Theme-aware SVG gradient stops for the faux-glass dock fill.
+  // Soft vertical gradient for the dock fill. Light: white → faint blue.
   const gradientStops = React.useMemo(() => {
     if (resolvedScheme === 'dark') {
       return {
-        top: { color: '#1C2026', opacity: 0.85 },
-        mid: { color: '#1E2A44', opacity: 0.75 },
-        bottom: { color: '#1A2332', opacity: 0.70 },
+        top: { color: '#1C2026', opacity: 0.92 },
+        mid: { color: '#1E2A44', opacity: 0.85 },
+        bottom: { color: '#1A2332', opacity: 0.80 },
       };
     }
     return {
-      top: { color: '#FFFFFF', opacity: 0.78 },
-      mid: { color: '#EEF4FF', opacity: 0.70 },
-      bottom: { color: '#DBEAFE', opacity: 0.62 },
+      top: { color: '#FFFFFF', opacity: 0.92 },
+      mid: { color: '#F4F8FF', opacity: 0.88 },
+      bottom: { color: '#EAF2FF', opacity: 0.82 },
     };
   }, [resolvedScheme]);
 
@@ -361,11 +375,11 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       pointerEvents="box-none"
       style={[
         styles.tabBarHost,
-        { paddingBottom: Math.max(insets.bottom, 8) },
+        { paddingBottom: Math.max(insets.bottom, 4) + 6 },
         revealStyle,
       ]}>
       <View style={[styles.shadowWrap, dockElevation]}>
-        <View style={[styles.tabDock, { borderColor: palette.primary }]}>
+        <View style={styles.tabDock}>
           <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
@@ -384,6 +398,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                 accessibilityLabel={accessibilityLabel}
                 label={label}
                 palette={palette}
+                resolvedScheme={resolvedScheme}
                 onPress={() => {
                   const event = navigation.emit({
                     type: 'tabPress',
@@ -514,7 +529,7 @@ const styles = StyleSheet.create({
     // (xl radius 24 minus its +12 downward offset). The host is anchored to
     // bottom:0, so this only grows the top edge — the dock does not move, and
     // `useTabBarBottomInset()` stays correct.
-    paddingTop: 16,
+    paddingTop: 10,
     backgroundColor: 'transparent',
     zIndex: 20,
   },
@@ -527,60 +542,24 @@ const styles = StyleSheet.create({
     borderRadius: 26,
   },
   tabDock: {
-    minHeight: 66,
+    minHeight: TAB_DOCK_HEIGHT,
     borderRadius: 26,
     backgroundColor: 'transparent',
-    borderWidth: 3,
-    // Glass rim — borderColor now applied via inline style from useTheme() palette.
-    borderColor: 'transparent',
+    borderWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     overflow: 'hidden',
   },
-  // Liquid glass layer 1 — translucent SVG gradient fill (faux blur host).
+  // Soft translucent fill (faux blur host).
   tabDockStaticFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 26,
     overflow: 'hidden',
   },
-  // Liquid glass layer 1b — primary-blue cast.
-  tabDockTint: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 26,
-    backgroundColor: 'rgba(37,99,235,0.04)',
-  },
-  // Layer 2 — top specular sheen (~33% of dock height).
-  tabTopSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 22,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    overflow: 'hidden',
-  },
-  // Layer 3 — side-edge shines.
-  tabEdgeShineLeft: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 0,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
-  },
-  tabEdgeShineRight: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    right: 0,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
-  },
-  // Layer 4 — 1px inner top edge.
+  // 1px inner top edge.
   tabInnerEdge: {
     position: 'absolute',
     top: 0,
@@ -589,45 +568,41 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.55)',
   },
-  // Dark-mode overrides for glass layers
-  tabEdgeShineDark: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
   tabInnerEdgeDark: {
     backgroundColor: 'rgba(255,255,255,0.10)',
   },
-  // Layer 5 — cool-tone bottom hairline.
+  // Cool-tone bottom hairline.
   tabBottomHairline: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(37,99,235,0.18)',
+    backgroundColor: 'rgba(37,99,235,0.12)',
   },
   tabItem: {
-    minHeight: 54,
-    paddingHorizontal: 2,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
     backgroundColor: 'transparent',
     zIndex: 1,
   },
-  tabItemActive: {
-    flex: 1.04,
-  },
-  // No item-level opacity: inactive state is already carried by tone + weight and
-  // by TabIcon3D's own icon opacity. Dimming the whole item on top of that only
-  // costs label contrast against the glass fill.
-  tabItemInactive: {
-    flex: 0.99,
-  },
-  iconWell: {
-    width: 26,
-    height: 26,
+  iconHost: {
+    width: TAB_ICON_PILL_SIZE,
+    height: TAB_ICON_PILL_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconPill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: koolaRadii.pill,
+  },
+  iconPillLight: {
+    backgroundColor: 'rgba(37,99,235,0.10)',
+  },
+  iconPillDark: {
+    backgroundColor: 'rgba(77,141,247,0.18)',
   },
   // One size for all five labels. Active/inactive is carried by weight + tone
   // only — differing fontSizes made the longest label ("Trò chuyện") the one that
@@ -635,8 +610,8 @@ const styles = StyleSheet.create({
   // than the inactive ones (10dp) instead of larger.
   tabLabel: {
     maxWidth: '100%',
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 9.5,
+    lineHeight: 12,
     textAlign: 'center',
     backgroundColor: 'transparent',
   },

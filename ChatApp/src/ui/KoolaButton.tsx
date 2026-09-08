@@ -13,7 +13,8 @@ import { koolaRadii, type Palette } from './theme';
 
 interface KoolaButtonProps extends Omit<PressableProps, 'children'> {
   title: string;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  /** `dangerOutline` = outlined destructive action: surface fill, danger hairline border, danger label/icon. */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'dangerOutline';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: string;
@@ -27,6 +28,7 @@ const textTone = {
   secondary: 'ink',
   ghost: 'primary',
   danger: 'surface',
+  dangerOutline: 'danger',
 } as const;
 
 const makeVariantBg = (p: Palette) => ({
@@ -34,6 +36,7 @@ const makeVariantBg = (p: Palette) => ({
   secondary: p.canvas,
   ghost: 'transparent',
   danger: p.danger,
+  dangerOutline: p.surface,
 });
 
 const makeIconColor = (p: Palette) => ({
@@ -41,6 +44,7 @@ const makeIconColor = (p: Palette) => ({
   secondary: p.ink,
   ghost: p.primary,
   danger: p.surface,
+  dangerOutline: p.danger,
 });
 
 const makeStyles = (p: Palette) =>
@@ -56,6 +60,10 @@ const makeStyles = (p: Palette) =>
     secondary: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.line,
+    },
+    dangerOutline: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.danger,
     },
     pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
     disabled: { opacity: 0.55 },
@@ -115,6 +123,7 @@ export const KoolaButton: React.FC<KoolaButtonProps> = ({
         styles[size],
         { backgroundColor: variantBg[variant] },
         variant === 'secondary' ? styles.secondary : null,
+        variant === 'dangerOutline' ? styles.dangerOutline : null,
         isDisabled ? styles.disabled : null,
         pressed && !isDisabled ? styles.pressed : null,
         typeof style === 'function' ? style({ pressed }) : style,

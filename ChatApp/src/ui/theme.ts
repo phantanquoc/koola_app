@@ -383,3 +383,175 @@ export const koolaDarkSurfaces: SurfaceScale = {
   level2: '#252B33',
   overlay: 'rgba(0, 0, 0, 0.7)',
 };
+
+// ─── Light field + glow primitives (additive — Personal home & dock glow) ────
+// Primitive layer, so raw hex is intentional here (same rule as `koolaColors`).
+// Every primitive ships BOTH a light and a dark variant; consumers select with
+// `resolvedScheme` and never hard-code hex in screen or component code.
+
+/**
+ * One radial bloom in the static light field.
+ * `cx`/`cy`/`r` are relative (percentage) values that react-native-svg resolves
+ * against the painted rect's bounding box, so blooms scale with any container.
+ */
+export type LightFieldBloom = {
+  color: string;
+  opacity: number;
+  cx: string;
+  cy: string;
+  r: string;
+};
+
+export type LightField = {
+  /** Canvas color painted under the blooms. */
+  base: string;
+  /** Blooms, ordered back to front. */
+  blooms: readonly LightFieldBloom[];
+};
+
+/**
+ * Static light-field background recipe (design D1). Screens render one
+ * memoized `Svg` from these stops — the field never animates, so it is safe for
+ * reduced-motion users and costs nothing per frame.
+ *
+ * Usage:
+ *   const field = koolaLightField[resolvedScheme];
+ */
+export const koolaLightField: { light: LightField; dark: LightField } = {
+  light: {
+    base: '#F7F9FC',
+    blooms: [
+      { color: '#DBEAFE', opacity: 0.55, cx: '50%', cy: '0%', r: '60%' },
+      { color: '#EEF4FF', opacity: 0.45, cx: '15%', cy: '45%', r: '50%' },
+      { color: '#D1FAE5', opacity: 0.25, cx: '90%', cy: '80%', r: '45%' },
+    ],
+  },
+  dark: {
+    base: '#0F1419',
+    blooms: [
+      { color: '#1E2A44', opacity: 0.65, cx: '50%', cy: '0%', r: '60%' },
+      { color: '#1A2332', opacity: 0.5, cx: '15%', cy: '45%', r: '50%' },
+      { color: '#10362B', opacity: 0.22, cx: '90%', cy: '80%', r: '45%' },
+    ],
+  },
+};
+
+/**
+ * A style fragment expressible as a shadow, a surface tint, or a hairline —
+ * the union the glow recipes need, because dark elevation is carried by tint
+ * instead of a black shadow (same reasoning as `koolaDarkShadows`).
+ */
+export type GlowShadowStyle = {
+  backgroundColor?: string;
+  borderWidth?: number;
+  borderColor?: string;
+  borderTopWidth?: number;
+  borderTopColor?: string;
+  shadowColor?: string;
+  shadowOffset?: { width: number; height: number };
+  shadowOpacity?: number;
+  shadowRadius?: number;
+  elevation?: number;
+};
+
+export type GlowShadows = {
+  /** Floating content cards. */
+  card: GlowShadowStyle;
+  /** Notch-style screen header. */
+  header: GlowShadowStyle;
+  /** Focused bottom-dock tab glow. */
+  tabFocus: GlowShadowStyle;
+};
+
+/**
+ * Glow elevation recipes (design D2). Light uses colored soft shadows; dark
+ * expresses elevation through a lighter surface tint + hairline, and keeps a
+ * colored glow for the focused tab so the treatment stays visible on a dark
+ * canvas instead of disappearing with a black shadow.
+ *
+ * Usage:
+ *   style={[cardStyle, koolaGlowShadows[resolvedScheme].card]}
+ */
+export const koolaGlowShadows: { light: GlowShadows; dark: GlowShadows } = {
+  light: {
+    card: {
+      shadowColor: '#2563EB',
+      shadowOpacity: 0.1,
+      shadowOffset: { width: 0, height: 10 },
+      shadowRadius: 24,
+      elevation: 3,
+    },
+    header: {
+      shadowColor: '#2563EB',
+      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: 6 },
+      shadowRadius: 16,
+      elevation: 2,
+    },
+    tabFocus: {
+      shadowColor: '#2563EB',
+      shadowOpacity: 0.35,
+      shadowOffset: { width: 0, height: 0 },
+      shadowRadius: 12,
+      elevation: 0,
+    },
+  },
+  dark: {
+    card: {
+      backgroundColor: '#262D36',
+      borderTopWidth: 0.5,
+      borderTopColor: 'rgba(255,255,255,0.06)',
+      borderColor: 'rgba(77,141,247,0.18)',
+      borderWidth: 1,
+    },
+    header: {
+      backgroundColor: '#222830',
+      borderTopWidth: 0.5,
+      borderTopColor: 'rgba(255,255,255,0.05)',
+    },
+    tabFocus: {
+      shadowColor: '#4D8DF7',
+      shadowOpacity: 0.28,
+      shadowOffset: { width: 0, height: 0 },
+      shadowRadius: 12,
+      elevation: 0,
+    },
+  },
+};
+
+/**
+ * Circular icon-well background (design D3). Wells carry icon glyphs only —
+ * glyph color always comes from semantic text/action tokens, never from here,
+ * so text contrast stays a semantic-token concern.
+ */
+export const koolaIconWell: { light: string; dark: string } = {
+  light: '#EDF1FA',
+  dark: '#232B36',
+};
+
+/** One gradient stop of the focused-tab glow ring. */
+export type FocusGlowStop = { color: string; opacity: number };
+
+/**
+ * Focused-tab glow ring gradient stops (design D7) — red → orange → blue, the
+ * brand triad, ordered start→end along the ring. Shared by the dock and any
+ * future chrome so the ring recipe cannot drift per surface.
+ *
+ * Usage:
+ *   const stops = koolaFocusGlow[resolvedScheme];
+ */
+export const koolaFocusGlow: {
+  light: readonly FocusGlowStop[];
+  dark: readonly FocusGlowStop[];
+} = {
+  light: [
+    { color: '#F04438', opacity: 0.9 },
+    { color: '#F97316', opacity: 0.9 },
+    { color: '#2563EB', opacity: 0.9 },
+  ],
+  dark: [
+    { color: '#F04438', opacity: 0.8 },
+    { color: '#FB923C', opacity: 0.8 },
+    { color: '#4D8DF7', opacity: 0.8 },
+  ],
+};
