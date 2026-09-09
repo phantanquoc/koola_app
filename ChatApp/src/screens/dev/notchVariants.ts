@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type NotchPresetId = 'original' | 'B' | 'current';
+export type NotchPresetId = 'original' | 'B' | 'current' | 'flat';
 
 export interface NotchPreset {
   id: NotchPresetId;
   label: string;
   subtitle: string;
+  /** When true, renders a plain rectangular bar — no notch protrusion, no shadow */
+  flat?: boolean;
   tabWidth: number;
   tabDrop: number;
   fillet: number;
@@ -37,6 +39,13 @@ export const NOTCH_PRESETS: Record<NotchPresetId, NotchPreset> = {
     subtitle: 'W 132 · Drop 22 · Fillet 22 · bottom 0.44, mềm vừa',
     tabWidth: 132, tabDrop: 22, fillet: 22, dyFactor: 0.06, hx: 0.42, hy: 0.06, bottomHx: 0.44, shadowStd: 10, highlightOpacity: 0.7, highlightStrong: false,
   },
+  flat: {
+    id: 'flat',
+    label: 'Flat — hộp thường, không notch',
+    subtitle: 'Thanh chữ nhật phẳng, không phần nhô, không đổ bóng',
+    flat: true,
+    tabWidth: 0, tabDrop: 0, fillet: 0, dyFactor: 0, hx: 0, hy: 0, bottomHx: 0, shadowStd: 0, highlightOpacity: 0, highlightStrong: false,
+  },
 };
 
 const STORAGE_KEY = 'dev:notchPreset';
@@ -44,17 +53,6 @@ const STORAGE_KEY = 'dev:notchPreset';
 let cached: NotchPresetId | null = null;
 const listeners = new Set<() => void>();
 let hydrated = false;
-
-async function hydrate() {
-  if (hydrated) return;
-  hydrated = true;
-  try {
-    const v = await AsyncStorage.getItem(STORAGE_KEY);
-    if (v === 'original' || v === 'B' || v === 'current') cached = v;
-    else cached = 'current';
-  } catch { cached = 'current'; }
-  listeners.forEach((l) => l());
-}
 
 export function getNotchPreset(): NotchPresetId {
   if (!hydrated) { hydrate(); return cached ?? 'current'; }
@@ -71,4 +69,15 @@ export function subscribeNotchPreset(cb: () => void): () => void {
   listeners.add(cb);
   if (!hydrated) hydrate();
   return () => listeners.delete(cb);
+}
+
+async function hydrate() {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const v = await AsyncStorage.getItem(STORAGE_KEY);
+    if (v === 'original' || v === 'B' || v === 'current' || v === 'flat') cached = v as NotchPresetId;
+    else cached = 'current';
+  } catch { cached = 'current'; }
+  listeners.forEach((l) => l());
 }

@@ -4,7 +4,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
 import type { SemanticTokens } from '../../../../ui/tokens/semantic';
 import { PersonalCard } from './PersonalCard';
-import { PERSONAL_BLUE_WELL, PERSONAL_DANGER_INK } from './personalTokens';
+import { PERSONAL_BLUE_WELL, PERSONAL_DANGER_INK, PERSONAL_DANGER_SOFT } from './personalTokens';
 
 export interface PersonalSecuritySectionProps {
   onManageDevices?: () => void;
@@ -27,14 +27,14 @@ export const PersonalSecuritySection: React.FC<PersonalSecuritySectionProps> = (
 
   return (
     <PersonalCard style={styles.outer}>
-      <KoolaText variant="label" weight="700" style={styles.title}>Cài đặt & bảo mật</KoolaText>
+      <KoolaText variant="heading" weight="700" style={styles.title}>Cài đặt & bảo mật</KoolaText>
 
       <Pressable onPress={handleDevices} hitSlop={6} accessibilityRole="button" accessibilityLabel="Quản lý thiết bị đăng nhập" style={({ pressed }) => [pressed && styles.pressed]}>
         <View style={styles.row}>
           <View style={styles.iconWell}>
             <MaterialIcons name="devices" size={14} color={tokens.semantic.text.muted} />
           </View>
-          <KoolaText variant="caption" weight="500" style={styles.rowLabel} numberOfLines={1}>Quản lý thiết bị đăng nhập</KoolaText>
+          <KoolaText variant="body" weight="500" style={styles.rowLabel} numberOfLines={1}>Quản lý thiết bị đăng nhập</KoolaText>
           <MaterialIcons name="chevron-right" size={18} color={tokens.semantic.text.faint} />
         </View>
       </Pressable>
@@ -44,7 +44,7 @@ export const PersonalSecuritySection: React.FC<PersonalSecuritySectionProps> = (
           <View style={styles.iconWell}>
             <MaterialIcons name="settings" size={14} color={tokens.semantic.text.muted} />
           </View>
-          <KoolaText variant="caption" weight="500" style={styles.rowLabel} numberOfLines={1}>Cài đặt</KoolaText>
+          <KoolaText variant="body" weight="500" style={styles.rowLabel} numberOfLines={1}>Cài đặt</KoolaText>
           <MaterialIcons name="chevron-right" size={18} color={tokens.semantic.text.faint} />
         </View>
       </Pressable>
@@ -56,7 +56,7 @@ export const PersonalSecuritySection: React.FC<PersonalSecuritySectionProps> = (
           <View style={[styles.iconWell, styles.iconWellDanger]}>
             <MaterialIcons name="logout" size={14} color={PERSONAL_DANGER_INK} />
           </View>
-          <KoolaText variant="caption" weight="600" style={styles.rowLabelDanger} numberOfLines={1}>Đăng xuất</KoolaText>
+          <KoolaText variant="body" weight="600" style={styles.rowLabelDanger} numberOfLines={1}>Đăng xuất</KoolaText>
         </View>
       </Pressable>
     </PersonalCard>
@@ -68,9 +68,9 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     outer: { padding: koolaSpacing.lg },
     pressed: { opacity: koolaOpacity.pressed },
     title: { color: semantic.text.primary, marginBottom: koolaSpacing.xs },
-    row: { flexDirection: 'row', alignItems: 'center', paddingVertical: koolaSpacing.md - 4 },
-    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.md - 6 },
-    iconWellDanger: { backgroundColor: scheme === 'light' ? '#FFF2F2' : 'rgba(239,68,68,0.12)', borderColor: scheme === 'light' ? '#FDD2D2' : 'rgba(239,68,68,0.25)' },
+    row: { flexDirection: 'row', alignItems: 'center', paddingVertical: koolaSpacing.sm },
+    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.sm },
+    iconWellDanger: { backgroundColor: PERSONAL_DANGER_SOFT[scheme].bg, borderColor: PERSONAL_DANGER_SOFT[scheme].border },
     rowLabel: { color: semantic.text.primary, flex: 1 },
     rowLabelDanger: { color: PERSONAL_DANGER_INK, flex: 1 },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle, marginVertical: koolaSpacing.xs },

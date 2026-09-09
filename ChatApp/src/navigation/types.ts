@@ -13,11 +13,13 @@ export type AuthStackParamList = {
 };
 
 // ─── Chat Sub-Tabs (top tabs inside ChatHomeScreen) ──────────────────────────
+// 5 tabs: Tin nhắn · Danh bạ · Khoảnh khắc · Phim · Kết nối
 export type ChatSubTabParamList = {
   Messages: undefined;
   Contacts: undefined;
   Moments: undefined;
   Shorts: undefined;
+  Connections: undefined;
 };
 
 // ─── Chat Tab Stack ───────────────────────────────────────────────────────────

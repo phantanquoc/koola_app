@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
-  Pressable,
   InteractionManager,
   StyleSheet,
   RefreshControl,
@@ -30,10 +29,6 @@ import {
   useTheme,
 } from '../../ui';
 import { useLocalFirstFlag } from '../../config/featureFlags';
-import { koolaRadii, koolaSpacing } from '../../ui/theme';
-import { KoolaText } from '../../ui/KoolaText';
-import type { ConversationCategory } from './conversationCategory';
-import { filterConversations } from './conversationCategory';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
@@ -59,154 +54,6 @@ import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
 );
-
-// ─── Messages category filter (client-side demo classifier) ──────────────────
-//
-// The backend has no category field; the four pills split the already-loaded
-// list locally via conversationCategory.classifyConversation. Filtering happens
-// purely at the render layer (see `visibleConversations` in the screen) so the
-// fetch / socket / pagination / SQLite data path is untouched.
-//
-// Order is locked to the mockup. The label doubles as the empty-state noun
-// ("Không có hội thoại Người lạ"), so keep them short and natural.
-const CATEGORY_FILTERS: ReadonlyArray<{ key: ConversationCategory; label: string }> = [
-  { key: 'all', label: 'Tất cả' },
-  { key: 'personal', label: 'Cá nhân' },
-  { key: 'business', label: 'Kết nối' },
-  { key: 'stranger', label: 'Người lạ' },
-];
-
-const CATEGORY_LABEL: Record<ConversationCategory, string> = {
-  all: 'Tất cả',
-  personal: 'Cá nhân',
-  business: 'Kết nối',
-  stranger: 'Người lạ',
-};
-
-// Mockup-matched solid fills for the four filter pills (sanctioned literal-hex
-// exception, same pattern as the auth screens' figmaHex map). The theme palette
-// cannot express this look: it has no purple token at all, and its mid-luminance
-// greens/reds (accent, brandRed) drop white label text below AA contrast.
-// Each entry is keyed by resolvedScheme — dark mode uses slightly deeper
-// variants so the white pill text stays >=4.5:1 on every fill in both schemes.
-const CATEGORY_PILL_BG: Record<ConversationCategory, { light: string; dark: string }> = {
-  all: { light: '#0D9488', dark: '#0F766E' }, // teal/green
-  personal: { light: '#2563EB', dark: '#1D4ED8' }, // blue (light value = palette.primary)
-  business: { light: '#B23B2E', dark: '#9A3412' }, // brown-red (brandRed family)
-  stranger: { light: '#B23C8A', dark: '#9333EA' }, // purple/magenta (no palette token exists)
-};
-
-// White is the only label color that clears AA on all four saturated fills in
-// both schemes; semantic.text.onAction resolves to a dark surface in dark mode.
-const CATEGORY_PILL_TEXT = '#FFFFFF';
-
-const makeStyles = () =>
-  StyleSheet.create({
-    filterRow: {
-      width: '100%',
-      flexDirection: 'row',
-      gap: koolaSpacing.sm,
-      paddingHorizontal: koolaSpacing.sm,
-      paddingVertical: koolaSpacing.sm,
-    },
-    pillShell: {
-      // The flex column for one of the four equal-width slots. The colored
-      // rounded rect lives one level deeper (pillInner) so the fill/border
-      // is owned by a View, not by the Pressable directly. This is the correct
-      // pattern: Pressable is a state container with a stable flex shell, View
-      // underneath paints the dock background per pill — mirroring KoolaHeader
-      // dock chrome — and avoids the case where Pressable's animated style
-      // callback competes with layout-driven background rendering.
-      flexBasis: 0,
-      flexGrow: 1,
-      flexShrink: 1,
-      minWidth: 0,
-      alignItems: 'stretch',
-      justifyContent: 'center',
-    },
-    pillInner: {
-      width: '100%',
-      height: 33,
-      minHeight: 33,
-      borderRadius: koolaRadii.pill,
-      paddingHorizontal: koolaSpacing.md,
-      alignItems: 'center',
-      justifyContent: 'center',
-      // Solid 1px rather than hairline: hairline is sub-pixel and paints
-      // as faint partial coverage, which caused the earlier "bare text" bug.
-      borderWidth: 1,
-      // backgroundColor/borderColor are set per-pill inline from CATEGORY_PILL_BG.
-    },
-    // Every pill renders at full opacity; selection is the 2px white ring.
-    pillSelected: {
-      borderWidth: 2,
-      // eslint-disable-next-line no-restricted-syntax -- sanctioned mockup hex (see CATEGORY_PILL_BG)
-      borderColor: '#FFFFFF',
-    },
-    pillUnselected: {
-      borderWidth: 1,
-    },
-    pillPressed: {
-      opacity: 0.7,
-    },
-  });
-
-/**
- * The four-pill header row. Memoised so scrolling / list re-renders never
- * rebuild it — it only changes when the selected `category` changes. Token
- * styling mirrors KoolaChip exactly, but built from a local Pressable so the
- * equal-width flex layout is not fought by KoolaChip's minHeight:44 default.
- */
-const CategoryFilterBar: React.FC<{
-  category: ConversationCategory;
-  onSelect: (next: ConversationCategory) => void;
-}> = React.memo(({ category, onSelect }) => {
-  const { resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeStyles(), []);
-  return (
-    <View style={styles.filterRow}>
-      {CATEGORY_FILTERS.map((f) => {
-        const selected = f.key === category;
-        // Defensive lookup: fall back to the light variant if resolvedScheme
-        // ever resolves to an unexpected key — fill must never be undefined.
-        const entry = CATEGORY_PILL_BG[f.key];
-        const fill = (entry as Record<string, string>)[resolvedScheme] ?? entry.light;
-        return (
-          <Pressable
-            key={f.key}
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            accessibilityLabel={f.label}
-            onPress={() => onSelect(f.key)}
-            // NativeWind interop spreads style callbacks into an empty object.
-            // Keep flex layout static and resolve pressed feedback in children.
-            style={styles.pillShell}>
-            {({ pressed }) => (
-              <View
-                style={[
-                  styles.pillInner,
-                  { backgroundColor: fill, borderColor: selected ? '#FFFFFF' : fill },
-                  selected ? styles.pillSelected : styles.pillUnselected,
-                  pressed ? styles.pillPressed : null,
-                ]}>
-                <KoolaText
-                  variant="caption"
-                  weight="700"
-                  align="center"
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  style={{ color: CATEGORY_PILL_TEXT }}>
-                  {f.label}
-                </KoolaText>
-              </View>
-            )}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-});
-CategoryFilterBar.displayName = 'CategoryFilterBar';
 
 /**
  * Fingerprint of exactly the fields that drive a conversation row's render.
@@ -283,14 +130,6 @@ const ConversationListScreen: React.FC = () => {
   const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [category, setCategory] = useState<ConversationCategory>('all');
-  // Render-layer-only filter over the already-loaded array. `all` returns the
-  // SAME reference, so the FlatList data prop is byte-for-byte what it was
-  // before this feature existed whenever no filter is active.
-  const visibleConversations = useMemo(
-    () => filterConversations(conversations, category),
-    [conversations, category],
-  );
   const [, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -612,7 +451,6 @@ const ConversationListScreen: React.FC = () => {
   }, [localFirstEnabled]);
 
   const handleRefresh = useCallback(() => {
-    setCategory('all');
     fetchConversations(true);
   }, [fetchConversations]);
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
@@ -713,14 +551,11 @@ const ConversationListScreen: React.FC = () => {
         maxToRenderPerBatch={10}
         windowSize={15}
         updateCellsBatchingPeriod={50}
-        data={visibleConversations}
+        data={conversations}
         keyExtractor={(item) => item._id}
         renderItem={renderConversation}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
-        ListHeaderComponent={
-          <CategoryFilterBar category={category} onSelect={setCategory} />
-        }
         contentContainerStyle={[
           screenStyles.listContent,
           { paddingBottom: tabBarInset },
@@ -741,15 +576,6 @@ const ConversationListScreen: React.FC = () => {
           ) : isConnected === false ? (
             <KoolaOfflineState
               onRetry={handleRefresh}
-              style={screenStyles.stateContainer}
-            />
-          ) : category !== 'all' ? (
-            <KoolaEmptyState
-              title={`Không có hội thoại ${CATEGORY_LABEL[category]}`}
-              message="Thử một bộ lọc khác để xem toàn bộ hội thoại của bạn."
-              icon="filter-alt-off"
-              actionLabel="Xem Tất cả"
-              onActionPress={() => setCategory('all')}
               style={screenStyles.stateContainer}
             />
           ) : (

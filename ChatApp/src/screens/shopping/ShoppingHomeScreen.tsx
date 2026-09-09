@@ -13,7 +13,6 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaSkeleton,
   KoolaText,
-  koolaIconWell,
   koolaRadii,
   koolaDarkShadows,
   koolaShadows,
@@ -24,7 +23,6 @@ import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { PreviewBanner } from '../../components/PreviewBanner';
 import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
-import { PersonalCard } from '../main/components/personal/PersonalCard';
 import {
   shoppingAttributeChips,
   shoppingCategories,
@@ -66,15 +64,13 @@ function filterAndSortProducts(
   return list;
 }
 
-// ── Search bar: KoolaSearchField-style input + cart & bell actions ────────────
+// ── Search bar ────────────────────────────────────────────────────────────────
 const SearchBar: React.FC<{
   semantic: SemanticTokens;
   styles: Styles;
   value: string;
   onChangeText: (t: string) => void;
-  onCartPress: () => void;
-  onBellPress: () => void;
-}> = ({ semantic, styles, value, onChangeText, onCartPress, onBellPress }) => {
+}> = ({ semantic, styles, value, onChangeText }) => {
   const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.searchDock, focused && styles.searchDockFocused]}>
@@ -103,88 +99,83 @@ const SearchBar: React.FC<{
           </Pressable>
         ) : null}
       </View>
-      <View style={styles.searchDivider} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Giỏ hàng"
-        android_ripple={{ color: semantic.border.subtle }}
-        onPress={onCartPress}
-        hitSlop={10}
-        style={styles.searchActionDock}>
-        <MaterialIcons name="shopping-cart" size={20} color={semantic.action.primary} />
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Thông báo"
-        android_ripple={{ color: semantic.border.subtle }}
-        onPress={onBellPress}
-        hitSlop={10}
-        style={styles.searchActionDock}>
-        <MaterialIcons name="notifications-none" size={22} color={semantic.action.primary} />
-      </Pressable>
     </View>
   );
 };
 
-// ── Filter card: PersonalCard + 36px icon-well + two pill rows ───────────────
+// ── Filter bar: tall LỌC well (left) + two pill rows (right) ─────────────────
 const FilterCard: React.FC<{
   semantic: SemanticTokens;
-  scheme: 'light' | 'dark';
   styles: Styles;
   activeSort: string | null;
   activeAttr: string | null;
   onToggleSort: (label: string) => void;
   onToggleAttr: (label: string) => void;
-}> = ({ semantic, scheme, styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
-  <PersonalCard style={styles.filterCardOverride}>
-    <View style={styles.filterCardInner}>
-      <View style={[styles.filterIconWell, { backgroundColor: koolaIconWell[scheme] }]}>
-        <MaterialIcons name="tune" size={18} color={semantic.action.primary} />
+}> = ({ semantic, styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
+  <View style={styles.filterBar}>
+    <View style={styles.filterWell}>
+      <MaterialIcons name="filter-list" size={20} color={semantic.text.onAction} />
+      <KoolaText variant="caption" weight="800" tone="surface" style={styles.filterWellLabel}>
+        LỌC
+      </KoolaText>
+    </View>
+    <View style={styles.filterPills}>
+      <View style={styles.pillRow}>
+        {shoppingSortChips.map((label) => {
+          const selected = activeSort === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              android_ripple={{ color: semantic.border.subtle }}
+              onPress={() => onToggleSort(label)}
+              hitSlop={4}
+              style={[styles.pill, selected && styles.pillSelected]}>
+              <KoolaText
+                variant="caption"
+                weight={selected ? '700' : '600'}
+                tone={selected ? 'surface' : 'muted'}
+                numberOfLines={1}>
+                {label}
+              </KoolaText>
+              {selected ? (
+                <MaterialIcons name="check" size={13} color={semantic.text.onAction} style={styles.pillCheck} />
+              ) : null}
+            </Pressable>
+          );
+        })}
       </View>
-      <View style={styles.filterRight}>
-        <View style={styles.pillRow}>
-          {shoppingSortChips.map((label) => {
-            const selected = activeSort === label;
-            return (
-              <Pressable
-                key={label}
-                accessibilityRole="button"
-                accessibilityLabel={label}
-                accessibilityState={{ selected }}
-                android_ripple={{ color: semantic.border.subtle }}
-                onPress={() => onToggleSort(label)}
-                hitSlop={4}
-                style={[styles.pill, selected && styles.pillSelected]}>
-                <KoolaText variant="caption" weight="800" tone={selected ? 'primary' : 'muted'} numberOfLines={1}>
-                  {label}
-                </KoolaText>
-              </Pressable>
-            );
-          })}
-        </View>
-        <View style={[styles.pillRow, styles.pillRowLast]}>
-          {shoppingAttributeChips.map((label) => {
-            const selected = activeAttr === label;
-            return (
-              <Pressable
-                key={label}
-                accessibilityRole="button"
-                accessibilityLabel={label}
-                accessibilityState={{ selected }}
-                android_ripple={{ color: semantic.border.subtle }}
-                onPress={() => onToggleAttr(label)}
-                hitSlop={4}
-                style={[styles.pill, selected && styles.pillSelected]}>
-                <KoolaText variant="caption" weight="800" tone={selected ? 'primary' : 'muted'} numberOfLines={1}>
-                  {label}
-                </KoolaText>
-              </Pressable>
-            );
-          })}
-        </View>
+      <View style={styles.pillRow}>
+        {shoppingAttributeChips.map((label) => {
+          const selected = activeAttr === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              android_ripple={{ color: semantic.border.subtle }}
+              onPress={() => onToggleAttr(label)}
+              hitSlop={4}
+              style={[styles.pill, selected && styles.pillSelected]}>
+              <KoolaText
+                variant="caption"
+                weight={selected ? '700' : '600'}
+                tone={selected ? 'surface' : 'muted'}
+                numberOfLines={1}>
+                {label}
+              </KoolaText>
+              {selected ? (
+                <MaterialIcons name="check" size={13} color={semantic.text.onAction} style={styles.pillCheck} />
+              ) : null}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
-  </PersonalCard>
+  </View>
 );
 
 // ── Single-column product row (thumbnail + meta + price + cart) ───────────────
@@ -316,12 +307,9 @@ const ShoppingHomeScreen: React.FC = () => {
         styles={styles}
         value={query}
         onChangeText={setQuery}
-        onCartPress={handleComingSoon}
-        onBellPress={handleComingSoon}
       />
       <FilterCard
         semantic={semantic}
-        scheme={resolvedScheme}
         styles={styles}
         activeSort={activeSort}
         activeAttr={activeAttr}
@@ -448,8 +436,8 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: 48,
-      borderRadius: koolaRadii.lg,
-      backgroundColor: semantic.surface.level1,
+      borderRadius: koolaRadii.md,
+      backgroundColor: scheme === 'dark' ? semantic.surface.level2 : '#E9ECF1',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.subtle,
       paddingHorizontal: 8,
@@ -497,47 +485,49 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    filterCardOverride: {
-      marginHorizontal: 0,
-      marginBottom: 10,
-      padding: 12,
-    },
-    filterCardInner: {
+    filterBar: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
+      marginBottom: 10,
     },
-    filterIconWell: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+    filterWell: {
+      width: 52,
+      alignSelf: 'stretch',
+      borderRadius: koolaRadii.sm,
+      backgroundColor: semantic.action.primary,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 10,
-      marginTop: 2,
+      paddingVertical: 8,
     },
-    filterRight: {
+    filterWellLabel: {
+      marginTop: 4,
+      letterSpacing: 0.4,
+    },
+    filterPills: {
       flex: 1,
+      gap: 8,
     },
     pillRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      marginBottom: 6,
-    },
-    pillRowLast: {
-      marginBottom: 0,
+      gap: 8,
     },
     pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
       borderRadius: koolaRadii.pill,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
       backgroundColor: semantic.surface.level0,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1,
       borderColor: semantic.border.subtle,
-      marginRight: 6,
-      marginBottom: 2,
+    },
+    pillCheck: {
+      marginLeft: 6,
     },
     pillSelected: {
-      backgroundColor: semantic.action.primarySoft,
+      backgroundColor: semantic.action.primary,
       borderColor: semantic.action.primary,
     },
     categoryRow: {

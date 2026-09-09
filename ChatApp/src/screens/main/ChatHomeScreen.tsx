@@ -14,7 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
 import { onChatHomeReset } from '../../navigation/chatTabReset';
-import KoolaHeader from '../../components/KoolaHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import ConversationListScreen from './ConversationListScreen';
 import ContactsScreen from './ContactsScreen';
@@ -23,7 +23,23 @@ import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
+import { NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+
+const ConnectionsPlaceholder: React.FC = () => {
+  const { tokens } = useTheme();
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.semantic.bg.canvas, padding: 24 }}>
+      <MaterialIcons name="handshake" size={48} color={tokens.semantic.text.muted} />
+      <KoolaText variant="title" weight="600" align="center" style={{ marginTop: 12, color: tokens.semantic.text.primary }}>
+        Kết nối
+      </KoolaText>
+      <KoolaText variant="body" align="center" style={{ marginTop: 8, color: tokens.semantic.text.muted }}>
+        Khám phá và kết nối với cộng đồng Koola.
+      </KoolaText>
+    </View>
+  );
+};
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
 const CHAT_SUB_TAB_BAR_HEIGHT = 40;
@@ -39,9 +55,10 @@ type TabMeta = {
 
 const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
   Messages: { iconIdle: 'chat', iconActive: 'forum', label: 'Tin nhắn' },
-  Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Tìm người' },
+  Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Danh bạ' },
   Moments: { iconIdle: 'star-outline', iconActive: 'star', label: 'Khoảnh khắc' },
-  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
+  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Phim' },
+  Connections: { iconIdle: 'handshake', iconActive: 'handshake', label: 'Kết nối' },
 };
 
 // Hook for unread counts. Returns 0 for now — wire to store/api when available.
@@ -228,12 +245,14 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
   const shortsUnread = useUnreadCount('Shorts');
+  const connectionsUnread = useUnreadCount('Connections');
 
   const unreadByRoute: Record<string, number> = {
     Messages: messagesUnread,
     Contacts: contactsUnread,
     Moments: momentsUnread,
     Shorts: shortsUnread,
+    Connections: connectionsUnread,
   };
 
   const barStyles = useMemo(() => ({
@@ -385,6 +404,7 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
           <TopTab.Screen name="Contacts" component={ContactsScreen} />
           <TopTab.Screen name="Moments" component={MomentsScreen} />
           <TopTab.Screen name="Shorts" component={ShortsScreen} />
+          <TopTab.Screen name="Connections" component={ConnectionsPlaceholder} />
         </TopTab.Navigator>
       </ChatSubTabVisibilityContext.Provider>
       <QrScannerModal
@@ -403,9 +423,86 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
+// Dock nằm sát 2 hõm notch: trái = Tìm kiếm, phải = QR + thêm mới.
+// Host trong suốt, không viền/divider — hoà vào bg header (level1) và nền box dưới.
+const ChatSearchDock: React.FC<{
+  onSearchPress: () => void;
+  onQrPress: () => void;
+  onAddPress: () => void;
+}> = ({ onSearchPress, onQrPress, onAddPress }) => {
+  const { tokens } = useTheme();
+  const sem = tokens.semantic;
+  return (
+    <View style={dockStyles.host}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Tìm kiếm"
+        onPress={onSearchPress}
+        style={dockStyles.searchBtn}
+        hitSlop={6}>
+        <MaterialIcons name="search" size={24} color={sem.action.primary} />
+        <KoolaText variant="body" style={{ color: sem.text.muted, marginLeft: 8 }}>
+          Tìm kiếm
+        </KoolaText>
+      </Pressable>
+      <View style={dockStyles.rightGroup}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Quét mã QR"
+          onPress={onQrPress}
+          hitSlop={8}
+          style={dockStyles.iconBtn}>
+          <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Tạo nhóm"
+          onPress={onAddPress}
+          hitSlop={8}
+          style={dockStyles.iconBtn}>
+          <MaterialIcons name="add" size={22} color={sem.action.primary} />
+        </Pressable>
+      </View>
+    </View>
+  );
+};
+
+const dockStyles = StyleSheet.create({
+  host: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+    backgroundColor: 'transparent',
+    // Không viền — cùng màu với box/surface.level1 bên dưới nên không lộ viền
+    borderWidth: 0,
+  },
+  searchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    height: '100%',
+  },
+  rightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { tokens } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Notch tab bottom = insets.top + NOTCH_WING_INSET + 22; dock wraps that plus
+  // paddingTop/paddingBottom + dock height — content must clear the full box.
+  const notchPad = insets.top + NOTCH_WING_INSET + 4 + 40 + 4;
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
@@ -447,8 +544,26 @@ const ChatHomeScreen: React.FC = () => {
   }, [navigation]);
 
   return (
-    <View style={screenStyles.container}>
-      <KoolaHeader onQrPress={handleQrPress} onSearchPress={handleSearchPress} onAddPress={handleAddPress} logoAnimation="none" animatedDockBorder stackedLayout />
+    <View style={[screenStyles.container, { paddingTop: notchPad }]}>
+      {/* Dock gác lên đúng vùng cánh notch — 2 hõm trái/phải của tab KOOLA.
+          Nền surface.level1 để liền mạch với sub-tab bar + rows conv bên dưới;
+          NotchHeader (zIndex 10 ở parent) vẽ đè lên nên tab KOOLA vẫn nổi. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: insets.top + NOTCH_WING_INSET,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          paddingHorizontal: 12,
+          paddingTop: 4,
+          paddingBottom: 4,
+          backgroundColor: tokens.semantic.surface.level1,
+          justifyContent: 'center',
+        }}>
+        <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+      </View>
       {!contentReady ? (
         // Interactive shell: KoolaHeader (command dock) stays live above; the
         // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
@@ -478,7 +593,7 @@ const ChatHomeScreen: React.FC = () => {
 // CHAT_SUB_TAB_BAR_HEIGHT) + skeleton conversation rows (matching
 // ConversationListItem: 48px avatar, minHeight 72, hairline separators).
 const SHELL_ROW_KEYS = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'];
-const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3'];
+const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3', 't4'];
 
 const ChatHomeShell: React.FC<{ styles: ReturnType<typeof makeScreenStyles> }> = ({ styles }) => (
   <View style={styles.shellBody}>
@@ -505,7 +620,7 @@ function makeScreenStyles(semantic: SemanticTokens) {
   return StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: semantic.bg.canvas,
+      backgroundColor: 'transparent',
     },
     shellBody: {
       flex: 1,

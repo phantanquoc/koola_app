@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../ui';
+import { NotchHeader } from '../components/NotchHeader';
+import { LightFieldBackground } from '../screens/main/components/personal/LightFieldBackground';
 import type { ChatTabStackParamList } from './types';
 import ChatHomeScreen from '../screens/main/ChatHomeScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
@@ -15,95 +18,93 @@ import AudienceListEditorScreen from '../screens/moments/AudienceListEditorScree
 const Stack = createNativeStackNavigator<ChatTabStackParamList>();
 
 const ChatTabStack: React.FC = () => {
-  const { resolvedScheme } = useTheme();
+  const { resolvedScheme, tokens } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
-  // palette unused after contentStyle -> transparent (prevents canvas/surface flash during slide)
   const contentStyle = useMemo(
     () => ({ backgroundColor: 'transparent' }),
     [],
   );
 
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'none',
-        contentStyle,
-        statusBarTranslucent: true,
-        navigationBarTranslucent: true,
-        statusBarStyle: isDark ? 'light' : 'dark',
-      }}>
-      <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
-      <Stack.Screen
-        name="Chat"
-        component={ChatScreen}
-        // slide_from_right kept, but animationDuration trimmed to 150ms (native
-        // default ~350ms) for a snappier push/pop. freezeOnBlur stays: once Chat
-        // loses focus (back-press pop), react-freeze suspends the whole subtree
-        // AFTER the slide animation (DelayedFreeze setTimeout(0)), so no late async
-        // setState (messages/pin/avatar) can re-render the native view and flash a
-        // stale snapshot over the list.
-        // Root-cause fix for the pop-back flicker — see [[chat_popback_flicker]].
-        options={{
-          animation: 'slide_from_right',
-          animationDuration: 150,
-          freezeOnBlur: true,
-        }}
-      />
-      <Stack.Screen
-        name="GroupInfo"
-        component={GroupInfoScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="UniversalSearch"
-        component={UniversalSearchScreen}
-        options={{ headerShown: false }}
-      />
-      {/* __DEV__ only — Logo Lab playground for 3D variant experiments */}
-      {__DEV__ && (
+    <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
+      <LightFieldBackground />
+      <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: 'none',
+          contentStyle,
+          statusBarTranslucent: true,
+          navigationBarTranslucent: true,
+          statusBarStyle: isDark ? 'light' : 'dark',
+        }}>
+        <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
         <Stack.Screen
-          name="OutboxDevPanel"
-          component={require('../screens/dev/OutboxDevPanel').default}
-          options={{ headerShown: true, title: '[DEV] Outbox Panel' }}
+          name="Chat"
+          component={ChatScreen}
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 150,
+            freezeOnBlur: true,
+          }}
         />
-      )}
-      {__DEV__ && (
         <Stack.Screen
-          name="LogoLab"
-          component={require('../screens/dev/LogoLabScreen').default}
-          options={{ headerShown: true, title: '[DEV] Logo Lab' }}
+          name="GroupInfo"
+          component={GroupInfoScreen}
+          options={{ headerShown: false }}
         />
-      )}
-      {/* ── Moments screens ────────────────────────────────────────── */}
-      <Stack.Screen
-        name="MomentComposer"
-        component={MomentComposerScreen}
-        options={{ headerShown: false, presentation: 'modal' }}
-      />
-      <Stack.Screen
-        name="MomentViewer"
-        component={MomentViewerScreen}
-        options={{ headerShown: false, presentation: 'fullScreenModal' }}
-      />
-      <Stack.Screen
-        name="Highlights"
-        component={HighlightsScreen}
-        options={{ headerShown: true, title: 'Nổi bật' }}
-      />
-      <Stack.Screen
-        name="AudienceListEditor"
-        component={AudienceListEditorScreen}
-        options={{ headerShown: false }}
-      />
-    </Stack.Navigator>
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="UniversalSearch"
+          component={UniversalSearchScreen}
+          options={{ headerShown: false }}
+        />
+        {__DEV__ && (
+          <Stack.Screen
+            name="OutboxDevPanel"
+            component={require('../screens/dev/OutboxDevPanel').default}
+            options={{ headerShown: true, title: '[DEV] Outbox Panel' }}
+          />
+        )}
+        {__DEV__ && (
+          <Stack.Screen
+            name="LogoLab"
+            component={require('../screens/dev/LogoLabScreen').default}
+            options={{ headerShown: true, title: '[DEV] Logo Lab' }}
+          />
+        )}
+        <Stack.Screen
+          name="MomentComposer"
+          component={MomentComposerScreen}
+          options={{ headerShown: false, presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="MomentViewer"
+          component={MomentViewerScreen}
+          options={{ headerShown: false, presentation: 'fullScreenModal' }}
+        />
+        <Stack.Screen
+          name="Highlights"
+          component={HighlightsScreen}
+          options={{ headerShown: true, title: 'Nổi bật' }}
+        />
+        <Stack.Screen
+          name="AudienceListEditor"
+          component={AudienceListEditorScreen}
+          options={{ headerShown: false }}
+        />
+      </Stack.Navigator>
+    </View>
   );
 };
+
+const styles = StyleSheet.create({
+  host: { flex: 1 },
+});
 
 export default ChatTabStack;

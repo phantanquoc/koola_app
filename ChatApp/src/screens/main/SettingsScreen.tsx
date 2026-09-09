@@ -21,7 +21,7 @@ import { PersonalSecuritySection } from './components/personal/PersonalSecurityS
  * which navigates to `SettingsDetail`.
  */
 const SettingsScreen: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, activeAccount, logout } = useAuth();
   const tabBarInset = useTabBarBottomInset();
   const insets = useSafeAreaInsets();
   const navigation =
@@ -49,8 +49,9 @@ const SettingsScreen: React.FC = () => {
         ]}
         showsVerticalScrollIndicator={false}>
         <PersonalProfileCard
-          displayName={user?.displayName || 'Không rõ'}
-          avatar={user?.avatar || undefined}
+          displayName={activeAccount?.displayName || user?.displayName || 'Không rõ'}
+          avatar={activeAccount?.avatar || user?.avatar || undefined}
+          accountType={activeAccount?.accountType ?? 'personal'}
           onEdit={() => navigation.navigate('EditProfile')}
           onSwitchAccount={() => navigation.navigate('AccountList')}
           onUpgradeBusiness={() => navigation.navigate('UpgradeAccount')}
@@ -62,6 +63,7 @@ const SettingsScreen: React.FC = () => {
           phone={user?.phone ?? undefined}
           email={user?.email ?? ''}
           userId={user?._id ? `KOOLA-${user._id.slice(-5).toUpperCase()}` : 'KOOLA-XXXXX'}
+          onEdit={() => navigation.navigate('EditProfile')}
         />
 
         {/* Settings & security — Figma 92:74 card. "Cài đặt" opens the detail

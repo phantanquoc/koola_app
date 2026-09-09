@@ -158,7 +158,7 @@ const LogoLabScreen: React.FC = () => {
 
       {/* ─── Notch variants (DEV, 3 mẫu) ─────────────────────────── */}
       <KoolaSurface variant="raised" style={s.variantCard}>
-        <KoolaText variant="label">Notch header — 3 mẫu (chọn để áp dụng toàn app)</KoolaText>
+        <KoolaText variant="label">Notch header — 4 mẫu (chọn để áp dụng toàn app)</KoolaText>
         <KoolaText variant="caption" tone="muted" style={{ marginTop: 4 }}>Đang dùng: <KoolaText variant="caption" weight="700">{NOTCH_PRESETS[notchPresetId].label}</KoolaText></KoolaText>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
           <KoolaText variant="caption">Xem nền:</KoolaText>
@@ -178,6 +178,13 @@ const LogoLabScreen: React.FC = () => {
                 </View>
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
                   {(() => {
+                    if (pr.flat) {
+                      return (
+                        <View style={{ height: 48, backgroundColor: notchDark ? '#1C2026' : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                          <KoolaText variant="label" weight="700" style={{ fontSize: 11 }}>KOOLA</KoolaText>
+                        </View>
+                      );
+                    }
                     const W = 340; const wingY = 4; const tabY = wingY + pr.tabDrop; const cx = W/2; const hw = pr.tabWidth/2; const r = pr.fillet;
                     const xl0 = cx - hw - r; const xlm = cx - hw; const xlf = cx - hw + r; const xrf = cx + hw - r; const xrm = cx + hw; const xr0 = cx + hw + r;
                     const midY = (wingY + tabY)/2; const dy = (tabY-wingY)*pr.dyFactor;

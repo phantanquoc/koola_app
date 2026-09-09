@@ -59,10 +59,31 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title }) => {
   const { tokens, resolvedScheme } = useTheme();
   const presetId = React.useSyncExternalStore(subscribeNotchPreset, getNotchPreset, getNotchPreset);
   const preset = NOTCH_PRESETS[presetId];
+
+  // All hooks must run unconditionally — the flat early-return below must not
+  // skip any hook call or React will throw "Rendered fewer hooks than expected".
   const { d, h, wingY, tabY } = useMemo(
     () => buildNotchPath(width, insets.top, preset.tabWidth, preset.tabDrop, preset.fillet, preset.dyFactor, preset.hx, preset.hy, preset.bottomHx),
     [width, insets.top, preset.tabWidth, preset.tabDrop, preset.fillet, preset.dyFactor, preset.hx, preset.hy, preset.bottomHx],
   );
+
+  // ── Flat: simple rectangular bar, no notch, no shadow ──
+  if (preset.flat) {
+    const flatH = insets.top + NOTCH_WING_INSET + 22;
+    return (
+      <View style={[styles.host, { height: flatH }, style]}>
+        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: tokens.semantic.surface.level1 }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: insets.top - 6, alignItems: 'center' }}>
+          {title ? (
+            <KoolaText variant="label" weight="700" style={{ color: tokens.semantic.text.primary }}>{title}</KoolaText>
+          ) : (
+            <KoolaLogo showMark={false} showWordmark variant="flat" wordmarkSize={20} />
+          )}
+        </View>
+      </View>
+    );
+  }
+
   const fill = tokens.semantic.surface.level1;
   const shadow = resolvedScheme === 'light' ? 'rgba(33, 45, 67, 0.14)' : 'rgba(0,0,0,0.45)';
   const tabCenterY = wingY + (tabY - wingY) / 2;
@@ -88,7 +109,7 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title }) => {
 
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { top: 0, height: h }]}>
         <View style={{ position: 'absolute', left: 0, right: 0, top: tabCenterY - 17, alignItems: 'center' }}>
-{title ? (
+          {title ? (
             <KoolaText variant="label" weight="700" style={{ color: tokens.semantic.text.primary }}>{title}</KoolaText>
           ) : (
             <KoolaLogo showMark={false} showWordmark variant="flat" wordmarkSize={20} />

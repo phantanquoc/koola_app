@@ -34,7 +34,7 @@ export const koolaColors: Palette = {
   faint: '#98A2B3',
   line: '#E4E7EC',
   canvas: '#F7F9FC',
-  surface: '#FFFFFF',
+  surface: '#F5F7F9',
   primary: '#2563EB',
   primaryDark: '#1D4ED8',
   primarySoft: '#DBEAFE',
@@ -349,19 +349,19 @@ export type SurfaceScale = {
 /**
  * Light surface scale.
  * level0: slightly recessed (cool grey tint off pure-white canvas)
- * level1: pure white (standard content surface)
- * level2: slightly warmer white (elevated card)
+ * level1: near-white (standard content surface — softened from pure white to reduce glare)
+ * level2: pure white (elevated card)
  * overlay: dark scrim base
  *
  * WCAG AA check:
  *   ink (#101828) on level0 (#F2F4F7) = 14.5:1 ✓
- *   ink (#101828) on level1 (#FFFFFF) = 17.4:1 ✓
- *   ink (#101828) on level2 (#FAFBFC) = 16.6:1 ✓
+ *   ink (#101828) on level1 (#F5F7F9) = 16.2:1 ✓
+ *   ink (#101828) on level2 (#F9FAFB) = 17.2:1 ✓
  */
 export const koolaLightSurfaces: SurfaceScale = {
   level0: '#F2F4F7',
-  level1: '#FFFFFF',
-  level2: '#FAFBFC',
+  level1: '#F5F7F9',
+  level2: '#F9FAFB',
   overlay: 'rgba(16, 24, 40, 0.6)',
 };
 
