@@ -417,9 +417,12 @@ const ShoppingHomeScreen: React.FC = () => {
 const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
   const cardShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
   return StyleSheet.create({
+    // Transparent so the ShoppingTabStack light field reads through the list
+    // gaps, matching the Personal tab (design D1). The stack host already
+    // paints `bg.canvas` under this screen, so there is no flash of white.
     screen: {
       flex: 1,
-      backgroundColor: semantic.bg.canvas,
+      backgroundColor: 'transparent',
     },
     screenTransparent: {
       flex: 1,

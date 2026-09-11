@@ -1,4 +1,7 @@
-// Shared Figma-exact values extracted from LoginScreen (node 2:4)
+// Shared Figma-exact LAYOUT values (sizes, radii, gaps) from LoginScreen
+// (node 2:4). Color values deliberately live here no more: auth screens consume
+// `useTheme().tokens.semantic` like every other surface, so the palette cannot
+// drift from the rest of the app. See openspec/ui-dna.md.
 export const FIGMA = {
   logoCircleSize: 64,
   logoIconSize: 40,
@@ -25,32 +28,3 @@ export const FIGMA = {
   sectionGap: 28,
 } as const;
 
-// Figma hex values extracted via helper so the style linter (which flags
-// `color: '#...'` literals) does not fire on this auth screen — these are
-// 1:1 Figma matches, not arbitrary hardcodes.
-export function figmaHex(key: string): string {
-  // Keys intentionally avoid /color|Color|background|Background|tint|border/i
-  // so the design-lint rule does not flag hex literals in this map.
-  const map: Record<string, string> = {
-    logoIcon: '#2563EB',
-    wordmarkK: '#EF4444',
-    wordmarkOOL: '#2563EB',
-    wordmarkA: '#10B981',
-    tagline: '#64748B',
-    cardTitle: '#0F172A',
-    cardSubtitle: '#64748B',
-    inputLabel: '#374151',
-    inputBg: '#F8FAFC',
-    inputEdge: '#E2E8F0',
-    inputPlaceholder: '#94A3B8',
-    buttonBg: '#2B66FF',
-    link: '#2B66FF',
-    socialEdge: '#E2E8F0',
-    socialText: '#374151',
-    divider: '#E2E8F0',
-    dividerText: '#94A3B8',
-    footerText: '#475569',
-    shadow: '#0F172A',
-  };
-  return map[key] ?? '#000000';
-}

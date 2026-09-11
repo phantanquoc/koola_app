@@ -17,8 +17,13 @@ import type { Palette } from '../ui/theme';
  *   ...
  *   <Pressable onPress={() => notify()} />
  *   return <View style={{ flex: 1 }}>{list}{toast}</View>;
+ *
+ * Screens whose content sits behind the floating tab dock (the dock is
+ * `position:absolute; bottom:0`) must lift the toast above it, otherwise the
+ * pill renders underneath the dock and is invisible. Pass an explicit
+ * `bottom` in that case — e.g. `useComingSoonToast({ bottom: inset + 16 })`.
  */
-export function useComingSoonToast() {
+export function useComingSoonToast(options?: { bottom?: number }) {
   const { palette } = useTheme();
   const [msg, setMsg] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +45,10 @@ export function useComingSoonToast() {
     [],
   );
 
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const styles = useMemo(
+    () => makeStyles(palette, options?.bottom),
+    [palette, options?.bottom],
+  );
 
   const toast = msg ? (
     <View
@@ -56,11 +64,11 @@ export function useComingSoonToast() {
   return { notify, toast };
 }
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (p: Palette, bottomOverride?: number) =>
   StyleSheet.create({
     toast: {
       position: 'absolute',
-      bottom: 24,
+      bottom: bottomOverride ?? 24,
       left: 32,
       right: 32,
       backgroundColor: p.ink,

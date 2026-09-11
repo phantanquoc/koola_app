@@ -48,7 +48,7 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
           {/* Name + account-type badge */}
           <View style={styles.nameRow}>
             <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel="Chỉnh sửa hồ sơ" style={({ pressed }) => [pressed && styles.pressed]}>
-              <KoolaText variant="heading" weight="800" numberOfLines={1} style={styles.name}>{displayName}</KoolaText>
+              <KoolaText variant="heading" weight="800" numberOfLines={2} ellipsizeMode="tail" style={styles.name}>{displayName}</KoolaText>
             </Pressable>
             <View
               style={[styles.accountBadge, accountType === 'business' ? styles.accountBadgeBusiness : styles.accountBadgePersonal]}

@@ -318,9 +318,11 @@ const ServicesHomeScreen: React.FC = () => {
 const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
   const bandShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
   return StyleSheet.create({
+    // Host is the SupportTabStack light-field's canvas — keep it transparent
+    // here so the bloom shows through the card gaps/outer background.
     screen: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: 'transparent',
     },
     listContent: {},
     contentInset: {

@@ -18,8 +18,8 @@ import {
   KoolaText,
   useTheme,
 } from '../../ui';
-import type { Palette } from '../../ui/theme';
-import { FIGMA, figmaHex } from './authFigma';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { FIGMA } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerify'>;
 
@@ -30,8 +30,8 @@ const MAX_ATTEMPTS = 5;
 const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
   const { email } = route.params;
   const { verifyOtp } = useAuth();
-  const { palette, resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeStyles(palette, resolvedScheme), [palette, resolvedScheme]);
+  const { tokens, resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens, resolvedScheme]);
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -219,11 +219,11 @@ const OtpVerifyScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
-const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
+const makeStyles = (t: SemanticTokens, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: t.bg.canvas,
     },
     scrollContent: {
       gap: FIGMA.sectionGap,
@@ -241,23 +241,23 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     },
     tagline: {
       fontSize: 13,
-      color: figmaHex('tagline'),
+      color: t.text.muted,
       fontWeight: '400',
       opacity: 0.9,
       textAlign: 'center' as const,
     },
     card: {
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderRadius: FIGMA.cardRadius,
       padding: FIGMA.cardPadding,
       gap: FIGMA.cardGap,
-      shadowColor: figmaHex('shadow'),
+      shadowColor: t.text.primary,
       shadowOffset: { width: 0, height: 12 },
       shadowOpacity: scheme === 'dark' ? 0.18 : 0.07,
       shadowRadius: 16,
       elevation: 6,
       borderWidth: scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
-      borderColor: scheme === 'dark' ? p.line : 'transparent',
+      borderColor: scheme === 'dark' ? t.border.subtle : 'transparent',
     },
     cardHeader: {
       gap: 6,
@@ -267,14 +267,14 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
       fontSize: FIGMA.cardTitleSize,
       lineHeight: Math.round(FIGMA.cardTitleSize * 1.2),
       fontWeight: '700',
-      color: figmaHex('cardTitle'),
+      color: t.text.primary,
       textAlign: 'center',
     },
     cardSubtitle: {
       fontSize: FIGMA.cardSubtitleSize,
       lineHeight: Math.round(FIGMA.cardSubtitleSize * 1.4),
       fontWeight: '400',
-      color: figmaHex('cardSubtitle'),
+      color: t.text.muted,
       textAlign: 'center',
     },
     fieldGroup: {
@@ -283,21 +283,21 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     inputLabel: {
       fontSize: FIGMA.inputLabelSize,
       fontWeight: '600',
-      color: figmaHex('inputLabel'),
+      color: t.text.primary,
     },
     inputShell: {
       minHeight: FIGMA.inputShellHeight,
       borderRadius: FIGMA.inputShellRadius,
       borderWidth: 1.5,
-      borderColor: scheme === 'dark' ? p.line : figmaHex('inputEdge'),
-      backgroundColor: scheme === 'dark' ? p.canvas : figmaHex('inputBg'),
+      borderColor: t.border.subtle,
+      backgroundColor: t.surface.level0,
       paddingHorizontal: 16,
     },
     primaryButton: {
       minHeight: FIGMA.buttonHeight,
       borderRadius: FIGMA.buttonRadius,
-      backgroundColor: figmaHex('buttonBg'),
-      shadowColor: figmaHex('buttonBg'),
+      backgroundColor: t.action.primary,
+      shadowColor: t.action.primary,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
       shadowRadius: 10,
@@ -311,7 +311,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     forgotText: {
       fontSize: FIGMA.linkSize,
       fontWeight: '600',
-      color: figmaHex('link'),
+      color: t.link,
     },
     footer: {
       paddingTop: 8,
@@ -319,17 +319,17 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     },
     footerText: {
       fontSize: FIGMA.footerTextSize,
-      color: figmaHex('footerText'),
+      color: t.text.muted,
       fontWeight: '400',
       textAlign: 'center',
     },
     footerLink: {
       fontSize: FIGMA.footerTextSize,
-      color: figmaHex('link'),
+      color: t.link,
       fontWeight: '700',
     },
     warningText: {
-      color: p.warning,
+      color: t.status.warning,
     },
     resendButton: {
       paddingVertical: 8,

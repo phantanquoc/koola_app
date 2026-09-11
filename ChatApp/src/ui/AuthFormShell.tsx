@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeProvider';
-import type { Palette } from './theme';
+import type { SemanticTokens } from './tokens/semantic';
 
 interface AuthFormShellProps {
   children: React.ReactNode;
@@ -46,9 +46,9 @@ export const AuthFormShell: React.FC<AuthFormShellProps> = ({
   bottomClearance = 24,
   background,
 }) => {
-  const { palette } = useTheme();
+  const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens]);
   const scrollRef = useRef<ScrollView>(null);
 
   return (
@@ -83,11 +83,11 @@ export const AuthFormShell: React.FC<AuthFormShellProps> = ({
   );
 };
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (t: SemanticTokens) =>
   StyleSheet.create({
     flex: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: t.bg.canvas,
     },
     content: {
       flexGrow: 1,

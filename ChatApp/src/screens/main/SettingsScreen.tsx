@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
+import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { koolaSpacing, useTheme } from '../../ui';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
@@ -27,6 +28,9 @@ const SettingsScreen: React.FC = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
   const { resolvedScheme } = useTheme();
+  const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast({
+    bottom: tabBarInset + 16,
+  });
   const styles = useMemo(() => makeScreenStyles(), []);
 
   // __DEV__ Logo Lab lives in the Chat tab stack, and `MainTabParamList`
@@ -56,7 +60,7 @@ const SettingsScreen: React.FC = () => {
           onSwitchAccount={() => navigation.navigate('AccountList')}
           onUpgradeBusiness={() => navigation.navigate('UpgradeAccount')}
         />
-        <PersonalWalletCard />
+        <PersonalWalletCard onComingSoon={notifyComingSoon} />
 
         {/* Account information — polished Figma 92:51 card */}
         <PersonalAccountInfoCard
@@ -85,6 +89,7 @@ const SettingsScreen: React.FC = () => {
           </PersonalCard>
         )}
       </ScrollView>
+      {comingSoonToast}
     </View>
   );
 };

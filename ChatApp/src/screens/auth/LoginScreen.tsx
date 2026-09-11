@@ -20,8 +20,8 @@ import {
   KoolaTextInput,
   useTheme,
 } from '../../ui';
-import type { Palette } from '../../ui/theme';
-import { FIGMA, figmaHex } from './authFigma';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { FIGMA } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -67,10 +67,10 @@ const AppleIcon: React.FC<{ size?: number; color?: string }> = ({
 
 const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const { login } = useAuth();
-  const { palette, resolvedScheme } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const styles = useMemo(
-    () => makeStyles(palette, resolvedScheme),
-    [palette, resolvedScheme],
+    () => makeStyles(tokens.semantic, resolvedScheme),
+    [tokens, resolvedScheme],
   );
 
   const [email, setEmail] = useState('');
@@ -199,7 +199,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 returnKeyType="next"
                 onSubmitEditing={() => passwordRef.current?.focus()}
                 blurOnSubmit={false}
-                placeholderTextColor={figmaHex('inputPlaceholder')}
+                placeholderTextColor={tokens.semantic.text.faint}
                 labelStyle={styles.inputLabel}
               />
 
@@ -219,7 +219,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 accessibilityLabel="Mat khau"
                 returnKeyType="go"
                 onSubmitEditing={handleLogin}
-                placeholderTextColor={figmaHex('inputPlaceholder')}
+                placeholderTextColor={tokens.semantic.text.faint}
                 labelStyle={styles.inputLabel}
               />
             </View>
@@ -300,11 +300,11 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
-const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
+const makeStyles = (t: SemanticTokens, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: t.bg.canvas,
     },
 
     // Column wrapper — Figma main-scroll-container gap: 28px
@@ -327,7 +327,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     },
     tagline: {
       fontSize: 13,
-      color: figmaHex('tagline'),
+      color: t.text.muted,
       fontWeight: '400',
       opacity: 0.9,
       textAlign: 'center' as const,
@@ -335,17 +335,17 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
 
     // ── Login card (Figma 2:26) ──
     card: {
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderRadius: FIGMA.cardRadius,
       padding: FIGMA.cardPadding,
       gap: FIGMA.cardGap,
-      shadowColor: figmaHex('shadow'),
+      shadowColor: t.text.primary,
       shadowOffset: { width: 0, height: 12 },
       shadowOpacity: scheme === 'dark' ? 0.18 : 0.07,
       shadowRadius: 16,
       elevation: 6,
       borderWidth: scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
-      borderColor: scheme === 'dark' ? p.line : 'transparent',
+      borderColor: scheme === 'dark' ? t.border.subtle : 'transparent',
     },
     cardHeader: {
       gap: 6,
@@ -355,14 +355,14 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
       fontSize: FIGMA.cardTitleSize,
       lineHeight: Math.round(FIGMA.cardTitleSize * 1.2),
       fontWeight: '700',
-      color: figmaHex('cardTitle'),
+      color: t.text.primary,
       textAlign: 'center',
     },
     cardSubtitle: {
       fontSize: FIGMA.cardSubtitleSize,
       lineHeight: Math.round(FIGMA.cardSubtitleSize * 1.4),
       fontWeight: '400',
-      color: figmaHex('cardSubtitle'),
+      color: t.text.muted,
       textAlign: 'center',
     },
 
@@ -373,14 +373,14 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     inputLabel: {
       fontSize: FIGMA.inputLabelSize,
       fontWeight: '600',
-      color: figmaHex('inputLabel'),
+      color: t.text.primary,
     },
     inputShell: {
       minHeight: FIGMA.inputShellHeight,
       borderRadius: FIGMA.inputShellRadius,
       borderWidth: 1.5,
-      borderColor: scheme === 'dark' ? p.line : figmaHex('inputEdge'),
-      backgroundColor: scheme === 'dark' ? p.canvas : figmaHex('inputBg'),
+      borderColor: t.border.subtle,
+      backgroundColor: t.surface.level0,
       paddingHorizontal: 16,
     },
 
@@ -388,8 +388,8 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     primaryButton: {
       minHeight: FIGMA.buttonHeight,
       borderRadius: FIGMA.buttonRadius,
-      backgroundColor: figmaHex('buttonBg'),
-      shadowColor: figmaHex('buttonBg'),
+      backgroundColor: t.action.primary,
+      shadowColor: t.action.primary,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
       shadowRadius: 10,
@@ -405,7 +405,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     forgotText: {
       fontSize: FIGMA.linkSize,
       fontWeight: '600',
-      color: figmaHex('link'),
+      color: t.link,
     },
 
     // ── Social section (Figma 3:4) ──
@@ -419,11 +419,11 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     dividerLine: {
       flex: 1,
       height: 1,
-      backgroundColor: scheme === 'dark' ? p.line : figmaHex('divider'),
+      backgroundColor: t.border.subtle,
     },
     dividerText: {
       fontSize: FIGMA.dividerTextSize,
-      color: figmaHex('dividerText'),
+      color: t.text.faint,
       fontWeight: '400',
       marginHorizontal: 12,
     },
@@ -436,12 +436,12 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
       minHeight: FIGMA.socialHeight,
       borderRadius: FIGMA.socialRadius,
       borderWidth: 1.5,
-      borderColor: scheme === 'dark' ? p.line : figmaHex('socialEdge'),
-      backgroundColor: p.surface,
+      borderColor: t.border.subtle,
+      backgroundColor: t.surface.level1,
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 12,
-      shadowColor: figmaHex('shadow'),
+      shadowColor: t.text.primary,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: scheme === 'dark' ? 0.12 : 0.03,
       shadowRadius: 4,
@@ -464,7 +464,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     socialButtonText: {
       fontSize: FIGMA.socialTextSize,
       fontWeight: '600',
-      color: figmaHex('socialText'),
+      color: t.text.primary,
       marginLeft: 8,
     },
 
@@ -475,13 +475,13 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') =>
     },
     footerText: {
       fontSize: FIGMA.footerTextSize,
-      color: figmaHex('footerText'),
+      color: t.text.muted,
       fontWeight: '400',
       textAlign: 'center',
     },
     footerLink: {
       fontSize: FIGMA.footerTextSize,
-      color: figmaHex('link'),
+      color: t.link,
       fontWeight: '700',
     },
   });

@@ -71,7 +71,7 @@ All UI must reference palette tokens via `useTheme().palette` — never hardcode
 
 Intentional-static exception: per-item accent tints sourced from data (e.g. a product/category's own `accent` hex used as `${accent}18` icon-shell fill) stay literal — they are content, not chrome, and read correctly on both schemes. Everything structural (surface, canvas, line, ink, text) must be palette tokens.
 
-**Figma-auth exception:** Auth screens (`src/screens/auth/*`) that implement a 1:1 Figma design (e.g. `koola-login-redesign`) may use exact Figma hex values via a local `figmaHex()` helper. These are spec-matched colors from the design file, not arbitrary hardcodes. The helper pattern keeps the linter clean and centralizes the Figma color map in one place per screen.
+**Auth screens follow the same rule — no Figma-color exception.** The earlier `figmaHex()` escape hatch (which let `src/screens/auth/*` carry a parallel hex map from the Figma file) has been removed: those hexes sat a few units off the system (`#2B66FF` vs `action.primary #2563EB`, `#F8FAFC` vs the surface scale, `#64748B` vs `text.muted`), which made login read as a slightly different app than the five tabs. Auth screens consume `useTheme().tokens.semantic` like every other surface. Layout-only Figma values (sizes, radii, gaps) still live in `src/screens/auth/authFigma.ts` under `FIGMA`.
 
 Pattern: `const { palette } = useTheme(); const styles = useMemo(() => makeStyles(palette), [palette]);` (legacy)
 

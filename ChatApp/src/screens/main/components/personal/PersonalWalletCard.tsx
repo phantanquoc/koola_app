@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
@@ -15,6 +15,7 @@ export interface PersonalWalletCardProps {
   onScanQr?: () => void;
   onPointsHistory?: () => void;
   onRedeemPoints?: () => void;
+  onComingSoon?: () => void;
 }
 
 /**
@@ -46,10 +47,10 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
   onScanQr,
   onPointsHistory,
   onRedeemPoints,
+  onComingSoon,
 }) => {
   const { tokens, resolvedScheme } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
-  const [revealed, setRevealed] = useState(false);
 
   const actionHandlers: Record<string, (() => void) | undefined> = {
     topup: onTopUp,
@@ -73,13 +74,14 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
           <KoolaText variant="body" style={styles.balanceLabel}>Số dư</KoolaText>
           <KoolaText variant="label" weight="800" style={styles.balanceValue}>{balance}</KoolaText>
           <Pressable
-            onPress={() => setRevealed(v => !v)}
+            disabled
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel={revealed ? 'Ẩn số dư' : 'Hiện số dư'}
-            style={({ pressed }) => [pressed && styles.pressed]}>
+            accessibilityLabel="Số dư đang ẩn"
+            accessibilityState={{ disabled: true }}
+            style={({ pressed }) => [styles.eyeBtnWrap, pressed && styles.pressed, styles.eyeDisabled]}>
             <View style={styles.eyeBtn}>
-              <MaterialIcons name={revealed ? 'visibility' : 'visibility-off'} size={15} color={tokens.semantic.text.muted} />
+              <MaterialIcons name="visibility-off" size={15} color={tokens.semantic.text.muted} />
             </View>
           </Pressable>
         </View>
@@ -90,7 +92,11 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
         {ACTIONS.map(action => (
           <View key={action.key} style={styles.actionCol}>
             <Pressable
-              onPress={actionHandlers[action.key]}
+              onPress={() => {
+                const h = actionHandlers[action.key];
+                if (h) h();
+                else onComingSoon?.();
+              }}
               accessibilityRole="button"
               accessibilityLabel={action.label}
               style={({ pressed }) => [pressed && styles.pressed]}>
@@ -138,7 +144,10 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
 
         <View style={styles.pillRow}>
           <Pressable
-            onPress={onPointsHistory}
+            onPress={() => {
+              if (onPointsHistory) onPointsHistory();
+              else onComingSoon?.();
+            }}
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel="Lịch sử tích điểm"
@@ -149,7 +158,10 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
             </View>
           </Pressable>
           <Pressable
-            onPress={onRedeemPoints}
+            onPress={() => {
+              if (onRedeemPoints) onRedeemPoints();
+              else onComingSoon?.();
+            }}
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel="Đổi điểm"
@@ -169,6 +181,8 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
   return StyleSheet.create({
     outer: { padding: koolaSpacing.lg },
     pressed: { opacity: koolaOpacity.pressed },
+    eyeDisabled: { opacity: 0.52 },
+    eyeBtnWrap: {},
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.lg },
     titleRow: { flexDirection: 'row', alignItems: 'center' },
     walletChip: { width: 22, height: 22, borderRadius: koolaRadii.xs, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.sm },

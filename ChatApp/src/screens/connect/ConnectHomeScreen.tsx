@@ -407,7 +407,7 @@ const makeListStyles = (p: Palette) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: 'transparent',
     },
     footer: {
       paddingVertical: 16,
@@ -424,7 +424,7 @@ const BANNER_DISMISSED_KEY = 'connect_banner_dismissed';
 const ConnectHomeScreen: React.FC = () => {
   const navigation = useNavigation<ConnectNavProp>();
   const { palette } = useTheme();
-  const styles = useMemo(() => makeScreenStyles(palette), [palette]);
+  const styles = useMemo(() => makeScreenStyles(), []);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRelationship, setActiveRelationship] = useState('all');
@@ -549,11 +549,13 @@ const ConnectHomeScreen: React.FC = () => {
   );
 };
 
-const makeScreenStyles = (p: Palette) =>
+const makeScreenStyles = () =>
   StyleSheet.create({
+    // Transparent so the ConnectTabStack light field shows through the card
+    // gaps — same canvas treatment as the Chat/Shopping/Personal tabs.
     container: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: 'transparent',
     },
   });
 

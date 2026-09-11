@@ -22,11 +22,12 @@ export const PersonalAccountInfoCard: React.FC<PersonalAccountInfoCardProps> = (
   const { tokens, resolvedScheme } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
 
-  const rows = [
-    { icon: 'phone-iphone', label: 'Điện thoại', value: phone || 'Chưa có' },
-    { icon: 'mail', label: 'Email', value: email || 'Chưa có' },
-    { icon: 'badge', label: 'ID người dùng', value: userId },
-  ];
+  interface AccountRow { icon: string; label: string; value: string }
+  const optional: AccountRow[] = [
+    { icon: 'phone-iphone', label: 'Điện thoại', value: phone || '' },
+    { icon: 'mail', label: 'Email', value: email || '' },
+  ].filter(r => !!r.value);
+  const rows: AccountRow[] = [...optional, { icon: 'badge', label: 'ID người dùng', value: userId }];
 
   return (
     <PersonalCard style={styles.outer}>
