@@ -4,7 +4,6 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
 import type { SemanticTokens } from '../../../../ui/tokens/semantic';
 import { PersonalCard } from './PersonalCard';
-import { PERSONAL_BLUE_WELL } from './personalTokens';
 
 export interface PersonalAccountInfoCardProps {
   phone?: string;
@@ -76,7 +75,7 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     title: { color: semantic.text.primary, marginBottom: koolaSpacing.sm },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle },
     infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: koolaSpacing.sm },
-    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.sm },
+    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm },
     infoLabel: { color: semantic.text.muted, flex: 1 },
     infoValue: { color: semantic.text.primary, marginLeft: koolaSpacing.sm, flexShrink: 1, textAlign: 'right' },
     editDivider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle, marginTop: koolaSpacing.sm },

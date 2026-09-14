@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { KoolaText, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 interface ConnectContextBannerProps {
   onCreatePress: () => void;
@@ -16,10 +17,12 @@ const ConnectContextBanner: React.FC<ConnectContextBannerProps> = ({
   onCreatePress,
   onDismiss,
 }) => {
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens]);
   return (
     <View style={styles.container}>
       <View style={styles.iconBox}>
-        <MaterialIcons name="handshake" size={28} color={koolaColors.primary} />
+        <MaterialIcons name="handshake" size={28} color={tokens.semantic.action.primary} />
       </View>
       <View style={styles.textCol}>
         <KoolaText variant="label" weight="700" style={styles.title}>
@@ -33,7 +36,7 @@ const ConnectContextBanner: React.FC<ConnectContextBannerProps> = ({
           onPress={onCreatePress}
           accessibilityRole="button"
           accessibilityLabel="Đăng ký doanh nghiệp của bạn">
-          <MaterialIcons name="add-business" size={16} color={koolaColors.surface} />
+          <MaterialIcons name="add-business" size={16} color={tokens.semantic.text.onAction} />
           <KoolaText variant="caption" weight="700" tone="surface" style={{ marginLeft: 4 }}>
             Đăng ký doanh nghiệp
           </KoolaText>
@@ -44,19 +47,20 @@ const ConnectContextBanner: React.FC<ConnectContextBannerProps> = ({
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel="Đóng gợi ý">
-        <MaterialIcons name="close" size={18} color={koolaColors.muted} />
+        <MaterialIcons name="close" size={18} color={tokens.semantic.text.muted} />
       </Pressable>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (t: SemanticTokens) =>
+  StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: koolaColors.primarySoft,
+    backgroundColor: t.action.primarySoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
+    borderColor: t.border.subtle,
     borderRadius: koolaRadii.md,
     padding: 14,
     marginHorizontal: 16,
@@ -66,8 +70,8 @@ const styles = StyleSheet.create({
   iconBox: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.pill,
+    backgroundColor: t.surface.level1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -76,7 +80,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: koolaColors.primaryDark,
+    color: t.action.primaryPressed,
     marginBottom: 4,
   },
   subtitle: {
@@ -88,7 +92,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: koolaColors.primary,
+    backgroundColor: t.action.primary,
     borderRadius: koolaRadii.xs,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -98,7 +102,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },

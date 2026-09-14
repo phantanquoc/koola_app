@@ -8,7 +8,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import UserAvatar from '../../components/UserAvatar';
 import { callAudioService } from '../../services/audio/callAudioService';
-import { KoolaText, useTheme } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 type CallScreenRouteProp = RouteProp<RootStackParamList, 'CallModal'>;
@@ -261,7 +261,7 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
     retryButtonText: { color: '#fff', fontSize: 16 },
     controls: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     controlButton: {
-      width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)',
+      width: 72, height: 72, borderRadius: koolaRadii.pill, backgroundColor: 'rgba(255,255,255,0.15)',
       justifyContent: 'center', alignItems: 'center', marginRight: 24, marginBottom: 24,
     },
     controlActive: { backgroundColor: 'rgba(255,255,255,0.35)' },

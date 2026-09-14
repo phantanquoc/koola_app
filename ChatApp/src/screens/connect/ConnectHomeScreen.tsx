@@ -37,7 +37,7 @@ import {
   useKoolaToast,
   useTheme,
 } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
 
@@ -77,15 +77,15 @@ function useAccountActions(navigation: ConnectNavProp) {
 interface RelationshipTabBarProps {
   activeRelationship: string;
   onSelectRelationship: (slug: string) => void;
-  palette: Palette;
+  semantic: SemanticTokens;
 }
 
 const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
   activeRelationship,
   onSelectRelationship,
-  palette,
+  semantic,
 }) => {
-  const styles = useMemo(() => makeTabBarStyles(palette), [palette]);
+  const styles = useMemo(() => makeTabBarStyles(semantic), [semantic]);
   return (
     <View style={styles.container} accessibilityRole="tablist">
       {RELATIONSHIP_FILTERS.map((rel) => {
@@ -111,13 +111,13 @@ const RelationshipTabBar: React.FC<RelationshipTabBarProps> = ({
   );
 };
 
-const makeTabBarStyles = (p: Palette) =>
+const makeTabBarStyles = (t: SemanticTokens) =>
   StyleSheet.create({
     container: {
       flexDirection: 'row',
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
+      borderBottomColor: t.border.subtle,
       paddingHorizontal: 16,
     },
     tab: {
@@ -129,7 +129,7 @@ const makeTabBarStyles = (p: Palette) =>
       borderBottomColor: 'transparent',
     },
     tabActive: {
-      borderBottomColor: p.primary,
+      borderBottomColor: t.action.primary,
     },
   });
 
@@ -158,7 +158,7 @@ interface FilterBarProps {
   onProvinceChange: (province: string) => void;
   activeSort: BusinessSort;
   onSortChange: (sort: BusinessSort) => void;
-  palette: Palette;
+  semantic: SemanticTokens;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -169,9 +169,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onProvinceChange,
   activeSort,
   onSortChange,
-  palette,
+  semantic,
 }) => {
-  const styles = useMemo(() => makeFilterBarStyles(palette), [palette]);
+  const styles = useMemo(() => makeFilterBarStyles(semantic), [semantic]);
   const showCategories = activeRelationship !== 'all';
   const activeFilterCount =
     (activeCategory ? 1 : 0) +
@@ -225,7 +225,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   <MaterialIcons
                     name={CATEGORY_ICON_MAP[cat.slug] || cat.icon}
                     size={14}
-                    color={isActive ? palette.surface : palette.primary}
+                    color={isActive ? semantic.text.onAction : semantic.action.primary}
                   />
                   <KoolaText
                     variant="caption"
@@ -244,12 +244,12 @@ const FilterBar: React.FC<FilterBarProps> = ({
   );
 };
 
-const makeFilterBarStyles = (p: Palette) =>
+const makeFilterBarStyles = (t: SemanticTokens) =>
   StyleSheet.create({
     wrapper: {
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
+      borderBottomColor: t.border.subtle,
     },
     scrollContent: {
       flexDirection: 'row',
@@ -260,7 +260,7 @@ const makeFilterBarStyles = (p: Palette) =>
     divider: {
       width: StyleSheet.hairlineWidth,
       height: 24,
-      backgroundColor: p.line,
+      backgroundColor: t.border.subtle,
       marginHorizontal: 4,
     },
     iconChip: {
@@ -269,14 +269,14 @@ const makeFilterBarStyles = (p: Palette) =>
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: p.canvas,
+      backgroundColor: t.bg.canvas,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+      borderColor: t.border.subtle,
       marginRight: 8,
     },
     iconChipActive: {
-      backgroundColor: p.primary,
-      borderColor: p.primary,
+      backgroundColor: t.action.primary,
+      borderColor: t.action.primary,
     },
     iconChipLabel: {
       marginLeft: 4,
@@ -284,8 +284,8 @@ const makeFilterBarStyles = (p: Palette) =>
     countBadge: {
       width: 22,
       height: 22,
-      borderRadius: 11,
-      backgroundColor: p.primary,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: t.action.primary,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
@@ -304,7 +304,7 @@ interface AccountListTabProps {
   activeSort: BusinessSort;
   activeProvince: string;
   onClearFilters: () => void;
-  palette: Palette;
+  semantic: SemanticTokens;
 }
 
 const AccountListTab: React.FC<AccountListTabProps> = ({
@@ -314,10 +314,10 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
   activeSort,
   activeProvince,
   onClearFilters,
-  palette,
+  semantic,
 }) => {
   const tabBarInset = useTabBarBottomInset();
-  const styles = useMemo(() => makeListStyles(palette), [palette]);
+  const styles = useMemo(() => makeListStyles(semantic), [semantic]);
   const { items, loading, refreshing, hasMore, error, loadMore, refresh } =
     useAccountDiscovery({
       businessCategory: activeCategory ?? undefined,
@@ -383,7 +383,7 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
               <ActivityIndicator
                 style={styles.footer}
                 size="small"
-                color={palette.primary}
+                color={semantic.action.primary}
               />
             ) : null
           }
@@ -393,7 +393,7 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={refresh}
-              tintColor={palette.primary}
+              tintColor={semantic.action.primary}
             />
           }
           contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
@@ -403,7 +403,7 @@ const AccountListTab: React.FC<AccountListTabProps> = ({
   );
 };
 
-const makeListStyles = (p: Palette) =>
+const makeListStyles = (t: SemanticTokens) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -423,7 +423,8 @@ const BANNER_DISMISSED_KEY = 'connect_banner_dismissed';
 
 const ConnectHomeScreen: React.FC = () => {
   const navigation = useNavigation<ConnectNavProp>();
-  const { palette } = useTheme();
+  const { tokens } = useTheme();
+  const semantic = tokens.semantic;
   const styles = useMemo(() => makeScreenStyles(), []);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -496,7 +497,7 @@ const ConnectHomeScreen: React.FC = () => {
       <RelationshipTabBar
         activeRelationship={activeRelationship}
         onSelectRelationship={handleSelectRelationship}
-        palette={palette}
+        semantic={semantic}
       />
 
       <FilterBar
@@ -507,7 +508,7 @@ const ConnectHomeScreen: React.FC = () => {
         onProvinceChange={setActiveProvince}
         activeSort={activeSort}
         onSortChange={setActiveSort}
-        palette={palette}
+        semantic={semantic}
       />
 
       {!bannerDismissed && (
@@ -535,7 +536,7 @@ const ConnectHomeScreen: React.FC = () => {
           activeSort={activeSort}
           activeProvince={activeProvince}
           onClearFilters={handleClearFilters}
-          palette={palette}
+          semantic={semantic}
         />
       )}
 

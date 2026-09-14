@@ -588,7 +588,7 @@ const makeStyles = (p: Palette) =>
       height: 44,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 22,
+      borderRadius: koolaRadii.pill,
     },
     backHeaderTitle: {
       flex: 1,

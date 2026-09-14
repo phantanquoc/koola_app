@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: koolaColors.canvas,
@@ -631,7 +631,7 @@ const styles = StyleSheet.create({
   removeButton: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },

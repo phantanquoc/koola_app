@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import PagerView from 'react-native-pager-view';
+import { koolaRadii } from '../../ui';
 
 // Lazy import — avoid crash if native module not yet linked
 const getBlobUtil = () => require('react-native-blob-util').default;
@@ -312,7 +313,7 @@ const s = StyleSheet.create({
   btn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',

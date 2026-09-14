@@ -253,7 +253,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.socialRow}>
               <Pressable
                 style={[styles.socialButton, styles.socialButtonFirst]}
-                android_ripple={{ color: 'rgba(15,23,42,0.06)', borderless: false }}
+                android_ripple={{ color: tokens.semantic.border.subtle, borderless: false }}
                 onPress={() => notify('Đăng nhập Google đang được phát triển')}
                 accessibilityRole="button"
                 accessibilityLabel="Dang nhap bang Google">
@@ -264,7 +264,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
               </Pressable>
               <Pressable
                 style={[styles.socialButton, styles.socialButtonLast]}
-                android_ripple={{ color: 'rgba(15,23,42,0.06)', borderless: false }}
+                android_ripple={{ color: tokens.semantic.border.subtle, borderless: false }}
                 onPress={() => notify('Đăng nhập Apple đang được phát triển')}
                 accessibilityRole="button"
                 accessibilityLabel="Dang nhap bang Apple">

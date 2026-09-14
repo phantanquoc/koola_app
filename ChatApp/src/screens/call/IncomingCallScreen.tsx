@@ -12,7 +12,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import UserAvatar from '../../components/UserAvatar';
 import { callAudioService } from '../../services/audio/callAudioService';
 import { webrtcService } from '../../services/webrtc/WebRTCService';
-import { KoolaText, useTheme } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 type IncomingCallRouteProp = RouteProp<RootStackParamList, 'IncomingCallModal'>;
@@ -173,7 +173,7 @@ const makeScreenStyles = (semantic: SemanticTokens) =>
     callButton: {
       width: 72,
       height: 72,
-      borderRadius: 36,
+      borderRadius: koolaRadii.pill,
       justifyContent: 'center',
       alignItems: 'center',
       marginBottom: 8,

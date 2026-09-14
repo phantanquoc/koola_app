@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { useTheme } from './ThemeProvider';
 import { KoolaText } from './KoolaText';
-import type { Palette } from './theme';
+import type { SemanticTokens } from './tokens/semantic';
 
 interface KoolaOtpInputProps {
   /** Current OTP value (digits only, 0–6 chars). */
@@ -24,7 +24,7 @@ interface KoolaOtpInputProps {
 
 /**
  * Modern per-digit OTP input with auto-advance, backspace handling, and paste
- * support. Theme-aware (light/dark via useTheme().palette).
+ * support. Theme-aware (light/dark via useTheme().tokens.semantic).
  *
  * Contract: `value` and `onChange` use the same plain digit string the existing
  * verify calls expect — no behavioral change to calling screens.
@@ -36,8 +36,8 @@ export const KoolaOtpInput: React.FC<KoolaOtpInputProps> = ({
   autoFocus = true,
   error,
 }) => {
-  const { palette } = useTheme();
-  const styles = React.useMemo(() => makeStyles(palette), [palette]);
+  const { tokens } = useTheme();
+  const styles = React.useMemo(() => makeStyles(tokens.semantic), [tokens]);
 
   // Hidden TextInput strategy: a single invisible TextInput captures all
   // keyboard events (including paste), while the visible boxes are pure display.
@@ -110,7 +110,7 @@ export const KoolaOtpInput: React.FC<KoolaOtpInputProps> = ({
       {error ? (
         <KoolaText
           variant="caption"
-          style={[styles.errorText, { color: palette.danger }]}>
+          style={[styles.errorText, { color: tokens.semantic.status.danger }]}>
           {error}
         </KoolaText>
       ) : null}
@@ -120,7 +120,7 @@ export const KoolaOtpInput: React.FC<KoolaOtpInputProps> = ({
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (t: SemanticTokens) =>
   StyleSheet.create({
     boxRow: {
       flexDirection: 'row',
@@ -132,28 +132,28 @@ const makeStyles = (p: Palette) =>
       height: 56,
       borderRadius: 12,
       borderWidth: 2,
-      borderColor: p.line,
-      backgroundColor: p.surface,
+      borderColor: t.border.subtle,
+      backgroundColor: t.surface.level1,
       alignItems: 'center',
       justifyContent: 'center',
     },
     boxFilled: {
-      borderColor: p.primary,
-      backgroundColor: p.primarySoft,
+      borderColor: t.action.primary,
+      backgroundColor: t.action.primarySoft,
     },
     boxActive: {
-      borderColor: p.primary,
+      borderColor: t.action.primary,
     },
     digit: {
       fontSize: 24,
-      color: p.ink,
+      color: t.text.primary,
     },
     cursor: {
       position: 'absolute',
       bottom: 12,
       width: 20,
       height: 2,
-      backgroundColor: p.primary,
+      backgroundColor: t.action.primary,
       borderRadius: 1,
     },
     hiddenInput: {

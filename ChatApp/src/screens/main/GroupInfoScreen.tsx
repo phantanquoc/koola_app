@@ -12,7 +12,7 @@ import UserAvatar from '../../components/UserAvatar';
 import AddMemberModal from '../../components/AddMemberModal';
 import ConversationCallHistorySheet from '../../components/ConversationCallHistorySheet';
 import { useAuth } from '../../contexts/AuthContext';
-import { KoolaText, koolaColors } from '../../ui';
+import { KoolaText, koolaColors, koolaRadii } from '../../ui';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import type { Conversation, User } from '../../types';
 
@@ -282,8 +282,8 @@ const s = StyleSheet.create({
   callHistoryIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#E3F2FD',
+    borderRadius: koolaRadii.pill,
+    backgroundColor: koolaColors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,

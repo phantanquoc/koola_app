@@ -17,7 +17,7 @@ import {
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import UserAvatar from '../UserAvatar';
-import { KoolaText, useTheme } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 
 interface MomentRingProps {
@@ -144,7 +144,7 @@ const makeStyles = (palette: Palette) =>
       width: 78,
     },
     pressable: {
-      borderRadius: 999,
+      borderRadius: koolaRadii.pill,
     },
     pressed: {
       opacity: 0.82,
@@ -183,7 +183,7 @@ const makeStyles = (palette: Palette) =>
       right: 0,
       width: 24,
       height: 24,
-      borderRadius: 12,
+      borderRadius: koolaRadii.pill,
       backgroundColor: palette.primary,
       borderWidth: 2,
       borderColor: palette.surface,

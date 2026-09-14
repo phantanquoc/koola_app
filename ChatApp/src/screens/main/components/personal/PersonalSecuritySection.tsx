@@ -4,7 +4,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
 import type { SemanticTokens } from '../../../../ui/tokens/semantic';
 import { PersonalCard } from './PersonalCard';
-import { PERSONAL_BLUE_WELL, PERSONAL_DANGER_INK, PERSONAL_DANGER_SOFT } from './personalTokens';
+import { PERSONAL_DANGER_SOFT } from './personalTokens';
 
 export interface PersonalSecuritySectionProps {
   onManageDevices?: () => void;
@@ -59,7 +59,7 @@ export const PersonalSecuritySection: React.FC<PersonalSecuritySectionProps> = (
         <Pressable onPress={handleLogout} hitSlop={6} accessibilityRole="button" accessibilityLabel="Đăng xuất" style={({ pressed }) => [pressed && styles.pressed]}>
           <View style={styles.row}>
             <View style={[styles.iconWell, styles.iconWellDanger]}>
-              <MaterialIcons name="logout" size={14} color={PERSONAL_DANGER_INK} />
+              <MaterialIcons name="logout" size={14} color={tokens.semantic.status.danger} />
             </View>
             <KoolaText variant="body" weight="600" style={styles.rowLabelDanger} numberOfLines={1}>Đăng xuất</KoolaText>
           </View>
@@ -92,10 +92,10 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     pressed: { opacity: koolaOpacity.pressed },
     title: { color: semantic.text.primary, marginBottom: koolaSpacing.xs },
     row: { flexDirection: 'row', alignItems: 'center', paddingVertical: koolaSpacing.sm },
-    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.sm },
+    iconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm },
     iconWellDanger: { backgroundColor: PERSONAL_DANGER_SOFT[scheme].bg, borderColor: PERSONAL_DANGER_SOFT[scheme].border },
     rowLabel: { color: semantic.text.primary, flex: 1 },
-    rowLabelDanger: { color: PERSONAL_DANGER_INK, flex: 1 },
+    rowLabelDanger: { color: semantic.status.danger, flex: 1 },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle, marginVertical: koolaSpacing.xs },
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: koolaSpacing.xl },
     dialog: { width: '100%', maxWidth: 340, backgroundColor: semantic.surface.level1, borderRadius: koolaRadii.lg, padding: koolaSpacing.lg, elevation: 8, shadowColor: semantic.text.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 16 },
@@ -104,6 +104,6 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: koolaSpacing.md, marginTop: koolaSpacing.lg },
     dialogBtn: { paddingHorizontal: koolaSpacing.md, paddingVertical: koolaSpacing.sm },
     dialogCancel: { color: semantic.text.muted },
-    dialogConfirm: { color: PERSONAL_DANGER_INK },
+    dialogConfirm: { color: semantic.status.danger },
   });
 }

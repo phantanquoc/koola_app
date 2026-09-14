@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
   previewButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: koolaRadii.pill,
     marginRight: koolaSpacing.md,
     alignItems: 'center',
     justifyContent: 'center',

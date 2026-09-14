@@ -636,7 +636,7 @@ const makeStyles = (p: Palette) =>
     heroBandPromptIcon: {
       width: 36,
       height: 36,
-      borderRadius: 18,
+      borderRadius: koolaRadii.pill,
       backgroundColor: p.surface,
       alignItems: 'center',
       justifyContent: 'center',

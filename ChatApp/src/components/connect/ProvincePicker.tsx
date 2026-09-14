@@ -14,9 +14,10 @@ import { VN_PROVINCES, normalizeVN } from '../../constants/provinces';
 import {
   KoolaIconButton,
   KoolaText,
-  koolaColors,
   koolaRadii,
+  useTheme,
 } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 interface ProvincePickerProps {
   value: string;
@@ -33,6 +34,9 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const { tokens } = useTheme();
+  const semantic = tokens.semantic;
+  const styles = useMemo(() => makeStyles(semantic), [semantic]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return VN_PROVINCES;
@@ -60,7 +64,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
     <>
       <Pressable
         style={[styles.trigger, error ? styles.triggerError : null]}
-        android_ripple={{ color: koolaColors.canvas }}
+        android_ripple={{ color: semantic.border.subtle }}
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={value || placeholder}>
@@ -71,7 +75,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
           style={styles.triggerText}>
           {value || placeholder}
         </KoolaText>
-        <MaterialIcons name="expand-more" size={20} color={koolaColors.muted} />
+        <MaterialIcons name="expand-more" size={20} color={semantic.text.muted} />
       </Pressable>
 
       {/* Fabric-safe: do not mount native <Modal> (Dialog Window) until open.
@@ -83,7 +87,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
         onRequestClose={handleClose}
         presentationStyle="fullScreen">
         <SafeAreaView style={styles.modalContainer}>
-          <StatusBar barStyle="dark-content" backgroundColor={koolaColors.surface} />
+          <StatusBar barStyle="dark-content" backgroundColor={semantic.bg.canvas} />
           <View style={styles.modalHeader}>
             <KoolaIconButton
               icon="arrow-back"
@@ -102,13 +106,13 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
             <MaterialIcons
               name="search"
               size={20}
-              color={koolaColors.faint}
+              color={semantic.text.faint}
               style={styles.searchIcon}
             />
             <TextInput
               style={styles.searchInput}
               placeholder="Tìm tỉnh/thành..."
-              placeholderTextColor={koolaColors.faint}
+              placeholderTextColor={semantic.text.faint}
               value={query}
               onChangeText={setQuery}
               autoFocus
@@ -120,7 +124,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
                 onPress={() => setQuery('')}
                 accessibilityRole="button"
                 accessibilityLabel="Xóa tìm kiếm">
-                <MaterialIcons name="close" size={20} color={koolaColors.faint} />
+                <MaterialIcons name="close" size={20} color={semantic.text.faint} />
               </Pressable>
             )}
           </View>
@@ -135,7 +139,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
               value ? (
                 <Pressable
                   style={styles.itemRow}
-                  android_ripple={{ color: koolaColors.canvas }}
+                  android_ripple={{ color: semantic.border.subtle }}
                   onPress={() => handleSelect('')}
                   accessibilityRole="button"
                   accessibilityLabel="Xóa bộ lọc tỉnh/thành">
@@ -145,7 +149,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
                   <MaterialIcons
                     name="close"
                     size={18}
-                    color={koolaColors.danger}
+                    color={semantic.status.danger}
                   />
                 </Pressable>
               ) : null
@@ -155,7 +159,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
               return (
                 <Pressable
                   style={[styles.itemRow, isSelected ? styles.itemRowSelected : null]}
-                  android_ripple={{ color: koolaColors.canvas }}
+                  android_ripple={{ color: semantic.border.subtle }}
                   onPress={() => handleSelect(item)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isSelected }}>
@@ -168,7 +172,7 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
                     <MaterialIcons
                       name="check"
                       size={20}
-                      color={koolaColors.primary}
+                      color={semantic.action.primary}
                     />
                   )}
                 </Pressable>
@@ -189,12 +193,13 @@ const ProvincePicker: React.FC<ProvincePickerProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (t: SemanticTokens) =>
+  StyleSheet.create({
   trigger: {
-    backgroundColor: koolaColors.surface,
+    backgroundColor: t.surface.level1,
     borderRadius: koolaRadii.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
+    borderColor: t.border.subtle,
     paddingHorizontal: 14,
     paddingVertical: 11,
     minHeight: 44,
@@ -204,14 +209,14 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   triggerError: {
-    borderColor: koolaColors.danger,
+    borderColor: t.status.danger,
   },
   triggerText: {
     flex: 1,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: koolaColors.surface,
+    backgroundColor: t.surface.level1,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -219,7 +224,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
+    borderBottomColor: t.border.subtle,
   },
   modalTitle: {
     flex: 1,
@@ -228,7 +233,7 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: koolaColors.canvas,
+    backgroundColor: t.bg.canvas,
     borderRadius: koolaRadii.sm,
     marginHorizontal: 16,
     marginVertical: 12,
@@ -241,7 +246,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: koolaColors.ink,
+    color: t.text.primary,
     paddingVertical: 0,
   },
   clearBtn: {
@@ -258,10 +263,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minHeight: 48,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
+    borderBottomColor: t.border.subtle,
   },
   itemRowSelected: {
-    backgroundColor: koolaColors.primarySoft,
+    backgroundColor: t.action.primarySoft,
   },
   emptyBox: {
     padding: 40,

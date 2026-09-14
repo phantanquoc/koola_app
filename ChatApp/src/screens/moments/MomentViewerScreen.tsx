@@ -40,7 +40,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, koolaColors, useTheme } from '../../ui';
+import { KoolaText, koolaColors, koolaRadii, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import { storiesApi } from '../../services/moments/momentsApi';
 import { momentsService } from '../../services/moments/momentsService';
@@ -792,7 +792,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -855,7 +855,7 @@ const styles = StyleSheet.create({
   reactionButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',

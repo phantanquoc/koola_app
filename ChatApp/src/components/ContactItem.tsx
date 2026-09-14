@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import UserAvatar from './UserAvatar';
-import { KoolaText, useTheme } from '../ui';
+import { KoolaText, koolaRadii, useTheme } from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
 import type { UserSearchResult } from '../types';
 
@@ -43,7 +43,7 @@ const makeStyles = (semantic: SemanticTokens) =>
     },
     info: { flex: 1, marginLeft: 12 },
     email: { marginTop: 2 },
-    statusDot: { width: 10, height: 10, borderRadius: 5, marginLeft: 8 },
+    statusDot: { width: 10, height: 10, borderRadius: koolaRadii.pill, marginLeft: 8 },
     online: { backgroundColor: semantic.status.success },
     offline: { backgroundColor: semantic.border.subtle },
   });

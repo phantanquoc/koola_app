@@ -11,6 +11,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import type { IMessage } from 'react-native-gifted-chat';
 import Toast from 'react-native-toast-message';
 import { translate } from '../services/translation/translationService';
+import { koolaColors, koolaRadii } from '../ui';
 import translationStore from '../services/translation/translationStore';
 import {
   getTranslationPrefs,
@@ -248,8 +249,8 @@ const styles = StyleSheet.create({
   emojiBtn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#f5f5f5',
+    borderRadius: koolaRadii.pill,
+    backgroundColor: koolaColors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },

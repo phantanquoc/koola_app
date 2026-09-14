@@ -16,7 +16,7 @@ import {
   koolaDarkShadows,
   useTheme,
 } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { PreviewBanner } from '../../components/PreviewBanner';
@@ -34,13 +34,13 @@ import KoolaHeader from '../../components/KoolaHeader';
 type Styles = ReturnType<typeof makeStyles>;
 
 const UrgentBand: React.FC<{
-  palette: Palette;
+  semantic: SemanticTokens;
   styles: Styles;
   onComingSoon: () => void;
-}> = ({ palette, styles, onComingSoon }) => (
+}> = ({ semantic, styles, onComingSoon }) => (
   <View style={styles.urgentBand}>
     <View style={styles.urgentIcon}>
-      <MaterialIcons name="flash-on" size={22} color={palette.surface} />
+      <MaterialIcons name="flash-on" size={22} color={semantic.text.onAction} />
     </View>
     <View style={styles.urgentCopy}>
       <KoolaText variant="label" weight="800" numberOfLines={1} style={{ marginBottom: 2 }}>
@@ -55,7 +55,7 @@ const UrgentBand: React.FC<{
       accessibilityLabel="Tạo yêu cầu dịch vụ"
       onPress={onComingSoon}
       style={styles.requestButton}>
-      <MaterialIcons name="add-task" size={18} color={palette.surface} style={{ marginRight: 5 }} />
+      <MaterialIcons name="add-task" size={18} color={semantic.text.onAction} style={{ marginRight: 5 }} />
       <KoolaText variant="caption" tone="surface" weight="800" numberOfLines={1}>
         Tạo yêu cầu
       </KoolaText>
@@ -66,9 +66,9 @@ const UrgentBand: React.FC<{
 const CategoryRail: React.FC<{
   activeCategory: string;
   onChange: (category: string) => void;
-  palette: Palette;
+  semantic: SemanticTokens;
   styles: Styles;
-}> = ({ activeCategory, onChange, palette, styles }) => (
+}> = ({ activeCategory, onChange, semantic, styles }) => (
   <ScrollView
     horizontal
     showsHorizontalScrollIndicator={false}
@@ -86,7 +86,7 @@ const CategoryRail: React.FC<{
           <MaterialIcons
             name={category.icon}
             size={17}
-            color={selected ? palette.surface : palette.primary}
+            color={selected ? semantic.text.onAction : semantic.action.primary}
             style={{ marginRight: 6 }}
           />
           <KoolaText
@@ -104,14 +104,14 @@ const CategoryRail: React.FC<{
 
 const ServiceCard: React.FC<{
   item: ServiceItem;
-  palette: Palette;
+  semantic: SemanticTokens;
   styles: Styles;
   onOpen: () => void;
-}> = React.memo(({ item, palette, styles, onOpen }) => (
+}> = React.memo(({ item, semantic, styles, onOpen }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={item.title}
-    android_ripple={{ color: palette.line }}
+    android_ripple={{ color: semantic.border.subtle }}
     onPress={onOpen}
     style={styles.serviceCard}>
     <View style={styles.serviceTop}>
@@ -128,13 +128,13 @@ const ServiceCard: React.FC<{
     </KoolaText>
     <View style={styles.serviceMeta}>
       <View style={styles.metaItem}>
-        <MaterialIcons name="schedule" size={14} color={palette.primary} style={styles.metaItemIcon} />
+        <MaterialIcons name="schedule" size={14} color={semantic.action.primary} style={styles.metaItemIcon} />
         <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1}>
           {item.eta}
         </KoolaText>
       </View>
       <View style={styles.metaItem}>
-        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.metaItemIcon} />
+        <MaterialIcons name="science" size={13} color={semantic.text.faint} style={styles.metaItemIcon} />
         <KoolaText variant="caption" tone="faint">
           Mẫu
         </KoolaText>
@@ -150,7 +150,7 @@ const ServiceCard: React.FC<{
         </KoolaText>
       </View>
       <View style={styles.nextButton}>
-        <MaterialIcons name="arrow-forward" size={18} color={palette.surface} />
+        <MaterialIcons name="arrow-forward" size={18} color={semantic.text.onAction} />
       </View>
     </View>
   </Pressable>
@@ -158,14 +158,14 @@ const ServiceCard: React.FC<{
 
 const ProviderRow: React.FC<{
   provider: ServiceProvider;
-  palette: Palette;
+  semantic: SemanticTokens;
   styles: Styles;
   onMessage: () => void;
-}> = ({ provider, palette, styles, onMessage }) => (
+}> = ({ provider, semantic, styles, onMessage }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={provider.name}
-    android_ripple={{ color: palette.line }}
+    android_ripple={{ color: semantic.border.subtle }}
     onPress={onMessage}
     style={styles.providerRow}>
     <View style={[styles.providerIcon, { backgroundColor: `${provider.accent}18` }]}>
@@ -181,7 +181,7 @@ const ProviderRow: React.FC<{
         {provider.service} · {provider.area}
       </KoolaText>
       <View style={styles.providerMeta}>
-        <MaterialIcons name="science" size={13} color={palette.faint} style={styles.providerMetaIcon} />
+        <MaterialIcons name="science" size={13} color={semantic.text.faint} style={styles.providerMetaIcon} />
         <KoolaText variant="caption" tone="faint" numberOfLines={1}>
           Dữ liệu mẫu · {provider.eta}
         </KoolaText>
@@ -201,11 +201,12 @@ const ProviderRow: React.FC<{
 
 const ServicesHomeScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
-  const { palette, resolvedScheme } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
+  const semantic = tokens.semantic;
   const { notify, toast } = useComingSoonToast();
   const styles = useMemo(
-    () => makeStyles(palette, resolvedScheme),
-    [palette, resolvedScheme],
+    () => makeStyles(semantic, resolvedScheme),
+    [semantic, resolvedScheme],
   );
   const [activeCategory, setActiveCategory] = useState('all');
 
@@ -226,9 +227,9 @@ const ServicesHomeScreen: React.FC = () => {
 
   const renderItem = useCallback(
     ({ item }: { item: ServiceItem }) => (
-      <ServiceCard item={item} palette={palette} styles={styles} onOpen={handleComingSoon} />
+      <ServiceCard item={item} semantic={semantic} styles={styles} onOpen={handleComingSoon} />
     ),
-    [palette, styles, handleComingSoon],
+    [semantic, styles, handleComingSoon],
   );
 
   const renderHeader = () => (
@@ -242,7 +243,7 @@ const ServicesHomeScreen: React.FC = () => {
         {servicesIsPreview && (
           <PreviewBanner message="Dịch vụ đang ở chế độ xem trước. Nhà cung cấp và giá là dữ liệu mẫu." />
         )}
-        <UrgentBand palette={palette} styles={styles} onComingSoon={handleComingSoon} />
+        <UrgentBand semantic={semantic} styles={styles} onComingSoon={handleComingSoon} />
         <View style={styles.sectionHeader}>
           <View>
             <KoolaText variant="heading" weight="800">
@@ -257,7 +258,7 @@ const ServicesHomeScreen: React.FC = () => {
         <CategoryRail
           activeCategory={activeCategory}
           onChange={setActiveCategory}
-          palette={palette}
+          semantic={semantic}
           styles={styles}
         />
       </View>
@@ -281,7 +282,7 @@ const ServicesHomeScreen: React.FC = () => {
           <ProviderRow
             key={provider.id}
             provider={provider}
-            palette={palette}
+            semantic={semantic}
             styles={styles}
             onMessage={handleComingSoon}
           />
@@ -315,7 +316,7 @@ const ServicesHomeScreen: React.FC = () => {
   );
 };
 
-const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
+const makeStyles = (t: SemanticTokens, scheme: 'light' | 'dark') => {
   const bandShadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.subtle;
   return StyleSheet.create({
     // Host is the SupportTabStack light-field's canvas — keep it transparent
@@ -332,9 +333,9 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     urgentBand: {
       minHeight: 92,
       borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+      borderColor: t.border.subtle,
       padding: 12,
       flexDirection: 'row',
       alignItems: 'center',
@@ -344,7 +345,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       width: 44,
       height: 44,
       borderRadius: koolaRadii.sm,
-      backgroundColor: p.primary,
+      backgroundColor: t.action.primary,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -360,7 +361,7 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: p.accent,
+      backgroundColor: t.action.primary,
       marginLeft: 12,
     },
     sectionHeader: {
@@ -380,14 +381,14 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+      borderColor: t.border.subtle,
       marginRight: 8,
     },
     categoryButtonActive: {
-      backgroundColor: p.primary,
-      borderColor: p.primary,
+      backgroundColor: t.action.primary,
+      borderColor: t.action.primary,
     },
     cardRow: {
       paddingHorizontal: 7,
@@ -398,9 +399,9 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       marginBottom: 10,
       marginHorizontal: 5,
       borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+      borderColor: t.border.subtle,
       padding: 10,
       overflow: 'hidden',
     },
@@ -452,13 +453,13 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
       marginRight: 8,
     },
     priceText: {
-      color: p.primary,
+      color: t.action.primary,
     },
     nextButton: {
       width: 34,
       height: 34,
       borderRadius: koolaRadii.sm,
-      backgroundColor: p.primary,
+      backgroundColor: t.action.primary,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -470,9 +471,9 @@ const makeStyles = (p: Palette, scheme: 'light' | 'dark') => {
     providerRow: {
       minHeight: 78,
       borderRadius: koolaRadii.md,
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
+      borderColor: t.border.subtle,
       padding: 12,
       flexDirection: 'row',
       alignItems: 'center',

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Pla
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { mediaApi } from '../services/api/apiService';
 import Toast from 'react-native-toast-message';
-import { useTheme } from '../ui';
+import { koolaRadii, useTheme } from '../ui';
 
 interface Props {
   mediaKey: string;
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   downloadBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: koolaRadii.pill,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,

@@ -17,7 +17,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Image, Pressable, StyleSheet } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MediaImage from '../MediaImage';
-import { KoolaText, useTheme } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 export interface PostMediaItem {
@@ -268,7 +268,7 @@ const makeStyles = (semantic: SemanticTokens) =>
       marginTop: -21,
       width: 42,
       height: 42,
-      borderRadius: 21,
+      borderRadius: koolaRadii.pill,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: SCRIM_MEDIUM,

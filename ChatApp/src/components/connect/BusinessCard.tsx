@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import UserAvatar from '../UserAvatar';
-import { KoolaText, koolaRadii, koolaShadows, useTheme } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import { koolaShadows, koolaDarkShadows } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 
 // ─── Category label lookup (module-level, no per-render allocation) ──────────
@@ -20,7 +21,7 @@ export interface BusinessCardProps {
 /**
  * Shared business card component used by ConnectHomeScreen and BusinessSearchScreen.
  * Renders avatar/logo imagery with graceful initials fallback via UserAvatar.
- * Uses useTheme().palette for dark-mode correctness + shadow depth tokens.
+ * Uses useTheme().tokens.semantic for dark-mode correctness + shadow depth tokens.
  */
 const BusinessCard: React.FC<BusinessCardProps> = ({
   item,
@@ -29,8 +30,9 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
   messageDisabled,
   messageLoading,
 }) => {
-  const { palette } = useTheme();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { tokens, resolvedScheme } = useTheme();
+  const semantic = tokens.semantic;
+  const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
 
   const categoryLabel =
     (item.businessCategory ? CATEGORY_LABELS[item.businessCategory] : undefined) ||
@@ -57,7 +59,7 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
             {item.displayName}
           </KoolaText>
           {item.verificationStatus === 'verified' && (
-            <MaterialIcons name="verified" size={14} color={palette.success} />
+            <MaterialIcons name="verified" size={14} color={semantic.status.success} />
           )}
         </View>
         <View style={styles.meta}>
@@ -69,7 +71,7 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
           {item.province ? (
             <>
               <View style={styles.dot} />
-              <MaterialIcons name="location-on" size={11} color={palette.muted} />
+              <MaterialIcons name="location-on" size={11} color={semantic.text.muted} />
               <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.metaLabel}>
                 {item.province}
               </KoolaText>
@@ -91,24 +93,24 @@ const BusinessCard: React.FC<BusinessCardProps> = ({
         disabled={messageDisabled || messageLoading}
         accessibilityRole="button"
         accessibilityLabel="Nhắn tin">
-        <MaterialIcons name="chat-bubble-outline" size={16} color={palette.primary} />
+        <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.action.primary} />
         <KoolaText variant="caption" tone="primary" weight="700" style={{ marginLeft: 4 }}>Nhắn tin</KoolaText>
       </Pressable>
     </Pressable>
   );
 };
 
-const makeStyles = (p: Palette) =>
+const makeStyles = (t: SemanticTokens, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     card: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: p.surface,
+      backgroundColor: t.surface.level1,
       padding: 14,
       marginHorizontal: 12,
       marginBottom: 8,
       borderRadius: koolaRadii.md,
-      ...koolaShadows.sm,
+      ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
     },
     content: {
       flex: 1,
@@ -137,7 +139,7 @@ const makeStyles = (p: Palette) =>
       width: 3,
       height: 3,
       borderRadius: 1.5,
-      backgroundColor: p.faint,
+      backgroundColor: t.text.faint,
       marginHorizontal: 2,
     },
     tagline: {
@@ -149,7 +151,7 @@ const makeStyles = (p: Palette) =>
       paddingHorizontal: 10,
       paddingVertical: 7,
       borderRadius: koolaRadii.pill,
-      backgroundColor: p.primarySoft,
+      backgroundColor: t.action.primarySoft,
       marginLeft: 12,
     },
   });

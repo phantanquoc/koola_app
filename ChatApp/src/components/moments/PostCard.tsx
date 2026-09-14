@@ -218,7 +218,7 @@ const makeStyles = (semantic: SemanticTokens) =>
     reactionChip: {
       width: 18,
       height: 18,
-      borderRadius: 9,
+      borderRadius: koolaRadii.pill,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1.5,

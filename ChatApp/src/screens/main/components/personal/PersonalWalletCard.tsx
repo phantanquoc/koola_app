@@ -4,7 +4,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
 import type { SemanticTokens } from '../../../../ui/tokens/semantic';
 import { PersonalCard } from './PersonalCard';
-import { PERSONAL_BLUE_WELL, PERSONAL_STAR } from './personalTokens';
+import { PERSONAL_STAR } from './personalTokens';
 
 export interface PersonalWalletCardProps {
   balance?: string;
@@ -135,7 +135,7 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
         <View style={styles.pointsRow}>
           <View style={styles.pointsLeft}>
             <View style={styles.starGem}>
-              <MaterialIcons name="star" size={10} color={PERSONAL_STAR[resolvedScheme].icon} />
+              <MaterialIcons name="star" size={10} color={tokens.semantic.status.warning} />
             </View>
             <KoolaText variant="body" weight="600" style={styles.pointsLabel}>Điểm tích lũy</KoolaText>
           </View>
@@ -185,7 +185,7 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     eyeBtnWrap: {},
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.lg },
     titleRow: { flexDirection: 'row', alignItems: 'center' },
-    walletChip: { width: 22, height: 22, borderRadius: koolaRadii.xs, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border, marginRight: koolaSpacing.sm },
+    walletChip: { width: 22, height: 22, borderRadius: koolaRadii.xs, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm },
     title: { color: semantic.text.primary, letterSpacing: 0.3 },
     balanceRow: { flexDirection: 'row', alignItems: 'center' },
     balanceLabel: { color: semantic.text.muted, marginRight: koolaSpacing.sm - 2 },
@@ -193,11 +193,11 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     eyeBtn: { width: 32, height: 32, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
     actionsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: koolaSpacing.lg },
     actionCol: { flex: 1, alignItems: 'center' },
-    actionWell: { width: 44, height: 44, borderRadius: koolaRadii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_BLUE_WELL[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_BLUE_WELL[scheme].border },
+    actionWell: { width: 44, height: 44, borderRadius: koolaRadii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
     detailedTopup: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: 30, height: 18 },
     // White ring is a deliberate cutout separator over the wallet glyph, not a themeable color.
     // eslint-disable-next-line no-restricted-syntax -- white badge ring (design intent)
-    topupBadge: { width: 13, height: 13, borderRadius: 6.5, backgroundColor: semantic.action.primary, alignItems: 'center', justifyContent: 'center', marginLeft: 1, borderWidth: 1.5, borderColor: '#FFFFFF' },
+    topupBadge: { width: 13, height: 13, borderRadius: koolaRadii.pill, backgroundColor: semantic.action.primary, alignItems: 'center', justifyContent: 'center', marginLeft: 1, borderWidth: 1.5, borderColor: '#FFFFFF' },
     detailedWithdraw: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     withdrawArrow: { marginLeft: -2, marginTop: -6 },
     actionLabel: { color: semantic.text.primary, marginTop: koolaSpacing.sm },
@@ -205,7 +205,7 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     pointsSection: {},
     pointsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.md },
     pointsLeft: { flexDirection: 'row', alignItems: 'center' },
-    starGem: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: PERSONAL_STAR[scheme].bg, borderWidth: StyleSheet.hairlineWidth, borderColor: PERSONAL_STAR[scheme].border, marginRight: koolaSpacing.sm - 1 },
+    starGem: { width: 18, height: 18, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm - 1 },
     pointsLabel: { color: semantic.text.primary },
     pointsValue: { color: semantic.action.primary },
     pillRow: { flexDirection: 'row' },

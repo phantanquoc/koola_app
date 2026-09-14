@@ -24,6 +24,7 @@ import Slider from '@react-native-community/slider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { getOrDownload, getFromMemory, invalidateKey } from '../services/media/mediaCacheService';
 import apiClient from '../services/api/apiService';
+import { koolaRadii } from '../ui';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -462,7 +463,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -546,7 +547,7 @@ const styles = StyleSheet.create({
   playButton: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',

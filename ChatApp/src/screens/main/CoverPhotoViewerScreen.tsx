@@ -20,7 +20,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usersApi } from '../../services/api/apiService';
 import { pickImage, uploadMedia } from '../../services/media/mediaUploadService';
 import { getOrDownload } from '../../services/media/mediaCacheService';
-import { koolaColors } from '../../ui';
+import { koolaColors, koolaRadii } from '../../ui';
 import type { RootStackParamList } from '../../navigation/types';
 
 // Lazy import — avoid crash if native module not yet linked
@@ -252,7 +252,7 @@ const s = StyleSheet.create({
   btn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',

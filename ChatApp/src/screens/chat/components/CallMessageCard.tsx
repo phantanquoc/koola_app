@@ -7,7 +7,7 @@ import type { IMessage } from 'react-native-gifted-chat';
 import type { CallLogEntry } from '../../../services/api/apiService';
 import UserAvatar from '../../../components/UserAvatar';
 import { webrtcService } from '../../../services/webrtc/WebRTCService';
-import { KoolaText, useTheme } from '../../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../../ui';
 import type { SemanticTokens } from '../../../ui/tokens/semantic';
 import type { ComponentTokens } from '../../../ui/tokens/components';
 import { formatRelativeTimestamp } from '../../../utils/formatViTimestamp';
@@ -326,7 +326,7 @@ const makeStyles = (semantic: SemanticTokens, component: ComponentTokens) =>
     iconCircle: {
       width: 18,
       height: 18,
-      borderRadius: 9,
+      borderRadius: koolaRadii.pill,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 6,
@@ -343,7 +343,7 @@ const makeStyles = (semantic: SemanticTokens, component: ComponentTokens) =>
     phoneCircle: {
       width: 18,
       height: 18,
-      borderRadius: 9,
+      borderRadius: koolaRadii.pill,
       backgroundColor: semantic.action.primary + '14',
       alignItems: 'center',
       justifyContent: 'center',

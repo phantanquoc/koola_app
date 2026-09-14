@@ -10,6 +10,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Blurhash } from 'react-native-blurhash';
 import { getOrDownload, getFromMemory } from '../services/media/mediaCacheService';
+import { koolaRadii } from '../ui';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const VIDEO_WIDTH = SCREEN_WIDTH * 0.6;
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
   playCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: koolaRadii.pill,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',

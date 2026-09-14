@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Pressable,
@@ -7,7 +7,8 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { BusinessSort } from '../../types';
-import { KoolaText, koolaColors, koolaRadii } from '../../ui';
+import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 interface SortMenuProps {
   value: BusinessSort;
@@ -28,6 +29,8 @@ const LABELS: Record<BusinessSort, string> = {
 
 const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
   const [open, setOpen] = useState(false);
+  const { tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens]);
 
   const handleSelect = useCallback(
     (next: BusinessSort) => {
@@ -44,11 +47,11 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={`Sắp xếp: ${LABELS[value]}`}>
-        <MaterialIcons name="sort" size={16} color={koolaColors.primary} />
+        <MaterialIcons name="sort" size={16} color={tokens.semantic.action.primary} />
         <KoolaText variant="caption" weight="600" tone="primary" style={{ marginHorizontal: 4 }}>
           {LABELS[value]}
         </KoolaText>
-        <MaterialIcons name="expand-more" size={16} color={koolaColors.primary} />
+        <MaterialIcons name="expand-more" size={16} color={tokens.semantic.action.primary} />
       </Pressable>
 
       {/* Fabric-safe: do not mount native <Modal> (Dialog Window) until open.
@@ -77,7 +80,7 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
                   <MaterialIcons
                     name={opt.icon}
                     size={20}
-                    color={isActive ? koolaColors.primary : koolaColors.muted}
+                    color={isActive ? tokens.semantic.action.primary : tokens.semantic.text.muted}
                   />
                   <KoolaText
                     variant="body"
@@ -90,7 +93,7 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
                     <MaterialIcons
                       name="check"
                       size={20}
-                      color={koolaColors.primary}
+                      color={tokens.semantic.action.primary}
                       style={styles.checkIcon}
                     />
                   )}
@@ -105,14 +108,15 @@ const SortMenu: React.FC<SortMenuProps> = ({ value, onChange }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (t: SemanticTokens) =>
+  StyleSheet.create({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: koolaRadii.xs,
-    backgroundColor: koolaColors.primarySoft,
+    backgroundColor: t.action.primarySoft,
     minHeight: 34,
     marginRight: 8,
   },
@@ -122,7 +126,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: koolaColors.surface,
+    backgroundColor: t.surface.level1,
     borderTopLeftRadius: koolaRadii.lg,
     borderTopRightRadius: koolaRadii.lg,
     paddingHorizontal: 16,
@@ -134,7 +138,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: koolaColors.line,
+    backgroundColor: t.border.subtle,
     marginBottom: 12,
   },
   sheetTitle: {
@@ -152,7 +156,7 @@ const styles = StyleSheet.create({
     borderRadius: koolaRadii.sm,
   },
   optionActive: {
-    backgroundColor: koolaColors.primarySoft,
+    backgroundColor: t.action.primarySoft,
   },
   optionText: {
     flex: 1,

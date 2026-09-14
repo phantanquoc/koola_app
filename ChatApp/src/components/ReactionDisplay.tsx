@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { koolaRadii, koolaColors } from '../ui';
 import type { MessageReaction } from '../types';
 
 interface Props {
@@ -55,15 +56,15 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 12,
+    backgroundColor: koolaColors.surface,
+    borderRadius: koolaRadii.pill,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   pillOwn: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: koolaColors.primarySoft,
     borderWidth: 1,
-    borderColor: '#2196F3',
+    borderColor: koolaColors.primary,
   },
   emoji: { fontSize: 14 },
   count: { fontSize: 12, color: '#666', marginLeft: 2 },

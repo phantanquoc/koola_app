@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { koolaRadii } from '../ui';
 import { conversationsApi, messagesApi } from '../services/api/apiService';
 import type { Conversation } from '../types';
 import UserAvatar from './UserAvatar';
@@ -177,7 +178,7 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: koolaRadii.pill,
     borderWidth: 2,
     borderColor: '#ccc',
     justifyContent: 'center',
