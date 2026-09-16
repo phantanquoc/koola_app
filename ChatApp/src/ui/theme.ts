@@ -33,7 +33,7 @@ export const koolaColors: Palette = {
   muted: '#667085',
   faint: '#98A2B3',
   line: '#E4E7EC',
-  canvas: '#F7F9FC',
+  canvas: '#F3F3F3',
   surface: '#F5F7F9',
   primary: '#2563EB',
   primaryDark: '#1D4ED8',
@@ -419,11 +419,11 @@ export type LightField = {
  */
 export const koolaLightField: { light: LightField; dark: LightField } = {
   light: {
-    base: '#F7F9FC',
+    base: '#F3F3F3',
     blooms: [
-      { color: '#DBEAFE', opacity: 0.55, cx: '50%', cy: '0%', r: '60%' },
-      { color: '#EEF4FF', opacity: 0.45, cx: '15%', cy: '45%', r: '50%' },
-      { color: '#D1FAE5', opacity: 0.25, cx: '90%', cy: '80%', r: '45%' },
+      { color: '#FFFFFF', opacity: 0.55, cx: '50%', cy: '0%', r: '60%' },
+      { color: '#FFFFFF', opacity: 0.35, cx: '15%', cy: '45%', r: '50%' },
+      { color: '#E8E8E8', opacity: 0.22, cx: '90%', cy: '80%', r: '45%' },
     ],
   },
   dark: {

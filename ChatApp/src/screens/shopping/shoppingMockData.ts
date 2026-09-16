@@ -139,36 +139,3 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Đã xác minh'],
   },
 ];
-
-export const shoppingStores: ShoppingStore[] = [
-  {
-    id: 's1',
-    name: 'Koola Mart Nguyễn Huệ',
-    category: 'Tạp hóa & tiêu dùng',
-    distance: '1.2 km',
-    eta: '18-25 phút',
-    rating: 4.9,
-    icon: 'store',
-    accent: '#2563EB',
-  },
-  {
-    id: 's2',
-    name: 'Bếp Cô Ba',
-    category: 'Cơm văn phòng',
-    distance: '800 m',
-    eta: '20 phút',
-    rating: 4.7,
-    icon: 'restaurant',
-    accent: '#F97316',
-  },
-  {
-    id: 's3',
-    name: 'TechNow Express',
-    category: 'Phụ kiện điện tử',
-    distance: '2.4 km',
-    eta: 'Hôm nay',
-    rating: 4.6,
-    icon: 'devices',
-    accent: '#10B981',
-  },
-];

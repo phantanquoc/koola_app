@@ -21,6 +21,7 @@ import {
   useTheme,
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 import { FIGMA } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
@@ -154,7 +155,9 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.root}>
-      <AuthFormShell background={<View style={StyleSheet.absoluteFill} />}>
+      {/* Same neutral light field as Personal/Shopping; AuthFormShell makes its
+          scroll layers transparent when `background` is set so the blooms show. */}
+      <AuthFormShell background={<LightFieldBackground />}>
         {/* All sections in one column with 28px gap — matches Figma main-scroll-container */}
         <View style={styles.scrollContent}>
           {/* Brand header — Figma 2:14 */}

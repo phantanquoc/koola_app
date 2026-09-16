@@ -1,7 +1,15 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { koolaLightField, useTheme } from '../../../../ui';
+
+interface LightFieldBackgroundProps {
+  /** When true, the SVG is sized to the full window instead of its (possibly
+   *  short) container, so radial-bloom geometry matches the page field exactly.
+   *  Used by fixed chrome (NotchHeader) that paints the top slice of the same
+   *  light field — the parent must clip with `overflow: 'hidden'`. */
+  windowSized?: boolean;
+}
 
 /**
  * Static light-field canvas behind the Personal home cards (design D1).
@@ -15,13 +23,19 @@ import { koolaLightField, useTheme } from '../../../../ui';
  * Memoized: the only reason to re-render is a scheme change, which arrives
  * through `useTheme()`.
  */
-const LightFieldBackgroundComponent: React.FC = () => {
+const LightFieldBackgroundComponent: React.FC<LightFieldBackgroundProps> = ({
+  windowSized = false,
+}) => {
   const { resolvedScheme } = useTheme();
   const field = koolaLightField[resolvedScheme];
+  const { width: winW, height: winH } = Dimensions.get('window');
+  const svgProps = windowSized
+    ? { width: winW, height: winH }
+    : { width: '100%', height: '100%' };
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Svg width="100%" height="100%">
+      <Svg {...svgProps}>
         <Defs>
           {field.blooms.map((bloom, index) => (
             <RadialGradient
@@ -39,11 +53,12 @@ const LightFieldBackgroundComponent: React.FC = () => {
             </RadialGradient>
           ))}
         </Defs>
-        <Rect width="100%" height="100%" fill={field.base} />
+        <Rect width={windowSized ? winW : '100%'} height={windowSized ? winH : '100%'} fill={field.base} />
         {field.blooms.map((_bloom, index) => (
           <Rect
             key={`bloom-${index}`}
-            width="100%" height="100%"
+            width={windowSized ? winW : '100%'}
+            height={windowSized ? winH : '100%'}
             fill={`url(#koolaLightFieldBloom${index})`}
           />
         ))}

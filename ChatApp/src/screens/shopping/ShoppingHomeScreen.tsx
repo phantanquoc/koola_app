@@ -18,10 +18,10 @@ import {
   koolaShadows,
   useTheme,
 } from '../../ui';
+import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
-import { PreviewBanner } from '../../components/PreviewBanner';
 import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
 import {
   shoppingAttributeChips,
@@ -56,6 +56,7 @@ function filterAndSortProducts(
   if (activeAttr) {
     list = list.filter((p) => p.tags.includes(activeAttr));
   }
+  // Sắp xếp theo dữ liệu mẫu (soldCount/rating) — chỉ để preview, chưa có backend.
   if (activeSort === 'Được mua nhiều nhất') {
     list = list.slice().sort((a, b) => b.soldCount - a.soldCount);
   } else if (activeSort === 'Đánh giá cao') {
@@ -251,7 +252,7 @@ const ShoppingHomeScreen: React.FC = () => {
     () => makeStyles(semantic, resolvedScheme),
     [semantic, resolvedScheme],
   );
-  const notchPad = insets.top + 4 + 22 + 4;
+  const notchPad = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + 4;
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeSort, setActiveSort] = useState<string | null>(null);
@@ -299,9 +300,6 @@ const ShoppingHomeScreen: React.FC = () => {
 
   const renderListHeader = () => (
     <View style={styles.contentInset}>
-      {shoppingIsPreview && (
-        <PreviewBanner message="Mua sắm đang ở chế độ xem trước. Sản phẩm là dữ liệu mẫu." />
-      )}
       <SearchBar
         semantic={semantic}
         styles={styles}

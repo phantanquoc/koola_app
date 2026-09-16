@@ -57,7 +57,7 @@ const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
   Messages: { iconIdle: 'chat', iconActive: 'forum', label: 'Tin nhắn' },
   Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Danh bạ' },
   Moments: { iconIdle: 'star-outline', iconActive: 'star', label: 'Khoảnh khắc' },
-  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Phim' },
+  Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
   Connections: { iconIdle: 'handshake', iconActive: 'handshake', label: 'Kết nối' },
 };
 
@@ -500,9 +500,8 @@ const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  // Notch tab bottom = insets.top + NOTCH_WING_INSET + 22; dock wraps that plus
-  // paddingTop/paddingBottom + dock height — content must clear the full box.
-  const notchPad = insets.top + NOTCH_WING_INSET + 4 + 40 + 4;
+  const dockTop = insets.top + NOTCH_WING_INSET + 40;
+  const notchPad = insets.top + NOTCH_WING_INSET + 40 + 4 + 40 + 4; // 48 above wings
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
@@ -547,12 +546,13 @@ const ChatHomeScreen: React.FC = () => {
     <View style={[screenStyles.container, { paddingTop: notchPad }]}>
       {/* Dock gác lên đúng vùng cánh notch — 2 hõm trái/phải của tab KOOLA.
           Nền surface.level1 để liền mạch với sub-tab bar + rows conv bên dưới;
-          NotchHeader (zIndex 10 ở parent) vẽ đè lên nên tab KOOLA vẫn nổi. */}
+          NotchHeader (zIndex 10 ở parent) vẽ đè lên nên tab KOOLA vẫn nổi.
+          Flat header: đẩy xuống thêm để tránh bị che bởi header phẳng. */}
       <View
         pointerEvents="box-none"
         style={{
           position: 'absolute',
-          top: insets.top + NOTCH_WING_INSET,
+          top: dockTop,
           left: 0,
           right: 0,
           zIndex: 20,

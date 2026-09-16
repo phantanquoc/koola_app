@@ -8,6 +8,7 @@ import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { koolaSpacing, useTheme } from '../../ui';
+import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
 import { PersonalProfileCard } from './components/personal/PersonalProfileCard';
@@ -49,7 +50,7 @@ const SettingsScreen: React.FC = () => {
         style={styles.scroll}
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: insets.top + 4 + 22 + koolaSpacing.lg, paddingBottom: tabBarInset },
+          { paddingTop: insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + koolaSpacing.lg, paddingBottom: tabBarInset },
         ]}
         showsVerticalScrollIndicator={false}>
         <PersonalProfileCard

@@ -19,6 +19,7 @@ import {
   useTheme,
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 import { FIGMA } from './authFigma';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
@@ -73,7 +74,8 @@ const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.root}>
-      <AuthFormShell background={<View style={StyleSheet.absoluteFill} />}>
+      {/* Same neutral light field as Personal/Shopping — see LoginScreen note. */}
+      <AuthFormShell background={<LightFieldBackground />}>
         <View style={styles.scrollContent}>
           <View style={styles.hero}>
             <Image

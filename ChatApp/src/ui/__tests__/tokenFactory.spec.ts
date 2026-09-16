@@ -269,8 +269,8 @@ describe('existing theme exports byte-for-byte', () => {
 
   it('koolaColors values are unchanged', () => {
     expect(koolaColors.ink).toBe('#101828');
-    expect(koolaColors.canvas).toBe('#F7F9FC');
-    expect(koolaColors.surface).toBe('#FFFFFF');
+    expect(koolaColors.canvas).toBe('#F3F3F3');
+    expect(koolaColors.surface).toBe('#F5F7F9');
     expect(koolaColors.primary).toBe('#2563EB');
     expect(koolaColors.brandRed).toBe('#E12D24');
     expect(koolaColors.brandBlue).toBe('#1E50C8');

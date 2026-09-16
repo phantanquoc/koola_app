@@ -54,8 +54,8 @@ const styles = useMemo(() => makeStyles(palette), [palette]);
 | muted | `#667085` | Secondary text, labels |
 | faint | `#98A2B3` | Placeholder, disabled text |
 | line | `#E4E7EC` | Borders, dividers |
-| canvas | `#F7F9FC` | Page background, input fills |
-| surface | `#FFFFFF` | Card/modal backgrounds |
+| canvas | `#F3F3F3` | Page background, input fills |
+| surface | `#F5F7F9` | Card/modal backgrounds |
 | primary | `#2563EB` | Actions, links, active states |
 | primaryDark | `#1D4ED8` | Pressed primary |
 | primarySoft | `#DBEAFE` | Primary tint backgrounds |
@@ -140,8 +140,8 @@ Surface levels replace heavy shadows for content elevation. Use `tokens.semantic
 | Level | Light | Dark | Use for |
 |-------|-------|------|---------|
 | level0 | `#F2F4F7` | `#0F1419` | Recessed/base surface |
-| level1 | `#FFFFFF` | `#1C2026` | Standard content surface |
-| level2 | `#FAFBFC` | `#252B33` | Elevated card surface |
+| level1 | `#F5F7F9` | `#1C2026` | Standard content surface |
+| level2 | `#F9FAFB` | `#252B33` | Elevated card surface |
 | overlay | `rgba(16,24,40,0.6)` | `rgba(0,0,0,0.7)` | Scrim/backdrop |
 
 Levels are visibly ordered (dark levels get progressively lighter). Shadow is still available for floating chrome (dock, menu, sheet, modal) but is no longer the default for cards/content.

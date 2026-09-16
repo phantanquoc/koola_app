@@ -6,7 +6,7 @@ Ensure every user-facing mobile feature exposes truthful availability state (rea
 
 ### Requirement: Mobile features expose truthful availability
 
-Each user-facing mobile feature SHALL have a defined `ready`, `preview`, or `unavailable` state that controls both presentation and interaction.
+Each user-facing mobile feature SHALL have a defined `ready`, `preview`, or `unavailable` state that controls interaction and guarantees truthful non-success feedback whenever a durable action is invoked.
 
 #### Scenario: Feature is ready
 
@@ -17,8 +17,9 @@ Each user-facing mobile feature SHALL have a defined `ready`, `preview`, or `una
 #### Scenario: Feature is preview-only
 
 - **WHEN** a feature uses sample data or lacks a transactional backend
-- **THEN** the surface SHALL visibly identify itself as a preview before interaction
+- **THEN** the surface SHALL provide truthful non-success feedback when the user invokes a durable action (for example a toast or availability label)
 - **AND** it SHALL NOT claim that an order, booking, send, upload, or other durable operation succeeded
+- **AND** it MAY omit a persistent preview banner when the non-success feedback above already identifies the surface as a preview
 
 #### Scenario: Feature is unavailable
 

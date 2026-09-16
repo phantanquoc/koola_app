@@ -98,14 +98,14 @@ describe('featureAvailability', () => {
       expect(source).not.toContain('item.rating.toFixed');
     });
 
-    it('Shopping screen includes a PreviewBanner import', async () => {
+    it('Shopping screen does NOT render a PreviewBanner', async () => {
       const fs = require('fs');
       const path = require('path');
       const source = fs.readFileSync(
         path.resolve(__dirname, '../screens/shopping/ShoppingHomeScreen.tsx'),
         'utf8',
       );
-      expect(source).toContain('PreviewBanner');
+      expect(source).not.toContain('PreviewBanner');
     });
 
     it('Services screen includes a PreviewBanner import', async () => {
