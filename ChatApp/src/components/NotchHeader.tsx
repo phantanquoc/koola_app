@@ -22,11 +22,29 @@ export const getNotchHeaderHeight = (topInset: number) =>
 
 export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title }) => {
   const insets = useSafeAreaInsets();
-  const { tokens } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top);
+  const isDark = resolvedScheme === 'dark';
   return (
     <View style={[styles.host, { height: flatH, overflow: 'hidden' as const }, style]}>
-      <LightFieldBackground windowSized />
+      {/* Frosted base: lets scrolled content show faintly underneath */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)',
+        }}
+      />
+      {/* Bloom slice kept but softened so the frost reads, still aligns with page field */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.72, overflow: 'hidden' }}>
+        <LightFieldBackground windowSized />
+      </View>
       <View
         pointerEvents="none"
         style={{

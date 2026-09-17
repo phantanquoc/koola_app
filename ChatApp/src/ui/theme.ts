@@ -475,11 +475,14 @@ export type GlowShadows = {
 export const koolaGlowShadows: { light: GlowShadows; dark: GlowShadows } = {
   light: {
     card: {
-      shadowColor: '#2563EB',
-      shadowOpacity: 0.1,
-      shadowOffset: { width: 0, height: 10 },
-      shadowRadius: 24,
-      elevation: 3,
+      // Back-compat default — PersonalCard now reads per-preset
+      // koolaCardElevations[*] in light; this value stays equivalent to preset A.
+      backgroundColor: '#FFFFFF',
+      shadowColor: '#101828',
+      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 18,
+      elevation: 6,
     },
     header: {
       shadowColor: '#2563EB',
@@ -516,6 +519,42 @@ export const koolaGlowShadows: { light: GlowShadows; dark: GlowShadows } = {
       shadowRadius: 12,
       elevation: 0,
     },
+  },
+};
+
+/**
+ * Card elevation test presets (light scheme) — DEV-comparable variants for
+ * how Personal-tab cards lift off the bloom-lit `#F3F3F3` canvas. Selected
+ * via the store in `screens/dev/cardElevation.ts`; dark scheme keeps the
+ * tinted-surface recipe in `koolaGlowShadows.dark`.
+ *
+ *  A: pure white + neutral soft shadow (iOS) with matching Android elevation
+ *  B: pure white + hairline border + very light shadow (Apple-style, subtle)
+ *  C: pure white, no shadow/border — separation by luminance only
+ */
+export type CardElevationId = 'A' | 'B' | 'C';
+
+export const koolaCardElevations: Record<CardElevationId, GlowShadowStyle> = {
+  A: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#101828',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  B: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 0.5,
+    borderColor: '#E4E7EC',
+  },
+  C: {
+    backgroundColor: '#FFFFFF',
   },
 };
 

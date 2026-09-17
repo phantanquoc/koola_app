@@ -14,7 +14,10 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { KoolaLogo, type KoolaLogoVariant, type KoolaLogoFont, type KoolaLogoAnimation } from '../../ui/KoolaLogo';
 import { KoolaText, KoolaSurface, useTheme } from '../../ui';
-import type { Palette } from '../../ui/theme';
+import { getCardElevation, setCardElevation, subscribeCardElevation } from './cardElevation';
+import { koolaCardElevations, type Palette, type CardElevationId } from '../../ui/theme';
+import { PersonalCard } from '../main/components/personal/PersonalCard';
+import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 
 const VARIANTS: { key: KoolaLogoVariant; label: string }[] = [
   { key: 'flat', label: 'Flat (mặc định)' },
@@ -52,6 +55,18 @@ const ANIM_OPTIONS: { key: KoolaLogoAnimation; label: string }[] = [
   { key: 'fade-slide', label: 'Mờ + trượt' },
 ];
 
+const ELEV_LABELS: Record<CardElevationId, string> = {
+  A: 'A — trắng + bóng trung tính',
+  B: 'B — trắng + viền hairline, bóng rất nhẹ',
+  C: 'C — trắng, không bóng (tách bằng màu)',
+};
+
+const ELEV_DESCS: Record<CardElevationId, string> = {
+  A: 'Shadow #101828 0.08 r18, elevation 6 — nổi rõ, mềm',
+  B: 'Border #E4E7EC 0.5px, shadow 0.05 r12, elevation 3 — kiểu Apple tinh tế',
+  C: 'Chỉ dựa độ trắng so với nền xám — tối giản, không bóng',
+};
+
 const LogoLabScreen: React.FC = () => {
   const { palette } = useTheme();
   const s = useMemo(() => makeStyles(palette), [palette]);
@@ -61,6 +76,7 @@ const LogoLabScreen: React.FC = () => {
   const [replayKey, setReplayKey] = useState(0);
   const [font, setFont] = useState<KoolaLogoFont>('system');
   const [anim, setAnim] = useState<KoolaLogoAnimation>('none');
+  const elevId = React.useSyncExternalStore(subscribeCardElevation, getCardElevation, getCardElevation) as CardElevationId;
 
   const markSize = SIZE_PRESETS[sizeIdx];
   const bgColor = darkBg ? '#1C2026' : '#F7F9FC';
@@ -149,6 +165,43 @@ const LogoLabScreen: React.FC = () => {
         >
           <KoolaText variant="label" tone="primary">Phát lại animation</KoolaText>
         </Pressable>
+      </KoolaSurface>
+
+      {/* ─── Card elevation (DEV, A/B/C) ──────────────────────── */}
+      <KoolaSurface variant="raised" style={s.variantCard}>
+        <KoolaText variant="label">Card nền — độ nổi (chọn để áp dụng tab Cá nhân)</KoolaText>
+        <KoolaText variant="caption" tone="muted" style={{ marginTop: 4 }}>
+          Đang dùng: <KoolaText variant="caption" weight="700">{ELEV_LABELS[elevId]}</KoolaText>
+        </KoolaText>
+        {(Object.keys(koolaCardElevations) as CardElevationId[]).map((id) => {
+          const active = elevId === id;
+          return (
+            <Pressable
+              key={id}
+              style={[s.elevTile, active && s.elevTileActive]}
+              onPress={() => setCardElevation(id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Card elevation ${id}`}
+            >
+              {/* Real light-field canvas behind each sample card so contrast
+                  reads the way it does on the Personal tab. Each tile renders
+                  its OWN preset style (not the store value) for honest
+                  side-by-side comparison. */}
+              <View style={s.elevStage}>
+                <LightFieldBackground />
+                <KoolaSurface style={[s.elevSampleCard, koolaCardElevations[id]]}>
+                  <KoolaText variant="label">Ví dụ thẻ {id}</KoolaText>
+                  <KoolaText variant="caption" tone="muted">
+                    {ELEV_DESCS[id]}
+                  </KoolaText>
+                </KoolaSurface>
+              </View>
+              <KoolaText variant="caption" weight={active ? '700' : '500'} tone={active ? 'primary' : 'muted'}>
+                {active ? 'Đang dùng' : ELEV_LABELS[id]}
+              </KoolaText>
+            </Pressable>
+          );
+        })}
       </KoolaSurface>
 
       {/* ─── Animation showcase (extruded 3D) ─────────────────── */}
@@ -263,6 +316,10 @@ const makeStyles = (p: Palette) =>
       marginTop: 4,
     },
     variantCard: { padding: 16, marginBottom: 16 },
+    elevStage: { position: 'relative', borderRadius: 16, overflow: 'hidden', paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+    elevSampleCard: { borderRadius: 16, padding: 16, gap: 6 },
+    elevTile: { flexDirection: 'column', paddingVertical: 8 },
+    elevTileActive: { opacity: 0.97 },
     variantLabel: { marginBottom: 10 },
     subLabel: { marginTop: 10, marginBottom: 6 },
     logoBox: {

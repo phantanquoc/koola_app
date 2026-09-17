@@ -2,11 +2,13 @@ import React from 'react';
 import { StyleSheet, type ViewProps } from 'react-native';
 import {
   KoolaSurface,
+  koolaCardElevations,
   koolaGlowShadows,
   koolaRadii,
   koolaSpacing,
   useTheme,
 } from '../../../../ui';
+import { getCardElevation, subscribeCardElevation } from '../../../dev/cardElevation';
 
 /**
  * Floating content card for the Personal home (design D2).
@@ -20,11 +22,21 @@ import {
  */
 export const PersonalCard: React.FC<ViewProps> = ({ style, ...props }) => {
   const { resolvedScheme } = useTheme();
+  const elevationId = React.useSyncExternalStore(
+    subscribeCardElevation,
+    getCardElevation,
+    getCardElevation,
+  );
+  const lightElev = koolaCardElevations[elevationId];
 
   return (
     <KoolaSurface
       {...props}
-      style={[styles.card, koolaGlowShadows[resolvedScheme].card, style]}
+      style={[
+        styles.card,
+        resolvedScheme === 'light' ? lightElev : koolaGlowShadows[resolvedScheme].card,
+        style,
+      ]}
     />
   );
 };
@@ -33,7 +45,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: koolaRadii.lg,
     padding: koolaSpacing.lg,
-    marginHorizontal: koolaSpacing.lg,
+    marginHorizontal: koolaSpacing.sm,
     marginBottom: koolaSpacing.lg,
   },
 });
