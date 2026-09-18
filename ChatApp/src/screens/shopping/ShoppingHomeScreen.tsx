@@ -63,6 +63,11 @@ const DOCK_H = 36;
 const DOCK_GAP_BOTTOM = 8;
 const FILTER_ROW_H = 44;
 const FILTER_ROW_GAP_BOTTOM = 8;
+// Vertical gap between product cards. Shared with the skeleton's row spacing
+// so the two stay in sync and swapping in real content causes no shift.
+const CARD_GAP = 6;
+// Tags shown per card (mock data carries up to 3; capped for uniform row height).
+const TAGS_PER_CARD = 2;
 const CHROME_RESERVE =
   DOCK_GAP_TOP + DOCK_H + DOCK_GAP_BOTTOM + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
 
@@ -425,7 +430,10 @@ const ProductRow: React.FC<{
     onPress={onOpen}
     style={styles.productRowCard}>
     <View style={[styles.productThumb, { backgroundColor: `${item.accent}16` }]}>
-      <MaterialIcons name={item.icon as never} size={30} color={item.accent} />
+      {/* 44: the thumb grew 72 → 104 wide and now fills the card's full
+          height, so the glyph scales with it (holding roughly the original
+          30/72 ≈ 0.42 ratio) rather than looking lost in the larger area. */}
+      <MaterialIcons name={item.icon as never} size={44} color={item.accent} />
       {item.badge ? (
         <View style={styles.productBadge}>
           <KoolaText variant="caption" weight="800" tone="surface" numberOfLines={1}>
@@ -451,8 +459,11 @@ const ProductRow: React.FC<{
           </KoolaText>
         ) : null}
       </View>
+      {/* Cap at 2 tags so every card's tag row is exactly one line and all
+          cards share a height. Mock data carries up to 3 tags per product —
+          the full array stays intact, only the render trims. */}
       <View style={styles.tagRow}>
-        {item.tags.slice(0, 3).map((tag) => (
+        {item.tags.slice(0, TAGS_PER_CARD).map((tag) => (
           <View key={tag} style={styles.tagChip}>
             <KoolaText variant="caption" tone="muted" numberOfLines={1}>
               {tag}
@@ -605,7 +616,7 @@ const ShoppingHomeScreen: React.FC = () => {
                 width="100%"
                 height={92}
                 radius={koolaRadii.md}
-                style={{ marginTop: i === 0 ? FILTER_ROW_GAP_BOTTOM : 10 }}
+                style={{ marginTop: i === 0 ? FILTER_ROW_GAP_BOTTOM : CARD_GAP }}
               />
             ))}
           </View>
@@ -795,24 +806,42 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       backgroundColor: semantic.surface.level1,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.subtle,
-      padding: 10,
-      marginBottom: 10,
+      // No blanket padding — the thumbnail bleeds to the top/bottom/left
+      // edges, so the 10dp inset lives on the content that still needs it
+      // (productMeta paddingVertical/marginLeft, rowCartBtn marginRight).
+      // overflow:'hidden' is what clips the bled thumb to the card's radius.
+      marginBottom: CARD_GAP,
       overflow: 'hidden',
       ...cardShadow,
     },
     productThumb: {
-      width: 72,
-      height: 72,
-      borderRadius: koolaRadii.sm,
+      // Square, DERIVED rather than hardcoded. `alignSelf: 'stretch'` makes the
+      // cross-axis height resolve to the row's content height (set by the meta
+      // block, which is the tallest child), then `aspectRatio: 1` derives width
+      // from that height — so the thumb stays exactly square automatically.
+      //
+      // No fixed width on purpose: a literal 102 would be a visual no-op today
+      // and would rot into a squat rectangle the moment the card grows (e.g.
+      // caption/label scale to 1.6x for accessibility, which makes the meta
+      // block taller). Height must keep deriving from the meta block, never the
+      // reverse, or cross-card height uniformity breaks.
+      alignSelf: 'stretch',
+      aspectRatio: 1,
+      // Flush in the card's left edge, so only the left corners round — and
+      // they must match the CARD's radius (md), not the old sm. Right corners
+      // stay square where the image butts against the text column.
+      borderTopLeftRadius: koolaRadii.md,
+      borderBottomLeftRadius: koolaRadii.md,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 10,
     },
     productBadge: {
       position: 'absolute',
-      left: 4,
-      top: 4,
-      maxWidth: 64,
+      // Nudged 4→6 now that the thumb is flush in the card's md (14dp) corner:
+      // at 4,4 the badge sat inside the corner's curve and read as clipped.
+      left: 6,
+      top: 6,
+      maxWidth: 76,
       borderRadius: koolaRadii.xs,
       backgroundColor: semantic.text.primary,
       paddingHorizontal: 6,
@@ -820,6 +849,11 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     },
     productMeta: {
       flex: 1,
+      // Carries the inset the card's removed `padding: 10` used to provide.
+      // paddingVertical here is what now sets the card's height, which the
+      // stretched thumbnail then matches.
+      paddingVertical: 10,
+      marginLeft: 10,
       marginRight: 8,
     },
     productTitle: {
@@ -840,11 +874,19 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     strikeText: {
       textDecorationLine: 'line-through',
     },
+    // nowrap (was 'wrap') is what actually guarantees one line. Capping at 2
+    // tags fits every mock combo at default text size, but caption text scales
+    // to 1.3x for accessibility, and at that size the longest pair
+    // ("Đã xác minh" + "Chính hãng") reaches the available meta width on a
+    // 360dp screen — with 'wrap' it would drop to a second line and make that
+    // card taller again. With nowrap + a shrinkable chip, the last tag
+    // truncates via its existing numberOfLines={1} instead.
     tagRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      flexWrap: 'nowrap',
     },
     tagChip: {
+      flexShrink: 1,
       borderRadius: koolaRadii.xs,
       backgroundColor: semantic.surface.level0,
       paddingHorizontal: 6,
@@ -855,6 +897,10 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     rowCartBtn: {
       width: 36,
       height: 36,
+      // Replaces the right side of the card's removed `padding: 10`, so the
+      // button keeps its inset from the card edge. Its existing hitSlop={8}
+      // still puts the effective target at ~52dp.
+      marginRight: 10,
       borderRadius: koolaRadii.sm,
       backgroundColor: semantic.action.primarySoft,
       alignItems: 'center',
