@@ -1,8 +1,16 @@
+import type { ImageSourcePropType } from 'react-native';
+
 export type ServiceCategory = {
   id: string;
   label: string;
   icon: string;
 };
+
+export const serviceProvinces = ['Toàn quốc', 'TP.HCM', 'Hà Nội', 'Đà Nẵng', 'Cần Thơ'] as const;
+export type ServiceProvince = (typeof serviceProvinces)[number];
+
+export const serviceSortChips = ['Đề xuất', 'Gần bạn', 'Giá thấp'] as const;
+export const serviceAttributeChips = ['Có xác minh', 'Phản hồi nhanh'] as const;
 
 export type ServiceItem = {
   id: string;
@@ -16,6 +24,9 @@ export type ServiceItem = {
   icon: string;
   accent: string;
   badge?: string;
+  province: ServiceProvince;
+  tags: string[];
+  image?: ImageSourcePropType;
 };
 
 export type ServiceProvider = {
@@ -28,6 +39,8 @@ export type ServiceProvider = {
   verified: boolean;
   icon: string;
   accent: string;
+  province: ServiceProvince;
+  image?: ImageSourcePropType;
 };
 
 export const serviceCategories: ServiceCategory[] = [
@@ -51,6 +64,9 @@ export const services: ServiceItem[] = [
     icon: 'build',
     accent: '#2563EB',
     badge: 'Phổ biến',
+    province: 'TP.HCM',
+    tags: ['Có xác minh', 'Phản hồi nhanh'],
+    image: require('../../assets/mock-services/service-repair-electrical.jpg'),
   },
   {
     id: 'sv2',
@@ -64,6 +80,9 @@ export const services: ServiceItem[] = [
     icon: 'local-shipping',
     accent: '#10B981',
     badge: 'Nhanh',
+    province: 'Hà Nội',
+    tags: ['Phản hồi nhanh'],
+    image: require('../../assets/mock-services/service-delivery.jpg'),
   },
   {
     id: 'sv3',
@@ -77,6 +96,9 @@ export const services: ServiceItem[] = [
     icon: 'restaurant',
     accent: '#F97316',
     badge: 'Đề xuất',
+    province: 'Đà Nẵng',
+    tags: ['Có xác minh'],
+    image: require('../../assets/mock-services/service-food.jpg'),
   },
   {
     id: 'sv4',
@@ -89,6 +111,9 @@ export const services: ServiceItem[] = [
     jobs: '960 lượt',
     icon: 'ac-unit',
     accent: '#14B8A6',
+    province: 'TP.HCM',
+    tags: ['Có xác minh', 'Phản hồi nhanh'],
+    image: require('../../assets/mock-services/service-ac-cleaning.jpg'),
   },
   {
     id: 'sv5',
@@ -101,6 +126,9 @@ export const services: ServiceItem[] = [
     jobs: '1.6k lượt',
     icon: 'cleaning-services',
     accent: '#8B5CF6',
+    province: 'Cần Thơ',
+    tags: ['Có xác minh'],
+    image: require('../../assets/mock-services/service-home-cleaning.jpg'),
   },
   {
     id: 'sv6',
@@ -113,6 +141,9 @@ export const services: ServiceItem[] = [
     jobs: '740 lượt',
     icon: 'local-laundry-service',
     accent: '#EC4899',
+    province: 'Hà Nội',
+    tags: ['Phản hồi nhanh'],
+    image: require('../../assets/mock-services/service-laundry.jpg'),
   },
 ];
 
@@ -127,6 +158,8 @@ export const serviceProviders: ServiceProvider[] = [
     verified: true,
     icon: 'engineering',
     accent: '#2563EB',
+    province: 'TP.HCM',
+    image: require('../../assets/mock-services/provider-avatar-1.jpg'),
   },
   {
     id: 'pr2',
@@ -138,6 +171,8 @@ export const serviceProviders: ServiceProvider[] = [
     verified: true,
     icon: 'two-wheeler',
     accent: '#10B981',
+    province: 'TP.HCM',
+    image: require('../../assets/mock-services/provider-avatar-2.jpg'),
   },
   {
     id: 'pr3',
@@ -149,5 +184,7 @@ export const serviceProviders: ServiceProvider[] = [
     verified: false,
     icon: 'restaurant-menu',
     accent: '#F97316',
+    province: 'Đà Nẵng',
+    image: require('../../assets/mock-services/provider-avatar-3.jpg'),
   },
 ];
