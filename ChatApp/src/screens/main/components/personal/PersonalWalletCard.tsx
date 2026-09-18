@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../../../ui';
 import type { SemanticTokens } from '../../../../ui/tokens/semantic';
@@ -38,6 +40,42 @@ const ACTIONS: { key: string; icon: string; label: string }[] = [
   { key: 'qr', icon: 'qr-code-scanner', label: 'Quét QR' },
 ];
 
+interface ActionWellButtonProps {
+  onPress: () => void;
+  accessibilityLabel: string;
+  wellStyle: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}
+
+/** Action well with a Reanimated press-in/press-out scale+opacity feedback. */
+const ActionWellButton: React.FC<ActionWellButtonProps> = ({ onPress, accessibilityLabel, wellStyle, children }) => {
+  const press = useSharedValue(0);
+
+  const handlePressIn = useCallback(() => {
+    press.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
+  }, [press]);
+
+  const handlePressOut = useCallback(() => {
+    press.value = withSpring(0, { damping: 12, stiffness: 260, mass: 0.4 });
+  }, [press]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - 0.08 * press.value }],
+    opacity: 1 - 0.18 * press.value,
+  }));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}>
+      <Animated.View style={[wellStyle, animStyle]}>{children}</Animated.View>
+    </Pressable>
+  );
+};
+
 export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
   balance = '•••• ••••',
   points = '256.000',
@@ -61,13 +99,11 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
 
   return (
     <PersonalCard style={styles.outer}>
-      {/* Header: chip + title left, masked balance + eye right — one row */}
+      {/* Header: title + wordmark left, masked balance + eye right — one row */}
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <View style={styles.walletChip}>
-            <MaterialIcons name="account-balance-wallet" size={11} color={tokens.semantic.action.primary} />
-          </View>
-          <KoolaText variant="heading" weight="700" style={styles.title}>Ví KOOLA</KoolaText>
+          <KoolaText variant="heading" weight="700" style={styles.title}>Ví</KoolaText>
+          <Image source={require('../../../../assets/logo_koola_wordmark.png')} style={styles.wordmark} resizeMode="contain" accessibilityLabel="KOOLA" />
         </View>
 
         <View style={styles.balanceRow}>
@@ -87,41 +123,40 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
         </View>
       </View>
 
+      <View style={styles.headerDivider} />
+
       {/* 4 action wells — all blue; Nạp/Rút are composited detailed icons */}
       <View style={styles.actionsGrid}>
         {ACTIONS.map(action => (
           <View key={action.key} style={styles.actionCol}>
-            <Pressable
+            <ActionWellButton
               onPress={() => {
                 const h = actionHandlers[action.key];
                 if (h) h();
                 else onComingSoon?.();
               }}
-              accessibilityRole="button"
               accessibilityLabel={action.label}
-              style={({ pressed }) => [pressed && styles.pressed]}>
-              <View style={styles.actionWell}>
-                {action.key === 'topup' ? (
-                  <View style={styles.detailedTopup}>
-                    <MaterialIcons name="account-balance-wallet" size={18} color={tokens.semantic.action.primary} />
-                    <View style={styles.topupBadge}>
-                      <MaterialIcons name="add" size={10} color="#FFFFFF" />
-                    </View>
+              wellStyle={styles.actionWell}>
+              {action.key === 'topup' ? (
+                <View style={styles.detailedTopup}>
+                  <MaterialIcons name="account-balance-wallet" size={18} color={tokens.semantic.action.primary} />
+                  <View style={styles.topupBadge}>
+                    <MaterialIcons name="add" size={10} color="#FFFFFF" />
                   </View>
-                ) : action.key === 'withdraw' ? (
-                  <View style={styles.detailedWithdraw}>
-                    <MaterialIcons name="payments" size={17} color={tokens.semantic.action.primary} />
-                    <MaterialIcons name="north-east" size={11} color={tokens.semantic.action.primary} style={styles.withdrawArrow} />
-                  </View>
-                ) : (
-                  <MaterialIcons
-                    name={action.icon}
-                    size={18}
-                    color={tokens.semantic.action.primary}
-                  />
-                )}
-              </View>
-            </Pressable>
+                </View>
+              ) : action.key === 'withdraw' ? (
+                <View style={styles.detailedWithdraw}>
+                  <MaterialIcons name="payments" size={17} color={tokens.semantic.action.primary} />
+                  <MaterialIcons name="north-east" size={11} color={tokens.semantic.action.primary} style={styles.withdrawArrow} />
+                </View>
+              ) : (
+                <MaterialIcons
+                  name={action.icon}
+                  size={18}
+                  color={tokens.semantic.action.primary}
+                />
+              )}
+            </ActionWellButton>
             <KoolaText variant="body" weight="500" style={styles.actionLabel}>{action.label}</KoolaText>
           </View>
         ))}
@@ -151,7 +186,7 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel="Lịch sử tích điểm"
-            style={({ pressed }) => [pressed && styles.pressed]}>
+            style={({ pressed }) => [styles.pillPressable, pressed && styles.pressed]}>
             <View style={styles.pill}>
               <KoolaText variant="body" weight="500" style={styles.pillText}>Lịch sử tích điểm</KoolaText>
               <MaterialIcons name="chevron-right" size={12} color={tokens.semantic.text.muted} />
@@ -165,7 +200,7 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel="Đổi điểm"
-            style={({ pressed }) => [pressed && styles.pressed]}>
+            style={({ pressed }) => [styles.pillPressable, pressed && styles.pressed]}>
             <View style={styles.pill}>
               <KoolaText variant="body" weight="500" style={styles.pillText}>Đổi điểm</KoolaText>
               <MaterialIcons name="chevron-right" size={12} color={tokens.semantic.text.muted} />
@@ -183,10 +218,13 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     pressed: { opacity: koolaOpacity.pressed },
     eyeDisabled: { opacity: 0.52 },
     eyeBtnWrap: {},
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.lg },
-    titleRow: { flexDirection: 'row', alignItems: 'center' },
-    walletChip: { width: 22, height: 22, borderRadius: koolaRadii.xs, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.md },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.xs },
+    wordmark: { width: 81, height: 14 },
+    headerDivider: { height: 1, backgroundColor: semantic.border.subtle, marginBottom: koolaSpacing.md },
     title: { color: semantic.text.primary, letterSpacing: 0.3 },
+
+
     balanceRow: { flexDirection: 'row', alignItems: 'center' },
     balanceLabel: { color: semantic.text.muted, marginRight: koolaSpacing.sm - 2 },
     balanceValue: { color: semantic.text.primary, letterSpacing: 1.2, marginRight: koolaSpacing.sm },
@@ -201,15 +239,16 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     detailedWithdraw: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     withdrawArrow: { marginLeft: -2, marginTop: -6 },
     actionLabel: { color: semantic.text.primary, marginTop: koolaSpacing.sm },
-    divider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle, marginBottom: koolaSpacing.md },
+    divider: { height: 1, backgroundColor: semantic.border.subtle, marginBottom: koolaSpacing.md },
     pointsSection: {},
     pointsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.md },
     pointsLeft: { flexDirection: 'row', alignItems: 'center' },
     starGem: { width: 18, height: 18, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: semantic.action.primarySoft, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm - 1 },
     pointsLabel: { color: semantic.text.primary },
     pointsValue: { color: semantic.action.primary },
-    pillRow: { flexDirection: 'row' },
-    pill: { flexDirection: 'row', alignItems: 'center', borderRadius: koolaRadii.pill, paddingHorizontal: koolaSpacing.sm, paddingVertical: koolaSpacing.sm - 1, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, marginRight: koolaSpacing.sm },
-    pillText: { color: semantic.text.primary, marginRight: koolaSpacing.xs },
+    pillRow: { flexDirection: 'row', gap: koolaSpacing.sm },
+    pillPressable: { flex: 1 },
+    pill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: koolaRadii.pill, paddingHorizontal: koolaSpacing.sm, paddingVertical: koolaSpacing.sm - 1, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
+    pillText: { color: semantic.text.primary, marginRight: koolaSpacing.xs, textAlign: 'center' },
   });
 }
