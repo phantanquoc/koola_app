@@ -72,7 +72,7 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
             <Pressable onPress={onSwitchAccount} hitSlop={8} accessibilityRole="button" accessibilityLabel="Chuyển tài khoản" style={({ pressed }) => [styles.switchPressable, pressed && styles.pressed]}>
               <View style={styles.switchBtn}>
                 <MaterialIcons name="swap-horiz" size={14} color={tokens.semantic.text.muted} style={styles.switchIcon} />
-                <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.switchLabel}>Chuyển tài khoản</KoolaText>
+                <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.switchLabel}>Tài khoản</KoolaText>
               </View>
             </Pressable>
           </View>

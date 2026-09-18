@@ -219,10 +219,10 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     eyeDisabled: { opacity: 0.52 },
     eyeBtnWrap: {},
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: koolaSpacing.md },
-    titleRow: { flexDirection: 'row', alignItems: 'center', gap: koolaSpacing.xs },
-    wordmark: { width: 81, height: 14 },
+    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: koolaSpacing.xs },
+    wordmark: { width: 90, height: 15, marginBottom: 1 },
     headerDivider: { height: 1, backgroundColor: semantic.border.subtle, marginBottom: koolaSpacing.md },
-    title: { color: semantic.text.primary, letterSpacing: 0.3 },
+    title: { color: semantic.text.muted, fontSize: 15, lineHeight: 15, letterSpacing: 0.2, includeFontPadding: false, textAlignVertical: 'bottom' },
 
 
     balanceRow: { flexDirection: 'row', alignItems: 'center' },
