@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   Image,
   InteractionManager,
@@ -12,7 +13,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { BlurView } from '@sbaiahmed1/react-native-blur';
 import {
   KoolaChip,
   KoolaSheet,
@@ -41,30 +41,39 @@ import {
  * Shopping home — single-column product list (Figma frame 64:2).
  *
  * Chrome layout (fixed, floats over the list):
- *   [glass search pill 48]  →  [Lọc pill + category scroller 44]  →  list
+ *   [flat search pill 40 + filter icon]  →  [chips-only scroller 44]  →  list
  *
- * The old chrome stacked a flat search bar, a tall blue "LỌC" well and two
- * wrapping pill rows (~264dp above the first product), which broke two DNA
- * rules: max 2 filter rows above content, and ~120px max filter height. Sort
- * and attribute chips now live in a bottom sheet behind the compact "Lọc" pill,
- * and the search surface matches the Chat tab's glass dock so the app has one
- * search language.
+ * Search is a flat opaque pill (fill `border.subtle`, no blur/shadow, focus
+ * ring is an overlay). The filter entry point ("Lọc" icon + badge) lives inside
+ * the dock (divider + icon-only button) so FilterRow below is chips-only.
+ * Scroll hides the dock over 120dp with snap at ~60dp; filter row slides into
+ * the vacated space (44→40 height compression, same offset — no seam).
  *
  * Notch is hosted by ShoppingTabStack (fixed chrome); this screen owns search,
  * the filter row, the filter sheet and the product list.
  */
 
-// Chrome reserve above the first product row: 4 gap + 48 dock + 8 gap
-// + 44 filter row + 8 gap. The list pads by this so nothing is clipped at
-// scroll 0 while rows still slide behind the glass pill on scroll.
+// Chrome reserve above the first product row: 4 gap + 40 dock + 8 gap
+// + 44 filter row + 12 gap (at rest; collapses 12→8 when chrome hides).
+// The list pads by this max reserve so nothing is clipped at scroll 0 while
+// rows still slide behind the pill on scroll. The 12→8 collapse is realized
+// as an Animated spacer inside overlayChrome (not as FlatList padding) so
+// CHROME_RESERVE / listTopPad stay static and the FlatList avoids a
+// layout reflow on every scroll frame.
 const DOCK_GAP_TOP = 4;
-// 36 = the COLLAPSED end-state height of ChatSearchDock (which morphs 48→36).
-// This dock is static at that collapsed size. CHROME_RESERVE below recomputes
-// from this, so the list's paddingTop tracks it automatically.
-const DOCK_H = 36;
+// 40 + hitSlop covers the 44dp minimum touch target (ui-dna.md:275): the pill
+// is visually 40dp while the TextInput's hitSlop top/bottom 2 brings its
+// effective area to 44dp. CHROME_RESERVE below recomputes from this.
+const DOCK_H = 40;
 const DOCK_GAP_BOTTOM = 8;
 const FILTER_ROW_H = 44;
-const FILTER_ROW_GAP_BOTTOM = 8;
+const FILTER_ROW_H_COLLAPSED = 40;
+const FILTER_ROW_GAP_BOTTOM = 12;
+const FILTER_ROW_GAP_COLLAPSED = 8;
+// Scroll-driven chrome: dock hides over 120dp, snap at midpoint (~60dp).
+const DOCK_HIDE_THRESHOLD = 120;
+const DOCK_HIDE_MID = DOCK_HIDE_THRESHOLD / 2;
+const DOCK_SLIDE = DOCK_H + DOCK_GAP_BOTTOM;
 // Vertical gap between product cards. Shared with the skeleton's row spacing
 // so the two stay in sync and swapping in real content causes no shift.
 const CARD_GAP = 6;
@@ -108,204 +117,156 @@ function filterAndSortProducts(
   return list;
 }
 
-// ── Search dock: fixed glass pill, static 36dp height (no scroll morph) ─────
-// Mirrors ChatSearchDock (ChatHomeScreen.tsx) in material/layering, sized to
-// that dock's COLLAPSED end-state (height 36, gap 6, icon ~18, font 11.5,
-// host paddingHorizontal 4). Unlike that dock (a Pressable used only for
-// navigation), this one hosts a live TextInput — morphing height while the
-// keyboard is open risks a layout jump / focus loss, so this version stays
-// static at the collapsed size rather than interpolating.
-//
-// 36dp is under the 44dp minimum touch target (ui-dna.md:275), so the input
-// and the clear button carry vertical hitSlop to bring their effective touch
-// area back to ~44dp while the pill stays visually 36dp.
-//
-// Layer order is load-bearing: shadowWrap → host (hairline, overflow hidden)
-// → BlurView (full-fill) → innerEdge + content row AS CHILDREN of BlurView.
-// Native BlurViewGroup.draw() skips its own subtree while capturing the
-// snapshot it blurs — children are excluded from that capture, siblings are
-// not. A sibling innerEdge/content row would get captured and rendered
-// blurred, ghosting behind the crisp icon/text (see ChatSearchDock comment).
+// ── Search dock: flat opaque pill, 40dp (flat dock pass) ────────────────────
+// Flat, no blur/shadow — fill is `semantic.border.subtle`. 40 + hitSlop
+// covers the 44dp minimum (ui-dna.md:275) without a shadowWrap. Focus ring is
+// an absolutely-positioned overlay so it doesn't eat into the content box.
 const ShoppingSearchDock: React.FC<{
   semantic: SemanticTokens;
   value: string;
   onChangeText: (t: string) => void;
-}> = ({ semantic, value, onChangeText }) => {
-  const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
+  activeFilterCount: number;
+  onOpenFilters: () => void;
+  onFocusChange?: (f: boolean) => void;
+}> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters, onFocusChange }) => {
   const [focused, setFocused] = useState(false);
-  const dockShadow = isDark ? koolaDarkShadows.md : koolaShadows.md;
-  const hairline = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
-  const focusRing = semantic.focus.ring;
+  const handleFocus = useCallback(() => { setFocused(true); onFocusChange?.(true); }, [onFocusChange]);
+  const handleBlur = useCallback(() => { setFocused(false); onFocusChange?.(false); }, [onFocusChange]);
 
   return (
-    <View style={[dockStyles.shadowWrap, dockShadow, dockStyles.hostSize]}>
-      <View
-        style={[
-          dockStyles.host,
-          { borderColor: focused ? focusRing : hairline, borderWidth: focused ? 1.5 : StyleSheet.hairlineWidth },
-        ]}>
-        <BlurView
-          blurType={isDark ? 'dark' : 'light'}
-          blurAmount={18}
-          overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
-          reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-          style={dockStyles.blurFill}>
-          {/* innerEdge + content MUST be BlurView children, not siblings — see
-              file header comment for why. */}
-          <View pointerEvents="none" style={[dockStyles.innerEdge, isDark ? dockStyles.innerEdgeDark : null]} />
-          <View style={dockStyles.contentRow}>
-            {/* 18px = chat's collapsed effective icon size (22 × 0.82). Set
-                directly rather than via a scale transform so the vector stays
-                crisp at this size. */}
-            <MaterialIcons name="search" size={18} color={semantic.text.faint} style={dockStyles.searchIcon} />
-            <TextInput
-              value={value}
-              onChangeText={onChangeText}
-              placeholder="Tìm kiếm sản phẩm..."
-              placeholderTextColor={semantic.text.faint}
-              style={[dockStyles.searchInput, { color: semantic.text.primary }]}
-              returnKeyType="search"
-              underlineColorAndroid="transparent"
-              accessibilityLabel="Tìm kiếm sản phẩm"
-              // Brings the 36dp-tall field back to a ~44dp touch target.
-              hitSlop={{ top: 4, bottom: 4 }}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-            />
-            {value.length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Xóa tìm kiếm"
-                onPress={() => onChangeText('')}
-                // 24dp box + 10 slop each side ≈ 44dp effective, so the clear
-                // button stays easy to hit on the shorter pill.
-                hitSlop={10}
-                style={dockStyles.searchClear}>
-                <MaterialIcons name="close" size={18} color={semantic.text.muted} />
-              </Pressable>
-            ) : null}
-          </View>
-        </BlurView>
+    <View style={[dockStyles.pill, { backgroundColor: semantic.border.subtle }]}>
+      {focused ? (
+        <View pointerEvents="none" style={[dockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
+      ) : null}
+      <View style={dockStyles.contentRow}>
+        <MaterialIcons name="search" size={20} color={semantic.text.faint} style={dockStyles.searchIcon} />
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder="Tìm kiếm sản phẩm..."
+          placeholderTextColor={semantic.text.faint}
+          style={[dockStyles.searchInput, { color: semantic.text.primary }]}
+          returnKeyType="search"
+          underlineColorAndroid="transparent"
+          accessibilityLabel="Tìm kiếm sản phẩm"
+          hitSlop={{ top: 2, bottom: 2 }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+        />
+        {value.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Xóa tìm kiếm"
+            onPress={() => onChangeText('')}
+            hitSlop={6}
+            style={dockStyles.searchClear}>
+            <MaterialIcons name="close" size={20} color={semantic.text.muted} />
+          </Pressable>
+        ) : null}
+        <View style={[dockStyles.divider, { backgroundColor: semantic.border.strong }]} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            activeFilterCount > 0 ? `Lọc, ${activeFilterCount} bộ lọc đang áp dụng` : 'Lọc sản phẩm'
+          }
+          onPress={onOpenFilters}
+          hitSlop={6}
+          style={dockStyles.filterBtn}>
+          <MaterialIcons name="filter-list" size={20} color={semantic.action.primary} />
+          {activeFilterCount > 0 ? (
+            <View style={dockStyles.filterBadge}>
+              <KoolaText variant="caption" weight="800" tone="surface" style={dockStyles.filterBadgeText}>
+                {activeFilterCount}
+              </KoolaText>
+            </View>
+          ) : null}
+        </Pressable>
       </View>
     </View>
   );
 };
 
 const dockStyles = StyleSheet.create({
-  shadowWrap: {
-    borderRadius: koolaRadii.pill,
-    overflow: 'visible',
-  },
-  // height + paddingHorizontal sit on the outer wrapper, matching where chat
-  // applies them (its animatedHostStyle targets shadowWrap, not host); the
-  // pill itself is flex:1 inside. Keeping padding off `host` also matters
-  // because blurFill is absolutely positioned within it — padding there would
-  // inset the glass fill instead of the content.
-  hostSize: {
+  pill: {
     height: DOCK_H,
-    paddingHorizontal: 4,
-  },
-  host: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: koolaRadii.pill,
     overflow: 'hidden',
+    justifyContent: 'center',
   },
-  blurFill: {
+  focusRing: {
     ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
-  },
-  innerEdge: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderTopLeftRadius: koolaRadii.pill,
-    borderTopRightRadius: koolaRadii.pill,
-  },
-  innerEdgeDark: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1.5,
   },
   contentRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    // Mirrors chat's inner searchBtn inset (paddingLeft 14 / paddingRight 8),
-    // stacked on top of the 4dp already reserved by hostSize.
     paddingLeft: 14,
     paddingRight: 8,
   },
-  // 6 = chat's collapsed inner gap (expanded is 8).
   searchIcon: {
     marginRight: 6,
   },
   searchInput: {
     flex: 1,
-    // 11.5 = chat's collapsed placeholder/label font size (expanded is 13).
-    fontSize: 11.5,
-    // No explicit lineHeight: on Android a lineHeight tight to a small
-    // fontSize clips ascenders/descenders. Full-height box + centered text
-    // keeps the placeholder and typed value un-cut inside the 36dp pill.
+    fontSize: 15,
     height: DOCK_H,
     paddingVertical: 0,
     textAlignVertical: 'center',
   },
   searchClear: {
     marginLeft: 6,
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  divider: {
+    width: StyleSheet.hairlineWidth,
+    height: 20,
+    marginHorizontal: 8,
+    opacity: 1,
+  },
+  filterBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: koolaRadii.pill,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
 });
 
-// ── Filter row: compact "Lọc" pill (fixed, opens sheet) + sort/attr scroller ─
-// Single 44dp row replaces the old tall blue well + 2 wrapping pill rows.
-// Sort + attribute chips live here (directly toggleable); categories moved into
-// the sheet — the two groups were swapped after device review.
-// WARNING (ui-dna.md:311): never use `gap` in a row-direction container that
-// has flex:1 children — Hermes on RN 0.76 silently drops children to new
-// lines. This row uses marginRight/marginLeft + flexShrink:0 instead.
+// ── Filter row: chips-only scroller (flat dock owns the filter icon) ───────
+ // Filter entry point (icon + badge + divider) lives inside the dock pill; this
+ // row is only the horizontal chip scroller. Single 44→40dp row.
+ // WARNING (ui-dna.md:311): never use `gap` in a row-direction container that
+ // has flex:1 children — Hermes on RN 0.76 silently drops children to new
+ // lines. Chips use marginRight + flexShrink:0 instead.
 const FilterRow: React.FC<{
   semantic: SemanticTokens;
   styles: Styles;
-  activeCount: number;
-  onOpenFilters: () => void;
   activeSort: string | null;
   activeAttr: string | null;
   onToggleSort: (label: string) => void;
   onToggleAttr: (label: string) => void;
-}> = ({ semantic, styles, activeCount, onOpenFilters, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
+}> = ({ semantic: _semantic, styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
   <View style={styles.filterRow}>
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={
-        activeCount > 0 ? `Lọc, ${activeCount} bộ lọc đang áp dụng` : 'Lọc sản phẩm'
-      }
-      accessibilityState={{ selected: activeCount > 0 }}
-      android_ripple={{ color: semantic.border.subtle }}
-      onPress={onOpenFilters}
-      hitSlop={4}
-      style={styles.filterPillBtn}>
-      <MaterialIcons name="filter-list" size={18} color={semantic.action.primary} />
-      <KoolaText variant="caption" weight="700" tone="primary" style={styles.filterPillLabel} numberOfLines={1}>
-        Lọc
-      </KoolaText>
-      {activeCount > 0 ? (
-        <View style={styles.filterCountBadge}>
-          <KoolaText variant="caption" weight="800" tone="surface" style={styles.filterCountText}>
-            {activeCount}
-          </KoolaText>
-        </View>
-      ) : null}
-    </Pressable>
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
@@ -551,9 +512,140 @@ const ShoppingHomeScreen: React.FC = () => {
   const notchPad = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + 4;
   // Fixed chrome (dock + filter row) floats over the list at notchPad; the
   // list reserves notchPad + CHROME_RESERVE so the first row clears both with
-  // no clipping at scroll 0, and content slides behind the glass on scroll.
+  // no clipping at scroll 0, and content slides behind the pill on scroll.
   const overlayTop = notchPad;
   const listTopPad = notchPad + CHROME_RESERVE;
+
+  // ── Scroll-driven chrome (plain Animated, no Reanimated) ────────────────
+  // Mirrors ConversationListScreen's hysteresis pattern but via Animated.Value
+  // so no new dependency. appliedOffset is the hysteresis-filtered offset that
+  // interpolations read; raw scroll drives it through a JS listener. All
+  // animated props are transform/opacity/height — native-driven.
+  const appliedOffset = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef<FlatList<ShoppingProduct>>(null);
+  const rawOffsetRef = useRef(0);
+  const appliedValueRef = useRef(0);
+  const travelRef = useRef(0);
+  const directionRef = useRef<1 | -1 | 0>(0);
+  const isDraggingRef = useRef(false);
+  const dockFocusedRef = useRef(false);
+  const [dockHidden, setDockHidden] = useState(false);
+  useEffect(() => {
+    const id = appliedOffset.addListener(({ value }: { value: number }) => {
+      appliedValueRef.current = value;
+      const hidden = value >= DOCK_HIDE_THRESHOLD - 1;
+      setDockHidden((prev) => (prev === hidden ? prev : hidden));
+    });
+    return () => appliedOffset.removeListener(id);
+  }, [appliedOffset]);
+
+  const HYSTERESIS = 10;
+
+  const dockTranslateY = appliedOffset.interpolate({
+    inputRange: [0, DOCK_HIDE_THRESHOLD],
+    outputRange: [0, -DOCK_SLIDE],
+    extrapolate: 'clamp',
+  });
+  const dockOpacity = appliedOffset.interpolate({
+    inputRange: [0, DOCK_HIDE_MID, DOCK_HIDE_THRESHOLD],
+    outputRange: [1, 0.5, 0],
+    extrapolate: 'clamp',
+  });
+  const filterTranslateY = appliedOffset.interpolate({
+    inputRange: [0, DOCK_HIDE_THRESHOLD],
+    outputRange: [0, -DOCK_SLIDE],
+    extrapolate: 'clamp',
+  });
+  // Filter row compresses 44→40 while sliding; native-driven height via Animated.
+  const filterRowHeight = appliedOffset.interpolate({
+    inputRange: [0, DOCK_HIDE_THRESHOLD],
+    outputRange: [FILTER_ROW_H, FILTER_ROW_H_COLLAPSED],
+    extrapolate: 'clamp',
+  });
+  // Gap below the filter row: 12 at rest → 8 when chrome is fully hidden.
+  // Layout prop (height) so driven with useNativeDriver:false via
+  // Animated.timing on appliedOffset; stays inside overlayChrome so
+  // CHROME_RESERVE / FlatList paddingTop can remain static.
+  const filterRowGapHeight = appliedOffset.interpolate({
+    inputRange: [0, DOCK_HIDE_THRESHOLD],
+    outputRange: [FILTER_ROW_GAP_BOTTOM, FILTER_ROW_GAP_COLLAPSED],
+    extrapolate: 'clamp',
+  });
+
+  const snapToNearestDetent = useCallback(() => {
+    if (dockFocusedRef.current) {
+      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      rawOffsetRef.current = 0;
+      travelRef.current = 0;
+      directionRef.current = -1;
+      return;
+    }
+    // Don't fight the sheet's own settle animation while it is open.
+    // Hysteresis already holds the chrome steady; snapping underneath
+    // would nudge scroll offset under the sheet.
+    // Guard lives inside the callback that already closes over filterSheetOpen
+    // — add dep below.
+    const v = appliedValueRef.current;
+    if (v > 20 && v < 100) {
+      const target = v < DOCK_HIDE_MID ? 0 : DOCK_HIDE_THRESHOLD;
+      Animated.timing(appliedOffset, { toValue: target, duration: 180, useNativeDriver: false }).start();
+      flatListRef.current?.scrollToOffset({ offset: target, animated: true });
+      rawOffsetRef.current = target;
+      travelRef.current = 0;
+      directionRef.current = target === 0 ? -1 : 1;
+    }
+  }, [appliedOffset]);
+
+  const handleFocusChange = useCallback((focused: boolean) => {
+    dockFocusedRef.current = focused;
+    if (focused) {
+      travelRef.current = 0;
+      directionRef.current = -1;
+      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+      if (rawOffsetRef.current > 0) {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        rawOffsetRef.current = 0;
+      }
+    }
+  }, [appliedOffset]);
+
+  const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const y = Math.max(0, e.nativeEvent.contentOffset.y);
+    if (dockFocusedRef.current) {
+      if (appliedValueRef.current !== 0) appliedOffset.setValue(0);
+      rawOffsetRef.current = y;
+      return;
+    }
+    const delta = y - rawOffsetRef.current;
+    rawOffsetRef.current = y;
+    if (y <= 4) {
+      travelRef.current = 0;
+      directionRef.current = -1;
+      appliedOffset.setValue(0);
+      return;
+    }
+    if (delta > 0) {
+      travelRef.current = Math.max(0, travelRef.current) + delta;
+      directionRef.current = 1;
+      appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y));
+    } else if (delta < 0) {
+      travelRef.current = Math.min(0, travelRef.current) + delta;
+      if (travelRef.current < -HYSTERESIS) {
+        directionRef.current = -1;
+        appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y));
+      }
+    }
+  }, [appliedOffset]);
+
+  const handleScrollBeginDrag = useCallback(() => { isDraggingRef.current = true; }, []);
+  const handleScrollEndDrag = useCallback(() => {
+    isDraggingRef.current = false;
+    snapToNearestDetent();
+  }, [snapToNearestDetent]);
+  const handleMomentumScrollEnd = useCallback(() => {
+    if (!isDraggingRef.current) snapToNearestDetent();
+  }, [snapToNearestDetent]);
 
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -655,11 +747,10 @@ const ShoppingHomeScreen: React.FC = () => {
           <View style={styles.contentInset}>
             <KoolaSkeleton width="100%" height={DOCK_H} radius={koolaRadii.pill} />
             <View style={{ flexDirection: 'row', marginTop: DOCK_GAP_BOTTOM, alignItems: 'center' }}>
-              {/* Lọc pill, then the first two row chips ("Được mua nhiều
-                  nhất" is the widest, hence 140). */}
-              <KoolaSkeleton width={72} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
+              {/* Chips-only row: no Lọc placeholder (filter lives inside dock) */}
               <KoolaSkeleton width={140} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={92} height={FILTER_ROW_H} radius={koolaRadii.pill} />
+              <KoolaSkeleton width={92} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
+              <KoolaSkeleton width={84} height={FILTER_ROW_H} radius={koolaRadii.pill} />
             </View>
           </View>
           <View style={styles.listContent}>
@@ -675,7 +766,8 @@ const ShoppingHomeScreen: React.FC = () => {
           </View>
         </View>
       ) : (
-        <FlatList
+        <Animated.FlatList
+          ref={flatListRef}
           removeClippedSubviews={false}
           data={products}
           keyExtractor={(item) => item.id}
@@ -688,22 +780,44 @@ const ShoppingHomeScreen: React.FC = () => {
           contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
           showsVerticalScrollIndicator={false}
           style={styles.screenTransparent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onScrollEndDrag={handleScrollEndDrag}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
         />
       )}
       {contentReady ? (
         <View style={[styles.overlayChrome, { top: overlayTop }]} pointerEvents="box-none">
           <View style={styles.contentInset} pointerEvents="box-none">
-            <ShoppingSearchDock semantic={semantic} value={query} onChangeText={setQuery} />
-            <FilterRow
-              semantic={semantic}
-              styles={styles}
-              activeCount={activeFilterCount}
-              onOpenFilters={openFilterSheet}
-              activeSort={activeSort}
-              activeAttr={activeAttr}
-              onToggleSort={toggleSort}
-              onToggleAttr={toggleAttr}
-            />
+            {/* Dock: fades + slides up over 120dp; when fully hidden pointerEvents none so taps reach rows. */}
+            <Animated.View
+              pointerEvents={dockHidden ? 'none' : 'auto'}
+              style={{ transform: [{ translateY: dockTranslateY }], opacity: dockOpacity }}>
+              <ShoppingSearchDock
+                semantic={semantic}
+                value={query}
+                onChangeText={setQuery}
+                activeFilterCount={activeFilterCount}
+                onOpenFilters={openFilterSheet}
+                onFocusChange={handleFocusChange}
+              />
+            </Animated.View>
+            {/* Filter row: slides up into vacated dock space, compresses 44->40. Same appliedOffset as dock => no seam. */}
+            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowHeight, marginTop: DOCK_GAP_BOTTOM, overflow: 'hidden' }}>
+              <View style={{ height: FILTER_ROW_H }}>
+                <FilterRow
+                  semantic={semantic}
+                  styles={styles}
+                  activeSort={activeSort}
+                  activeAttr={activeAttr}
+                  onToggleSort={toggleSort}
+                  onToggleAttr={toggleAttr}
+                />
+              </View>
+            </Animated.View>
+            {/* Breathing gap between filter row and first card: 12 at rest → 8 when hidden. Spacer lives inside overlayChrome (not FlatList padding) so CHROME_RESERVE / listTopPad stay static and avoid layout reflow on every scroll frame. */}
+            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowGapHeight }} />
           </View>
         </View>
       ) : null}
@@ -761,42 +875,11 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       paddingTop: DOCK_GAP_TOP,
       zIndex: koolaZIndex.sticky,
     },
-    // ── Filter row ──
+    // ── Filter row (chips-only) ──
     filterRow: {
       flexDirection: 'row',
       alignItems: 'center',
       height: FILTER_ROW_H,
-      marginTop: DOCK_GAP_BOTTOM,
-    },
-    filterPillBtn: {
-      flexShrink: 0,
-      flexDirection: 'row',
-      alignItems: 'center',
-      height: 36,
-      minHeight: 36,
-      borderRadius: koolaRadii.pill,
-      paddingHorizontal: 12,
-      marginRight: 8,
-      backgroundColor: semantic.surface.level2,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: semantic.border.subtle,
-      ...cardShadow,
-    },
-    filterPillLabel: {
-      marginLeft: 6,
-    },
-    filterCountBadge: {
-      marginLeft: 6,
-      minWidth: 18,
-      height: 18,
-      borderRadius: koolaRadii.pill,
-      paddingHorizontal: 5,
-      backgroundColor: semantic.action.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    filterCountText: {
-      lineHeight: 18,
     },
     // flex:1 so the scroller takes the space the "Lọc" pill leaves; the pill's
     // flexShrink:0 keeps it from being squeezed.
@@ -814,9 +897,9 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: semantic.surface.level1,
+      backgroundColor: semantic.surface.level2,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: semantic.border.subtle,
+      borderColor: semantic.border.strong,
       marginRight: 8,
     },
     rowChipActive: {
