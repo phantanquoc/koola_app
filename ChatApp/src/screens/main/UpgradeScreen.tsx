@@ -9,7 +9,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { KoolaText, koolaOpacity, koolaRadii, koolaSpacing, useTheme } from '../../ui';
+import { KoolaText, koolaRadii, koolaSpacing, useTheme } from '../../ui';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { usePersonalNavHeader } from '../../navigation/PersonalHeaderContext';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import {
   COMPARE_FEATURES,
@@ -18,11 +20,6 @@ import {
   type TierId,
   type UpgradeTier,
 } from './upgradeTiers';
-
-
-const NOTCH_TAB_DROP = 30;
-const NOTCH_WING_INSET = 4;
-const HEADER_CONTENT_HEIGHT = 36;
 
 export { UPGRADE_TIERS, COMPARE_FEATURES, formatPrice };
 export type { TierId, UpgradeTier };
@@ -37,34 +34,22 @@ const UpgradeScreen: React.FC = () => {
   const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedId, setSelectedId] = useState<TierId>('pro');
 
-  const headerPadTop = insets.top + NOTCH_WING_INSET + NOTCH_TAB_DROP + 4;
+  // Takes over the shared NotchHeader band with a back icon + "Nâng cấp"
+  // title while this screen is focused (see PersonalHeaderContext).
+  usePersonalNavHeader('Nâng cấp', () => navigation.goBack());
+
+  // NotchHeader is rendered by PersonalTabStack as a fixed sibling that paints
+  // above every screen in the stack (zIndex 10). Content starts right below it.
+  const scrollPadTop = getNotchHeaderHeight(insets.top, true) + koolaSpacing.sm;
   const scrollPadBottom = tabBarInset + koolaSpacing.lg;
 
   return (
     <View style={styles.root}>
-
-      {/* Header row — back + title overlay inside notch area */}
-      <View
-        style={[
-          styles.headerRow,
-          { paddingTop: insets.top + NOTCH_WING_INSET + 6, height: insets.top + NOTCH_WING_INSET + NOTCH_TAB_DROP + 2 },
-        ]}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại"
-          style={({ pressed }) => [styles.headerBack, pressed && { opacity: koolaOpacity.pressed }]}>
-          <MaterialIcons name="chevron-left" size={26} color={semantic.text.primary} />
-        </Pressable>
-        <View style={styles.headerSpacer} />
-      </View>
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: headerPadTop + 6, paddingBottom: scrollPadBottom },
+          { paddingTop: scrollPadTop, paddingBottom: scrollPadBottom },
         ]}
         showsVerticalScrollIndicator={false}>
         {/* Billing toggle */}
@@ -311,25 +296,6 @@ const UpgradeScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: 'transparent' },
-  headerRow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: koolaSpacing.md,
-  },
-  headerBack: {
-    width: 36,
-    height: 36,
-    borderRadius: koolaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerSpacer: { width: 36 },
   scroll: { flex: 1 },
   contentContainer: { flexGrow: 1, paddingHorizontal: koolaSpacing.lg, gap: koolaSpacing.lg },
   hero: { alignItems: 'center', paddingTop: 0 },
