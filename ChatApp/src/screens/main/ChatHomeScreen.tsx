@@ -22,8 +22,8 @@ import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
-import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
-import { NOTCH_WING_INSET } from '../../components/NotchHeader';
+import { KoolaText, KoolaSkeleton, koolaRadii, koolaShadows, koolaDarkShadows, useTheme } from '../../ui';
+import { NOTCH_WING_INSET, NOTCH_HEADER_CONTENT_H } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const ConnectionsPlaceholder: React.FC = () => {
@@ -423,76 +423,103 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Dock nằm sát 2 hõm notch: trái = Tìm kiếm, phải = QR + thêm mới.
-// Host trong suốt, không viền/divider — hoà vào bg header (level1) và nền box dưới.
+// Unified Pill 48 — floating capsule like bottom dock: pill itself is
+// elevated (level2 + hairline + shadow md), container outside stays transparent
+// so side gutters + 4px header gap show list data behind like the bottom dock.
 const ChatSearchDock: React.FC<{
   onSearchPress: () => void;
   onQrPress: () => void;
   onAddPress: () => void;
 }> = ({ onSearchPress, onQrPress, onAddPress }) => {
-  const { tokens } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const sem = tokens.semantic;
+  const [searchPressed, setSearchPressed] = useState(false);
+  const [qrPressed, setQrPressed] = useState(false);
+  const [addPressed, setAddPressed] = useState(false);
+  const pressedStyle = { backgroundColor: sem.action.primarySoft, opacity: 0.82 as const };
+  const dockShadow = resolvedScheme === 'dark' ? koolaDarkShadows.md : koolaShadows.md;
   return (
-    <View style={dockStyles.host}>
+    <View style={[dockStyles.shadowWrap, dockShadow]}>
+      <View
+        style={[
+          dockStyles.host,
+          {
+            backgroundColor: sem.surface.level2,
+            borderColor: sem.border.subtle,
+          },
+        ]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Tìm kiếm"
+        accessibilityHint="Mở tìm kiếm hội thoại"
         onPress={onSearchPress}
-        style={dockStyles.searchBtn}
-        hitSlop={6}>
-        <MaterialIcons name="search" size={24} color={sem.action.primary} />
-        <KoolaText variant="body" style={{ color: sem.text.muted, marginLeft: 8 }}>
+        onPressIn={() => setSearchPressed(true)}
+        onPressOut={() => setSearchPressed(false)}
+        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+        style={[dockStyles.searchBtn, searchPressed ? pressedStyle : null]}>
+        <MaterialIcons name="search" size={20} color={sem.action.primary} />
+        <KoolaText variant="body" numberOfLines={1} style={{ color: sem.text.muted, fontSize: 13, lineHeight: 18, flex: 1 }}>
           Tìm kiếm
         </KoolaText>
       </Pressable>
-      <View style={dockStyles.rightGroup}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Quét mã QR"
-          onPress={onQrPress}
-          hitSlop={8}
-          style={dockStyles.iconBtn}>
-          <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Tạo nhóm"
-          onPress={onAddPress}
-          hitSlop={8}
-          style={dockStyles.iconBtn}>
-          <MaterialIcons name="add" size={22} color={sem.action.primary} />
-        </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Quét mã QR"
+        accessibilityHint="Mở quét mã QR"
+        onPress={onQrPress}
+        onPressIn={() => setQrPressed(true)}
+        onPressOut={() => setQrPressed(false)}
+        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+        style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
+        <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Tạo nhóm"
+        accessibilityHint="Tạo nhóm mới"
+        onPress={onAddPress}
+        onPressIn={() => setAddPressed(true)}
+        onPressOut={() => setAddPressed(false)}
+        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+        style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
+        <MaterialIcons name="add" size={22} color={sem.action.primary} />
+      </Pressable>
       </View>
     </View>
   );
 };
 
 const dockStyles = StyleSheet.create({
+  shadowWrap: {
+    borderRadius: koolaRadii.pill,
+  },
   host: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 40,
-    backgroundColor: 'transparent',
-    // Không viền — cùng màu với box/surface.level1 bên dưới nên không lộ viền
-    borderWidth: 0,
+    height: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: koolaRadii.pill,
+    paddingHorizontal: 4,
+    overflow: 'hidden',
   },
   searchBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    height: '100%',
-  },
-  rightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    height: 48,
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
   },
   iconBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
+    borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
 });
 
@@ -500,8 +527,10 @@ const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const dockTop = insets.top + NOTCH_WING_INSET + 40;
-  const notchPad = insets.top + NOTCH_WING_INSET + 40 + 4 + 40 + 4; // 48 above wings
+  // Floating overlay: dock sits at header bottom; FlatList's inner top padding
+  // lets rows scroll behind the transparent gutters like the bottom dock.
+  const dockTop = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H; // = flatH
+  const dockReserve = 56; // 4 top gap + 48 pill + 4 bottom gap
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
@@ -542,12 +571,12 @@ const ChatHomeScreen: React.FC = () => {
     navigation.navigate('Chat', { conversationId });
   }, [navigation]);
 
+  const notchPad = dockTop + dockReserve; // = flatH + 56 (=84): header + pill gap reserve
+
   return (
     <View style={[screenStyles.container, { paddingTop: notchPad }]}>
-      {/* Dock gác lên đúng vùng cánh notch — 2 hõm trái/phải của tab KOOLA.
-          Nền surface.level1 để liền mạch với sub-tab bar + rows conv bên dưới;
-          NotchHeader (zIndex 10 ở parent) vẽ đè lên nên tab KOOLA vẫn nổi.
-          Flat header: đẩy xuống thêm để tránh bị che bởi header phẳng. */}
+      {/* Floating pill: chỉ pill đục + bóng md, mọi rìa 12/4 trong suốt để
+          list lướt sau lưng như dock bottom — không có mảng trắng che data. */}
       <View
         pointerEvents="box-none"
         style={{
@@ -559,7 +588,7 @@ const ChatHomeScreen: React.FC = () => {
           paddingHorizontal: 12,
           paddingTop: 4,
           paddingBottom: 4,
-          backgroundColor: tokens.semantic.surface.level1,
+          backgroundColor: 'transparent',
           justifyContent: 'center',
         }}>
         <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />

@@ -7,6 +7,7 @@ import {
 import { getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { BlurView } from '@sbaiahmed1/react-native-blur';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -346,26 +347,23 @@ interface TabDockBackgroundProps {
 }
 
 const TabDockBackground: React.FC<TabDockBackgroundProps> = React.memo(({
-  gradientStops,
   resolvedScheme,
-}) => (
-  <>
-    <View pointerEvents="none" style={styles.tabDockStaticFill}>
-      <Svg width="100%" height="100%" preserveAspectRatio="none">
-        <Defs>
-          <SvgLinearGradient id="tabFill" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={gradientStops.top.color} stopOpacity={String(gradientStops.top.opacity)} />
-            <Stop offset="0.55" stopColor={gradientStops.mid.color} stopOpacity={String(gradientStops.mid.opacity)} />
-            <Stop offset="1" stopColor={gradientStops.bottom.color} stopOpacity={String(gradientStops.bottom.opacity)} />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect width="100%" height="100%" fill="url(#tabFill)" />
-      </Svg>
-    </View>
-    <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' && styles.tabInnerEdgeDark]} />
-    <View pointerEvents="none" style={styles.tabBottomHairline} />
-  </>
-));
+}) => {
+  const isDark = resolvedScheme === 'dark';
+  return (
+    <>
+      <BlurView
+        blurType={isDark ? 'dark' : 'light'}
+        blurAmount={18}
+        overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
+        reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
+        style={styles.tabDockBlurFill}
+      />
+      <View pointerEvents="none" style={[styles.tabInnerEdge, isDark && styles.tabInnerEdgeDark]} />
+      <View pointerEvents="none" style={styles.tabBottomHairline} />
+    </>
+  );
+});
 
 const TAB_COUNT = 5;
 
@@ -375,7 +373,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   navigation,
 }) => {
   const insets = useSafeAreaInsets();
-  const { palette, resolvedScheme, tokens } = useTheme();
+  const { palette, resolvedScheme } = useTheme();
   const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
@@ -386,7 +384,8 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     indicatorX.value = withSpring(state.index, { damping: 20, stiffness: 420, mass: 0.45 });
   }, [state.index, indicatorX]);
 
-  // Soft vertical gradient for the dock fill. Light: white → faint blue.
+  // Previously a vertical gradient fill; now BlurView handles the glass fill.
+  // Keep for prop compat until next cleanup.
   const gradientStops = React.useMemo(() => {
     if (resolvedScheme === 'dark') {
       return {
@@ -401,17 +400,19 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       bottom: { color: '#EAF2FF', opacity: 0.82 },
     };
   }, [resolvedScheme]);
+  void gradientStops;
 
-  // Opaque base under the glass layers, plus the float shadow. Dark mode gets a
-  // lighter elevated surface + top hairline instead of a shadow, since black
-  // shadows are invisible on dark backgrounds.
-  const dockElevation = React.useMemo(
-    () =>
-      resolvedScheme === 'dark'
-        ? koolaDarkShadows.xl
-        : { backgroundColor: tokens.semantic.surface.level1, ...koolaShadows.xl },
-    [resolvedScheme, tokens.semantic.surface.level1],
-  );
+  // Glass shadow: strip opaque backgroundColor so BlurView shows through.
+  // Shadows are invisible on dark anyway; dark elevation is via hairline.
+  const dockElevation = React.useMemo(() => {
+    if (resolvedScheme === 'dark') {
+      const { backgroundColor: _bg, borderTopWidth: _btw, borderTopColor: _btc, ...rest } =
+        koolaDarkShadows.xl as unknown as Record<string, unknown>;
+      return rest;
+    }
+    const { backgroundColor: _bg, ...rest } = koolaShadows.xl as unknown as Record<string, unknown>;
+    return rest as typeof koolaShadows.xl;
+  }, [resolvedScheme]);
 
   // Small one-shot reveal so the dock doesn't pop in after a fullscreen route
   // finishes closing. It is not a perpetual loop, so it remains unmount-safe.
@@ -625,7 +626,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     zIndex: 20,
   },
-  // Liquid-glass shadow wrapper. Drop shadow lives here so it isn't clipped by
+  // Glass shadow wrapper. Shadow lives on this View so it isn't clipped by
   // `tabDock`'s overflow:hidden. The opaque backgroundColor is load-bearing on
   // two counts: Android renders no shadow for a transparent view (no background
   // drawable means no outline), and it stops list rows from bleeding through the
@@ -637,7 +638,8 @@ const styles = StyleSheet.create({
     minHeight: TAB_DOCK_HEIGHT,
     borderRadius: 26,
     backgroundColor: 'transparent',
-    borderWidth: 0,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.18)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -645,8 +647,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     overflow: 'hidden',
   },
-  // Soft translucent fill (faux blur host).
-  tabDockStaticFill: {
+  // BlurView glass fill (replaces the old Svg gradient).
+  tabDockBlurFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 26,
     overflow: 'hidden',
