@@ -1,3 +1,12 @@
+import type { ImageSourcePropType } from 'react-native';
+
+/**
+ * Ảnh sản phẩm mẫu là bundled asset local trong `src/assets/mock-shopping/`
+ * (Pexels free license — được dùng thương mại, không cần credit). Hoàn toàn
+ * offline, không gọi network, deterministic khi test — cùng tinh thần với
+ * `momentsMockPosts.ts`.
+ */
+
 export type ShoppingCategory = {
   id: string;
   label: string;
@@ -19,6 +28,13 @@ export type ShoppingProduct = {
   accent: string;
   icon: string;
   tags: string[];
+  /**
+   * Bundled offline mock photo (`require()` result — `number` under RN's
+   * asset pipeline). Optional: `accent`/`icon` stay the loading/fallback
+   * visual (accent-tinted backdrop + glyph) while the image decodes or if
+   * a product has none, same intent as `momentsMockPosts.ts`.
+   */
+  image?: ImageSourcePropType;
 };
 
 export type ShoppingStore = {
@@ -60,6 +76,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#10B981',
     icon: 'eco',
     tags: ['Organic', 'Không đường', 'Chính hãng'],
+    image: require('../../assets/mock-shopping/vegetables.jpg'),
   },
   {
     id: 'p2',
@@ -75,6 +92,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#F97316',
     icon: 'restaurant',
     tags: ['Không đường', 'Chính hãng'],
+    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
   },
   {
     id: 'p3',
@@ -91,6 +109,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#2563EB',
     icon: 'headphones',
     tags: ['Chính hãng', 'Chứng nhận'],
+    image: require('../../assets/mock-shopping/earbuds.jpg'),
   },
   {
     id: 'p4',
@@ -106,6 +125,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#14B8A6',
     icon: 'home',
     tags: ['Đã xác minh', 'Chính hãng', 'Chứng nhận'],
+    image: require('../../assets/mock-shopping/mop.jpg'),
   },
   {
     id: 'p5',
@@ -122,6 +142,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#EC4899',
     icon: 'spa',
     tags: ['Chính hãng'],
+    image: require('../../assets/mock-shopping/skincare.jpg'),
   },
   {
     id: 'p6',
@@ -137,5 +158,6 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#F59E0B',
     icon: 'rice-bowl',
     tags: ['Organic', 'Đã xác minh'],
+    image: require('../../assets/mock-shopping/rice.jpg'),
   },
 ];

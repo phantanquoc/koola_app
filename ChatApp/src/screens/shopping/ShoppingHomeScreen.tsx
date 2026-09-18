@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  Image,
   InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
+  type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -422,7 +424,15 @@ const ProductRow: React.FC<{
   styles: Styles;
   onOpen: () => void;
   onAdd: () => void;
-}> = React.memo(({ item, semantic, styles, onOpen, onAdd }) => (
+}> = React.memo(({ item, semantic, styles, onOpen, onAdd }) => {
+  // Ảnh mock là bundled asset nên gần như không thể lỗi, nhưng vẫn theo dõi
+  // onError để ô thumb không bao giờ là một khối màu trống: hỏng ảnh → rơi về
+  // glyph, đúng như khi sản phẩm chưa có `image`.
+  const [imageFailed, setImageFailed] = useState(false);
+  const onImageError = useCallback(() => setImageFailed(true), []);
+  const showImage = Boolean(item.image) && !imageFailed;
+
+  return (
   <Pressable
     accessibilityRole="button"
     accessibilityLabel={item.title}
@@ -430,10 +440,24 @@ const ProductRow: React.FC<{
     onPress={onOpen}
     style={styles.productRowCard}>
     <View style={[styles.productThumb, { backgroundColor: `${item.accent}16` }]}>
-      {/* 44: the thumb grew 72 → 104 wide and now fills the card's full
-          height, so the glyph scales with it (holding roughly the original
-          30/72 ≈ 0.42 ratio) rather than looking lost in the larger area. */}
-      <MaterialIcons name={item.icon as never} size={44} color={item.accent} />
+      {showImage ? (
+        // Ảnh phủ kín ô vuông, nằm TRÊN nền accent (nền hiện trong lúc decode)
+        // và DƯỚI badge — badge render sau nên vẫn nằm trên cùng. Ảnh chỉ để
+        // trang trí: Pressable cha đã có accessibilityLabel={item.title}.
+        <Image
+          source={item.image as ImageSourcePropType}
+          style={styles.productThumbImage}
+          resizeMode="cover"
+          onError={onImageError}
+          accessible={false}
+          importantForAccessibility="no"
+        />
+      ) : (
+        /* 44: the thumb grew 72 → 104 wide and now fills the card's full
+           height, so the glyph scales with it (holding roughly the original
+           30/72 ≈ 0.42 ratio) rather than looking lost in the larger area. */
+        <MaterialIcons name={item.icon as never} size={44} color={item.accent} />
+      )}
       {item.badge ? (
         <View style={styles.productBadge}>
           <KoolaText variant="caption" weight="800" tone="surface" numberOfLines={1}>
@@ -459,30 +483,59 @@ const ProductRow: React.FC<{
           </KoolaText>
         ) : null}
       </View>
+      {/* Rating + sold count. The star is decorative — the adjacent numbers
+          carry the meaning, and the outer Pressable already owns
+          accessibilityLabel={item.title} — so the row is wrapped with its own
+          accessible/accessibilityLabel instead of leaving the star to float
+          unannounced next to a bare "4.8". */}
+      <View
+        style={styles.ratingRow}
+        accessible
+        accessibilityLabel={`${item.rating} sao, đã bán ${item.sold}`}>
+        <MaterialIcons
+          name="star"
+          size={12}
+          color={semantic.status.warning}
+          importantForAccessibility="no"
+        />
+        <KoolaText variant="caption" weight="700" style={styles.ratingText} numberOfLines={1}>
+          {item.rating}
+        </KoolaText>
+        <KoolaText variant="caption" tone="muted" style={styles.soldText} numberOfLines={1}>
+          {' · '}
+          {item.sold} đã bán
+        </KoolaText>
+      </View>
       {/* Cap at 2 tags so every card's tag row is exactly one line and all
           cards share a height. Mock data carries up to 3 tags per product —
           the full array stays intact, only the render trims. */}
       <View style={styles.tagRow}>
         {item.tags.slice(0, TAGS_PER_CARD).map((tag) => (
           <View key={tag} style={styles.tagChip}>
-            <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+            <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.tagText}>
               {tag}
             </KoolaText>
           </View>
         ))}
       </View>
     </View>
+    {/* Sibling of productMeta, NOT a child of it or of tagRow: the 30dp button
+        is taller than the 18dp tag chip, so while it sat inside tagRow it drove
+        that row's height and opened a ~12dp hole above the chips. Out of flow it
+        pins to the card's own bottom-right corner and the rows keep their
+        1-2dp rhythm. */}
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Thêm ${item.title} vào giỏ`}
-      android_ripple={{ color: semantic.action.primarySoft }}
+      android_ripple={{ color: `${semantic.status.danger}1A` }}
       onPress={onAdd}
       hitSlop={8}
       style={styles.rowCartBtn}>
-      <MaterialIcons name="shopping-cart" size={18} color={semantic.action.primary} />
+      <MaterialIcons name="shopping-cart" size={16} color={semantic.status.danger} />
     </Pressable>
   </Pressable>
-));
+  );
+});
 
 const ShoppingHomeScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
@@ -614,7 +667,7 @@ const ShoppingHomeScreen: React.FC = () => {
               <KoolaSkeleton
                 key={i}
                 width="100%"
-                height={92}
+                height={99}
                 radius={koolaRadii.md}
                 style={{ marginTop: i === 0 ? FILTER_ROW_GAP_BOTTOM : CARD_GAP }}
               />
@@ -808,8 +861,12 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       borderColor: semantic.border.subtle,
       // No blanket padding — the thumbnail bleeds to the top/bottom/left
       // edges, so the 10dp inset lives on the content that still needs it
-      // (productMeta paddingVertical/marginLeft, rowCartBtn marginRight).
-      // overflow:'hidden' is what clips the bled thumb to the card's radius.
+      // (productMeta paddingVertical/marginLeft/marginRight). rowCartBtn is
+      // an absolute sibling of productMeta anchored to THIS card, so its own
+      // right/bottom offsets supply its inset independently.
+      // overflow:'hidden' is what clips the bled thumb to the card's radius —
+      // rowCartBtn's right:10/bottom:6 sit well inside the md (14dp) corner
+      // radius, so it isn't clipped by this.
       marginBottom: CARD_GAP,
       overflow: 'hidden',
       ...cardShadow,
@@ -835,6 +892,26 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // Fills productThumb via PERCENTAGE sizing, deliberately NOT absolute
+    // positioning. productThumb has no width of its own: `alignSelf:'stretch'`
+    // resolves its height from the row, then `aspectRatio: 1` derives the width
+    // from that height. An absolutely-positioned child pinning all four edges
+    // (StyleSheet.absoluteFillObject → right/bottom: 0) needs its containing
+    // block's width already resolved, which here is still pending on the
+    // aspectRatio pass — Yoga/Fabric then falls back to the row's full width and
+    // the image bleeds across the whole card, over the title/price/tags.
+    // `width/height: '100%'` resolves in the same pass as the parent, so the
+    // image stays inside the square. (productBadge stays absolute safely because
+    // it only pins left+top, never right/bottom.)
+    // Repeats productThumb's left-only corner radii — productThumb has no
+    // overflow:'hidden' of its own (the card clips at its own edge), so without
+    // this the image would square off the thumb's rounded left corners.
+    productThumbImage: {
+      width: '100%',
+      height: '100%',
+      borderTopLeftRadius: koolaRadii.md,
+      borderBottomLeftRadius: koolaRadii.md,
+    },
     productBadge: {
       position: 'absolute',
       // Nudged 4→6 now that the thumb is flush in the card's md (14dp) corner:
@@ -851,39 +928,70 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       flex: 1,
       // Carries the inset the card's removed `padding: 10` used to provide.
       // paddingVertical here is what now sets the card's height, which the
-      // stretched thumbnail then matches.
-      paddingVertical: 10,
+      // stretched thumbnail then matches. marginRight is a plain right inset
+      // from the card edge for the title/shop/price/rating rows — the cart
+      // button is a sibling of this block (absolute, own right/bottom
+      // offsets), not something this margin needs to make room for.
+      paddingVertical: 6,
       marginLeft: 10,
-      marginRight: 8,
+      marginRight: 10,
     },
+    // Sizes step DOWN from the `label`/`caption` variant defaults so the card
+    // reads denser: hierarchy now comes from weight + color, not size. Line
+    // heights come down with them (~1.4 ratio, matching label 14/20 and
+    // caption 12/16) so the text box stops reserving the taller variant line.
     productTitle: {
-      marginBottom: 2,
+      fontSize: 12,
+      lineHeight: 16,
+      marginBottom: 1,
     },
     productShop: {
-      marginBottom: 4,
+      fontSize: 11,
+      lineHeight: 14,
+      marginBottom: 2,
     },
     priceRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: 4,
+      marginBottom: 2,
     },
     priceText: {
-      color: semantic.action.primary,
+      fontSize: 13,
+      lineHeight: 18,
+      color: semantic.status.danger,
       marginRight: 6,
     },
     strikeText: {
+      fontSize: 11,
+      lineHeight: 14,
       textDecorationLine: 'line-through',
     },
+    ratingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    ratingText: {
+      fontSize: 11,
+      lineHeight: 14,
+      marginLeft: 3,
+    },
+    soldText: {
+      fontSize: 11,
+      lineHeight: 14,
+    },
     // nowrap (was 'wrap') is what actually guarantees one line. Capping at 2
-    // tags fits every mock combo at default text size, but caption text scales
-    // to 1.3x for accessibility, and at that size the longest pair
-    // ("Đã xác minh" + "Chính hãng") reaches the available meta width on a
-    // 360dp screen — with 'wrap' it would drop to a second line and make that
-    // card taller again. With nowrap + a shrinkable chip, the last tag
-    // truncates via its existing numberOfLines={1} instead.
+    // tags fits every mock combo at default text size. paddingRight reserves
+    // a lane clear of the absolute rowCartBtn (30 wide + 10 right inset + 6
+    // breathing gap) so long tags truncate against that edge instead of
+    // running underneath the button — this reservation is local to tagRow
+    // only, the title/shop/price/rating rows above keep productMeta's full
+    // width. Tag chips already have flexShrink:1 + numberOfLines={1}, so
+    // they truncate rather than collide with the reserved lane.
     tagRow: {
       flexDirection: 'row',
       flexWrap: 'nowrap',
+      paddingRight: 46,
     },
     tagChip: {
       flexShrink: 1,
@@ -892,17 +1000,33 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       paddingHorizontal: 6,
       paddingVertical: 2,
       marginRight: 4,
-      marginTop: 2,
+      marginTop: 1,
+    },
+    tagText: {
+      fontSize: 10,
+      lineHeight: 13,
     },
     rowCartBtn: {
-      width: 36,
-      height: 36,
-      // Replaces the right side of the card's removed `padding: 10`, so the
-      // button keeps its inset from the card edge. Its existing hitSlop={8}
-      // still puts the effective target at ~52dp.
-      marginRight: 10,
+      // Absolutely positioned sibling of productMeta inside productRowCard —
+      // out of flow, so its 30dp height no longer drives tagRow's height (that
+      // was the earlier bug: tagRow inflated to 30dp with empty space above
+      // the 18dp chips). productRowCard is the anchor because its width is
+      // resolved by the FlatList row, not derived (unlike productThumb, whose
+      // width comes FROM aspectRatio+stretch — an absolute right/bottom child
+      // there hits the same Yoga trap productThumbImage's comment describes).
+      // right: 10 matches productMeta's marginLeft/marginRight. bottom: 6
+      // matches productMeta's paddingVertical, so the button stays level
+      // with the tag row's bottom text baseline instead of floating above
+      // it now that the text block's own bottom inset is 6, not 10.
+      // productRowCard has overflow:'hidden' but 6 sits well inside its md
+      // (14dp) corner radius, so the button isn't clipped.
+      position: 'absolute',
+      right: 10,
+      bottom: 6,
+      width: 30,
+      height: 30,
       borderRadius: koolaRadii.sm,
-      backgroundColor: semantic.action.primarySoft,
+      backgroundColor: `${semantic.status.danger}1A`,
       alignItems: 'center',
       justifyContent: 'center',
     },
