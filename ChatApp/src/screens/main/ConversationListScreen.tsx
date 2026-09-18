@@ -4,6 +4,7 @@ import {
   InteractionManager,
   StyleSheet,
   RefreshControl,
+  AccessibilityInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -49,6 +50,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
@@ -83,6 +85,19 @@ const ConversationListScreen: React.FC = () => {
   const localFirstEnabled = useLocalFirstFlag();
   const { tokens } = useTheme();
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
+  const reduceMotionSV = useSharedValue(prefersReducedMotion());
+  // Keep UI-thread flag in sync when system setting toggles mid-session
+  useEffect(() => {
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled: boolean) => {
+      reduceMotionSV.value = enabled;
+    });
+    return () => {
+      // RN >=0.65 returns subscription with remove(); fallback for older
+      if (sub && typeof (sub as { remove?: () => void }).remove === 'function') {
+        (sub as { remove: () => void }).remove();
+      }
+    };
+  }, [reduceMotionSV]);
   const previousScrollY = useSharedValue(0);
   const scrollDirection = useSharedValue(0);
   const directionTravel = useSharedValue(0);
@@ -90,6 +105,14 @@ const ConversationListScreen: React.FC = () => {
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       if (!visibilityContext) return;
+      // M5: reduce-motion — force dock pinned expanded, no withTiming
+      if (reduceMotionSV.value) {
+        // Keep pinned at 0 without animation
+        visibilityContext.hiddenProgress.value = 0;
+        visibilityContext.dockProgress.value = 0;
+        previousScrollY.value = Math.max(0, event.contentOffset.y);
+        return;
+      }
 
       const offsetY = Math.max(0, event.contentOffset.y);
       const delta = offsetY - previousScrollY.value;
@@ -103,11 +126,19 @@ const ConversationListScreen: React.FC = () => {
             easing: Easing.out(Easing.cubic),
           });
         }
+        visibilityContext.dockProgress.value = withTiming(0, {
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+        });
       } else if (delta > 0) {
         directionTravel.value = Math.max(0, directionTravel.value) + delta;
         if (directionTravel.value > 8 && scrollDirection.value !== 1) {
           scrollDirection.value = 1;
           visibilityContext.hiddenProgress.value = withTiming(1, {
+            duration: 260,
+            easing: Easing.out(Easing.cubic),
+          });
+          visibilityContext.dockProgress.value = withTiming(1, {
             duration: 260,
             easing: Easing.out(Easing.cubic),
           });
@@ -117,6 +148,10 @@ const ConversationListScreen: React.FC = () => {
         if (directionTravel.value < -8 && scrollDirection.value !== -1) {
           scrollDirection.value = -1;
           visibilityContext.hiddenProgress.value = withTiming(0, {
+            duration: 220,
+            easing: Easing.out(Easing.cubic),
+          });
+          visibilityContext.dockProgress.value = withTiming(0, {
             duration: 220,
             easing: Easing.out(Easing.cubic),
           });
@@ -556,6 +591,11 @@ const ConversationListScreen: React.FC = () => {
         renderItem={renderConversation}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        // No top padding for the search dock here: ChatHomeScreen's outer
+        // container already applies `notchPad` (= header height + dock reserve),
+        // and the sub-tab bar sits inside that padded container. Reserving the
+        // same space again on the list added a second ~84px gap between the
+        // sub-tab bar and the first conversation row.
         contentContainerStyle={[
           screenStyles.listContent,
           { paddingBottom: tabBarInset },

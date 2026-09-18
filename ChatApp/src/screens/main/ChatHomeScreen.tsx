@@ -4,8 +4,10 @@ import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-na
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { BlurView } from '@sbaiahmed1/react-native-blur';
 import Animated, {
   Easing,
+  interpolate,
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
@@ -25,6 +27,7 @@ import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, koolaShadows, koolaDarkShadows, useTheme } from '../../ui';
 import { NOTCH_WING_INSET, NOTCH_HEADER_CONTENT_H } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { prefersReducedMotion } from '../../ui/tokens/motion';
 
 const ConnectionsPlaceholder: React.FC = () => {
   const { tokens } = useTheme();
@@ -330,12 +333,10 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 // entire nested TopTab.Navigator tree — 4 sub-tabs, each mounting its own
 // screen component — even though none of that UI depends on the outer state.
 // Memoizing here confines those re-renders to the chrome layer above and
-// keeps the unfreeze-from-freezeOnBlur path from repainting the whole subtree
-// on every tab switch. Props are deliberately narrow and all stable (refs,
-// useCallback'd handlers, the shared value itself which is a stable object).
 interface ChatHomeContentProps {
   styles: ReturnType<typeof makeScreenStyles>;
   hiddenProgress: SharedValue<number>;
+  dockProgress: SharedValue<number>;
   topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
   qrVisible: boolean;
   onQrClose: () => void;
@@ -348,6 +349,7 @@ interface ChatHomeContentProps {
 const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
   styles: _styles,
   hiddenProgress,
+  dockProgress,
   topTabNavRef,
   qrVisible,
   onQrClose,
@@ -366,7 +368,7 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
   // re-render even though the underlying shared value hadn't changed. That was
   // the dominant cost on the freezeOnBlur flush (4 state updates in rapid
   // succession each rebuilt the context value and cascaded through 4 sub-tabs).
-  const visibilityValue = useMemo(() => ({ hiddenProgress }), [hiddenProgress]);
+  const visibilityValue = useMemo(() => ({ hiddenProgress, dockProgress }), [hiddenProgress, dockProgress]);
 
   // Deterministic Chat entry: subscribe to the emitter fired by MainNavigator's
   // ChatTab handler (both cross-tab navigation and reselect). This replaces the
@@ -423,91 +425,172 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Unified Pill 48 — floating capsule like bottom dock: pill itself is
-// elevated (level2 + hairline + shadow md), container outside stays transparent
-// so side gutters + 4px header gap show list data behind like the bottom dock.
+// Glass pill dock — BlurView + overlay + innerEdge + hairline, mirroring
+// MainNavigator TabDockBackground. Morph 48→36 driven by dockProgress.
+//
+// The dock content is nested INSIDE BlurView on purpose. This dock sits within
+// the ChatHomeScreen `Screen`, and ReactNativeBlurView redirects its capture
+// root to the nearest `rnscreens.Screen` ancestor — so the snapshot it blurs
+// covers this screen, dock included. Native `BlurViewGroup.draw()` skips itself
+// while `isRendering()` is true, which excludes only its own subtree from that
+// snapshot. Children are therefore safe; siblings are not — as a sibling, the
+// content row got captured and blurred, ghosting behind the crisp icons/text.
 const ChatSearchDock: React.FC<{
+  dockProgress: SharedValue<number>;
   onSearchPress: () => void;
   onQrPress: () => void;
   onAddPress: () => void;
-}> = ({ onSearchPress, onQrPress, onAddPress }) => {
+}> = ({ dockProgress, onSearchPress, onQrPress, onAddPress }) => {
   const { tokens, resolvedScheme } = useTheme();
   const sem = tokens.semantic;
+  const isDark = resolvedScheme === 'dark';
   const [searchPressed, setSearchPressed] = useState(false);
   const [qrPressed, setQrPressed] = useState(false);
   const [addPressed, setAddPressed] = useState(false);
   const pressedStyle = { backgroundColor: sem.action.primarySoft, opacity: 0.82 as const };
-  const dockShadow = resolvedScheme === 'dark' ? koolaDarkShadows.md : koolaShadows.md;
+  const reduceMotion = prefersReducedMotion();
+
+  const animatedHostStyle = useAnimatedStyle(() => {
+    if (reduceMotion) {
+      return { height: 48, paddingHorizontal: 4 } as const;
+    }
+    return {
+      height: interpolate(dockProgress.value, [0, 1], [48, 36]),
+      paddingHorizontal: interpolate(dockProgress.value, [0, 1], [4, 4]),
+    };
+  });
+  const animatedSearchBtnStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { gap: 8 } as const;
+    return { gap: interpolate(dockProgress.value, [0, 1], [8, 6]) } as const;
+  });
+  const searchIconSize = 20;
+  // Text/icon sizes are interpolated via animated styles where possible;
+  // icon size morph 22→18 via container scaling to keep vector crisp.
+  const animatedIconWrapStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return {} as const;
+    const s = interpolate(dockProgress.value, [0, 1], [1, 0.82]);
+    return { transform: [{ scale: s }] } as const;
+  });
+  const animatedTextStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { fontSize: 13 } as const;
+    return { fontSize: interpolate(dockProgress.value, [0, 1], [13, 11.5]) } as const;
+  });
+  const dockShadow = isDark ? koolaDarkShadows.md : koolaShadows.md;
   return (
-    <View style={[dockStyles.shadowWrap, dockShadow]}>
+    <Animated.View style={[dockStyles.shadowWrap, dockShadow, animatedHostStyle]}>
       <View
         style={[
           dockStyles.host,
           {
-            backgroundColor: sem.surface.level2,
-            borderColor: sem.border.subtle,
+            borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
           },
         ]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Tìm kiếm"
-        accessibilityHint="Mở tìm kiếm hội thoại"
-        onPress={onSearchPress}
-        onPressIn={() => setSearchPressed(true)}
-        onPressOut={() => setSearchPressed(false)}
-        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-        style={[dockStyles.searchBtn, searchPressed ? pressedStyle : null]}>
-        <MaterialIcons name="search" size={20} color={sem.action.primary} />
-        <KoolaText variant="body" numberOfLines={1} style={{ color: sem.text.muted, fontSize: 13, lineHeight: 18, flex: 1 }}>
-          Tìm kiếm
-        </KoolaText>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Quét mã QR"
-        accessibilityHint="Mở quét mã QR"
-        onPress={onQrPress}
-        onPressIn={() => setQrPressed(true)}
-        onPressOut={() => setQrPressed(false)}
-        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-        style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
-        <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Tạo nhóm"
-        accessibilityHint="Tạo nhóm mới"
-        onPress={onAddPress}
-        onPressIn={() => setAddPressed(true)}
-        onPressOut={() => setAddPressed(false)}
-        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-        style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
-        <MaterialIcons name="add" size={22} color={sem.action.primary} />
-      </Pressable>
+        <BlurView
+          blurType={isDark ? 'dark' : 'light'}
+          blurAmount={18}
+          overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
+          reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
+          style={dockStyles.blurFill}>
+          {/* innerEdge + content MUST be BlurView children, not siblings.
+              The native BlurViewGroup no-ops its own draw() while capturing
+              the root snapshot (isRendering() guard), which excludes only
+              this subtree from the blur source — that's what stops the dock
+              from blurring its own icons/text. A sibling View is outside that
+              subtree and gets captured + blurred like everything else. */}
+          <View pointerEvents="none" style={[dockStyles.innerEdge, isDark ? dockStyles.innerEdgeDark : null]} />
+          <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center' }, animatedSearchBtnStyle]}>
+            <Pressable
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Tìm kiếm"
+              accessibilityHint="Mở tìm kiếm hội thoại"
+              onPress={onSearchPress}
+              onPressIn={() => setSearchPressed(true)}
+              onPressOut={() => setSearchPressed(false)}
+              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+              style={[dockStyles.searchBtn, searchPressed ? pressedStyle : null]}>
+              <MaterialIcons name="search" size={searchIconSize} color={sem.action.primary} />
+              <Animated.Text numberOfLines={1} style={[{ color: sem.text.muted, lineHeight: 18, flex: 1 }, animatedTextStyle]}>
+                Tìm kiếm
+              </Animated.Text>
+            </Pressable>
+            <Pressable
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Quét mã QR"
+              accessibilityHint="Mở quét mã QR"
+              onPress={onQrPress}
+              onPressIn={() => setQrPressed(true)}
+              onPressOut={() => setQrPressed(false)}
+              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+              style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
+              <Animated.View style={animatedIconWrapStyle}>
+                <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
+              </Animated.View>
+            </Pressable>
+            <Pressable
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Tạo nhóm"
+              accessibilityHint="Tạo nhóm mới"
+              onPress={onAddPress}
+              onPressIn={() => setAddPressed(true)}
+              onPressOut={() => setAddPressed(false)}
+              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+              style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
+              <Animated.View style={animatedIconWrapStyle}>
+                <MaterialIcons name="add" size={22} color={sem.action.primary} />
+              </Animated.View>
+            </Pressable>
+          </Animated.View>
+        </BlurView>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
 const dockStyles = StyleSheet.create({
   shadowWrap: {
     borderRadius: koolaRadii.pill,
+    overflow: 'visible',
   },
   host: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: koolaRadii.pill,
-    paddingHorizontal: 4,
     overflow: 'hidden',
+  },
+  // Blur fill spans the host and also lays out the dock content as its
+  // children (see the note on ChatSearchDock for why they cannot be siblings).
+  blurFill: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
+  },
+  // 1px inner top edge.
+  innerEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderTopLeftRadius: koolaRadii.pill,
+    borderTopRightRadius: koolaRadii.pill,
+  },
+  innerEdgeDark: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   searchBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 48,
+    height: '100%',
     paddingLeft: 14,
     paddingRight: 8,
     borderRadius: koolaRadii.pill,
@@ -515,7 +598,8 @@ const dockStyles = StyleSheet.create({
   },
   iconBtn: {
     width: 48,
-    height: 48,
+    height: 36,
+    minHeight: 36,
     borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -534,6 +618,7 @@ const ChatHomeScreen: React.FC = () => {
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
+  const dockProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
   // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
@@ -577,7 +662,7 @@ const ChatHomeScreen: React.FC = () => {
     <View style={[screenStyles.container, { paddingTop: notchPad }]}>
       {/* Floating pill: chỉ pill đục + bóng md, mọi rìa 12/4 trong suốt để
           list lướt sau lưng như dock bottom — không có mảng trắng che data. */}
-      <View
+      <Animated.View
         pointerEvents="box-none"
         style={{
           position: 'absolute',
@@ -591,8 +676,8 @@ const ChatHomeScreen: React.FC = () => {
           backgroundColor: 'transparent',
           justifyContent: 'center',
         }}>
-        <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
-      </View>
+        <ChatSearchDock dockProgress={dockProgress} onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+      </Animated.View>
       {!contentReady ? (
         // Interactive shell: KoolaHeader (command dock) stays live above; the
         // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
@@ -604,6 +689,7 @@ const ChatHomeScreen: React.FC = () => {
         <ChatHomeContent
           styles={screenStyles}
           hiddenProgress={hiddenProgress}
+          dockProgress={dockProgress}
           topTabNavRef={topTabNavRef}
           qrVisible={qrVisible}
           onQrClose={handleQrClose}

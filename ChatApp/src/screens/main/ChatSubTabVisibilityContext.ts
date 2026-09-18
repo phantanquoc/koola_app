@@ -3,6 +3,7 @@ import type { SharedValue } from 'react-native-reanimated';
 
 export type ChatSubTabVisibilityContextValue = {
   hiddenProgress: SharedValue<number>;
+  dockProgress: SharedValue<number>;
 };
 
 export const ChatSubTabVisibilityContext =
