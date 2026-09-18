@@ -67,9 +67,11 @@ export const PersonalProfileCard: React.FC<PersonalProfileCardProps> = ({
               <View style={styles.tierIconWrap}><MaterialIcons name="workspace-premium" size={12} color={tokens.semantic.text.muted} /></View>
               <KoolaText variant="label" weight="700" style={styles.tierPillText} numberOfLines={1}>{tierLabel}</KoolaText>
             </View>
-            <Pressable onPress={onSwitchAccount} hitSlop={8} accessibilityRole="button" accessibilityLabel="Chuyển tài khoản" style={({ pressed }) => [pressed && styles.pressed]}>
+            {/* Shrink lives on the Pressable — it is the flex child of row2, so Yoga
+                can only shrink the pill if the shrink is declared here, not on the inner View. */}
+            <Pressable onPress={onSwitchAccount} hitSlop={8} accessibilityRole="button" accessibilityLabel="Chuyển tài khoản" style={({ pressed }) => [styles.switchPressable, pressed && styles.pressed]}>
               <View style={styles.switchBtn}>
-                <MaterialIcons name="swap-horiz" size={14} color={tokens.semantic.text.muted} />
+                <MaterialIcons name="swap-horiz" size={14} color={tokens.semantic.text.muted} style={styles.switchIcon} />
                 <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.switchLabel}>Chuyển tài khoản</KoolaText>
               </View>
             </Pressable>
@@ -119,12 +121,21 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     accountBadge: { width: 20, height: 20, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },
     accountBadgePersonal: { backgroundColor: semantic.surface.level0, borderColor: semantic.border.subtle },
     accountBadgeBusiness: { backgroundColor: semantic.action.primary, borderColor: semantic.action.primary },
-    row2: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: koolaSpacing.sm, marginTop: koolaSpacing.sm, minWidth: 0, width: '100%' as const },
-    tierPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: koolaSpacing.xs, height: 30, paddingHorizontal: koolaSpacing.md, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.10)' },
+    // Note: row2 has a flexShrink:1 child (switchPressable) below, so per ui-dna.md:311
+    // it uses marginRight on the non-shrinking sibling instead of `gap`.
+    row2: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginTop: koolaSpacing.sm, minWidth: 0, width: '100%' as const },
+    tierPill: { flexShrink: 0, marginRight: koolaSpacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: koolaSpacing.xs, height: 30, paddingHorizontal: koolaSpacing.md, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.10)' },
     tierIconWrap: { width: 18, height: 18, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: scheme === 'light' ? semantic.surface.level0 : 'rgba(255,255,255,0.08)' },
     tierPillText: { color: semantic.text.primary },
-    switchBtn: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: koolaSpacing.sm - 2, height: 30, paddingHorizontal: koolaSpacing.md, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.10)' },
-    switchLabel: { color: semantic.text.primary, flexShrink: 1 },
+    // switchPressable is the actual flex child of row2 — shrink must live here (not just on the
+    // inner switchBtn View) or Yoga measures the Pressable at its natural content width and it
+    // overflows row2 at larger font scales.
+    switchPressable: { flexShrink: 1, minWidth: 0 },
+    // Inner View has its own flexShrink:1/minWidth:0 chain + gap→margin (ui-dna.md:311) so the
+    // icon (flexShrink:0) stays fixed-size and the label is the only thing that shrinks/ellipsizes.
+    switchBtn: { flexShrink: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 30, paddingHorizontal: koolaSpacing.md, borderRadius: koolaRadii.pill, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.10)' },
+    switchIcon: { flexShrink: 0, marginRight: koolaSpacing.sm - 2 },
+    switchLabel: { color: semantic.text.primary, flexShrink: 1, minWidth: 0 },
     editBtnSlot: { marginHorizontal: koolaSpacing.lg, marginTop: koolaSpacing.md, marginBottom: koolaSpacing.sm },
     editBtn: { height: 38, borderRadius: koolaRadii.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: koolaSpacing.sm - 2, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: 1, borderColor: scheme === 'light' ? semantic.border.subtle : 'rgba(255,255,255,0.10)', paddingHorizontal: koolaSpacing.md },
     editBtnLabel: { color: semantic.text.primary },
