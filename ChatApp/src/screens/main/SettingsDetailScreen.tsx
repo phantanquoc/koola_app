@@ -6,6 +6,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { usePersonalNavHeader } from '../../navigation/PersonalHeaderContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { usersApi } from '../../services/api/apiService';
 import {
@@ -22,7 +24,6 @@ import {
   KoolaDivider,
   KoolaSegmentedControl,
   KoolaText,
-  koolaIconWell,
   koolaOpacity,
   koolaRadii,
   koolaSpacing,
@@ -70,8 +71,16 @@ const SettingsDetailScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { tokens, mode, setMode, resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
+  const { tokens, mode, setMode } = useTheme();
+  const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+
+  // Takes over the shared NotchHeader band with a back icon + "Cài đặt"
+  // title while this screen is focused (see PersonalHeaderContext).
+  usePersonalNavHeader('Cài đặt', () => navigation.goBack());
+
+  // NotchHeader is rendered by PersonalTabStack as a fixed sibling that paints
+  // above every screen in the stack (zIndex 10). Content starts right below it.
+  const scrollPadTop = getNotchHeaderHeight(insets.top, true) + koolaSpacing.sm;
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(user?.settings?.notificationsEnabled ?? true);
   const [togglingNotify, setTogglingNotify] = useState(false);
@@ -131,17 +140,12 @@ const SettingsDetailScreen: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      {/* Local header (screens in this stack draw their own; headerShown is off) */}
-      <View style={[styles.headerRow, { paddingTop: insets.top + koolaSpacing.md }]}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color={tokens.semantic.action.primary} />
-        </Pressable>
-        <KoolaText variant="heading" weight="700">Cài đặt</KoolaText>
-      </View>
-
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.contentContainer, { paddingBottom: tabBarInset }]}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingTop: scrollPadTop, paddingBottom: tabBarInset },
+        ]}
         showsVerticalScrollIndicator={false}>
 
         {/* Theme */}
@@ -290,13 +294,11 @@ const SettingsDetailScreen: React.FC = () => {
   );
 };
 
-const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') =>
+const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
     root: { flex: 1 },
     scroll: { flex: 1 },
-    contentContainer: { flexGrow: 1, paddingTop: koolaSpacing.lg, paddingBottom: koolaSpacing.lg },
-    headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: koolaSpacing.lg, paddingBottom: koolaSpacing.md, backgroundColor: semantic.bg.canvas, gap: koolaSpacing.md },
-    backBtn: { width: 36, height: 36, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: koolaIconWell[scheme] },
+    contentContainer: { flexGrow: 1, paddingBottom: koolaSpacing.lg },
     cardTitle: { marginBottom: koolaSpacing.sm },
     rowDivider: { marginVertical: koolaSpacing.sm },
     notificationPreviewCaption: { marginBottom: koolaSpacing.sm },
