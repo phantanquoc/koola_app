@@ -40,7 +40,7 @@ const UpgradeScreen: React.FC = () => {
 
   // NotchHeader is rendered by PersonalTabStack as a fixed sibling that paints
   // above every screen in the stack (zIndex 10). Content starts right below it.
-  const scrollPadTop = getNotchHeaderHeight(insets.top, true) + koolaSpacing.sm;
+  const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + koolaSpacing.sm;
   const scrollPadBottom = tabBarInset + koolaSpacing.lg;
 
   return (

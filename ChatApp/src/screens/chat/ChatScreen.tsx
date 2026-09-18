@@ -24,7 +24,6 @@ import { useMediaUpload } from './hooks/useMediaUpload';
 import { useDeadLetterActions } from './hooks/useDeadLetterActions';
 import { useChatHeaderState } from './hooks/useChatHeaderState';
 import { useInlineCallLogs } from './hooks/useInlineCallLogs';
-import ChatHeader from './components/ChatHeader';
 import MessageItem, { makeMessageItemStyles } from './components/MessageItem';
 import CallMessageCard from './components/CallMessageCard';
 import { MemoizedMessageList } from './components/MemoizedMessageList';
@@ -64,6 +63,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { useChatNavHeader } from '../../navigation/ChatHeaderContext';
 
 // ─── Palette-aware style factory ─────────────────────────────────────────────
 function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens) {
@@ -118,6 +119,10 @@ const ChatScreen: React.FC = () => {
   const composerBottomInset = Math.max(insets.bottom, 8);
   const composerScrollClearance =
     CHAT_COMPOSER_DOCK_HEIGHT + CHAT_COMPOSER_TOP_GAP + CHAT_COMPOSER_SCROLL_GAP + composerBottomInset;
+  // NotchHeader is rendered by ChatTabStack as a fixed sibling that paints
+  // above every screen in the stack (zIndex 10), and hosts this screen's
+  // header (chat variant). Content starts right below it.
+  const notchPadTop = getNotchHeaderHeight(insets.top, 'chat');
 
   const { tokens } = useTheme();
   const styles = useMemo(
@@ -886,6 +891,21 @@ const ChatScreen: React.FC = () => {
     isMountedRef,
   });
 
+  // ─── Header: take over the shared notch band while focused ──────────────────
+  // ChatTabStack renders NotchHeader as a fixed sibling that paints above every
+  // screen in the stack (zIndex 10), so a header of our own here would sit under
+  // it. Instead we hand the band our identity + actions and it renders the chat
+  // variant; the band reverts to the KOOLA wordmark when Chat loses focus.
+  // State stays where it is — this only moves where it gets rendered.
+  useChatNavHeader({
+    title: chatTitle,
+    status: otherUserStatus,
+    avatarKey: otherAvatarKey,
+    onBack: () => navigation.goBack(),
+    onHeaderPress: handleHeaderPress,
+    onStartCall: handleStartCall,
+  });
+
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
   // Stabilize listViewProps reference to prevent memo boundary from breaking.
@@ -933,19 +953,12 @@ const ChatScreen: React.FC = () => {
 
   return (
     <BottomSheetModalProvider>
-    <View style={styles.container}>
+    {/* The header lives in the shared notch band (see useChatNavHeader above),
+        which paints over this screen — everything here starts below it so the
+        offline banner, pin banner and message list are never covered. */}
+    <View style={[styles.container, { paddingTop: notchPadTop }]}>
       {/* Offline Banner */}
       <OfflineBanner isVisible={isConnected === false} />
-
-      {/* Header */}
-      <ChatHeader
-        chatTitle={chatTitle}
-        otherUserStatus={otherUserStatus}
-        otherAvatarKey={otherAvatarKey}
-        onBack={() => navigation.goBack()}
-        onHeaderPress={handleHeaderPress}
-        onStartCall={handleStartCall}
-      />
 
       {/* Pin Banner */}
       <PinBanner

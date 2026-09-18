@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../ui';
 import { NotchHeader } from '../components/NotchHeader';
 import { LightFieldBackground } from '../screens/main/components/personal/LightFieldBackground';
+import { ChatHeaderContext, type ChatHeaderConfig } from './ChatHeaderContext';
 import type { ChatTabStackParamList } from './types';
 import ChatHomeScreen from '../screens/main/ChatHomeScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
@@ -20,17 +21,42 @@ const Stack = createNativeStackNavigator<ChatTabStackParamList>();
 const ChatTabStack: React.FC = () => {
   const { resolvedScheme, tokens } = useTheme();
   const isDark = resolvedScheme === 'dark';
+  const [headerConfig, setHeaderConfig] = useState<ChatHeaderConfig | null>(null);
+  // Which route in THIS stack is focused, tracked from the navigator's own
+  // focus events. The Chat screen runs with `freezeOnBlur: true`, so its
+  // `useFocusEffect` cleanup (which calls setConfig(null)) sits inside a
+  // subtree that react-freeze suspends shortly after blur. The ordering does
+  // work out today — react-native-screens' DelayedFreeze defers the freeze by
+  // a setTimeout(0) while `blur` is emitted from a passive effect in the same
+  // commit — but the band must not depend on winning that race. This gate is
+  // driven from outside the frozen subtree, so leaving Chat always reverts the
+  // band to the wordmark even if the release never arrives.
+  const [focusedRouteName, setFocusedRouteName] =
+    useState<keyof ChatTabStackParamList>('ChatHome');
 
   const contentStyle = useMemo(
     () => ({ backgroundColor: 'transparent' }),
     [],
   );
 
+  const chatConfig = focusedRouteName === 'Chat' ? headerConfig : null;
+  const headerCtx = useMemo(
+    () => ({ config: headerConfig, setConfig: setHeaderConfig }),
+    [headerConfig],
+  );
+
   return (
+    <ChatHeaderContext.Provider value={headerCtx}>
     <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
       <LightFieldBackground />
-      <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />
+      <NotchHeader
+        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+        chat={chatConfig ?? undefined}
+      />
       <Stack.Navigator
+        screenListeners={({ route }) => ({
+          focus: () => setFocusedRouteName(route.name as keyof ChatTabStackParamList),
+        })}
         screenOptions={{
           headerShown: false,
           animation: 'none',
@@ -100,6 +126,7 @@ const ChatTabStack: React.FC = () => {
         />
       </Stack.Navigator>
     </View>
+    </ChatHeaderContext.Provider>
   );
 };
 
