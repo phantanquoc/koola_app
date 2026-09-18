@@ -20,7 +20,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 12,
+    marginHorizontal: 0,
     marginBottom: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
