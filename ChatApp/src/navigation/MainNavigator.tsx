@@ -13,7 +13,7 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withSequence,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -131,7 +131,8 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
  * Replaces the old pill. Size drives both the resting glyph box and the box,
  * so they never drift apart. Radius 11 gives a "squircle" square, not a circle.
  */
-const TAB_ICON_BOX_SIZE = 32;
+const TAB_ICON_BOX_W = 38;
+const TAB_ICON_BOX_H = 32;
 const TAB_ICON_BOX_RADIUS = 11;
 
 /** Tiny upward nudge on focus — reads as "selected", not "moving". */
@@ -264,7 +265,7 @@ const TabBarItemComponent: React.FC<TabBarItemProps> = ({
 
   React.useEffect(() => {
     focus.value = withTiming(isFocused ? 1 : 0, {
-      duration: 150,
+      duration: 220,
       easing: Easing.out(Easing.cubic),
     });
   }, [isFocused, focus]);
@@ -379,10 +380,21 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
   const [dockWidth, setDockWidth] = React.useState(0);
   const indicatorX = useSharedValue(state.index);
-  // Spring the indicator whenever the focused index changes
+  const squish = useSharedValue(0);
+  const prevIndexRef = React.useRef(state.index);
   React.useEffect(() => {
-    indicatorX.value = withSpring(state.index, { damping: 20, stiffness: 420, mass: 0.45 });
-  }, [state.index, indicatorX]);
+    const delta = Math.abs(state.index - prevIndexRef.current);
+    prevIndexRef.current = state.index;
+    const dur = 220 + 35 * delta;
+    indicatorX.value = withTiming(state.index, {
+      duration: dur,
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+    });
+    squish.value = withSequence(
+      withTiming(1, { duration: dur / 2, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: dur / 2, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [state.index, indicatorX, squish]);
 
   // Previously a vertical gradient fill; now BlurView handles the glass fill.
   // Keep for prop compat until next cleanup.
@@ -433,9 +445,16 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     const PAD = 10;
     const itemWidth = count > 0 ? (dockWidth - PAD * 2) / count : 0;
     return {
-      transform: [{ translateX: PAD + indicatorX.value * itemWidth + (itemWidth - TAB_ICON_BOX_SIZE) / 2 }],
+      transform: [{ translateX: PAD + indicatorX.value * itemWidth + (itemWidth - TAB_ICON_BOX_W) / 2 }],
     };
   });
+
+  const travelSquishStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scaleX: 1 + 0.08 * squish.value },
+      { scaleY: 1 - 0.04 * squish.value },
+    ],
+  }));
 
   if (isHidden) return null;
 
@@ -451,9 +470,11 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
         <View style={styles.tabDock} onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}>
           <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
           {/* Traveling border — one frame that glides between tabs */}
-          {dockWidth > 0 ? (
-            <Animated.View pointerEvents="none" style={[styles.travelBorder, travelStyle]}>
-              <Svg width={TAB_ICON_BOX_SIZE} height={TAB_ICON_BOX_SIZE}>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.travelBorder, travelStyle, { opacity: dockWidth > 0 ? 1 : 0 }]}>
+            <Animated.View pointerEvents="none" style={travelSquishStyle}>
+              <Svg width={TAB_ICON_BOX_W} height={TAB_ICON_BOX_H}>
                 <Defs>
                   <SvgLinearGradient id="travelBorderGrad" x1="0" y1="0" x2="1" y2="1">
                     <Stop offset="0" stopColor={resolvedScheme === 'light' ? '#FF8A1A' : '#FF9A3D'} />
@@ -463,8 +484,8 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                 <Rect
                   x={0.9}
                   y={0.9}
-                  width={TAB_ICON_BOX_SIZE - 1.8}
-                  height={TAB_ICON_BOX_SIZE - 1.8}
+                  width={TAB_ICON_BOX_W - 1.8}
+                  height={TAB_ICON_BOX_H - 1.8}
                   rx={TAB_ICON_BOX_RADIUS}
                   ry={TAB_ICON_BOX_RADIUS}
                   fill="none"
@@ -473,7 +494,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
                 />
               </Svg>
             </Animated.View>
-          ) : null}
+          </Animated.View>
           {state.routes.map((route, index) => {
             const routeName = route.name as TabName;
             const meta = TAB_META[routeName];
@@ -617,7 +638,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
     // Headroom for the dock's drop shadow, which spreads ~12px above the dock
     // (xl radius 24 minus its +12 downward offset). The host is anchored to
     // bottom:0, so this only grows the top edge — the dock does not move, and
@@ -683,8 +704,8 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   iconHost: {
-    width: TAB_ICON_BOX_SIZE,
-    height: TAB_ICON_BOX_SIZE,
+    width: TAB_ICON_BOX_W,
+    height: TAB_ICON_BOX_H,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -702,12 +723,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     left: 0,
-    width: TAB_ICON_BOX_SIZE,
-    height: TAB_ICON_BOX_SIZE,
+    width: TAB_ICON_BOX_W,
+    height: TAB_ICON_BOX_H,
   },
   glyphWrap: {
-    width: TAB_ICON_BOX_SIZE,
-    height: TAB_ICON_BOX_SIZE,
+    width: TAB_ICON_BOX_W,
+    height: TAB_ICON_BOX_H,
     alignItems: 'center',
     justifyContent: 'center',
   },
