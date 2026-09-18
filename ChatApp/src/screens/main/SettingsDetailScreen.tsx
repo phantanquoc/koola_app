@@ -225,8 +225,12 @@ const SettingsDetailScreen: React.FC = () => {
             })}
             <Pressable
               onPress={() => setLanguagePickerVisible(false)}
-              style={({ pressed }) => [styles.languageCancel, pressed && styles.languageCancelPressed]}>
-              <KoolaText variant="label" tone="muted" align="center">Đóng</KoolaText>
+              // Style-as-function carries press feedback only — RN 0.76 drops
+              // layout props passed through this callback.
+              style={({ pressed }) => (pressed ? styles.languageCancelPressed : null)}>
+              <View style={styles.languageCancel}>
+                <KoolaText variant="label" tone="muted" align="center">Đóng</KoolaText>
+              </View>
             </Pressable>
           </View>
         </Pressable>

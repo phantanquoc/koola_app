@@ -128,18 +128,23 @@ export const PersonalIconRow: React.FC<PersonalIconRowProps> = ({
 
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.row,
-        selected && styles.selected,
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
+      // Only press feedback may live in the style-as-function. RN 0.76 drops
+      // layout props passed through this callback, which collapsed the row into
+      // a vertical column on device. Layout stays on the static inner View.
+      style={({ pressed }) => (pressed && !disabled ? styles.pressed : null)}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ selected, disabled }}>
-      {content}
+      <View
+        style={[
+          styles.row,
+          selected && styles.selected,
+          disabled && styles.disabled,
+        ]}>
+        {content}
+      </View>
     </Pressable>
   );
 };
