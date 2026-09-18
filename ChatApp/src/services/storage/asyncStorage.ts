@@ -3,6 +3,21 @@ import type { RecentSearchItem } from '../../types';
 import type { ThemeMode } from '../../ui/theme';
 import { normalizeMode } from '../../ui/theme';
 
+/**
+ * Shape of the local-only notification preferences blob. Defined here (rather
+ * than imported from services/notifications/notificationPrefs.ts) to avoid a
+ * circular import — that module imports asyncStorage, not the other way
+ * around.
+ */
+export interface NotificationPrefsData {
+  directMessages: boolean;
+  groupMessages: boolean;
+  momentsMentions: boolean;
+  shopping: boolean;
+  connect: boolean;
+  services: boolean;
+}
+
 const KEYS = {
   REFRESH_TOKEN: 'refresh_token',
   USER: 'user',
@@ -13,6 +28,7 @@ const KEYS = {
   THEME: 'theme',
   AUTO_TRANSLATE: 'auto_translate',
   PREFERRED_LANGUAGE: 'preferred_language',
+  NOTIFICATION_PREFS: 'notification_prefs',
 };
 
 const RECENT_SEARCHES_MAX = 10;
@@ -148,6 +164,26 @@ export const asyncStorage = {
     if (/^[a-z]{2}$/.test(normalized)) {
       await AsyncStorage.setItem(KEYS.PREFERRED_LANGUAGE, normalized);
     }
+  },
+
+  // ─── Notification preferences (mock/local-only) ──────────────────────────
+  // These 6 sub-toggles are UI-preview only (see
+  // services/notifications/notificationPrefs.ts) — never wired to a backend
+  // call. Persisted as a single JSON blob; missing/corrupt storage tolerates
+  // gracefully by returning an empty partial, which the domain module merges
+  // over its own defaults.
+  async getNotificationPrefs(): Promise<Partial<NotificationPrefsData>> {
+    const raw = await AsyncStorage.getItem(KEYS.NOTIFICATION_PREFS);
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Partial<NotificationPrefsData>) : {};
+    } catch {
+      return {};
+    }
+  },
+  async setNotificationPrefs(prefs: NotificationPrefsData): Promise<void> {
+    await AsyncStorage.setItem(KEYS.NOTIFICATION_PREFS, JSON.stringify(prefs));
   },
 
   // ─── Clear all ────────────────────────────────────────────────────────────

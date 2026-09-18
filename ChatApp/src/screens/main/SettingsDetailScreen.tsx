@@ -13,6 +13,12 @@ import {
   updateTranslationPrefs,
 } from '../../services/translation/translationPrefs';
 import {
+  hydrateNotificationPrefs,
+  updateNotificationPrefs,
+  useNotificationPrefs,
+} from '../../services/notifications/notificationPrefs';
+import type { NotificationPrefs } from '../../services/notifications/notificationPrefs';
+import {
   KoolaDivider,
   KoolaSegmentedControl,
   KoolaText,
@@ -46,6 +52,19 @@ const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
 const languageLabel = (code: string): string =>
   LANGUAGE_OPTIONS.find(option => option.value === code)?.label ?? code;
 
+/**
+ * Sub-rows under the master "Thông báo" switch. MOCK / UI-only — see caption
+ * rendered in the card and services/notifications/notificationPrefs.ts.
+ */
+const NOTIFICATION_DETAIL_ROWS: { key: keyof NotificationPrefs; icon: string; title: string }[] = [
+  { key: 'directMessages', icon: 'chat-bubble-outline', title: 'Tin nhắn cá nhân' },
+  { key: 'groupMessages', icon: 'group', title: 'Tin nhắn nhóm' },
+  { key: 'momentsMentions', icon: 'star-outline', title: 'Nhắc đến trong Khoảnh khắc' },
+  { key: 'shopping', icon: 'shopping-cart', title: 'Mua sắm' },
+  { key: 'connect', icon: 'handshake', title: 'Kết nối' },
+  { key: 'services', icon: 'category', title: 'Dịch vụ' },
+];
+
 const SettingsDetailScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
   const tabBarInset = useTabBarBottomInset();
@@ -61,8 +80,10 @@ const SettingsDetailScreen: React.FC = () => {
   const [togglingTranslate, setTogglingTranslate] = useState(false);
   const [togglingLanguage, setTogglingLanguage] = useState(false);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
+  const notificationPrefs = useNotificationPrefs();
 
   useEffect(() => { void hydrateTranslationPrefs(); }, []);
+  useEffect(() => { void hydrateNotificationPrefs(); }, []);
   useEffect(() => {
     setAutoTranslateEnabled(user?.settings?.autoTranslateEnabled ?? false);
     setPreferredLanguage(user?.settings?.preferredLanguage ?? 'vi');
@@ -87,6 +108,10 @@ const SettingsDetailScreen: React.FC = () => {
       await updateTranslationPrefs({ autoTranslateEnabled: !value }).catch(() => undefined);
       Alert.alert('Lỗi', 'Không thể cập nhật cài đặt dịch tự động');
     } finally { setTogglingTranslate(false); }
+  }, []);
+
+  const handleToggleNotificationDetail = useCallback((key: keyof NotificationPrefs, value: boolean) => {
+    void updateNotificationPrefs({ [key]: value }).catch(() => undefined);
   }, []);
 
   const handleSelectLanguage = useCallback(async (value: string) => {
@@ -172,6 +197,32 @@ const SettingsDetailScreen: React.FC = () => {
               />
             }
           />
+          {notificationsEnabled && (
+            <>
+              <KoolaDivider style={styles.rowDivider} />
+              <KoolaText variant="caption" tone="muted" style={styles.notificationPreviewCaption}>
+                Các mục chi tiết đang là bản xem trước, chưa có hiệu lực.
+              </KoolaText>
+              {NOTIFICATION_DETAIL_ROWS.map((row, index) => (
+                <React.Fragment key={row.key}>
+                  {index > 0 && <KoolaDivider style={styles.rowDivider} />}
+                  <PersonalIconRow
+                    icon={row.icon}
+                    title={row.title}
+                    trailing={
+                      <Switch
+                        value={notificationPrefs[row.key]}
+                        onValueChange={(value) => handleToggleNotificationDetail(row.key, value)}
+                        trackColor={{ false: tokens.semantic.border.subtle, true: tokens.semantic.action.primarySoft }}
+                        thumbColor={notificationPrefs[row.key] ? tokens.semantic.action.primary : tokens.semantic.text.faint}
+                        accessibilityLabel={row.title}
+                      />
+                    }
+                  />
+                </React.Fragment>
+              ))}
+            </>
+          )}
         </PersonalCard>
 
         {/* About & cache */}
@@ -248,6 +299,7 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') =>
     backBtn: { width: 36, height: 36, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: koolaIconWell[scheme] },
     cardTitle: { marginBottom: koolaSpacing.sm },
     rowDivider: { marginVertical: koolaSpacing.sm },
+    notificationPreviewCaption: { marginBottom: koolaSpacing.sm },
     segmentWrap: { paddingTop: koolaSpacing.xs },
     languageOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: semantic.surface.overlay, zIndex: 10 },
     languageSheet: { backgroundColor: semantic.surface.level1, borderTopLeftRadius: koolaRadii.lg, borderTopRightRadius: koolaRadii.lg, paddingTop: koolaSpacing.sm, paddingHorizontal: koolaSpacing.lg },
