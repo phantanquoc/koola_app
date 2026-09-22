@@ -7,14 +7,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+import { BlurView } from '@sbaiahmed1/react-native-blur';
 import {
   KoolaIconButton,
   koolaDarkShadows,
   koolaDurations,
   koolaEasing,
-  koolaGlassGradient,
-  koolaGlassSheen,
   koolaOpacity,
   koolaShadows,
   koolaSpacing,
@@ -23,17 +21,14 @@ import {
   useTheme,
 } from '../../../ui';
 
-// Faux-glass is reserved for composer chrome. The glass layer stack, rim width
-// and radius below are matched to the bottom tab dock in `MainNavigator` so the
-// two floating docks read as one family; gradient stops come from the shared
-// `koolaGlassGradient` primitive. The message content itself remains flat.
+// Glass dock — BlurView (same glass as MainNavigator TabDockBackground).
+// blurAmount 18, blurType dark/light, overlayColor light rgba(255,255,255,0.62)
+// / dark rgba(28,32,38,0.52), reducedTransparencyFallbackColor, innerEdge
+// 55%/10%, bottomHairline 12%, border 0.5 rgba(255,255,255,0.18), shadow xl
+// stripped bg. Keeps the two floating docks (tab bar + composer) as one family.
 const DOCK_RADIUS = 26;
 
-// Rim is 3px on every side, so the border alone adds 6px to the box height that
-// the old hairline border did not. Bumping 54 -> 58 keeps this constant truthful
-// for `ChatScreen`'s clearance math — under-reporting it would let the last
-// message sit beneath the translucent dock.
-export const CHAT_COMPOSER_DOCK_HEIGHT = 58;
+export const CHAT_COMPOSER_DOCK_HEIGHT = 52;
 // Headroom for the xl drop shadow, which spreads upward from the dock. Mirrors
 // `tabBarHost.paddingTop` in MainNavigator. The host is anchored to bottom:0, so
 // this grows the top edge only — the dock itself does not move.
@@ -70,21 +65,20 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
     const insets = useSafeAreaInsets();
     const bottomPad = Math.max(insets.bottom, koolaSpacing.sm);
     const exitProgress = useSharedValue(exiting ? 1 : 0);
-    const { tokens, palette, resolvedScheme } = useTheme();
+    const { tokens, resolvedScheme } = useTheme();
 
-    const gradientStops = koolaGlassGradient[resolvedScheme];
-    const sheenColor = koolaGlassSheen[resolvedScheme];
-
-    // Opaque base under the glass layers, plus the float shadow. Dark mode gets a
-    // lighter elevated surface + top hairline instead of a shadow, since black
-    // shadows are invisible on dark backgrounds. Mirrors MainNavigator tab dock.
-    const dockElevation = useMemo(
-      () =>
-        resolvedScheme === 'dark'
-          ? koolaDarkShadows.xl
-          : { backgroundColor: tokens.semantic.surface.level1, ...koolaShadows.xl },
-      [resolvedScheme, tokens.semantic.surface.level1],
-    );
+    const isDark = resolvedScheme === 'dark';
+    // Shadow — strip backgroundColor so BlurView glass shows through.
+    // Mirrors MainNavigator dockElevation (dark: hairline via border; light: shadow).
+    const dockElevation = useMemo(() => {
+      if (isDark) {
+        const { backgroundColor: _bg, borderTopWidth: _btw, borderTopColor: _btc, ...rest } =
+          koolaDarkShadows.xl as unknown as Record<string, unknown>;
+        return rest;
+      }
+      const { backgroundColor: _bg, ...rest } = koolaShadows.xl as unknown as Record<string, unknown>;
+      return rest as typeof koolaShadows.xl;
+    }, [isDark]);
 
     useEffect(() => {
       exitProgress.value = withTiming(exiting ? 1 : 0, {
@@ -130,36 +124,16 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
             accessibilityState={{ disabled: !!disabled, busy: !!disabled }}
             style={[
               styles.dock,
-              { borderColor: offline ? tokens.semantic.status.warning : palette.primary },
               disabled ? styles.dockDisabled : null,
             ]}>
-            <View pointerEvents="none" style={styles.dockStaticFill}>
-              <Svg width="100%" height="100%" preserveAspectRatio="none">
-                <Defs>
-                  <SvgLinearGradient id="composerFill" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor={gradientStops.top.color} stopOpacity={String(gradientStops.top.opacity)} />
-                    <Stop offset="0.55" stopColor={gradientStops.mid.color} stopOpacity={String(gradientStops.mid.opacity)} />
-                    <Stop offset="1" stopColor={gradientStops.bottom.color} stopOpacity={String(gradientStops.bottom.opacity)} />
-                  </SvgLinearGradient>
-                </Defs>
-                <Rect width="100%" height="100%" fill="url(#composerFill)" />
-              </Svg>
-            </View>
-            <View pointerEvents="none" style={styles.dockTint} />
-            <View pointerEvents="none" style={styles.topSheen}>
-              <Svg width="100%" height="100%" preserveAspectRatio="none">
-                <Defs>
-                  <SvgLinearGradient id="composerSheen" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor={sheenColor} stopOpacity="0.85" />
-                    <Stop offset="1" stopColor={sheenColor} stopOpacity="0" />
-                  </SvgLinearGradient>
-                </Defs>
-                <Rect width="100%" height="100%" fill="url(#composerSheen)" />
-              </Svg>
-            </View>
-            <View pointerEvents="none" style={[styles.edgeShineLeft, resolvedScheme === 'dark' && styles.edgeShineDark]} />
-            <View pointerEvents="none" style={[styles.edgeShineRight, resolvedScheme === 'dark' && styles.edgeShineDark]} />
-            <View pointerEvents="none" style={[styles.innerEdge, resolvedScheme === 'dark' && styles.innerEdgeDark]} />
+            <BlurView
+              blurType={isDark ? 'dark' : 'light'}
+              blurAmount={18}
+              overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
+              reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
+              style={styles.dockBlurFill}
+            />
+            <View pointerEvents="none" style={[styles.innerEdge, isDark && styles.innerEdgeDark]} />
             <View pointerEvents="none" style={styles.bottomHairline} />
 
             <View style={styles.row}>
@@ -255,16 +229,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: koolaSpacing.xxl,
+    paddingHorizontal: koolaSpacing.lg,
     paddingTop: CHAT_COMPOSER_TOP_GAP,
     backgroundColor: 'transparent',
     zIndex: koolaZIndex.sticky,
   },
-  // Liquid-glass shadow wrapper. Drop shadow lives here so it isn't clipped by
-  // `dock`'s overflow:hidden. The opaque backgroundColor is load-bearing: Android
-  // renders no shadow for a transparent view, and it stops list rows from bleeding
-  // through the translucent glass fill. Color + shadow come from the theme via
-  // inline style (dockElevation useMemo). Mirrors MainNavigator shadowWrap.
+  // Glass shadow wrapper. Shadow lives on this View so it isn't clipped by
+  // `dock`'s overflow:hidden. backgroundColor is stripped (see dockElevation)
+  // so BlurView glass shows through. Mirrors MainNavigator shadowWrap.
   shadowWrap: {
     borderRadius: DOCK_RADIUS,
   },
@@ -272,56 +244,21 @@ const styles = StyleSheet.create({
     minHeight: CHAT_COMPOSER_DOCK_HEIGHT,
     borderRadius: DOCK_RADIUS,
     backgroundColor: 'transparent',
-    borderWidth: 3,
-    // Glass rim — borderColor applied via inline style (primary or warning).
-    borderColor: 'transparent',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.18)',
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 4,
     paddingVertical: 6,
   },
-  // Liquid glass layer 1 — translucent SVG gradient fill (faux blur host).
-  dockStaticFill: {
+  // BlurView glass fill — mirrors MainNavigator tabDockBlurFill.
+  dockBlurFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: DOCK_RADIUS,
     overflow: 'hidden',
   },
-  // Liquid glass layer 1b — primary-blue cast.
-  dockTint: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: DOCK_RADIUS,
-    backgroundColor: 'rgba(37,99,235,0.04)',
-  },
-  // Layer 2 — top specular sheen (~40% of dock height).
-  topSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 22,
-    borderTopLeftRadius: DOCK_RADIUS,
-    borderTopRightRadius: DOCK_RADIUS,
-    overflow: 'hidden',
-  },
-  // Layer 3 — side-edge shines.
-  edgeShineLeft: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 0,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
-  },
-  edgeShineRight: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    right: 0,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
-  },
-  // Layer 4 — 1px inner top edge.
+  // 1px inner top edge.
   innerEdge: {
     position: 'absolute',
     top: 0,
@@ -330,21 +267,17 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.55)',
   },
-  // Dark-mode overrides for glass layers
-  edgeShineDark: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
   innerEdgeDark: {
     backgroundColor: 'rgba(255,255,255,0.10)',
   },
-  // Layer 5 — cool-tone bottom hairline.
+  // Cool-tone bottom hairline — 12% to match TabDock (was 18% on faux-glass).
   bottomHairline: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(37,99,235,0.18)',
+    backgroundColor: 'rgba(37,99,235,0.12)',
   },
   dockDisabled: {
     opacity: koolaOpacity.disabled,

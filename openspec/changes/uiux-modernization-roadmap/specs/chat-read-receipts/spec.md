@@ -35,4 +35,4 @@ Chat UI modernization SHALL preserve navigation behavior that prevents pop-back 
 
 #### Scenario: Chat composer is changed visually
 - **WHEN** chat composer visual code is updated
-- **THEN** the update SHALL NOT reintroduce `BlurView` in the composer surface
+- **THEN** the composer glass SHALL use `BlurView` (`blurAmount` 18, `overlayColor` light `rgba(255,255,255,0.62)` / dark `rgba(28,32,38,0.52)`, `reducedTransparencyFallbackColor`, 1px inner top edge, 0.5 hairline border `rgba(255,255,255,0.18)`, bottom hairline `rgba(37,99,235,0.12)`, shadow xl) mirroring `MainNavigator.TabDockBackground`, with backgroundColor stripped from the shadow wrapper so the blur shows through
