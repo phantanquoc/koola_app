@@ -57,7 +57,7 @@ export const shoppingCategories: ShoppingCategory[] = [
   { id: 'beauty', label: 'Làm đẹp', icon: 'spa' },
 ];
 
-export const shoppingSortChips = ['Được mua nhiều nhất', 'Giá tốt nhất'] as const;
+export const shoppingSortChips = ['Được mua nhiều nhất', 'Giá thấp nhất'] as const;
 export const shoppingAttributeChips = ['Organic', 'Chứng nhận', 'Đã xác minh'] as const;
 
 export const shoppingProducts: ShoppingProduct[] = [

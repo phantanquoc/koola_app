@@ -110,7 +110,7 @@ function filterAndSortProducts(
   // Sắp xếp theo dữ liệu mẫu (soldCount/rating) — chỉ để preview, chưa có backend.
   if (activeSort === 'Được mua nhiều nhất') {
     list = list.slice().sort((a, b) => b.soldCount - a.soldCount);
-  } else if (activeSort === 'Giá tốt nhất') {
+  } else if (activeSort === 'Giá thấp nhất') {
     const toNum = (s: string) => Number(s.replace(/[.\sđĐ]/g, '')) || 0;
     list = list.slice().sort((a, b) => toNum(a.price) - toNum(b.price));
   }
@@ -206,7 +206,7 @@ const dockStyles = StyleSheet.create({
 
 // ── Filter row: 2 hàng + nút Lọc cao 2 hàng bên phải ─────────────────────
  // Bố cục yêu cầu:
- //   [Được mua nhiều nhất] [Giá tốt nhất]     ┌──────┐
+ //   [Được mua nhiều nhất] [Giá thấp nhất]     ┌──────┐
  //   [Organic] [Chứng nhận] [Đã xác minh]     │ Lọc  │  ← cao 68 = 30+8+30, canh phải
  //                                            └──────┘
  // Hàng 1 = 2 chip dài (sort), hàng 2 = 3 chip ngắn (attr).
