@@ -909,15 +909,18 @@ const ChatScreen: React.FC = () => {
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
   // Stabilize listViewProps reference to prevent memo boundary from breaking.
-  // composerScrollClearance depends on insets but is computed once at mount.
-  // NOTE: no per-tick viewability props here — see the removal note near the top
-  // of the component for why they were dropped.
+  // composerScrollClearance is for the bottom dock (BlurView pill). Because the
+  // list is inverted, contentContainer paddingTop maps visually to the bottom
+  // edge near the composer; paddingBottom maps to the top edge under the
+  // NotchHeader. To let scrolled content slide behind the glass header (like
+  // the outer tabs), the screen container no longer clips with paddingTop —
+  // instead the list extends behind the header and reserves its own top gap.
   const stableListViewProps = useMemo(
     () => ({
       scrollEventThrottle: 16,
       contentContainerStyle: {
         paddingTop: composerScrollClearance,
-        paddingBottom: 20,
+        paddingBottom: notchPadTop,
       },
       showsVerticalScrollIndicator: false,
       removeClippedSubviews: false,
@@ -948,15 +951,16 @@ const ChatScreen: React.FC = () => {
         }, 100);
       },
     }),
-    [composerScrollClearance],
+    [composerScrollClearance, notchPadTop],
   );
 
   return (
     <BottomSheetModalProvider>
-    {/* The header lives in the shared notch band (see useChatNavHeader above),
-        which paints over this screen — everything here starts below it so the
-        offline banner, pin banner and message list are never covered. */}
-    <View style={[styles.container, { paddingTop: notchPadTop }]}>
+    {/* The header lives in the shared notch band (see useChatNavHeader above).
+        The list is intentionally not clipped by the screen container — it
+        extends behind the glass header so scrolled data blurs underneath it,
+        like the outer tabs. Padding is reserved in listViewProps instead. */}
+    <View style={styles.container}>
       {/* Offline Banner */}
       <OfflineBanner isVisible={isConnected === false} />
 

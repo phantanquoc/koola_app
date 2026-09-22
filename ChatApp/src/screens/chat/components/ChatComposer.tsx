@@ -28,7 +28,7 @@ import {
 // stripped bg. Keeps the two floating docks (tab bar + composer) as one family.
 const DOCK_RADIUS = 26;
 
-export const CHAT_COMPOSER_DOCK_HEIGHT = 52;
+export const CHAT_COMPOSER_DOCK_HEIGHT = 46;
 // Headroom for the xl drop shadow, which spreads upward from the dock. Mirrors
 // `tabBarHost.paddingTop` in MainNavigator. The host is anchored to bottom:0, so
 // this grows the top edge only — the dock itself does not move.
@@ -129,7 +129,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
             <BlurView
               blurType={isDark ? 'dark' : 'light'}
               blurAmount={18}
-              overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
+              overlayColor={isDark ? 'rgba(28,32,38,0.34)' : 'rgba(255,255,255,0.42)'}
               reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
               style={styles.dockBlurFill}
             />
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   },
   dock: {
     minHeight: CHAT_COMPOSER_DOCK_HEIGHT,
-    borderRadius: DOCK_RADIUS,
+    borderRadius: 22,
     backgroundColor: 'transparent',
     borderWidth: 0.5,
     borderColor: 'rgba(255,255,255,0.18)',
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   // BlurView glass fill — mirrors MainNavigator tabDockBlurFill.
   dockBlurFill: {
@@ -294,8 +294,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     paddingHorizontal: koolaSpacing.sm,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
     maxHeight: 100,
     // Force transparent — Android TextInput inherits a white background from
     // the theme, which would re-introduce the brighter band across the dock
