@@ -5,7 +5,6 @@ import {
   Image,
   InteractionManager,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -66,8 +65,8 @@ const DOCK_GAP_TOP = 4;
 // effective area to 44dp. CHROME_RESERVE below recomputes from this.
 const DOCK_H = 40;
 const DOCK_GAP_BOTTOM = 8;
-const FILTER_ROW_H = 44;
-const FILTER_ROW_H_COLLAPSED = 40;
+const FILTER_ROW_H = 68;
+const FILTER_ROW_H_COLLAPSED = 64;
 const FILTER_ROW_GAP_BOTTOM = 12;
 const FILTER_ROW_GAP_COLLAPSED = 8;
 // Scroll-driven chrome: dock hides over 120dp, snap at midpoint (~60dp).
@@ -111,8 +110,9 @@ function filterAndSortProducts(
   // Sắp xếp theo dữ liệu mẫu (soldCount/rating) — chỉ để preview, chưa có backend.
   if (activeSort === 'Được mua nhiều nhất') {
     list = list.slice().sort((a, b) => b.soldCount - a.soldCount);
-  } else if (activeSort === 'Đánh giá cao') {
-    list = list.slice().sort((a, b) => b.rating - a.rating);
+  } else if (activeSort === 'Giá tốt nhất') {
+    const toNum = (s: string) => Number(s.replace(/[.\sđĐ]/g, '')) || 0;
+    list = list.slice().sort((a, b) => toNum(a.price) - toNum(b.price));
   }
   return list;
 }
@@ -125,10 +125,8 @@ const ShoppingSearchDock: React.FC<{
   semantic: SemanticTokens;
   value: string;
   onChangeText: (t: string) => void;
-  activeFilterCount: number;
-  onOpenFilters: () => void;
   onFocusChange?: (f: boolean) => void;
-}> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters, onFocusChange }) => {
+}> = ({ semantic, value, onChangeText, onFocusChange }) => {
   const [focused, setFocused] = useState(false);
   const handleFocus = useCallback(() => { setFocused(true); onFocusChange?.(true); }, [onFocusChange]);
   const handleBlur = useCallback(() => { setFocused(false); onFocusChange?.(false); }, [onFocusChange]);
@@ -163,24 +161,6 @@ const ShoppingSearchDock: React.FC<{
             <MaterialIcons name="close" size={20} color={semantic.text.muted} />
           </Pressable>
         ) : null}
-        <View style={[dockStyles.divider, { backgroundColor: semantic.border.strong }]} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            activeFilterCount > 0 ? `Lọc, ${activeFilterCount} bộ lọc đang áp dụng` : 'Lọc sản phẩm'
-          }
-          onPress={onOpenFilters}
-          hitSlop={6}
-          style={dockStyles.filterBtn}>
-          <MaterialIcons name="filter-list" size={20} color={semantic.action.primary} />
-          {activeFilterCount > 0 ? (
-            <View style={dockStyles.filterBadge}>
-              <KoolaText variant="caption" weight="800" tone="surface" style={dockStyles.filterBadgeText}>
-                {activeFilterCount}
-              </KoolaText>
-            </View>
-          ) : null}
-        </Pressable>
       </View>
     </View>
   );
@@ -222,99 +202,91 @@ const dockStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  divider: {
-    width: StyleSheet.hairlineWidth,
-    height: 20,
-    marginHorizontal: 8,
-    opacity: 1,
-  },
-  filterBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: koolaRadii.pill,
-    paddingHorizontal: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-  },
-  filterBadgeText: {
-    fontSize: 10,
-    lineHeight: 12,
-  },
 });
 
-// ── Filter row: chips-only scroller (flat dock owns the filter icon) ───────
- // Filter entry point (icon + badge + divider) lives inside the dock pill; this
- // row is only the horizontal chip scroller. Single 44→40dp row.
- // WARNING (ui-dna.md:311): never use `gap` in a row-direction container that
- // has flex:1 children — Hermes on RN 0.76 silently drops children to new
- // lines. Chips use marginRight + flexShrink:0 instead.
+// ── Filter row: 2 hàng + nút Lọc cao 2 hàng bên phải ─────────────────────
+ // Bố cục yêu cầu:
+ //   [Được mua nhiều nhất] [Giá tốt nhất]     ┌──────┐
+ //   [Organic] [Chứng nhận] [Đã xác minh]     │ Lọc  │  ← cao 68 = 30+8+30, canh phải
+ //                                            └──────┘
+ // Hàng 1 = 2 chip dài (sort), hàng 2 = 3 chip ngắn (attr).
+ // Nút Lọc bên phải cao bằng 2 hàng chip, icon filter-list, badge đỏ khi có filter.
 const FilterRow: React.FC<{
   semantic: SemanticTokens;
   styles: Styles;
   activeSort: string | null;
   activeAttr: string | null;
+  activeFilterCount: number;
   onToggleSort: (label: string) => void;
   onToggleAttr: (label: string) => void;
-}> = ({ semantic: _semantic, styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
+  onOpenFilters: () => void;
+}> = ({ semantic, styles, activeSort, activeAttr, activeFilterCount, onToggleSort, onToggleAttr, onOpenFilters }) => (
   <View style={styles.filterRow}>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.chipScroller}
-      contentContainerStyle={styles.chipScrollerContent}>
-      {shoppingSortChips.map((label) => {
-        const selected = activeSort === label;
-        return (
-          <Pressable
-            key={label}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            accessibilityState={{ selected }}
-            onPress={() => onToggleSort(label)}
-            hitSlop={4}
-            style={[styles.rowChip, selected && styles.rowChipActive]}>
-            <KoolaText
-              variant="caption"
-              weight="800"
-              tone={selected ? 'surface' : 'muted'}
-              numberOfLines={1}>
-              {label}
-            </KoolaText>
-          </Pressable>
-        );
-      })}
-      {shoppingAttributeChips.map((label) => {
-        const selected = activeAttr === label;
-        return (
-          <Pressable
-            key={label}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            accessibilityState={{ selected }}
-            onPress={() => onToggleAttr(label)}
-            hitSlop={4}
-            style={[styles.rowChip, selected && styles.rowChipActive]}>
-            <KoolaText
-              variant="caption"
-              weight="800"
-              tone={selected ? 'surface' : 'muted'}
-              numberOfLines={1}>
-              {label}
-            </KoolaText>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <View style={styles.chipGrid}>
+      <View style={styles.chipRowTop}>
+        {shoppingSortChips.map((label) => {
+          const selected = activeSort === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              onPress={() => onToggleSort(label)}
+              hitSlop={4}
+              style={[styles.rowChip, selected && styles.rowChipActive]}>
+              <KoolaText
+                variant="caption"
+                weight="700"
+                tone={selected ? 'surface' : 'muted'}
+                style={styles.rowChipText}
+                numberOfLines={1}>
+                {label}
+              </KoolaText>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.chipRowBottom}>
+        {shoppingAttributeChips.map((label) => {
+          const selected = activeAttr === label;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+              onPress={() => onToggleAttr(label)}
+              hitSlop={4}
+              style={[styles.rowChip, selected && styles.rowChipActive]}>
+              <KoolaText
+                variant="caption"
+                weight="700"
+                tone={selected ? 'surface' : 'muted'}
+                style={styles.rowChipText}
+                numberOfLines={1}>
+                {label}
+              </KoolaText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={activeFilterCount > 0 ? `Lọc, ${activeFilterCount} bộ lọc đang áp dụng` : 'Lọc'}
+      onPress={onOpenFilters}
+      hitSlop={4}
+      style={styles.filterTallBtn}>
+      <MaterialIcons name="filter-alt" size={20} color={semantic.action.primary} />
+      {activeFilterCount > 0 ? (
+        <View style={styles.filterTallBadge}>
+          <KoolaText variant="caption" weight="800" tone="surface" style={styles.filterBadgeText}>
+            {activeFilterCount}
+          </KoolaText>
+        </View>
+      ) : null}
+    </Pressable>
   </View>
 );
 
@@ -746,11 +718,14 @@ const ShoppingHomeScreen: React.FC = () => {
               shifts horizontally when content swaps in. */}
           <View style={styles.contentInset}>
             <KoolaSkeleton width="100%" height={DOCK_H} radius={koolaRadii.pill} />
-            <View style={{ flexDirection: 'row', marginTop: DOCK_GAP_BOTTOM, alignItems: 'center' }}>
-              {/* Chips-only row: no Lọc placeholder (filter lives inside dock) */}
-              <KoolaSkeleton width={140} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={92} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={84} height={FILTER_ROW_H} radius={koolaRadii.pill} />
+            <View style={{ marginTop: DOCK_GAP_BOTTOM, height: FILTER_ROW_H }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                <KoolaSkeleton width={136} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
+                <KoolaSkeleton width={94} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
+                <KoolaSkeleton width={72} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
+                <KoolaSkeleton width={86} height={30} radius={koolaRadii.pill} style={{ marginRight: 6 }} />
+                <KoolaSkeleton width={88} height={30} radius={koolaRadii.pill} />
+              </View>
             </View>
           </View>
           <View style={styles.listContent}>
@@ -798,8 +773,6 @@ const ShoppingHomeScreen: React.FC = () => {
                 semantic={semantic}
                 value={query}
                 onChangeText={setQuery}
-                activeFilterCount={activeFilterCount}
-                onOpenFilters={openFilterSheet}
                 onFocusChange={handleFocusChange}
               />
             </Animated.View>
@@ -811,8 +784,10 @@ const ShoppingHomeScreen: React.FC = () => {
                   styles={styles}
                   activeSort={activeSort}
                   activeAttr={activeAttr}
+                  activeFilterCount={activeFilterCount}
                   onToggleSort={toggleSort}
                   onToggleAttr={toggleAttr}
+                  onOpenFilters={openFilterSheet}
                 />
               </View>
             </Animated.View>
@@ -875,36 +850,70 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       paddingTop: DOCK_GAP_TOP,
       zIndex: koolaZIndex.sticky,
     },
-    // ── Filter row (chips-only) ──
+    // ── Filter row: 2 hàng + nút Lọc cao 2 hàng ──
     filterRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'stretch',
       height: FILTER_ROW_H,
     },
-    // flex:1 so the scroller takes the space the "Lọc" pill leaves; the pill's
-    // flexShrink:0 keeps it from being squeezed.
-    chipScroller: {
+    chipGrid: {
       flex: 1,
+      justifyContent: 'space-between',
     },
-    chipScrollerContent: {
+    chipRowTop: {
+      flexDirection: 'row',
       alignItems: 'center',
-      paddingRight: 12,
+    },
+    chipRowBottom: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     rowChip: {
-      height: 36,
-      minHeight: 36,
+      height: 30,
+      minHeight: 30,
       borderRadius: koolaRadii.pill,
-      paddingHorizontal: 12,
+      paddingHorizontal: 10,
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: semantic.surface.level2,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.strong,
-      marginRight: 8,
+      marginRight: 6,
+    },
+    rowChipText: {
+      fontSize: 11,
+      lineHeight: 14,
     },
     rowChipActive: {
       backgroundColor: semantic.action.primary,
       borderColor: semantic.action.primary,
+    },
+    filterTallBtn: {
+      width: 44,
+      height: FILTER_ROW_H,
+      borderRadius: koolaRadii.md,
+      backgroundColor: semantic.surface.level2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.strong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 8,
+    },
+    filterTallBadge: {
+      position: 'absolute',
+      top: 6,
+      right: 4,
+      minWidth: 16,
+      height: 16,
+      borderRadius: koolaRadii.pill,
+      paddingHorizontal: 3,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#EF4444',
+    },
+    filterBadgeText: {
+      fontSize: 10,
+      lineHeight: 12,
     },
     // ── Filter sheet ──
     sheetContent: {
