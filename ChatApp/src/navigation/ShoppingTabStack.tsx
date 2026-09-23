@@ -9,7 +9,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { ShoppingTabStackParamList } from './types';
 import ShoppingHomeScreen from '../screens/shopping/ShoppingHomeScreen';
 import ShoppingProductDetailScreen from '../screens/shopping/ShoppingProductDetailScreen';
-import { getNotchHeaderHeight } from '../components/NotchHeader';
+import { getNotchHeaderHeight, NotchHeader } from '../components/NotchHeader';
 
 const Stack = createNativeStackNavigator<ShoppingTabStackParamList>();
 
@@ -127,20 +127,9 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null }> = (
     );
   }
 
-  // Default: KOOLA wordmark (ShoppingHome)
-  return (
-    <View style={[styles.host2, { height: flatH, overflow: 'hidden' as const }, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)' }} />
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.72, overflow: 'hidden' }}>
-        <LightFieldBackground windowSized />
-      </View>
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: insets.top, bottom: 0, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 2 }}>
-        <KoolaText variant="label" weight="800" style={{ color: tokens.semantic.text.primary, letterSpacing: 2, fontSize: 16 }}>
-          KOOLA
-        </KoolaText>
-      </View>
-    </View>
-  );
+  // Default: KOOLA wordmark — delegate to existing NotchHeader so list keeps
+  // exactly the same visuals as before, and as ConnectTab/others do.
+  return <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />;
 };
 
 const navStyles = StyleSheet.create({
