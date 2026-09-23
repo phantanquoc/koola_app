@@ -131,12 +131,10 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
               blurAmount={18}
               overlayColor={isDark ? 'rgba(28,32,38,0.34)' : 'rgba(255,255,255,0.42)'}
               reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-              style={styles.dockBlurFill}
-            />
-            <View pointerEvents="none" style={[styles.innerEdge, isDark && styles.innerEdgeDark]} />
-            <View pointerEvents="none" style={styles.bottomHairline} />
-
-            <View style={styles.row}>
+              style={styles.dockBlurFill}>
+              <View pointerEvents="none" style={[styles.innerEdge, isDark && styles.innerEdgeDark]} />
+              <View pointerEvents="none" style={styles.bottomHairline} />
+              <View style={styles.row}>
               {onPressEmoji && (
                 <KoolaIconButton
                   icon="sentiment-satisfied-alt"
@@ -214,6 +212,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
                 </>
               )}
             </View>
+            </BlurView>
           </View>
         </View>
       </Animated.View>
@@ -247,14 +246,16 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: 'rgba(255,255,255,0.18)',
     overflow: 'hidden',
+  },
+  // BlurView glass fill — mirrors ChatSearchDock/TabDock pattern.
+  // Content (innerEdge + row) MUST be BlurView children so isRendering()
+  // excludes them from the captured snapshot; see ChatSearchDock note.
+  dockBlurFill: {
+    ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 4,
     paddingVertical: 4,
-  },
-  // BlurView glass fill — mirrors MainNavigator tabDockBlurFill.
-  dockBlurFill: {
-    ...StyleSheet.absoluteFillObject,
     borderRadius: DOCK_RADIUS,
     overflow: 'hidden',
   },
