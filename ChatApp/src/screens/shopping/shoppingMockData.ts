@@ -13,6 +13,13 @@ export type ShoppingCategory = {
   icon: string;
 };
 
+export type ShoppingSeller = {
+  id: string;
+  name: string;
+  verified: boolean;
+  province?: string;
+};
+
 export type ShoppingProduct = {
   id: string;
   title: string;
@@ -28,6 +35,8 @@ export type ShoppingProduct = {
   accent: string;
   icon: string;
   tags: string[];
+  description?: string;
+  seller: ShoppingSeller;
   /**
    * Bundled offline mock photo (`require()` result — `number` under RN's
    * asset pipeline). Optional: `accent`/`icon` stay the loading/fallback
@@ -76,6 +85,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#10B981',
     icon: 'eco',
     tags: ['Organic', 'Không đường', 'Chính hãng'],
+    description: 'Rau củ tươi hái mỗi sáng tại Đà Lạt, giao trong ngày. Combo 3-4 loại theo mùa, kèm hướng dẫn bảo quản.',
+    seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
     image: require('../../assets/mock-shopping/vegetables.jpg'),
   },
   {
@@ -92,6 +103,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#F97316',
     icon: 'restaurant',
     tags: ['Không đường', 'Chính hãng'],
+    description: 'Cơm gà ta sốt tiêu xanh, ăn kèm rau trộn và canh. Bếp nấu theo đơn, giao nóng trong 25 phút.',
+    seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
     image: require('../../assets/mock-shopping/chicken-rice.jpg'),
   },
   {
@@ -109,6 +122,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#2563EB',
     icon: 'headphones',
     tags: ['Chính hãng', 'Chứng nhận'],
+    description: 'Tai nghe nhét tai Bluetooth 5.3, pin 6h, kèm case sạc. Đổi mới 7 ngày nếu lỗi kỹ thuật.',
+    seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
     image: require('../../assets/mock-shopping/earbuds.jpg'),
   },
   {
@@ -125,6 +140,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#14B8A6',
     icon: 'home',
     tags: ['Đã xác minh', 'Chính hãng', 'Chứng nhận'],
+    description: 'Bộ lau nhà gấp gọn, đầu lau xoay 360°, cán inox. Gọn khi cất, bền khi dùng.',
+    seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
     image: require('../../assets/mock-shopping/mop.jpg'),
   },
   {
@@ -142,6 +159,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#EC4899',
     icon: 'spa',
     tags: ['Chính hãng'],
+    description: 'Sữa rửa mặt pH 5.5, không cồn, cho da nhạy cảm. Dung tích 120ml, dùng ~2 tháng.',
+    seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
     image: require('../../assets/mock-shopping/skincare.jpg'),
   },
   {
@@ -158,6 +177,8 @@ export const shoppingProducts: ShoppingProduct[] = [
     accent: '#F59E0B',
     icon: 'rice-bowl',
     tags: ['Organic', 'Đã xác minh'],
+    description: 'Gạo ST25 chính vụ, dẻo thơm, đóng túi hút chân không 5kg. Giao 4h nội thành.',
+    seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
     image: require('../../assets/mock-shopping/rice.jpg'),
   },
 ];

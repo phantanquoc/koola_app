@@ -50,7 +50,8 @@ export function useTabDockSuppression(): () => () => void {
 }
 
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
-const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true };
+const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true };
+const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail: true };
 export const TAB_BAR_FLOATING_INSET = 86;
 
 const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
@@ -120,6 +121,12 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
       route as RouteProp<MainTabParamList, 'PersonalTab'>,
     ) ?? 'PersonalHome';
     return !!FULLSCREEN_PERSONAL_ROUTES[focused];
+  }
+  if (route.name === 'ShoppingTab') {
+    const focused = getFocusedRouteNameFromRoute(
+      route as RouteProp<MainTabParamList, 'ShoppingTab'>,
+    ) ?? 'ShoppingHome';
+    return !!FULLSCREEN_SHOPPING_ROUTES[focused];
   }
   return false;
 }
@@ -196,16 +203,14 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
     opacity: focusProgress.value,
   }));
 
+  // Ghost-border fix: per-item iconBox (filled bg) and the global travelBorder
+  // stroke were both visible at the focused index but positioned by different
+  // systems (flex-centered vs absolute translateX math). Any sub-pixel or
+  // re-measure difference after Chat push/pop produced the double-border ghost
+  // seen in the screenshots. The travelBorder is the single source of truth for
+  // the selected frame — keep only that.
   return (
     <View style={styles.iconHost}>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.iconBox,
-          resolvedScheme === 'light' ? styles.iconBoxLight : styles.iconBoxDark,
-          boxStyle,
-        ]}
-      />
       <Animated.View pointerEvents="none" style={[styles.glyphWrap, wrapperStyle]}>
         <View style={styles.glyphStack}>
           {/* Muted glyph — visible when unfocused, fades out on focus */}
@@ -350,20 +355,13 @@ interface TabDockBackgroundProps {
 const TabDockBackground: React.FC<TabDockBackgroundProps> = React.memo(({
   resolvedScheme,
 }) => {
-  const isDark = resolvedScheme === 'dark';
-  return (
-    <>
-      <BlurView
-        blurType={isDark ? 'dark' : 'light'}
-        blurAmount={18}
-        overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
-        reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-        style={styles.tabDockBlurFill}
-      />
-      <View pointerEvents="none" style={[styles.tabInnerEdge, isDark && styles.tabInnerEdgeDark]} />
-      <View pointerEvents="none" style={styles.tabBottomHairline} />
-    </>
-  );
+  // Kept for compat — bg is now rendered inline inside CustomKoolaTabBar's
+  // BlurView so tab items are BlurView *children* (excluded from the blur
+  // snapshot via isRendering guard). A sibling BlurView would capture the
+  // items and ghost them, which is exactly the double-border seen after
+  // Chat push/pop when the dock remounts.
+  void resolvedScheme;
+  return null;
 });
 
 const TAB_COUNT = 5;
@@ -468,7 +466,21 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       ]}>
       <View style={[styles.shadowWrap, dockElevation]}>
         <View style={styles.tabDock} onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}>
-          <TabDockBackground gradientStops={gradientStops} resolvedScheme={resolvedScheme} />
+          {/* Glass bg must be the FIRST child of tabDock with items as its
+              children — ReactNativeBlurView finds its capture root as the
+              nearest rnscreens.Screen ancestor and then skips its *own* subtree
+              during isRendering(). Items were siblings of BlurView before, so
+              they got captured + blurred and produced the ghost double border
+              on remount after Chat push/pop. Nesting like ChatSearchDock does. */}
+          <BlurView
+            blurType={resolvedScheme === 'dark' ? 'dark' : 'light'}
+            blurAmount={18}
+            overlayColor={resolvedScheme === 'dark' ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
+            reducedTransparencyFallbackColor={resolvedScheme === 'dark' ? '#1C2026' : '#FFFFFF'}
+            style={styles.tabDockBlurFill}>
+            <View pointerEvents="none" style={[styles.tabInnerEdge, resolvedScheme === 'dark' ? styles.tabInnerEdgeDark : null]} />
+            <View pointerEvents="none" style={styles.tabBottomHairline} />
+            <View style={styles.tabDockContent}>
           {/* Traveling border — one frame that glides between tabs */}
           <Animated.View
             pointerEvents="none"
@@ -546,6 +558,8 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
               />
             );
           })}
+            </View>
+          </BlurView>
         </View>
       </View>
     </Animated.View>
@@ -661,16 +675,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 0.5,
     borderColor: 'rgba(255,255,255,0.18)',
+    overflow: 'hidden',
+  },
+  tabDockContent: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    overflow: 'hidden',
   },
-  // BlurView glass fill (replaces the old Svg gradient).
+  // BlurView glass fill — when wrapping dock content it must be a normal
+  // (non-absolute) flex child so it contributes to tabDock's height.
   tabDockBlurFill: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     borderRadius: 26,
     overflow: 'hidden',
   },

@@ -21,10 +21,15 @@ import {
   koolaDarkShadows,
   koolaShadows,
   koolaZIndex,
+  useKoolaToast,
   useTheme,
 } from '../../ui';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import type { ShoppingTabStackParamList } from '../../navigation/types';
+import { conversationsApi } from '../../services/api/apiService';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
@@ -356,8 +361,8 @@ const ProductRow: React.FC<{
   semantic: SemanticTokens;
   styles: Styles;
   onOpen: () => void;
-  onAdd: () => void;
-}> = React.memo(({ item, semantic, styles, onOpen, onAdd }) => {
+  onChat: () => void;
+}> = React.memo(({ item, semantic, styles, onOpen, onChat }) => {
   // Ảnh mock là bundled asset nên gần như không thể lỗi, nhưng vẫn theo dõi
   // onError để ô thumb không bao giờ là một khối màu trống: hỏng ảnh → rơi về
   // glyph, đúng như khi sản phẩm chưa có `image`.
@@ -459,12 +464,12 @@ const ProductRow: React.FC<{
         1-2dp rhythm. */}
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Thêm ${item.title} vào giỏ`}
-      android_ripple={{ color: `${semantic.status.danger}1A` }}
-      onPress={onAdd}
+      accessibilityLabel={`Nhắn tin về ${item.title}`}
+      android_ripple={{ color: `${semantic.action.primary}1A` }}
+      onPress={onChat}
       hitSlop={8}
       style={styles.rowCartBtn}>
-      <MaterialIcons name="shopping-cart" size={16} color={semantic.status.danger} />
+      <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.action.primary} />
     </Pressable>
   </Pressable>
   );
@@ -637,17 +642,30 @@ const ShoppingHomeScreen: React.FC = () => {
     return () => task.cancel();
   }, []);
 
-  const shoppingIsPreview = isPreview('shopping');
+  const shoppingNav = useNavigation<NativeStackNavigationProp<ShoppingTabStackParamList>>();
+  const koolaToast = useKoolaToast();
 
-  const handleComingSoon = useCallback(
-    () => notify(`${AVAILABILITY_LABELS[shoppingIsPreview ? 'preview' : 'unavailable']} — Tính năng đang được phát triển`),
-    [notify, shoppingIsPreview],
-  );
+  const handleOpenProduct = useCallback((productId: string) => {
+    shoppingNav.navigate('ShoppingProductDetail', { productId });
+  }, [shoppingNav]);
 
-  const handlePreviewAdd = useCallback(
-    () => notify(`${AVAILABILITY_LABELS.preview} — không thể thêm vào giỏ hàng thật`),
-    [notify],
-  );
+  const handleChatSeller = useCallback(async (product: ShoppingProduct) => {
+    try {
+      const { conversation } = await conversationsApi.startDirectChat(product.seller.id);
+      (shoppingNav as unknown as { navigate: (a: string, b: unknown) => void }).navigate('ChatTab', {
+        screen: 'Chat',
+        params: { conversationId: conversation._id },
+      });
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      koolaToast.show(
+        status === 404
+          ? 'Gian hang mau chua co tai khoan that — se ket noi khi backend san sang.'
+          : 'Khong the bat dau tro chuyen. Ban thu lai nhe.',
+        status === 404 ? 'info' : 'warning',
+      );
+    }
+  }, [shoppingNav, koolaToast]);
 
   const products = useMemo(() => {
     let list = filterAndSortProducts(query, activeAttr, activeSort);
@@ -700,13 +718,13 @@ const ShoppingHomeScreen: React.FC = () => {
     ({ item }: { item: ShoppingProduct }) => (
       <ProductRow
         item={item}
-        onOpen={handleComingSoon}
-        onAdd={handlePreviewAdd}
+        onOpen={() => handleOpenProduct(item.id)}
+        onChat={() => handleChatSeller(item)}
         semantic={semantic}
         styles={styles}
       />
     ),
-    [handleComingSoon, handlePreviewAdd, semantic, styles],
+    [handleOpenProduct, handleChatSeller, semantic, styles],
   );
 
   return (
@@ -1050,7 +1068,7 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     priceText: {
       fontSize: 13,
       lineHeight: 18,
-      color: semantic.status.danger,
+      color: semantic.text.primary,
       marginRight: 6,
     },
     strikeText: {
@@ -1118,7 +1136,7 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       width: 30,
       height: 30,
       borderRadius: koolaRadii.sm,
-      backgroundColor: `${semantic.status.danger}1A`,
+      backgroundColor: `${semantic.action.primary}1A`,
       alignItems: 'center',
       justifyContent: 'center',
     },
