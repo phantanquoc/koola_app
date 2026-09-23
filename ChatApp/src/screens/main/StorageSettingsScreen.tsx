@@ -12,6 +12,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { usePersonalNavHeader } from '../../navigation/PersonalHeaderContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   KoolaButton,
   KoolaDivider,
@@ -33,10 +36,13 @@ const GB = 1024 * 1024 * 1024;
 
 const StorageSettingsScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
+  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  usePersonalNavHeader('Bộ nhớ đệm', () => navigation.goBack());
+  const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + 8;
 
   const [usedBytes, setUsedBytes] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
@@ -128,20 +134,9 @@ const StorageSettingsScreen: React.FC = () => {
       style={styles.container}
       contentContainerStyle={[
         styles.contentContainer,
-        { paddingBottom: tabBarInset },
+        { paddingTop: scrollPadTop, paddingBottom: tabBarInset },
       ]}
       showsVerticalScrollIndicator={false}>
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color={palette.primary} />
-        </Pressable>
-        <KoolaText variant="heading">Bộ nhớ đệm</KoolaText>
-      </View>
-
       <KoolaSurface variant="raised" style={styles.section}>
         <View style={styles.menuItemRow}>
           <View style={styles.menuLabelRow}>

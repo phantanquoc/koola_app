@@ -11,6 +11,10 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { usePersonalNavHeader } from '../../navigation/PersonalHeaderContext';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { useAuth } from '../../contexts/AuthContext';
 import { accountsApi } from '../../services/api/apiService';
 import {
@@ -420,10 +424,17 @@ const CreateBusinessForm: React.FC<CreateFormProps> = ({ onCreated, onCancel }) 
 const AccountListScreen: React.FC = () => {
   const { accounts, activeAccount, switchAccount } = useAuth();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarBottomInset();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [localAccounts, setLocalAccounts] = useState<Account[]>(accounts);
+  usePersonalNavHeader(showCreateForm ? 'Tạo tài khoản' : 'Tài khoản', () => {
+    if (showCreateForm) setShowCreateForm(false);
+    else (navigation as any).goBack();
+  });
+  const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + 8;
   // Set of accountIds that have pending notification badges.
   const [badgedAccounts, setBadgedAccounts] = useState<Set<string>>(new Set());
 
@@ -481,30 +492,18 @@ const AccountListScreen: React.FC = () => {
 
   if (showCreateForm) {
     return (
-      <CreateBusinessForm
-        onCreated={handleCreated}
-        onCancel={() => setShowCreateForm(false)}
-      />
+      <View style={[styles.screenContainer, { paddingTop: scrollPadTop, paddingBottom: tabBarInset }]}>
+        <CreateBusinessForm
+          onCreated={handleCreated}
+          onCancel={() => setShowCreateForm(false)}
+        />
+      </View>
     );
   }
 
   return (
     <View style={styles.screenContainer}>
-      <View style={styles.backHeader}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại"
-          style={styles.backButton}
-          android_ripple={{ color: palette.primarySoft, borderless: true }}>
-          <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
-        </Pressable>
-        <KoolaText variant="label" weight="600" numberOfLines={1} style={styles.backHeaderTitle}>
-          Tài khoản
-        </KoolaText>
-        <View style={styles.backHeaderSpacer} />
-      </View>
-      <ScrollView style={styles.container} contentContainerStyle={styles.listContent}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.listContent, { paddingTop: scrollPadTop }]}>
         <KoolaText variant="heading" style={styles.pageTitle}>Danh sách tài khoản</KoolaText>
 
       <KoolaSurface variant="raised" style={styles.listCard}>

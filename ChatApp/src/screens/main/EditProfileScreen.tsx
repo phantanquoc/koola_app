@@ -13,6 +13,9 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { usePersonalNavHeader } from '../../navigation/PersonalHeaderContext';
+import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { usersApi } from '../../services/api/apiService';
 import { pickImage, uploadMedia } from '../../services/media/mediaUploadService';
 import { getOrDownload } from '../../services/media/mediaCacheService';
@@ -57,12 +60,17 @@ const EditProfileScreen: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarBottomInset();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [activeSheet, setActiveSheet] = useState<SheetType>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [coverUri, setCoverUri] = useState<string | null>(null);
+
+  // Shared NotchHeader (kiểu Nâng cấp / Cài đặt) — không tự vẽ header riêng
+  usePersonalNavHeader('Chỉnh sửa hồ sơ', () => navigation.goBack());
+  const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + 8;
 
   // Resolve cover photo media key to local URI for the hero band background
   useEffect(() => {
@@ -151,27 +159,9 @@ const EditProfileScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Custom header — controls top inset precisely */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => navigation.goBack()}
-            hitSlop={12}
-            android_ripple={{ color: palette.line, borderless: true, radius: 22 }}
-            style={({ pressed }) => [styles.headerBack, pressed && styles.rowPressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Quay lại">
-            <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
-          </Pressable>
-          <KoolaText variant="heading" weight="700" style={styles.headerTitle} numberOfLines={1}>
-            Chỉnh sửa hồ sơ
-          </KoolaText>
-          <View style={styles.headerSpacer} />
-        </View>
-      </View>
-
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: scrollPadTop, paddingBottom: tabBarInset }]}
         showsVerticalScrollIndicator={false}>
         {/* Hero — cover band + info card with avatar sticker */}
         <View style={styles.heroWrap}>
@@ -565,34 +555,10 @@ const makeStyles = (p: Palette) =>
       backgroundColor: p.canvas,
     },
 
-    // Header
-    header: {
-      backgroundColor: p.surface,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
-    },
-    headerRow: {
-      minHeight: 52,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: koolaSpacing.sm,
-    },
-    headerBack: {
-      width: 44,
-      height: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    headerTitle: {
-      flex: 1,
-      textAlign: 'center',
-    },
-    headerSpacer: {
-      width: 44,
-    },
-
     // Scroll
-    scroll: {
+    scrollView: { flex: 1 },
+    scrollContent: {
+      flexGrow: 1,
       paddingBottom: koolaSpacing.xxl,
     },
 
