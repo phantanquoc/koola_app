@@ -203,12 +203,7 @@ const TabIcon3D: React.FC<TabIcon3DProps> = ({
     opacity: focusProgress.value,
   }));
 
-  // Ghost-border fix: per-item iconBox (filled bg) and the global travelBorder
-  // stroke were both visible at the focused index but positioned by different
-  // systems (flex-centered vs absolute translateX math). Any sub-pixel or
-  // re-measure difference after Chat push/pop produced the double-border ghost
-  // seen in the screenshots. The travelBorder is the single source of truth for
-  // the selected frame — keep only that.
+  // Ghost-border: drop per-item iconBox (travelBorder is sole frame)
   return (
     <View style={styles.iconHost}>
       <Animated.View pointerEvents="none" style={[styles.glyphWrap, wrapperStyle]}>
@@ -454,24 +449,26 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     ],
   }));
 
-  if (isHidden) return null;
+  // Ghost fix: don't unmount on fullscreen — that resets dockWidth to 0
+  // for one frame after pop, so travelBorder mis-computes itemWidth and
+  // flashes at the left edge. Keep mounted but hidden; width stays measured.
+  const hiddenStyle = useAnimatedStyle(() => ({
+    opacity: isHidden ? 0 : reveal.value,
+    transform: [{ translateY: isHidden ? 12 : 8 * (1 - reveal.value) }],
+  }));
 
   return (
     <Animated.View
-      pointerEvents="box-none"
+      pointerEvents={isHidden ? 'none' : 'box-none'}
       style={[
         styles.tabBarHost,
         { paddingBottom: Math.max(insets.bottom, 4) + 6 },
-        revealStyle,
-      ]}>
+        hiddenStyle,
+      ]}
+      accessibilityElementsHidden={isHidden}
+      importantForAccessibility={isHidden ? 'no-hide-descendants' : 'auto'}>
       <View style={[styles.shadowWrap, dockElevation]}>
         <View style={styles.tabDock} onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}>
-          {/* Glass bg must be the FIRST child of tabDock with items as its
-              children — ReactNativeBlurView finds its capture root as the
-              nearest rnscreens.Screen ancestor and then skips its *own* subtree
-              during isRendering(). Items were siblings of BlurView before, so
-              they got captured + blurred and produced the ghost double border
-              on remount after Chat push/pop. Nesting like ChatSearchDock does. */}
           <BlurView
             blurType={resolvedScheme === 'dark' ? 'dark' : 'light'}
             blurAmount={18}
