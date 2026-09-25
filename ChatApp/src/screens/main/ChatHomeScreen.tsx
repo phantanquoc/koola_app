@@ -4,7 +4,6 @@ import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-na
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { BlurView } from '@sbaiahmed1/react-native-blur';
 import Animated, {
   Easing,
   interpolate,
@@ -24,7 +23,7 @@ import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
-import { KoolaText, KoolaSkeleton, koolaRadii, koolaShadows, koolaDarkShadows, useTheme } from '../../ui';
+import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
 import { NOTCH_WING_INSET, NOTCH_HEADER_CONTENT_H } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
@@ -274,11 +273,12 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
   }), [semantic]);
 
   const visibilityStyle = useAnimatedStyle(() => {
-    const hidden = visibilityContext?.hiddenProgress.value ?? 0;
+    const t = visibilityContext?.hiddenProgress.value ?? 0;
+    const h = t * t * (3 - 2 * t); // smoothstep: êm ở 2 đầu, vẫn nhạy khi vừa đổi hướng
     return {
-      height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - hidden),
-      opacity: 1 - hidden,
-      transform: [{ translateY: -CHAT_SUB_TAB_BAR_HEIGHT * hidden }],
+      height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - h),
+      opacity: 1 - h,
+      transform: [{ translateY: -CHAT_SUB_TAB_BAR_HEIGHT * h }],
     };
   }, [visibilityContext]);
 
@@ -425,25 +425,18 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Glass pill dock — BlurView + overlay + innerEdge + hairline, mirroring
-// MainNavigator TabDockBackground. Morph 48→36 driven by dockProgress.
-//
-// The dock content is nested INSIDE BlurView on purpose. This dock sits within
-// the ChatHomeScreen `Screen`, and ReactNativeBlurView redirects its capture
-// root to the nearest `rnscreens.Screen` ancestor — so the snapshot it blurs
-// covers this screen, dock included. Native `BlurViewGroup.draw()` skips itself
-// while `isRendering()` is true, which excludes only its own subtree from that
-// snapshot. Children are therefore safe; siblings are not — as a sibling, the
-// content row got captured and blurred, ghosting behind the crisp icons/text.
+// Flat pill dock — solid fill matching Shopping tab's canvas, no shadow/blur.
+// Elevation is expressed only by a hairline border + subtle tone lift over the
+// transparent list canvas, keeping the existing pill/morph behaviour.
+// Content is laid out directly inside the host (no BlurView wrapper needed).
 const ChatSearchDock: React.FC<{
   dockProgress: SharedValue<number>;
   onSearchPress: () => void;
   onQrPress: () => void;
   onAddPress: () => void;
 }> = ({ dockProgress, onSearchPress, onQrPress, onAddPress }) => {
-  const { tokens, resolvedScheme } = useTheme();
+  const { tokens } = useTheme();
   const sem = tokens.semantic;
-  const isDark = resolvedScheme === 'dark';
   const [searchPressed, setSearchPressed] = useState(false);
   const [qrPressed, setQrPressed] = useState(false);
   const [addPressed, setAddPressed] = useState(false);
@@ -475,30 +468,18 @@ const ChatSearchDock: React.FC<{
     if (reduceMotion) return { fontSize: 13 } as const;
     return { fontSize: interpolate(dockProgress.value, [0, 1], [13, 11.5]) } as const;
   });
-  const dockShadow = isDark ? koolaDarkShadows.md : koolaShadows.md;
   return (
-    <Animated.View style={[dockStyles.shadowWrap, dockShadow, animatedHostStyle]}>
-      <View
-        style={[
-          dockStyles.host,
-          {
-            borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-          },
-        ]}>
-        <BlurView
-          blurType={isDark ? 'dark' : 'light'}
-          blurAmount={18}
-          overlayColor={isDark ? 'rgba(28,32,38,0.52)' : 'rgba(255,255,255,0.62)'}
-          reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-          style={dockStyles.blurFill}>
-          {/* innerEdge + content MUST be BlurView children, not siblings.
-              The native BlurViewGroup no-ops its own draw() while capturing
-              the root snapshot (isRendering() guard), which excludes only
-              this subtree from the blur source — that's what stops the dock
-              from blurring its own icons/text. A sibling View is outside that
-              subtree and gets captured + blurred like everything else. */}
-          <View pointerEvents="none" style={[dockStyles.innerEdge, isDark ? dockStyles.innerEdgeDark : null]} />
-          <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center' }, animatedSearchBtnStyle]}>
+    <Animated.View
+      style={[
+        dockStyles.host,
+        {
+          // Đúng màu pill bên Mua sắm: ShoppingSearchDock dùng `semantic.border.subtle`
+          // làm fill (#E4E7EC light / #2F3542 dark), không phải bg.canvas.
+          backgroundColor: sem.border.subtle,
+        },
+        animatedHostStyle,
+      ]}>
+      <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center' }, animatedSearchBtnStyle]}>
             <Pressable
               hitSlop={8}
               accessibilityRole="button"
@@ -543,47 +524,16 @@ const ChatSearchDock: React.FC<{
               </Animated.View>
             </Pressable>
           </Animated.View>
-        </BlurView>
-      </View>
     </Animated.View>
   );
 };
 
 const dockStyles = StyleSheet.create({
-  shadowWrap: {
-    borderRadius: koolaRadii.pill,
-    overflow: 'visible',
-  },
   host: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
-  },
-  // Blur fill spans the host and also lays out the dock content as its
-  // children (see the note on ChatSearchDock for why they cannot be siblings).
-  blurFill: {
-    ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: koolaRadii.pill,
     overflow: 'hidden',
-  },
-  // 1px inner top edge.
-  innerEdge: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderTopLeftRadius: koolaRadii.pill,
-    borderTopRightRadius: koolaRadii.pill,
-  },
-  innerEdgeDark: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   searchBtn: {
     flex: 1,

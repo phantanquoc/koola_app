@@ -92,6 +92,9 @@ screenshots/
 koola_screen.png
 ChatApp/koola_screen.png
 ChatApp/ui.xml
+ChatApp/.shot-*.png
+ChatApp/.crop-*.png
+ChatApp/.shot-*.jpg
 
 # Built APKs + raw measurement output (APKs are ~138MB each; the CSVs worth
 # keeping are copied into docs/perf-measurements/ instead).
