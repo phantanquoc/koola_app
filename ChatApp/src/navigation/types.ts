@@ -59,6 +59,7 @@ export type PersonalTabStackParamList = {
 export type ShoppingTabStackParamList = {
   ShoppingHome: undefined;
   ShoppingProductDetail: { productId: string };
+  ShoppingStorefront: { sellerId: string };
 };
 
 // ─── Support Tab Stack ────────────────────────────────────────────────────────

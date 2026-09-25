@@ -96,8 +96,8 @@ const ShoppingProductDetailScreen: React.FC = () => {
 
   const handleViewShop = useCallback(() => {
     if (!product) return;
-    toast.show('Gian hang mau — kham pha them o tab Ket noi', 'info');
-  }, [product, toast]);
+    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingStorefront', { sellerId: product.seller.id });
+  }, [product, navigation]);
 
   if (!product) {
     return (
@@ -224,7 +224,7 @@ const ShoppingProductDetailScreen: React.FC = () => {
           <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Xem gian hang</KoolaText>
         </Pressable>
         <KoolaButton
-          title="Nhan tin trao doi"
+          title="Nhắn tin"
           icon="chat-bubble-outline"
           variant="primary"
           loading={contacting}
@@ -318,9 +318,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       paddingHorizontal: 16,
       paddingTop: 10,
       gap: 10,
-      backgroundColor: semantic.bg.canvas,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: semantic.border.subtle,
+      backgroundColor: 'transparent',
     },
     shopBtn: {
       flexDirection: 'row',
@@ -331,6 +329,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       borderRadius: koolaRadii.pill,
       borderWidth: 1,
       backgroundColor: semantic.surface.level1,
+      ...shadow,
     },
     chatBtn: { flex: 1 },
   });

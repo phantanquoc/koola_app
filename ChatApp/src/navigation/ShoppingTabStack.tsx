@@ -9,6 +9,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { ShoppingTabStackParamList } from './types';
 import ShoppingHomeScreen from '../screens/shopping/ShoppingHomeScreen';
 import ShoppingProductDetailScreen from '../screens/shopping/ShoppingProductDetailScreen';
+import ShoppingStorefrontScreen from '../screens/shopping/ShoppingStorefrontScreen';
 import { getNotchHeaderHeight, NotchHeader } from '../components/NotchHeader';
 
 const Stack = createNativeStackNavigator<ShoppingTabStackParamList>();
@@ -17,13 +18,30 @@ const ShoppingTabStack: React.FC = () => {
   const { resolvedScheme, tokens } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const [headerConfig, setHeaderConfig] = useState<ShoppingHeaderConfig | null>(null);
+  const [focusedRouteName, setFocusedRouteName] =
+    useState<keyof ShoppingTabStackParamList>('ShoppingHome');
+
+  // Gate: KOOLA wordmark only on ShoppingHome. When a product/storefront
+  // screen is focused, its config must be shown even if the previous
+  // screen's useFocusEffect cleanup (setConfig(null)) races after the next
+  // screen's focus effect — same race fixed in ChatTabStack via
+  // focusedRouteName. DetachPreviousScreen:false keeps both mounted but
+  // blur/focus still fire in the same commit.
+  const displayConfig = focusedRouteName === 'ShoppingHome' ? null : headerConfig;
+  const headerCtx = React.useMemo(
+    () => ({ config: headerConfig, setConfig: setHeaderConfig }),
+    [headerConfig],
+  );
 
   return (
-    <ShoppingHeaderContext.Provider value={{ config: headerConfig, setConfig: setHeaderConfig }}>
+    <ShoppingHeaderContext.Provider value={headerCtx}>
       <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
         <LightFieldBackground />
-        <ShoppingNotchHeader config={headerConfig} />
+        <ShoppingNotchHeader config={displayConfig} />
         <Stack.Navigator
+          screenListeners={({ route }) => ({
+            focus: () => setFocusedRouteName(route.name as keyof ShoppingTabStackParamList),
+          })}
           screenOptions={{
             headerShown: false,
             animation: 'slide_from_right',
@@ -33,9 +51,15 @@ const ShoppingTabStack: React.FC = () => {
             contentStyle: { backgroundColor: 'transparent' } as never,
             // @ts-expect-error cardStyle is valid for native-stack but types lag
             cardStyle: { backgroundColor: 'transparent' },
+            // Fabric fix: native-stack detaches the previous screen off-tree to save
+            // memory; popping Storefront while ProductDetail is detached desyncs
+            // Fabric's ViewGroup child count → "Cannot remove child at index 1"
+            // crash (MountItemDispatcher). Keep previous screen mounted.
+            detachPreviousScreen: false,
           }}>
           <Stack.Screen name="ShoppingHome" component={ShoppingHomeScreen} />
           <Stack.Screen name="ShoppingProductDetail" component={ShoppingProductDetailScreen} />
+          <Stack.Screen name="ShoppingStorefront" component={ShoppingStorefrontScreen} />
         </Stack.Navigator>
       </View>
     </ShoppingHeaderContext.Provider>
