@@ -40,6 +40,9 @@ export interface NotchHeaderProps {
    *  taking over the shared band (see ChatHeaderContext). Takes precedence
    *  over `onBack`/`title`. */
   chat?: NotchHeaderChatConfig;
+  /** Optional action icons to render on the right side of the wordmark variant.
+   *  Positioned absolutely so they don't push the wordmark left. */
+  actions?: React.ReactNode;
 }
 
 export const NOTCH_WING_INSET = 4;
@@ -70,7 +73,7 @@ export const getNotchHeaderHeight = (
       ? NOTCH_HEADER_NAV_CONTENT_H
       : NOTCH_HEADER_CONTENT_H);
 
-export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top, chat ? 'chat' : onBack ? 'nav' : 'wordmark');
@@ -300,6 +303,18 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
           />
         )}
       </View>
+      {actions && (
+        <View
+          style={{
+            position: 'absolute',
+            right: 12,
+            top: insets.top,
+            bottom: 0,
+            justifyContent: 'center',
+          }}>
+          {actions}
+        </View>
+      )}
     </View>
   );
 };

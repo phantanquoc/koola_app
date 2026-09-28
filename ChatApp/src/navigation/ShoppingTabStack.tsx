@@ -11,6 +11,7 @@ import ShoppingHomeScreen from '../screens/shopping/ShoppingHomeScreen';
 import ShoppingProductDetailScreen from '../screens/shopping/ShoppingProductDetailScreen';
 import ShoppingStorefrontScreen from '../screens/shopping/ShoppingStorefrontScreen';
 import { getNotchHeaderHeight, NotchHeader } from '../components/NotchHeader';
+import { useComingSoonToast } from '../hooks/useComingSoonToast';
 
 const Stack = createNativeStackNavigator<ShoppingTabStackParamList>();
 
@@ -20,6 +21,7 @@ const ShoppingTabStack: React.FC = () => {
   const [headerConfig, setHeaderConfig] = useState<ShoppingHeaderConfig | null>(null);
   const [focusedRouteName, setFocusedRouteName] =
     useState<keyof ShoppingTabStackParamList>('ShoppingHome');
+  const { notify, toast } = useComingSoonToast();
 
   // Gate: KOOLA wordmark only on ShoppingHome. When a product/storefront
   // screen is focused, its config must be shown even if the previous
@@ -37,7 +39,7 @@ const ShoppingTabStack: React.FC = () => {
     <ShoppingHeaderContext.Provider value={headerCtx}>
       <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
         <LightFieldBackground />
-        <ShoppingNotchHeader config={displayConfig} />
+        <ShoppingNotchHeader config={displayConfig} notify={notify} />
         <Stack.Navigator
           screenListeners={({ route }) => ({
             focus: () => setFocusedRouteName(route.name as keyof ShoppingTabStackParamList),
@@ -61,17 +63,20 @@ const ShoppingTabStack: React.FC = () => {
           <Stack.Screen name="ShoppingProductDetail" component={ShoppingProductDetailScreen} />
           <Stack.Screen name="ShoppingStorefront" component={ShoppingStorefrontScreen} />
         </Stack.Navigator>
+        {toast}
       </View>
     </ShoppingHeaderContext.Provider>
   );
 };
 
 // ── Shared notch header — wordmark (default) / nav / product ────────────────
-const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null }> = ({ config }) => {
+const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notify: (text?: string) => void }> = ({ config, notify }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top, config ? 'nav' : 'wordmark');
   const isDark = resolvedScheme === 'dark';
+  const [messagePressed, setMessagePressed] = useState(false);
+  const [notificationPressed, setNotificationPressed] = useState(false);
 
   // Product detail variant: ←  |  Shop name (truncated)  |  share  cart  search
   if (config?.variant === 'product') {
@@ -165,7 +170,69 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null }> = (
 
   // Default: KOOLA wordmark — delegate to existing NotchHeader so list keeps
   // exactly the same visuals as before, and as ConnectTab/others do.
-  return <NotchHeader style={{ position: 'absolute', top: 0, left: 0, right: 0 }} />;
+  const headerActions = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Pressable
+        onPress={() => notify()}
+        onPressIn={() => setMessagePressed(true)}
+        onPressOut={() => setMessagePressed(false)}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Tin nhắn"
+        style={[
+          {
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center'
+          },
+          messagePressed && {
+            backgroundColor: koolaIconWell[resolvedScheme],
+            opacity: koolaOpacity.pressed
+          }
+        ]}>
+        <MaterialIcons
+          name="chat-bubble-outline"
+          size={20}
+          color={tokens.semantic.text.secondary}
+        />
+      </Pressable>
+      <Pressable
+        onPress={() => notify()}
+        onPressIn={() => setNotificationPressed(true)}
+        onPressOut={() => setNotificationPressed(false)}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Thông báo"
+        style={[
+          {
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center'
+          },
+          notificationPressed && {
+            backgroundColor: koolaIconWell[resolvedScheme],
+            opacity: koolaOpacity.pressed
+          }
+        ]}>
+        <MaterialIcons
+          name="notifications-none"
+          size={20}
+          color={tokens.semantic.text.secondary}
+        />
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <NotchHeader
+      style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+      actions={headerActions}
+    />
+  );
 };
 
 const navStyles = StyleSheet.create({
