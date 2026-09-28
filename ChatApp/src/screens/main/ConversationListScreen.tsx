@@ -45,10 +45,8 @@ import {
 } from './conversationPagination';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import Animated, {
-  Easing,
   useAnimatedScrollHandler,
   useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
@@ -99,17 +97,12 @@ const ConversationListScreen: React.FC = () => {
     };
   }, [reduceMotionSV]);
   const previousScrollY = useSharedValue(0);
-  const scrollDirection = useSharedValue(0);
-  const directionTravel = useSharedValue(0);
 
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       if (!visibilityContext) return;
-      // M5: reduce-motion — force dock pinned expanded, no withTiming
       if (reduceMotionSV.value) {
-        // Keep pinned at 0 without animation
         visibilityContext.hiddenProgress.value = 0;
-        visibilityContext.dockProgress.value = 0;
         previousScrollY.value = Math.max(0, event.contentOffset.y);
         return;
       }
@@ -117,11 +110,7 @@ const ConversationListScreen: React.FC = () => {
       const offsetY = Math.max(0, event.contentOffset.y);
       const delta = offsetY - previousScrollY.value;
 
-      // Submenu: continuous + dính hướng kéo như dock, nhưng KHÔNG dùng
-      // withTiming nhảy cục. Tiến lùi theo delta với step nhỏ → bám ngón
-      // tay từng frame, nhích ngược ~8px là thấy lộ ngay (như dock), scroll
-      // chậm vẫn mượt. Một cửa sổ 4px ở đỉnh ép hiện đủ để không kẹt ẩn.
-      // Hệ số 0.016 (~62px cho full 0→1) + deadzone 0.45px triệt rung tay.
+      // Submenu: continuous + dính hướng kéo, KHÔNG dùng withTiming nhảy cục.
       if (offsetY <= 4) {
         visibilityContext.hiddenProgress.value = 0;
       } else {
@@ -132,39 +121,7 @@ const ConversationListScreen: React.FC = () => {
           let next = cur + step;
           if (next < 0) next = 0;
           else if (next > 1) next = 1;
-          // One-pole nắn nhẹ để không lộ răng cưa khi ngón rung 1px.
           visibilityContext.hiddenProgress.value = cur + (next - cur) * 0.72;
-        }
-      }
-
-      // Dock vẫn giữ hysteresis cũ (không đổi behaviour, đã OK).
-      // CHỈ dock ở đây — submenu đã được block trên điều khiển riêng để mượt.
-      if (offsetY <= 4) {
-        directionTravel.value = 0;
-        if (scrollDirection.value !== -1) {
-          scrollDirection.value = -1;
-        }
-        visibilityContext.dockProgress.value = withTiming(0, {
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-        });
-      } else if (delta > 0) {
-        directionTravel.value = Math.max(0, directionTravel.value) + delta;
-        if (directionTravel.value > 8 && scrollDirection.value !== 1) {
-          scrollDirection.value = 1;
-          visibilityContext.dockProgress.value = withTiming(1, {
-            duration: 260,
-            easing: Easing.out(Easing.cubic),
-          });
-        }
-      } else if (delta < 0) {
-        directionTravel.value = Math.min(0, directionTravel.value) + delta;
-        if (directionTravel.value < -8 && scrollDirection.value !== -1) {
-          scrollDirection.value = -1;
-          visibilityContext.dockProgress.value = withTiming(0, {
-            duration: 220,
-            easing: Easing.out(Easing.cubic),
-          });
         }
       }
 

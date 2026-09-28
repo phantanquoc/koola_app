@@ -6,7 +6,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, {
   Easing,
-  interpolate,
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
@@ -336,7 +335,6 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 interface ChatHomeContentProps {
   styles: ReturnType<typeof makeScreenStyles>;
   hiddenProgress: SharedValue<number>;
-  dockProgress: SharedValue<number>;
   topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
   qrVisible: boolean;
   onQrClose: () => void;
@@ -349,7 +347,6 @@ interface ChatHomeContentProps {
 const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
   styles: _styles,
   hiddenProgress,
-  dockProgress,
   topTabNavRef,
   qrVisible,
   onQrClose,
@@ -368,7 +365,7 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
   // re-render even though the underlying shared value hadn't changed. That was
   // the dominant cost on the freezeOnBlur flush (4 state updates in rapid
   // succession each rebuilt the context value and cascaded through 4 sub-tabs).
-  const visibilityValue = useMemo(() => ({ hiddenProgress, dockProgress }), [hiddenProgress, dockProgress]);
+  const visibilityValue = useMemo(() => ({ hiddenProgress }), [hiddenProgress]);
 
   // Deterministic Chat entry: subscribe to the emitter fired by MainNavigator's
   // ChatTab handler (both cross-tab navigation and reselect). This replaces the
@@ -425,61 +422,32 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Flat pill dock — solid fill matching Shopping tab's canvas, no shadow/blur.
-// Elevation is expressed only by a hairline border + subtle tone lift over the
-// transparent list canvas, keeping the existing pill/morph behaviour.
-// Content is laid out directly inside the host (no BlurView wrapper needed).
+// Flat pill dock — 36 cố định (bằng size thu nhỏ trước đây), không còn
+// animation co giãn theo scroll. Giữ nguyên màu/bố cục pill.
 const ChatSearchDock: React.FC<{
-  dockProgress: SharedValue<number>;
   onSearchPress: () => void;
   onQrPress: () => void;
   onAddPress: () => void;
-}> = ({ dockProgress, onSearchPress, onQrPress, onAddPress }) => {
+}> = ({ onSearchPress, onQrPress, onAddPress }) => {
   const { tokens } = useTheme();
   const sem = tokens.semantic;
   const [searchPressed, setSearchPressed] = useState(false);
   const [qrPressed, setQrPressed] = useState(false);
   const [addPressed, setAddPressed] = useState(false);
   const pressedStyle = { backgroundColor: sem.action.primarySoft, opacity: 0.82 as const };
-  const reduceMotion = prefersReducedMotion();
-
-  const animatedHostStyle = useAnimatedStyle(() => {
-    if (reduceMotion) {
-      return { height: 48, paddingHorizontal: 4 } as const;
-    }
-    return {
-      height: interpolate(dockProgress.value, [0, 1], [48, 36]),
-      paddingHorizontal: interpolate(dockProgress.value, [0, 1], [4, 4]),
-    };
-  });
-  const animatedSearchBtnStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { gap: 8 } as const;
-    return { gap: interpolate(dockProgress.value, [0, 1], [8, 6]) } as const;
-  });
-  const searchIconSize = 20;
-  // Text/icon sizes are interpolated via animated styles where possible;
-  // icon size morph 22→18 via container scaling to keep vector crisp.
-  const animatedIconWrapStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return {} as const;
-    const s = interpolate(dockProgress.value, [0, 1], [1, 0.82]);
-    return { transform: [{ scale: s }] } as const;
-  });
-  const animatedTextStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { fontSize: 13 } as const;
-    return { fontSize: interpolate(dockProgress.value, [0, 1], [13, 11.5]) } as const;
-  });
   return (
-    <Animated.View
+    <View
       style={[
         dockStyles.host,
         {
           // Đúng màu pill bên Mua sắm: ShoppingSearchDock dùng `semantic.border.subtle`
           // làm fill (#E4E7EC light / #2F3542 dark), không phải bg.canvas.
           backgroundColor: sem.border.subtle,
+          height: 36,
+          paddingHorizontal: 4,
         },
-        animatedHostStyle,
       ]}>
-      <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center' }, animatedSearchBtnStyle]}>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Pressable
               hitSlop={8}
               accessibilityRole="button"
@@ -490,10 +458,10 @@ const ChatSearchDock: React.FC<{
               onPressOut={() => setSearchPressed(false)}
               android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
               style={[dockStyles.searchBtn, searchPressed ? pressedStyle : null]}>
-              <MaterialIcons name="search" size={searchIconSize} color={sem.action.primary} />
-              <Animated.Text numberOfLines={1} style={[{ color: sem.text.muted, lineHeight: 18, flex: 1 }, animatedTextStyle]}>
+              <MaterialIcons name="search" size={20} color={sem.action.primary} />
+              <KoolaText variant="body" numberOfLines={1} style={{ color: sem.text.muted, lineHeight: 18, flex: 1, fontSize: 11.5 }}>
                 Tìm kiếm
-              </Animated.Text>
+              </KoolaText>
             </Pressable>
             <Pressable
               hitSlop={8}
@@ -505,9 +473,9 @@ const ChatSearchDock: React.FC<{
               onPressOut={() => setQrPressed(false)}
               android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
               style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
-              <Animated.View style={animatedIconWrapStyle}>
+              <View style={{ transform: [{ scale: 0.82 }] }}>
                 <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
-              </Animated.View>
+              </View>
             </Pressable>
             <Pressable
               hitSlop={8}
@@ -519,12 +487,12 @@ const ChatSearchDock: React.FC<{
               onPressOut={() => setAddPressed(false)}
               android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
               style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
-              <Animated.View style={animatedIconWrapStyle}>
+              <View style={{ transform: [{ scale: 0.82 }] }}>
                 <MaterialIcons name="add" size={22} color={sem.action.primary} />
-              </Animated.View>
+              </View>
             </Pressable>
-          </Animated.View>
-    </Animated.View>
+          </View>
+    </View>
   );
 };
 
@@ -564,11 +532,10 @@ const ChatHomeScreen: React.FC = () => {
   // Floating overlay: dock sits at header bottom; FlatList's inner top padding
   // lets rows scroll behind the transparent gutters like the bottom dock.
   const dockTop = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H; // = flatH
-  const dockReserve = 56; // 4 top gap + 48 pill + 4 bottom gap
+  const dockReserve = 44; // 4 top gap + 36 pill + 4 bottom gap (pill cố định 36)
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
-  const dockProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
   // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
@@ -606,13 +573,12 @@ const ChatHomeScreen: React.FC = () => {
     navigation.navigate('Chat', { conversationId });
   }, [navigation]);
 
-  const notchPad = dockTop + dockReserve; // = flatH + 56 (=84): header + pill gap reserve
+  const notchPad = dockTop + dockReserve; // = flatH + 44: header + pill 36 gap reserve
 
   return (
     <View style={[screenStyles.container, { paddingTop: notchPad }]}>
-      {/* Floating pill: chỉ pill đục + bóng md, mọi rìa 12/4 trong suốt để
-          list lướt sau lưng như dock bottom — không có mảng trắng che data. */}
-      <Animated.View
+      {/* Floating pill 36 cố định — không còn co giãn theo scroll */}
+      <View
         pointerEvents="box-none"
         style={{
           position: 'absolute',
@@ -626,8 +592,8 @@ const ChatHomeScreen: React.FC = () => {
           backgroundColor: 'transparent',
           justifyContent: 'center',
         }}>
-        <ChatSearchDock dockProgress={dockProgress} onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
-      </Animated.View>
+        <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+      </View>
       {!contentReady ? (
         // Interactive shell: KoolaHeader (command dock) stays live above; the
         // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
@@ -639,7 +605,6 @@ const ChatHomeScreen: React.FC = () => {
         <ChatHomeContent
           styles={screenStyles}
           hiddenProgress={hiddenProgress}
-          dockProgress={dockProgress}
           topTabNavRef={topTabNavRef}
           qrVisible={qrVisible}
           onQrClose={handleQrClose}
