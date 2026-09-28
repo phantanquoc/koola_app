@@ -272,8 +272,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Search in shop — brown dock like parent ShoppingHome (flat, no border) */}
-        <View style={[styles.searchWrap, { backgroundColor: '#F3ECE2' }]}>
+        {/* Search in shop — same gray pill as parent ShoppingHome / ChatHome dock */}
+        <View style={[styles.searchWrap, { backgroundColor: semantic.border.subtle }]}>
           <MaterialIcons name="search" size={18} color={semantic.text.faint} />
           <TextInput
             value={query}

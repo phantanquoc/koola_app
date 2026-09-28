@@ -47,6 +47,11 @@ const ShoppingProductDetailScreen: React.FC = () => {
     [route.params.productId],
   );
 
+  const handleViewShop = useCallback(() => {
+    if (!product) return;
+    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingStorefront', { sellerId: product.seller.id });
+  }, [product, navigation]);
+
   const handleShare = useCallback(() => {
     toast.show('Chia sẻ — đang phát triển', 'info');
   }, [toast]);
@@ -60,6 +65,7 @@ const ShoppingProductDetailScreen: React.FC = () => {
   useShoppingProductHeader({
     shopName: product?.shop ?? 'Chi tiết sản phẩm',
     onBack: useCallback(() => navigation.goBack(), [navigation]),
+    onShopPress: handleViewShop,
     onShare: handleShare,
     onCart: handleCart,
     onSearch: handleSearch,
@@ -93,11 +99,6 @@ const ShoppingProductDetailScreen: React.FC = () => {
       setContacting(false);
     }
   }, [product, navigation, toast]);
-
-  const handleViewShop = useCallback(() => {
-    if (!product) return;
-    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingStorefront', { sellerId: product.seller.id });
-  }, [product, navigation]);
 
   if (!product) {
     return (

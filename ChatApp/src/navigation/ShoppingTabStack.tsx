@@ -90,10 +90,22 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null }> = (
             style={({ pressed }) => [navStyles.backBtn, { backgroundColor: koolaIconWell[resolvedScheme] }, pressed && { opacity: koolaOpacity.pressed }]}>
             <MaterialIcons name="arrow-back" size={22} color={tokens.semantic.text.primary} />
           </Pressable>
-          <View pointerEvents="none" style={navStyles.titleCenter}>
-            <KoolaText variant="label" weight="700" numberOfLines={1} style={{ textAlign: 'center', color: tokens.semantic.text.primary }}>
-              {config.shopName}
-            </KoolaText>
+          <View pointerEvents="box-none" style={navStyles.titleCenter}>
+            <Pressable
+              onPress={config.onShopPress}
+              disabled={!config.onShopPress}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Xem gian hàng"
+              android_ripple={config.onShopPress ? { color: tokens.semantic.border.subtle, borderless: false } : undefined}
+              style={({ pressed }) => [
+                navStyles.titlePress,
+                pressed && config.onShopPress && { backgroundColor: tokens.semantic.surface.level0, opacity: 1 },
+              ]}>
+              <KoolaText variant="label" weight="700" numberOfLines={1} style={{ textAlign: 'center', color: tokens.semantic.text.primary }}>
+                {config.shopName}
+              </KoolaText>
+            </Pressable>
           </View>
           <View style={navStyles.actionGroup}>
             <Pressable
@@ -167,6 +179,14 @@ const navStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
+  },
+  titlePress: {
+    flex: 1,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
   },
   actionGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, marginLeft: 'auto' },
   actionBtn: { width: 36, height: 36, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center' },

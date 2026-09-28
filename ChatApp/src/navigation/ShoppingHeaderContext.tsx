@@ -2,7 +2,7 @@ import React from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 export type ShoppingHeaderConfig =
-  | { variant: 'product'; _id: symbol; title: string; shopName: string; onBack: () => void; onShare?: () => void; onCart?: () => void; onSearch?: () => void }
+  | { variant: 'product'; _id: symbol; title: string; shopName: string; onBack: () => void; onShopPress?: () => void; onShare?: () => void; onCart?: () => void; onSearch?: () => void }
   | { variant: 'nav'; _id: symbol; title: string; onBack: () => void };
 
 export type ShoppingHeaderContextValue = {
@@ -33,18 +33,21 @@ export const useShoppingNavHeader = (title: string, onBack: () => void) => {
 export const useShoppingProductHeader = (args: {
   shopName: string;
   onBack: () => void;
+  onShopPress?: () => void;
   onShare?: () => void;
   onCart?: () => void;
   onSearch?: () => void;
 }) => {
   const ctx = React.useContext(ShoppingHeaderContext);
   const setConfig = ctx?.setConfig;
-  const { shopName, onBack, onShare, onCart, onSearch } = args;
+  const { shopName, onBack, onShopPress, onShare, onCart, onSearch } = args;
   const onBackRef = React.useRef(onBack);
+  const onShopPressRef = React.useRef(onShopPress);
   const onShareRef = React.useRef(onShare);
   const onCartRef = React.useRef(onCart);
   const onSearchRef = React.useRef(onSearch);
   onBackRef.current = onBack;
+  onShopPressRef.current = onShopPress;
   onShareRef.current = onShare;
   onCartRef.current = onCart;
   onSearchRef.current = onSearch;
@@ -60,6 +63,7 @@ export const useShoppingProductHeader = (args: {
         title: 'Chi tiết sản phẩm',
         shopName,
         onBack: () => onBackRef.current(),
+        onShopPress: () => onShopPressRef.current?.(),
         onShare: () => onShareRef.current?.(),
         onCart: () => onCartRef.current?.(),
         onSearch: () => onSearchRef.current?.(),
