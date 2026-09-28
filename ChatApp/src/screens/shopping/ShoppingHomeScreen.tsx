@@ -70,8 +70,8 @@ const DOCK_GAP_TOP = 4;
 // effective area to 44dp. CHROME_RESERVE below recomputes from this.
 const DOCK_H = 40;
 const DOCK_GAP_BOTTOM = 8;
-const FILTER_ROW_H = 68;
-const FILTER_ROW_H_COLLAPSED = 64;
+const FILTER_ROW_H = 72;
+const FILTER_ROW_H_COLLAPSED = 72;
 const FILTER_ROW_GAP_BOTTOM = 12;
 const FILTER_ROW_GAP_COLLAPSED = 8;
 // Scroll-driven chrome: dock hides over 120dp, snap at midpoint (~60dp).
@@ -737,12 +737,16 @@ const ShoppingHomeScreen: React.FC = () => {
           <View style={styles.contentInset}>
             <KoolaSkeleton width="100%" height={DOCK_H} radius={koolaRadii.pill} />
             <View style={{ marginTop: DOCK_GAP_BOTTOM, height: FILTER_ROW_H }}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                <KoolaSkeleton width={136} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
-                <KoolaSkeleton width={94} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
-                <KoolaSkeleton width={72} height={30} radius={koolaRadii.pill} style={{ marginRight: 6, marginBottom: 8 }} />
-                <KoolaSkeleton width={86} height={30} radius={koolaRadii.pill} style={{ marginRight: 6 }} />
-                <KoolaSkeleton width={88} height={30} radius={koolaRadii.pill} />
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <KoolaSkeleton width="50%" height={32} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="50%" height={32} radius={koolaRadii.pill} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
+                </View>
               </View>
             </View>
           </View>
@@ -876,31 +880,36 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     },
     chipGrid: {
       flex: 1,
-      justifyContent: 'space-between',
+      gap: 8,
+      justifyContent: 'center',
     },
     chipRowTop: {
       flexDirection: 'row',
-      alignItems: 'center',
+      gap: 6,
     },
     chipRowBottom: {
       flexDirection: 'row',
-      alignItems: 'center',
+      gap: 6,
     },
     rowChip: {
-      height: 30,
-      minHeight: 30,
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 'auto',
+      height: 32,
+      minHeight: 32,
       borderRadius: koolaRadii.pill,
-      paddingHorizontal: 10,
+      paddingHorizontal: 12,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: semantic.surface.level2,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.strong,
-      marginRight: 6,
     },
     rowChipText: {
       fontSize: 11,
       lineHeight: 14,
+      textAlign: 'center',
     },
     rowChipActive: {
       backgroundColor: semantic.action.primary,
@@ -915,7 +924,7 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       borderColor: semantic.border.strong,
       alignItems: 'center',
       justifyContent: 'center',
-      marginLeft: 8,
+      marginLeft: 6,
     },
     filterTallBadge: {
       position: 'absolute',
