@@ -52,12 +52,17 @@ const ShoppingProductDetailScreen: React.FC = () => {
     (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingStorefront', { sellerId: product.seller.id });
   }, [product, navigation]);
 
+  const handleGoCart = useCallback(() => {
+    if (!product) return;
+    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', { productId: product.id });
+  }, [product, navigation]);
+
   const handleShare = useCallback(() => {
     toast.show('Chia sẻ — đang phát triển', 'info');
   }, [toast]);
   const handleCart = useCallback(() => {
-    toast.show('Giỏ hàng — đang phát triển', 'info');
-  }, [toast]);
+    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', product ? { productId: product.id } : {});
+  }, [navigation, product]);
   const handleSearch = useCallback(() => {
     toast.show('Tìm kiếm — đang phát triển', 'info');
   }, [toast]);
@@ -218,11 +223,11 @@ const ShoppingProductDetailScreen: React.FC = () => {
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <Pressable
-          onPress={handleViewShop}
+          onPress={handleGoCart}
           style={[styles.shopBtn, { borderColor: semantic.border.strong }]}
           android_ripple={{ color: semantic.border.subtle }}>
-          <MaterialIcons name="storefront" size={18} color={semantic.text.primary} />
-          <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Xem gian hang</KoolaText>
+          <MaterialIcons name="shopping-bag" size={18} color={semantic.text.primary} />
+          <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Mua hang</KoolaText>
         </Pressable>
         <KoolaButton
           title="Nhắn tin"

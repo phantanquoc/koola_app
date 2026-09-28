@@ -87,8 +87,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
     toast.show('Chia sẻ — đang phát triển', 'info');
   }, [toast]);
   const handleCart = useCallback(() => {
-    toast.show('Giỏ hàng — đang phát triển', 'info');
-  }, [toast]);
+    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', {});
+  }, [navigation]);
   const handleSearch = useCallback(() => {
     toast.show('Tìm kiếm — đang phát triển', 'info');
   }, [toast]);

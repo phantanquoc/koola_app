@@ -60,6 +60,7 @@ export type ShoppingTabStackParamList = {
   ShoppingHome: undefined;
   ShoppingProductDetail: { productId: string };
   ShoppingStorefront: { sellerId: string };
+  ShoppingCart: { productId?: string };
 };
 
 // ─── Support Tab Stack ────────────────────────────────────────────────────────

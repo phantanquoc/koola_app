@@ -10,6 +10,7 @@ import type { ShoppingTabStackParamList } from './types';
 import ShoppingHomeScreen from '../screens/shopping/ShoppingHomeScreen';
 import ShoppingProductDetailScreen from '../screens/shopping/ShoppingProductDetailScreen';
 import ShoppingStorefrontScreen from '../screens/shopping/ShoppingStorefrontScreen';
+import ShoppingCartScreen from '../screens/shopping/ShoppingCartScreen';
 import { getNotchHeaderHeight, NotchHeader } from '../components/NotchHeader';
 import { useComingSoonToast } from '../hooks/useComingSoonToast';
 
@@ -62,6 +63,7 @@ const ShoppingTabStack: React.FC = () => {
           <Stack.Screen name="ShoppingHome" component={ShoppingHomeScreen} />
           <Stack.Screen name="ShoppingProductDetail" component={ShoppingProductDetailScreen} />
           <Stack.Screen name="ShoppingStorefront" component={ShoppingStorefrontScreen} />
+          <Stack.Screen name="ShoppingCart" component={ShoppingCartScreen} />
         </Stack.Navigator>
         {toast}
       </View>
