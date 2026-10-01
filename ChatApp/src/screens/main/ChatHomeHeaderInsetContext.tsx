@@ -2,8 +2,11 @@ import React from 'react';
 
 /** Height of the Chat Home sub-tab bar (CustomTabBar) at rest. */
 export const CHAT_SUB_TAB_BAR_HEIGHT = 40;
-/** Gap between the sub-tab bar and the first row of every sub-tab scene. */
-export const CHAT_HOME_CONTENT_GAP = 8;
+/**
+ * Gap between the sub-tab bar and the first row of every sub-tab scene.
+ * 0 = the first row sits flush against the sub-tab bar (no canvas strip).
+ */
+export const CHAT_HOME_CONTENT_GAP = 0;
 
 /**
  * Full resting chrome inset for Chat Home sub-tab scenes, given the height of

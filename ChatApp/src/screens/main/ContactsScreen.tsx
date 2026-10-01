@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   View,
-  FlatList,
   ActivityIndicator,
   StyleSheet,
   Alert,
@@ -16,6 +15,8 @@ import ContactItem from '../../components/ContactItem';
 import { KoolaEmptyState, KoolaErrorState, useTheme } from '../../ui';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
+import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
+import Animated, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { UserSearchResult } from '../../types';
 
@@ -25,6 +26,15 @@ const ContactsScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const tabBarInset = useTabBarBottomInset();
   const headerInset = React.useContext(ChatHomeHeaderInsetContext);
+  const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
+  // Chỉ báo độ cuộn cho bóng đổ của glass chrome (Contacts không ẩn sub-tab bar).
+  const handleScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      if (!visibilityContext) return;
+      const lift = Math.max(0, event.contentOffset.y) / CHAT_CHROME_LIFT_DISTANCE;
+      visibilityContext.scrolledProgress.value = lift > 1 ? 1 : lift;
+    },
+  });
   const { results, isLoading, error, search, loadMore, hasMore } =
     useContactsSearch();
 
@@ -87,7 +97,9 @@ const ContactsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <FlatList
+      <Animated.FlatList
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         // The list starts at y=0 behind Chat Home's glass header + overlaid
         // sub-tab bar; the search bar rides in the list header so it sits just
         // below the resting chrome instead of being hidden under it.

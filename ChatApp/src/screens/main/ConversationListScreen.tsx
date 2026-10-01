@@ -49,7 +49,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
-import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
+import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
@@ -103,6 +103,10 @@ const ConversationListScreen: React.FC = () => {
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       if (!visibilityContext) return;
+      // Chrome "nổi" (bóng đổ) khi có data cuộn phía sau — không phải motion,
+      // nên vẫn áp dụng cả khi reduce-motion.
+      const lift = Math.max(0, event.contentOffset.y) / CHAT_CHROME_LIFT_DISTANCE;
+      visibilityContext.scrolledProgress.value = lift > 1 ? 1 : lift;
       if (reduceMotionSV.value) {
         visibilityContext.hiddenProgress.value = 0;
         previousScrollY.value = Math.max(0, event.contentOffset.y);

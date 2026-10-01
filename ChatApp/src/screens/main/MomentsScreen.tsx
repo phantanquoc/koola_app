@@ -35,7 +35,7 @@ import {
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
-import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
+import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 import { resolveMomentsStoryRegion } from './momentsView';
 import { MOCK_MOMENTS_POSTS } from './momentsMockPosts';
@@ -74,6 +74,8 @@ const MomentsScreen: React.FC = () => {
       if (!visibilityContext) return;
       const offsetY = Math.max(0, event.contentOffset.y);
       const delta = offsetY - previousScrollY.value;
+      const lift = offsetY / CHAT_CHROME_LIFT_DISTANCE;
+      visibilityContext.scrolledProgress.value = lift > 1 ? 1 : lift;
       if (offsetY <= 4) {
         directionTravel.value = 0;
         if (scrollDirection.value !== -1) {

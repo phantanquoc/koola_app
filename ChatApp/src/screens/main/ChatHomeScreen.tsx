@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet, Image } from 'react-native';
+import { LightFieldBackground } from './components/personal/LightFieldBackground';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { LightFieldBackground } from './components/personal/LightFieldBackground';
 import {
   CHAT_SUB_TAB_BAR_HEIGHT,
   ChatHomeHeaderInsetContext,
@@ -242,6 +243,34 @@ const tabItemStyles = {
   },
 };
 
+// ─── Floating frosted chrome ─────────────────────────────────────────────────
+// Header (wordmark + dock) và sub-tab bar dùng CHUNG 1 tấm kính phủ màu duy
+// nhất (render trong CustomTabBar, nằm dưới header): tint trắng mờ + bloom
+// LightField — giữ đúng hiệu ứng cũ, KHÔNG blur. Một tấm = không đường nối,
+// bloom bắt đầu từ y=0 nên khớp nền trang. Cảm giác "nổi" đến từ bóng đổ
+// (ChromeShadow) hiện dần khi có data cuộn phía sau.
+//
+// Khi ẩn sub-tab bar, tấm kính chỉ TRƯỢT lên (translateY) — không đổi height.
+const CHROME_TINT_LIGHT = 'rgba(255,255,255,0.84)';
+const CHROME_TINT_DARK = 'rgba(15,20,25,0.72)';
+const CHROME_BLOOM_OPACITY = 0.72;
+const CHROME_FALLBACK_LIGHT = '#FFFFFF';
+const CHROME_FALLBACK_DARK = '#1C2026';
+/** Chiều cao dải bóng đổ dưới chrome khi "nổi" lên khỏi nội dung. */
+const CHROME_SHADOW_H = 14;
+
+const ChromeShadow: React.FC<{ isDark: boolean }> = ({ isDark }) => (
+  <Svg width="100%" height={CHROME_SHADOW_H}>
+    <Defs>
+      <SvgLinearGradient id="chatChromeShadow" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0" stopColor="#000000" stopOpacity={isDark ? '0.36' : '0.12'} />
+        <Stop offset="1" stopColor="#000000" stopOpacity="0" />
+      </SvgLinearGradient>
+    </Defs>
+    <Rect width="100%" height={CHROME_SHADOW_H} fill="url(#chatChromeShadow)" />
+  </Svg>
+);
+
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
 // Overlays the sub-tab scenes (absolute, directly below the glass header block)
 // instead of taking layout space, so scene lists start at y=0 and rows scroll
@@ -250,7 +279,7 @@ const tabItemStyles = {
 type CustomTabBarProps = MaterialTopTabBarProps & { top: number };
 
 const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position, top }) => {
-  const { tokens } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
   const messagesUnread = useUnreadCount('Messages');
@@ -267,14 +296,43 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     Connections: connectionsUnread,
   };
 
+  const isDark = resolvedScheme === 'dark';
+
   const barStyles = useMemo(() => ({
+    // Tấm kính chung: phủ từ y=0 (sau header) tới đáy sub-tab bar.
+    glass: {
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      height: top + CHAT_SUB_TAB_BAR_HEIGHT,
+      zIndex: 10,
+    },
+    glassClip: {
+      ...StyleSheet.absoluteFillObject,
+      overflow: 'hidden' as const,
+    },
+    hairline: {
+      position: 'absolute' as const,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: semantic.border.subtle,
+    },
+    shadow: {
+      position: 'absolute' as const,
+      left: 0,
+      right: 0,
+      top: '100%' as const,
+    },
     container: {
       position: 'absolute' as const,
       top,
       left: 0,
       right: 0,
-      zIndex: 10,
-      backgroundColor: semantic.surface.level1,
+      zIndex: 11,
+      backgroundColor: 'transparent',
       paddingHorizontal: 4,
       paddingTop: 0,
       overflow: 'hidden' as const,
@@ -297,6 +355,18 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     };
   }, [visibilityContext]);
 
+  // Kính chỉ trượt lên theo tab bar (translateY, không đổi height → không relayout).
+  const glassStyle = useAnimatedStyle(() => {
+    const t = visibilityContext?.hiddenProgress.value ?? 0;
+    const h = t * t * (3 - 2 * t);
+    return { transform: [{ translateY: -CHAT_SUB_TAB_BAR_HEIGHT * h }] };
+  }, [visibilityContext]);
+
+  // Bóng đổ = chrome "nổi" khỏi nội dung; chỉ hiện khi có data cuộn phía sau.
+  const shadowStyle = useAnimatedStyle(() => ({
+    opacity: visibilityContext?.scrolledProgress.value ?? 0,
+  }), [visibilityContext]);
+
   useEffect(() => {
     if (state.index !== 0 && visibilityContext) {
       visibilityContext.hiddenProgress.value = withTiming(0, {
@@ -306,38 +376,64 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     }
   }, [state.index, visibilityContext]);
 
+  // Đổi sub-tab: scene mới tự báo lại scrolledProgress ở lần scroll kế tiếp.
+  useEffect(() => {
+    if (visibilityContext) {
+      visibilityContext.scrolledProgress.value = withTiming(0, { duration: 160 });
+    }
+  }, [state.index, visibilityContext]);
+
   return (
-    <Animated.View style={[barStyles.container, visibilityStyle]} accessibilityRole="tablist">
-      <View style={barStyles.row}>
-        {state.routes.map((route, index) => {
-          const meta = SUB_TAB_META[route.name as keyof ChatSubTabParamList];
-          if (!meta) return null;
-          const isFocused = state.index === index;
-          return (
-            <TabItem
-              key={route.key}
-              meta={meta}
-              isFocused={isFocused}
-              position={position}
-              tabIndex={index}
-              routesLength={state.routes.length}
-              unread={unreadByRoute[route.name] ?? 0}
-              semantic={semantic}
-              onPress={() => {
-                const event = navigation.emit({
-                  type: 'tabPress',
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-                if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name as never);
-                }
-              }}
-            />
-          );
-        })}
-      </View>
-    </Animated.View>
+    <>
+      <Animated.View pointerEvents="none" style={[barStyles.glass, glassStyle]}>
+        <View style={barStyles.glassClip}>
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: isDark ? CHROME_TINT_DARK : CHROME_TINT_LIGHT },
+            ]}
+          />
+          <View style={[StyleSheet.absoluteFill, { opacity: CHROME_BLOOM_OPACITY }]}>
+            <LightFieldBackground windowSized />
+          </View>
+          <View style={barStyles.hairline} />
+        </View>
+        <Animated.View style={[barStyles.shadow, shadowStyle]}>
+          <ChromeShadow isDark={isDark} />
+        </Animated.View>
+      </Animated.View>
+      <Animated.View style={[barStyles.container, visibilityStyle]} accessibilityRole="tablist">
+        <View style={barStyles.row}>
+          {state.routes.map((route, index) => {
+            const meta = SUB_TAB_META[route.name as keyof ChatSubTabParamList];
+            if (!meta) return null;
+            const isFocused = state.index === index;
+            return (
+              <TabItem
+                key={route.key}
+                meta={meta}
+                isFocused={isFocused}
+                position={position}
+                tabIndex={index}
+                routesLength={state.routes.length}
+                unread={unreadByRoute[route.name] ?? 0}
+                semantic={semantic}
+                onPress={() => {
+                  const event = navigation.emit({
+                    type: 'tabPress',
+                    target: route.key,
+                    canPreventDefault: true,
+                  });
+                  if (!isFocused && !event.defaultPrevented) {
+                    navigation.navigate(route.name as never);
+                  }
+                }}
+              />
+            );
+          })}
+        </View>
+      </Animated.View>
+    </>
   );
 };
 
@@ -351,6 +447,7 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
 interface ChatHomeContentProps {
   styles: ReturnType<typeof makeScreenStyles>;
   hiddenProgress: SharedValue<number>;
+  scrolledProgress: SharedValue<number>;
   /** y where the overlaid sub-tab bar sits (= glass header block height). */
   tabBarTop: number;
   topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
@@ -365,6 +462,7 @@ interface ChatHomeContentProps {
 const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
   styles: _styles,
   hiddenProgress,
+  scrolledProgress,
   tabBarTop,
   topTabNavRef,
   qrVisible,
@@ -384,7 +482,10 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
   // re-render even though the underlying shared value hadn't changed. That was
   // the dominant cost on the freezeOnBlur flush (4 state updates in rapid
   // succession each rebuilt the context value and cascaded through 4 sub-tabs).
-  const visibilityValue = useMemo(() => ({ hiddenProgress }), [hiddenProgress]);
+  const visibilityValue = useMemo(
+    () => ({ hiddenProgress, scrolledProgress }),
+    [hiddenProgress, scrolledProgress],
+  );
 
   // Deterministic Chat entry: subscribe to the emitter fired by MainNavigator's
   // ChatTab handler (both cross-tab navigation and reselect). This replaces the
@@ -551,6 +652,7 @@ const ChatHomeScreen: React.FC = () => {
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
+  const scrolledProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
   // ─── Frosted header block geometry ──────────────────────────────────────────
@@ -609,43 +711,18 @@ const ChatHomeScreen: React.FC = () => {
             zIndex: 20,
             overflow: 'hidden',
           }}>
-          {/* Frosted base: lets scrolled content show faintly underneath */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)',
-            }}
-          />
-          {/* Bloom slice kept but softened so the frost reads */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              opacity: 0.72,
-              overflow: 'hidden',
-            }}>
-            <LightFieldBackground windowSized />
-          </View>
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: StyleSheet.hairlineWidth,
-              backgroundColor: tokens.semantic.border.subtle,
-            }}
-          />
+          {/* Nền kính (tint + bloom) do CustomTabBar vẽ bên dưới khối này — 1 tấm
+              liền cho cả header + sub-tab bar. Trước khi nested tabs mount
+              (shell), dùng nền đặc tạm để header không trong suốt trên skeleton. */}
+          {!contentReady ? (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: isDark ? CHROME_FALLBACK_DARK : CHROME_FALLBACK_LIGHT },
+              ]}
+            />
+          ) : null}
           {/* KOOLA wordmark — same geometry as NotchHeader wordmark branch */}
           <View
             pointerEvents="none"
@@ -686,6 +763,7 @@ const ChatHomeScreen: React.FC = () => {
           <ChatHomeContent
             styles={screenStyles}
             hiddenProgress={hiddenProgress}
+            scrolledProgress={scrolledProgress}
             tabBarTop={tabBarTop}
             topTabNavRef={topTabNavRef}
             qrVisible={qrVisible}
