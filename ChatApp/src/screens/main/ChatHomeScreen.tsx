@@ -1,9 +1,15 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet, Image } from 'react-native';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { LightFieldBackground } from './components/personal/LightFieldBackground';
+import {
+  CHAT_SUB_TAB_BAR_HEIGHT,
+  ChatHomeHeaderInsetContext,
+  chatHomeContentInset,
+} from './ChatHomeHeaderInsetContext';
 import Animated, {
   Easing,
   type SharedValue,
@@ -23,14 +29,14 @@ import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
-import { NOTCH_WING_INSET, NOTCH_HEADER_CONTENT_H } from '../../components/NotchHeader';
+import { NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
-import { prefersReducedMotion } from '../../ui/tokens/motion';
 
 const ConnectionsPlaceholder: React.FC = () => {
   const { tokens } = useTheme();
+  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.semantic.bg.canvas, padding: 24 }}>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.semantic.bg.canvas, padding: 24, paddingTop: headerInset + 24 }}>
       <MaterialIcons name="handshake" size={48} color={tokens.semantic.text.muted} />
       <KoolaText variant="title" weight="600" align="center" style={{ marginTop: 12, color: tokens.semantic.text.primary }}>
         Kết nối
@@ -43,7 +49,6 @@ const ConnectionsPlaceholder: React.FC = () => {
 };
 
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
-const CHAT_SUB_TAB_BAR_HEIGHT = 40;
 
 // ─── Sub-tab metadata ─────────────────────────────────────────────────────────
 // Each tab provides a paired (outline ↔ filled) icon. Active state crossfades
@@ -238,7 +243,13 @@ const tabItemStyles = {
 };
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
-const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, position }) => {
+// Overlays the sub-tab scenes (absolute, directly below the glass header block)
+// instead of taking layout space, so scene lists start at y=0 and rows scroll
+// behind both the bar and the blur. Scenes reserve the resting chrome height
+// via ChatHomeHeaderInsetContext.
+type CustomTabBarProps = MaterialTopTabBarProps & { top: number };
+
+const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position, top }) => {
   const { tokens } = useTheme();
   const semantic = tokens.semantic;
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
@@ -258,6 +269,11 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 
   const barStyles = useMemo(() => ({
     container: {
+      position: 'absolute' as const,
+      top,
+      left: 0,
+      right: 0,
+      zIndex: 10,
       backgroundColor: semantic.surface.level1,
       paddingHorizontal: 4,
       paddingTop: 0,
@@ -269,7 +285,7 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
       justifyContent: 'space-between' as const,
       position: 'relative' as const,
     },
-  }), [semantic]);
+  }), [semantic, top]);
 
   const visibilityStyle = useAnimatedStyle(() => {
     const t = visibilityContext?.hiddenProgress.value ?? 0;
@@ -335,6 +351,8 @@ const CustomTabBar: React.FC<MaterialTopTabBarProps> = ({ state, navigation, pos
 interface ChatHomeContentProps {
   styles: ReturnType<typeof makeScreenStyles>;
   hiddenProgress: SharedValue<number>;
+  /** y where the overlaid sub-tab bar sits (= glass header block height). */
+  tabBarTop: number;
   topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
   qrVisible: boolean;
   onQrClose: () => void;
@@ -347,6 +365,7 @@ interface ChatHomeContentProps {
 const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
   styles: _styles,
   hiddenProgress,
+  tabBarTop,
   topTabNavRef,
   qrVisible,
   onQrClose,
@@ -393,7 +412,7 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
           tabBar={(props) => {
             // Capture the top-tab navigation for reset-to-Messages
             topTabNavRef.current = props.navigation;
-            return <CustomTabBar {...props} />;
+            return <CustomTabBar {...props} top={tabBarTop} />;
           }}
           screenOptions={{
             lazy: true,
@@ -527,25 +546,27 @@ const dockStyles = StyleSheet.create({
 
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
-  const { tokens } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const insets = useSafeAreaInsets();
-  // Floating overlay: dock sits at header bottom; FlatList's inner top padding
-  // lets rows scroll behind the transparent gutters like the bottom dock.
-  const dockTop = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H; // = flatH
-  const dockReserve = 44; // 4 top gap + 36 pill + 4 bottom gap (pill cố định 36)
   const [qrVisible, setQrVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
+  // ─── Frosted header block geometry ──────────────────────────────────────────
+  // The wordmark (17h) + search dock (36h) chrome block, pinned to the top with
+  // frosted semi-transparent backing matching Shopping/Connect tabs. Sub-tab bar (40h) overlays directly below it.
+  const WORDMARK_H = 24; // Wordmark content area (slightly taller than 17px image for centering)
+  const DOCK_GAP = 8;    // Gap between wordmark and dock
+  const DOCK_H = 36;     // Search dock pill height (fixed, no shrinking)
+  const blockH = insets.top + NOTCH_WING_INSET + WORDMARK_H + DOCK_GAP + DOCK_H;
+  const tabBarTop = blockH; // Sub-tab bar sits directly below frosted block
+  const headerInset = chatHomeContentInset(blockH); // Full chrome inset for scene lists
+
+  const isDark = resolvedScheme === 'dark';
+
+
   // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
-  // ChatHomeScreen is the only bottom tab holding a nested material-top-tabs
-  // (4 sub-tabs) + a large FlatList + a Reanimated sub-tab bar. With
-  // freezeOnBlur, returning to this tab unfreezes and re-renders that whole
-  // subtree in one frame → jank ("đơ một nhịp"). Deferring the nested content
-  // behind a shell frame spreads that cost, mirroring the proven D1 pattern on
-  // Shopping/Connect. The ref guard makes this fire once per mount only, so a
-  // revisit of an already-populated screen skips the skeleton (no flash).
   const [contentReady, setContentReady] = useState(false);
   const contentReadyFired = useRef(false);
 
@@ -573,48 +594,110 @@ const ChatHomeScreen: React.FC = () => {
     navigation.navigate('Chat', { conversationId });
   }, [navigation]);
 
-  const notchPad = dockTop + dockReserve; // = flatH + 44: header + pill 36 gap reserve
-
   return (
-    <View style={[screenStyles.container, { paddingTop: notchPad }]}>
-      {/* Floating pill 36 cố định — không còn co giãn theo scroll */}
-      <View
-        pointerEvents="box-none"
-        style={{
-          position: 'absolute',
-          top: dockTop,
-          left: 0,
-          right: 0,
-          zIndex: 20,
-          paddingHorizontal: 12,
-          paddingTop: 4,
-          paddingBottom: 4,
-          backgroundColor: 'transparent',
-          justifyContent: 'center',
-        }}>
-        <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+    <ChatHomeHeaderInsetContext.Provider value={headerInset}>
+      <View style={screenStyles.container}>
+        {/* Sticky frosted header block — wordmark + search dock matching Shopping/Connect tabs */}
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: blockH,
+            zIndex: 20,
+            overflow: 'hidden',
+          }}>
+          {/* Frosted base: lets scrolled content show faintly underneath */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)',
+            }}
+          />
+          {/* Bloom slice kept but softened so the frost reads */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              opacity: 0.72,
+              overflow: 'hidden',
+            }}>
+            <LightFieldBackground windowSized />
+          </View>
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: StyleSheet.hairlineWidth,
+              backgroundColor: tokens.semantic.border.subtle,
+            }}
+          />
+          {/* KOOLA wordmark — same geometry as NotchHeader wordmark branch */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: insets.top + NOTCH_WING_INSET,
+              height: WORDMARK_H,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+            <Image
+              source={require('../../assets/logo_koola_wordmark.png')}
+              style={{ width: 99, height: 17 }}
+              resizeMode="contain"
+              accessibilityLabel="KOOLA"
+            />
+          </View>
+          {/* Command dock (search + QR + add) — sits below wordmark, pinned 36h */}
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: insets.top + NOTCH_WING_INSET + WORDMARK_H + DOCK_GAP,
+              height: DOCK_H,
+              paddingHorizontal: 12,
+              justifyContent: 'center',
+            }}>
+            <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+          </View>
+        </View>
+        {!contentReady ? (
+          <ChatHomeShell styles={screenStyles} />
+        ) : (
+          <ChatHomeContent
+            styles={screenStyles}
+            hiddenProgress={hiddenProgress}
+            tabBarTop={tabBarTop}
+            topTabNavRef={topTabNavRef}
+            qrVisible={qrVisible}
+            onQrClose={handleQrClose}
+            onNavigateProfile={handleNavigateProfile}
+            onNavigateChat={handleNavigateChat}
+            groupModalVisible={groupModalVisible}
+            setGroupModalVisible={setGroupModalVisible}
+          />
+        )}
       </View>
-      {!contentReady ? (
-        // Interactive shell: KoolaHeader (command dock) stays live above; the
-        // heavy nested tabs are replaced by a skeleton sub-tab bar strip + rows
-        // sized to the conversation-list layout so there is no layout shift when
-        // the real content swaps in. One frame only — InteractionManager fires
-        // right after the shell paints.
-        <ChatHomeShell styles={screenStyles} />
-      ) : (
-        <ChatHomeContent
-          styles={screenStyles}
-          hiddenProgress={hiddenProgress}
-          topTabNavRef={topTabNavRef}
-          qrVisible={qrVisible}
-          onQrClose={handleQrClose}
-          onNavigateProfile={handleNavigateProfile}
-          onNavigateChat={handleNavigateChat}
-          groupModalVisible={groupModalVisible}
-          setGroupModalVisible={setGroupModalVisible}
-        />
-      )}
-    </View>
+    </ChatHomeHeaderInsetContext.Provider>
   );
 };
 

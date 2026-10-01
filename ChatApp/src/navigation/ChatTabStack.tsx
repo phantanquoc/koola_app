@@ -45,14 +45,19 @@ const ChatTabStack: React.FC = () => {
     [headerConfig],
   );
 
+  // ChatHome owns its own glass header block (wordmark + search dock), so we
+  // hide the stack-level wordmark there to avoid a double layer/seam.
+  const showStackHeader = focusedRouteName !== 'ChatHome';
   return (
     <ChatHeaderContext.Provider value={headerCtx}>
     <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
       <LightFieldBackground />
-      <NotchHeader
-        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
-        chat={chatConfig ?? undefined}
-      />
+      {showStackHeader && (
+        <NotchHeader
+          style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+          chat={chatConfig ?? undefined}
+        />
+      )}
       <Stack.Navigator
         screenListeners={({ route }) => ({
           focus: () => setFocusedRouteName(route.name as keyof ChatTabStackParamList),

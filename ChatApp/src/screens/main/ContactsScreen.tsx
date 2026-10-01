@@ -15,6 +15,7 @@ import ContactSearchBar from '../../components/ContactSearchBar';
 import ContactItem from '../../components/ContactItem';
 import { KoolaEmptyState, KoolaErrorState, useTheme } from '../../ui';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { UserSearchResult } from '../../types';
 
@@ -23,6 +24,7 @@ const ContactsScreen: React.FC = () => {
   const { tokens } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
   const tabBarInset = useTabBarBottomInset();
+  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
   const { results, isLoading, error, search, loadMore, hasMore } =
     useContactsSearch();
 
@@ -85,9 +87,12 @@ const ContactsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ContactSearchBar onSearch={handleSearch} />
-
       <FlatList
+        // The list starts at y=0 behind Chat Home's glass header + overlaid
+        // sub-tab bar; the search bar rides in the list header so it sits just
+        // below the resting chrome instead of being hidden under it.
+        ListHeaderComponent={<ContactSearchBar onSearch={handleSearch} />}
+        keyboardShouldPersistTaps="handled"
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
         data={results}
@@ -99,7 +104,7 @@ const ContactsScreen: React.FC = () => {
         onEndReached={hasMore ? loadMore : undefined}
         onEndReachedThreshold={0.5}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
-        contentContainerStyle={{ paddingBottom: tabBarInset }}
+        contentContainerStyle={{ paddingTop: headerInset, paddingBottom: tabBarInset }}
       />
     </SafeAreaView>
   );

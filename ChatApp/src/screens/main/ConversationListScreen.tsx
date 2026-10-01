@@ -50,6 +50,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
+import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
@@ -83,6 +84,7 @@ const ConversationListScreen: React.FC = () => {
   const localFirstEnabled = useLocalFirstFlag();
   const { tokens } = useTheme();
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
+  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
   const reduceMotionSV = useSharedValue(prefersReducedMotion());
   // Keep UI-thread flag in sync when system setting toggles mid-session
   useEffect(() => {
@@ -522,7 +524,7 @@ const ConversationListScreen: React.FC = () => {
 
   if (error && conversations.length === 0 && isConnected !== false) {
     return (
-      <SafeAreaView style={screenStyles.container} edges={['bottom']}>
+      <SafeAreaView style={[screenStyles.container, { paddingTop: headerInset }]} edges={['bottom']}>
         <KoolaErrorState
           icon="wifi-off"
           title="Không thể tải hội thoại"
@@ -537,9 +539,6 @@ const ConversationListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={screenStyles.container} edges={['bottom']}>
-      <OfflineBanner
-        isVisible={isConnected === false && conversations.length > 0}
-      />
       <Animated.FlatList
         // Fabric workaround facebook/react-native#53258 — clipped subviews race on unmount
         removeClippedSubviews={false}
@@ -558,15 +557,19 @@ const ConversationListScreen: React.FC = () => {
         renderItem={renderConversation}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
-        // No top padding for the search dock here: ChatHomeScreen's outer
-        // container already applies `notchPad` (= header height + dock reserve),
-        // and the sub-tab bar sits inside that padded container. Reserving the
-        // same space again on the list added a second ~84px gap between the
-        // sub-tab bar and the first conversation row.
+        // The list starts at y=0 behind Chat Home's glass header + overlaid
+        // sub-tab bar; reserve exactly that resting chrome (incl. the gap) so
+        // the first row sits just below it and later rows scroll behind it.
         contentContainerStyle={[
           screenStyles.listContent,
-          { paddingBottom: tabBarInset },
+          { paddingTop: headerInset, paddingBottom: tabBarInset },
         ]}
+        // Offline banner scrolls with the list, directly below the chrome.
+        ListHeaderComponent={
+          <OfflineBanner
+            isVisible={isConnected === false && conversations.length > 0}
+          />
+        }
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -604,6 +607,8 @@ const ConversationListScreen: React.FC = () => {
             refreshing={refreshing}
             onRefresh={handleRefresh}
             tintColor={tokens.semantic.action.primary}
+            // Android: spinner would otherwise appear hidden under the chrome.
+            progressViewOffset={headerInset}
           />
         }
         ItemSeparatorComponent={SeparatorComponent}

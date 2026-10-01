@@ -28,7 +28,6 @@ import MomentsFeedHeader, { type FeedHeaderRing } from '../../components/moments
 import PostCard, { type FeedPost } from '../../components/moments/PostCard';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import {
-  KoolaEmptyState,
   KoolaErrorState,
   KoolaText,
   koolaSpacing,
@@ -37,6 +36,7 @@ import {
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
+import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 import { resolveMomentsStoryRegion } from './momentsView';
 import { MOCK_MOMENTS_POSTS } from './momentsMockPosts';
 
@@ -49,6 +49,7 @@ const MomentsScreen: React.FC = () => {
   const tabBarInset = useTabBarBottomInset();
   const { width: screenWidth } = useWindowDimensions();
   const visibilityContext = React.useContext(ChatSubTabVisibilityContext);
+  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
   const previousScrollY = useSharedValue(0);
   const scrollDirection = useSharedValue(0);
   const directionTravel = useSharedValue(0);
@@ -308,8 +309,10 @@ const MomentsScreen: React.FC = () => {
         keyExtractor={(item) => item.id}
         renderItem={renderPost}
         ListHeaderComponent={listHeader}
-        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarInset }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.semantic.action.primary} />}
+        // Starts at y=0 behind Chat Home's glass header + overlaid sub-tab bar;
+        // reserve exactly the resting chrome so the feed header sits below it.
+        contentContainerStyle={[styles.listContent, { paddingTop: headerInset, paddingBottom: tabBarInset }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.semantic.action.primary} progressViewOffset={headerInset} />}
         removeClippedSubviews={false}
         initialNumToRender={4}
         maxToRenderPerBatch={5}

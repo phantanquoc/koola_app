@@ -2,13 +2,16 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { KoolaState, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
+import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 
 const ShortsScreen: React.FC = () => {
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  // Scene starts at y=0 behind Chat Home's glass header; center below it.
+  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: headerInset }]}>
       <KoolaState
         icon="play-circle-filled"
         title="Video ngắn"
