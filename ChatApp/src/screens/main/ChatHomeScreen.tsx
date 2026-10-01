@@ -30,7 +30,6 @@ import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
-import { NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const ConnectionsPlaceholder: React.FC = () => {
@@ -259,6 +258,35 @@ const CHROME_FALLBACK_DARK = '#1C2026';
 /** Chiều cao dải bóng đổ dưới chrome khi "nổi" lên khỏi nội dung. */
 const CHROME_SHADOW_H = 14;
 
+/**
+ * Scrim dọc phủ trên tấm kính trong vùng header: chỉ phủ vùng status bar,
+ * tan dần về 0 tại `solidUntil` (đáy status bar) — không phủ wordmark/dock;
+ * phần còn lại tới đáy block (đáy dock) giữ đúng độ trong của tấm kính.
+ * Nằm trong header block cố định nên không trượt theo sub-tab bar.
+ */
+const ChromeEdgeScrim: React.FC<{ isDark: boolean; height: number; solidUntil: number }> = ({
+  isDark,
+  height,
+  solidUntil,
+}) => {
+  const color = isDark ? CHROME_FALLBACK_DARK : CHROME_FALLBACK_LIGHT;
+  const solidStop = Math.min(1, Math.max(0, solidUntil / height));
+  return (
+    <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height={height}>
+      <Defs>
+        <SvgLinearGradient id="chatChromeEdgeScrim" x1="0" y1="0" x2="0" y2="1">
+          {/* Nhẹ: chỉ đỡ thêm cho giờ/pin; từ wordmark trở xuống giữ đúng
+              độ trong của tấm kính (user muốn vẫn thấy data mờ phía sau). */}
+          <Stop offset="0" stopColor={color} stopOpacity="0.5" />
+          <Stop offset={String(solidStop)} stopColor={color} stopOpacity="0" />
+          <Stop offset="1" stopColor={color} stopOpacity="0" />
+        </SvgLinearGradient>
+      </Defs>
+      <Rect width="100%" height={height} fill="url(#chatChromeEdgeScrim)" />
+    </Svg>
+  );
+};
+
 const ChromeShadow: React.FC<{ isDark: boolean }> = ({ isDark }) => (
   <Svg width="100%" height={CHROME_SHADOW_H}>
     <Defs>
@@ -367,6 +395,11 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     opacity: visibilityContext?.scrolledProgress.value ?? 0,
   }), [visibilityContext]);
 
+  // Chỉ 1 cách phân tách tại 1 thời điểm: hairline lúc nghỉ, bóng đổ lúc cuộn.
+  const hairlineStyle = useAnimatedStyle(() => ({
+    opacity: 1 - (visibilityContext?.scrolledProgress.value ?? 0),
+  }), [visibilityContext]);
+
   useEffect(() => {
     if (state.index !== 0 && visibilityContext) {
       visibilityContext.hiddenProgress.value = withTiming(0, {
@@ -396,7 +429,7 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
           <View style={[StyleSheet.absoluteFill, { opacity: CHROME_BLOOM_OPACITY }]}>
             <LightFieldBackground windowSized />
           </View>
-          <View style={barStyles.hairline} />
+          <Animated.View style={[barStyles.hairline, hairlineStyle]} />
         </View>
         <Animated.View style={[barStyles.shadow, shadowStyle]}>
           <ChromeShadow isDark={isDark} />
@@ -542,32 +575,44 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Flat pill dock — 36 cố định (bằng size thu nhỏ trước đây), không còn
-// animation co giãn theo scroll. Giữ nguyên màu/bố cục pill.
+// Flat pill dock — pill cố định cao 36. Lớp fill xám (lớp con đầu tiên, absolute
+// fill trong pill bo tròn + overflow hidden) mờ dần opacity 1→0 khi sub-tab bar ẩn
+// theo scroll (cùng đường smoothstep với CustomTabBar, chạy trên UI thread) → pill
+// hoà vào nền kính header phía sau, khớp tuyệt đối cả light/dark mà không hardcode
+// màu. Sub-tab bar hiện lại thì fill hiện dần về. Icon, chữ và press feedback từng
+// nút không bị ảnh hưởng; geometry header (blockH/tabBarTop/headerInset) không đổi.
 const ChatSearchDock: React.FC<{
+  hiddenProgress: SharedValue<number>;
   onSearchPress: () => void;
   onQrPress: () => void;
   onAddPress: () => void;
-}> = ({ onSearchPress, onQrPress, onAddPress }) => {
+}> = ({ hiddenProgress, onSearchPress, onQrPress, onAddPress }) => {
   const { tokens } = useTheme();
   const sem = tokens.semantic;
   const [searchPressed, setSearchPressed] = useState(false);
   const [qrPressed, setQrPressed] = useState(false);
   const [addPressed, setAddPressed] = useState(false);
   const pressedStyle = { backgroundColor: sem.action.primarySoft, opacity: 0.82 as const };
+  const fillFadeStyle = useAnimatedStyle(() => {
+    // Kẹp [0,1]: spring snap có thể vọt nhẹ quá biên → opacity luôn nằm trong 0–1.
+    const t = Math.min(1, Math.max(0, hiddenProgress.value));
+    const h = t * t * (3 - 2 * t); // smoothstep — khớp visibilityStyle của sub-tab bar
+    return { opacity: 1 - h };
+  }, [hiddenProgress]);
   return (
-    <View
-      style={[
-        dockStyles.host,
-        {
-          // Đúng màu pill bên Mua sắm: ShoppingSearchDock dùng `semantic.border.subtle`
-          // làm fill (#E4E7EC light / #2F3542 dark), không phải bg.canvas.
-          backgroundColor: sem.border.subtle,
-          height: 36,
-          paddingHorizontal: 4,
-        },
-      ]}>
-      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+    <View style={dockStyles.host}>
+      {/* Lớp fill xám — đúng màu pill bên Mua sắm: ShoppingSearchDock dùng
+          `semantic.border.subtle` làm fill (#E4E7EC light / #2F3542 dark), không
+          phải bg.canvas. Absolute fill trong pill bo tròn + overflow hidden nên
+          vẫn bo tròn; mờ dần về 0 khi sub-tab bar ẩn. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: sem.border.subtle }, fillFadeStyle]}
+      />
+      {/* alignSelf 'stretch': hàng nút nhận chiều cao xác định từ pill (cố định 36)
+          để các nút height '100%' lấp đầy pill (host alignItems 'center' không
+          stretch con). Render sau lớp fill nên nằm phía trên. */}
+      <View style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Pressable
               hitSlop={8}
               accessibilityRole="button"
@@ -616,12 +661,19 @@ const ChatSearchDock: React.FC<{
   );
 };
 
+// Chiều cao pill search dock — cố định, chỉ lớp fill xám bên trong là animate.
+const DOCK_PILL_H = 36;
+
 const dockStyles = StyleSheet.create({
   host: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: DOCK_PILL_H,
+    paddingHorizontal: 4,
     borderRadius: koolaRadii.pill,
     overflow: 'hidden',
+    // Nền trong suốt: màu xám do lớp fill con vẽ (mờ dần khi sub-tab bar ẩn).
+    backgroundColor: 'transparent',
   },
   searchBtn: {
     flex: 1,
@@ -636,8 +688,7 @@ const dockStyles = StyleSheet.create({
   },
   iconBtn: {
     width: 48,
-    height: 36,
-    minHeight: 36,
+    height: '100%', // lấp đầy pill cố định 36 để không bị overflow:hidden cắt
     borderRadius: koolaRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -658,10 +709,12 @@ const ChatHomeScreen: React.FC = () => {
   // ─── Frosted header block geometry ──────────────────────────────────────────
   // The wordmark (17h) + search dock (36h) chrome block, pinned to the top with
   // frosted semi-transparent backing matching Shopping/Connect tabs. Sub-tab bar (40h) overlays directly below it.
-  const WORDMARK_H = 24; // Wordmark content area (slightly taller than 17px image for centering)
-  const DOCK_GAP = 8;    // Gap between wordmark and dock
-  const DOCK_H = 36;     // Search dock pill height (fixed, no shrinking)
-  const blockH = insets.top + NOTCH_WING_INSET + WORDMARK_H + DOCK_GAP + DOCK_H;
+  // Layout: insets.top + 2 (top) + 17 (wordmark) + 6 (gap) + 36 (dock) = insets.top + 61.
+  const WORDMARK_TOP = 2; // Khớp `paddingTop: 2` của NotchHeader → logo không nhảy vị trí khi đổi tab
+  const WORDMARK_H = 17;  // = chiều cao ảnh wordmark (99×17), không chừa thêm vùng căn giữa
+  const DOCK_GAP = 6;     // Gap between wordmark and dock
+  const DOCK_H = 36;      // Search dock slot height (fixed; pill inside is also a fixed 36, only its gray fill fades)
+  const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 61
   const tabBarTop = blockH; // Sub-tab bar sits directly below frosted block
   const headerInset = chatHomeContentInset(blockH); // Full chrome inset for scene lists
 
@@ -722,15 +775,24 @@ const ChatHomeScreen: React.FC = () => {
                 { backgroundColor: isDark ? CHROME_FALLBACK_DARK : CHROME_FALLBACK_LIGHT },
               ]}
             />
-          ) : null}
-          {/* KOOLA wordmark — same geometry as NotchHeader wordmark branch */}
+          ) : (
+            // Scroll-edge scrim (kiểu iOS 26): chỉ phủ vùng status bar, nhạt
+            // dần về 0 tại đáy status bar → giờ/pin luôn sạch; wordmark, dock
+            // và sub-tab bar vẫn thấy mờ data phía sau qua tấm kính.
+            <ChromeEdgeScrim
+              isDark={isDark}
+              height={blockH}
+              solidUntil={insets.top}
+            />
+          )}
+          {/* KOOLA wordmark — same geometry as NotchHeader wordmark branch (logo top = insets.top + 2) */}
           <View
             pointerEvents="none"
             style={{
               position: 'absolute',
               left: 0,
               right: 0,
-              top: insets.top + NOTCH_WING_INSET,
+              top: insets.top + WORDMARK_TOP,
               height: WORDMARK_H,
               alignItems: 'center',
               justifyContent: 'center',
@@ -742,19 +804,24 @@ const ChatHomeScreen: React.FC = () => {
               accessibilityLabel="KOOLA"
             />
           </View>
-          {/* Command dock (search + QR + add) — sits below wordmark, pinned 36h */}
+          {/* Command dock (search + QR + add) — 6dp below wordmark, fixed 36h slot + pill 36; fill xám mờ dần khi sub-tab ẩn */}
           <View
             pointerEvents="box-none"
             style={{
               position: 'absolute',
               left: 0,
               right: 0,
-              top: insets.top + NOTCH_WING_INSET + WORDMARK_H + DOCK_GAP,
+              top: insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP,
               height: DOCK_H,
               paddingHorizontal: 12,
               justifyContent: 'center',
             }}>
-            <ChatSearchDock onSearchPress={handleSearchPress} onQrPress={handleQrPress} onAddPress={handleAddPress} />
+            <ChatSearchDock
+              hiddenProgress={hiddenProgress}
+              onSearchPress={handleSearchPress}
+              onQrPress={handleQrPress}
+              onAddPress={handleAddPress}
+            />
           </View>
         </View>
         {!contentReady ? (

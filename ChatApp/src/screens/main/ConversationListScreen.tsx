@@ -45,8 +45,10 @@ import {
 } from './conversationPagination';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import Animated, {
+  type SharedValue,
   useAnimatedScrollHandler,
   useSharedValue,
+  withSpring,
 } from 'react-native-reanimated';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
@@ -73,6 +75,17 @@ function conversationFingerprint(c: Conversation): string {
   return `${c.type}|${c.name ?? ''}|${c.avatar ?? ''}|${c.lastMessagePreview ?? ''}|${
     c.lastMessageAt ?? ''
   }|${c.unreadCount ?? 0}||${members}`;
+}
+
+/** Spring nhẹ có chút nảy khi sub-tab bar hiện lại / ẩn hẳn sau khi thả tay. */
+const SUB_TAB_SNAP_SPRING = { damping: 18, stiffness: 220, mass: 0.6 };
+
+function snapSubTabBar(progress: SharedValue<number>, offsetY: number) {
+  'worklet';
+  const target = offsetY <= 4 || progress.value < 0.5 ? 0 : 1;
+  if (progress.value !== target) {
+    progress.value = withSpring(target, SUB_TAB_SNAP_SPRING);
+  }
 }
 
 const ConversationListScreen: React.FC = () => {
@@ -132,6 +145,20 @@ const ConversationListScreen: React.FC = () => {
       }
 
       previousScrollY.value = offsetY;
+    },
+    // Snap khi thả tay: không bao giờ dừng ở trạng thái nửa ẩn nửa hiện.
+    // Có quán tính (velocity lớn) → chờ onMomentumEnd để không giành giật với
+    // onScroll đang cập nhật trực tiếp.
+    onEndDrag: (event) => {
+      if (!visibilityContext || reduceMotionSV.value) return;
+      const vy = event.velocity?.y ?? 0;
+      if ((vy >= 0 ? vy : -vy) < 0.3) {
+        snapSubTabBar(visibilityContext.hiddenProgress, Math.max(0, event.contentOffset.y));
+      }
+    },
+    onMomentumEnd: (event) => {
+      if (!visibilityContext || reduceMotionSV.value) return;
+      snapSubTabBar(visibilityContext.hiddenProgress, Math.max(0, event.contentOffset.y));
     },
   });
 
