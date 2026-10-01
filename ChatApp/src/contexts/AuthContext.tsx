@@ -24,6 +24,7 @@ import { navigationRef } from '../navigation/RootNavigator';
 import { momentsService } from '../services/moments/momentsService';
 import { clearAccountBadge } from '../services/push/accountBadgeStorage';
 import * as conversationRepository from '../services/db/conversationRepository';
+import { cartStore } from '../services/shopping/cartStore';
 import type { User, Account } from '../types';
 
 // ─── Local-first wiring teardown refs ─────────────────────────────────────────
@@ -193,6 +194,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setAccounts([]);
       setActiveAccount(null);
+      // Drop every account's shopping cart from the device (mirrors logout).
+      cartStore.clearAllAccounts();
       rootUserIdRef.current = null;
     });
     return () => setForceLogoutHandler(null);
@@ -302,6 +305,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         accountType: 'personal' as const,
       };
       setActiveAccount(resolvedActive);
+      // Shopping cart is per active account (commerce-catalog D11).
+      cartStore.setAccount(activeId);
 
       setCurrentUserId(activeId);
       momentsService.setCurrentUserId(activeId);
@@ -389,6 +394,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // (g) Update active account in state
       const found = accounts.find((a) => a._id === targetId);
       setActiveAccount(found ?? { _id: targetId, displayName: targetId, accountType: 'personal' });
+      // Swap to the target account's shopping cart (commerce-catalog D11).
+      cartStore.setAccount(targetId);
       // (h) Clear per-account notification badge now that this account is active
       void clearAccountBadge(targetId);
     } finally {
@@ -428,6 +435,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       accountType: 'personal',
     };
     setActiveAccount(personalAccount);
+    cartStore.setAccount(me._id);
     await asyncStorage.clearActiveAccountId();
 
     // Initialise local SQLite DB for this user
@@ -478,6 +486,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setAccounts([personalAccount]);
     setActiveAccount(personalAccount);
+    cartStore.setAccount(me._id);
     await asyncStorage.clearActiveAccountId();
 
     // Initialise local SQLite DB for this user
@@ -576,6 +585,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       shutdownDb();
       setAccounts([]);
       setActiveAccount(null);
+      // Wipe the shopping cart storage for every account (commerce-catalog D11).
+      cartStore.clearAllAccounts();
       rootUserIdRef.current = null;
       // setUser(null) flips the auth group — only LogoutTransition is on the
       // stack at this point (1 screen), so Fabric's unmount batch is tiny and

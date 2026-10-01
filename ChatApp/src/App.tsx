@@ -7,7 +7,7 @@ import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-c
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import Toast from 'react-native-toast-message';
-import { koolaToastConfig, ThemeProvider, useTheme } from './ui';
+import { KoolaConfirmHost, koolaToastConfig, ThemeProvider, useTheme } from './ui';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import RootNavigator, { navigationRef } from './navigation/RootNavigator';
 import { offlineQueueService } from './services/OfflineQueueService';
@@ -193,7 +193,9 @@ const App: React.FC = () => {
           </KeyboardProvider>
         </SafeAreaProvider>
         {/* Root singleton stays mounted for the full app lifetime. Custom
-            renderers consume theme tokens without adding screen-local hosts. */}
+            renderers consume theme tokens without adding screen-local hosts.
+            KoolaConfirmHost (koolaConfirm) sits above navigation, below Toast. */}
+        <KoolaConfirmHost />
         <Toast config={koolaToastConfig} />
       </ThemeProvider>
       </BottomSheetModalProvider>
