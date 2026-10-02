@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet, Image } from 'react-native';
 import { LightFieldBackground } from './components/personal/LightFieldBackground';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -82,7 +82,19 @@ interface TabItemProps {
   unread: number;
   onPress: () => void;
   semantic: SemanticTokens;
+  isDark: boolean;
 }
+
+// MaterialIcons codepoints for the active (filled) sub-tab glyphs, rendered
+// through SvgText so the icon itself can carry a gradient fill. Values match
+// react-native-vector-icons/MaterialIcons glyphmap — do not hand-edit.
+const ACTIVE_GLYPH_CHAR: Record<string, string> = {
+  forum: String.fromCharCode(0xe0bf),
+  people: String.fromCharCode(0xe7fb),
+  star: String.fromCharCode(0xe838),
+  'play-circle-filled': String.fromCharCode(0xe038),
+  handshake: String.fromCharCode(0xebcb),
+};
 
 const TabItem: React.FC<TabItemProps> = ({
   meta,
@@ -93,7 +105,18 @@ const TabItem: React.FC<TabItemProps> = ({
   unread,
   onPress,
   semantic,
+  isDark,
 }) => {
+  // Diagonal gradient glyph: top-left ORANGE → bottom-right BLUE (x1=0 y1=0 →
+  // x2=1 y2=1) — the reverse of the bottom bar (blue→orange). Same palette as
+  // TabIcon3D in MainNavigator.
+  const instanceId = React.useId();
+  const cleanId = instanceId.replace(/:/g, '_');
+  const gradOrange = isDark ? '#FF9A3D' : '#FF8A1A';
+  const gradBlue = isDark ? '#4D8DF7' : '#2563EB';
+  const glyphGradId = `subTabGlyph-${cleanId}`;
+  const barGradId = `subTabBar-${cleanId}`;
+  const glyphChar = ACTIVE_GLYPH_CHAR[meta.iconActive] ?? meta.iconActive;
   const press = useSharedValue(0);
   const inputRange = useMemo(() => Array.from({ length: routesLength }, (_, index) => index), [routesLength]);
   const activeProgress = useMemo(() => position.interpolate({
@@ -161,11 +184,24 @@ const TabItem: React.FC<TabItemProps> = ({
               />
             </NativeAnimated.View>
             <NativeAnimated.View style={{ opacity: activeProgress }}>
-              <MaterialIcons
-                name={meta.iconActive}
-                size={24}
-                color={semantic.action.primary}
-              />
+              <Svg width={24} height={24} viewBox="0 0 24 24">
+                <Defs>
+                  <SvgLinearGradient id={glyphGradId} x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0" stopColor={gradOrange} />
+                    <Stop offset="1" stopColor={gradBlue} />
+                  </SvgLinearGradient>
+                </Defs>
+                <SvgText
+                  x="12"
+                  y="12"
+                  textAnchor="middle"
+                  alignmentBaseline="central"
+                  fontFamily="MaterialIcons"
+                  fontSize={24}
+                  fill={`url(#${glyphGradId})`}>
+                  {glyphChar}
+                </SvgText>
+              </Svg>
             </NativeAnimated.View>
             {unread > 0 ? (
               <View style={[tabItemStyles.badge, { backgroundColor: semantic.signal.unread }]}>
@@ -179,7 +215,6 @@ const TabItem: React.FC<TabItemProps> = ({
             style={[
               tabItemStyles.activeUnderline,
               {
-                backgroundColor: semantic.action.primary,
                 opacity: activeProgress,
                 transform: [{
                   scaleX: activeProgress.interpolate({
@@ -188,8 +223,17 @@ const TabItem: React.FC<TabItemProps> = ({
                   }),
                 }],
               },
-            ]}
-          />
+            ]}>
+            <Svg width={20} height={2} viewBox="0 0 20 2">
+              <Defs>
+                <SvgLinearGradient id={barGradId} x1="0" y1="0" x2="1" y2="0">
+                  <Stop offset="0" stopColor={gradOrange} />
+                  <Stop offset="1" stopColor={gradBlue} />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect x="0" y="0" width="20" height="2" rx="1" fill={`url(#${barGradId})`} />
+            </Svg>
+          </NativeAnimated.View>
         </NativeAnimated.View>
       </Animated.View>
     </Pressable>
@@ -451,6 +495,7 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
                 routesLength={state.routes.length}
                 unread={unreadByRoute[route.name] ?? 0}
                 semantic={semantic}
+                isDark={isDark}
                 onPress={() => {
                   const event = navigation.emit({
                     type: 'tabPress',
