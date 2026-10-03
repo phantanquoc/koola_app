@@ -8,6 +8,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { User, UserSchema } from '../users/user.schema';
 import { RefreshToken, RefreshTokenSchema } from '../auth/refresh-token.schema';
 import { MediaModule } from '../media/media.module';
+import { CommerceSellerVisibilityModule } from '../commerce/seller-visibility/seller-visibility.module';
 import { GatewayModule } from '../gateway/gateway.module';
 import { RedisModule } from '../common/redis/redis.module';
 import { HealthModule } from '../health/health.module';
@@ -47,6 +48,9 @@ import {
       { name: AudienceList.name, schema: AudienceListSchema },
     ]),
     MediaModule,
+    // Dependency-free (User + CommerceProduct models only) — NOT CommerceModule,
+    // which imports AdminModule and would form a cycle (commerce-catalog D1).
+    CommerceSellerVisibilityModule,
     GatewayModule,
     RedisModule,
     HealthModule,

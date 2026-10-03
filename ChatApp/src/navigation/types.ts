@@ -53,6 +53,8 @@ export type PersonalTabStackParamList = {
   AccountList: undefined;
   SettingsDetail: undefined;
   UpgradeAccount: undefined;
+  PersonalOrders: undefined;
+  PersonalOrderDetail: { orderId: string };
 };
 
 // ─── Shopping Tab Stack ───────────────────────────────────────────────────────
@@ -60,7 +62,11 @@ export type ShoppingTabStackParamList = {
   ShoppingHome: undefined;
   ShoppingProductDetail: { productId: string };
   ShoppingStorefront: { sellerId: string };
-  ShoppingCart: { productId?: string };
+  // Cart content comes from the shared cart store, not route params (D12).
+  ShoppingCart: undefined;
+  ShoppingCheckout: { sellerId: string };
+  ShoppingOrders: undefined;
+  ShoppingOrderDetail: { orderId: string };
 };
 
 // ─── Support Tab Stack ────────────────────────────────────────────────────────

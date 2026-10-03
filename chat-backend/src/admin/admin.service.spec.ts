@@ -6,6 +6,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { AdminService } from './admin.service';
 import { User } from '../users/user.schema';
 import { RefreshToken } from '../auth/refresh-token.schema';
+import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
 
 // Stub the MediaService module so the uuid ESM import in media.service.ts
 // never gets loaded by Jest (which cannot parse ESM node_modules by default).
@@ -39,6 +40,7 @@ const mockUserModel = {
   findOneAndUpdate: jest.fn(),
   find: jest.fn(),
   countDocuments: jest.fn(),
+  updateMany: jest.fn(),
 };
 
 const mockRefreshTokenModel = {
@@ -47,6 +49,10 @@ const mockRefreshTokenModel = {
 
 const mockMediaService = {
   generatePresignedGetUrl: jest.fn(),
+};
+
+const mockSellerVisibility = {
+  syncSellers: jest.fn().mockResolvedValue({ modified: 0 }),
 };
 
 // ─── Suite ───────────────────────────────────────────────────────────────────
@@ -65,6 +71,7 @@ describe('AdminService', () => {
           useValue: mockRefreshTokenModel,
         },
         { provide: MediaService, useValue: mockMediaService },
+        { provide: SellerVisibilityService, useValue: mockSellerVisibility },
       ],
     }).compile();
 
@@ -360,6 +367,91 @@ describe('AdminService', () => {
       await expect(service.unbanUser('ghost')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  // ─── Commerce seller visibility sync (commerce-catalog D1) ────────────────
+  // Every mutator that changes verification or ban state MUST re-sync the
+  // denormalized CommerceProduct.sellerActive flag, otherwise a rejected or
+  // banned business keeps selling publicly until someone edits each product.
+
+  describe('seller visibility sync', () => {
+    it('approveBusiness syncs the approved seller', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.approveBusiness('biz-1');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('rejectBusiness syncs the rejected seller', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.rejectBusiness('biz-1', 'bad license');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('does not sync when approve/reject target is missing', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(service.approveBusiness('x')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.rejectBusiness('x', 'r')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockSellerVisibility.syncSellers).not.toHaveBeenCalled();
+    });
+
+    it('bulkApproveBusiness syncs every id', async () => {
+      mockUserModel.updateMany.mockResolvedValue({
+        modifiedCount: 2,
+      });
+      await service.bulkApproveBusiness(['a', 'b']);
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['a', 'b']);
+    });
+
+    it('bulkRejectBusiness syncs every id', async () => {
+      mockUserModel.updateMany.mockResolvedValue({
+        modifiedCount: 2,
+      });
+      await service.bulkRejectBusiness(['a', 'b'], 'spam');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['a', 'b']);
+    });
+
+    it('banUser syncs a business target', async () => {
+      mockUserModel.findByIdAndUpdate.mockReturnValue({
+        select: jest
+          .fn()
+          .mockResolvedValue({ _id: 'biz-1', accountType: 'business' }),
+      });
+      mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 0 });
+      await service.banUser('biz-1');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('unbanUser syncs a business target', async () => {
+      mockUserModel.findByIdAndUpdate.mockReturnValue({
+        select: jest
+          .fn()
+          .mockResolvedValue({ _id: 'biz-1', accountType: 'business' }),
+      });
+      await service.unbanUser('biz-1');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('ban/unban of a personal user does not sync', async () => {
+      mockUserModel.findByIdAndUpdate.mockReturnValue({
+        select: jest
+          .fn()
+          .mockResolvedValue({ _id: 'u1', accountType: 'personal' }),
+      });
+      mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 0 });
+      await service.banUser('u1');
+      await service.unbanUser('u1');
+      expect(mockSellerVisibility.syncSellers).not.toHaveBeenCalled();
     });
   });
 });

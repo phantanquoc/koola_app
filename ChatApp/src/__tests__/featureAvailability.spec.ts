@@ -14,8 +14,8 @@ import {
 
 describe('featureAvailability', () => {
   describe('availability registry', () => {
-    it('classifies shopping as preview', () => {
-      expect(getFeatureAvailability('shopping')).toBe('preview');
+    it('classifies shopping as ready (commerce-orders)', () => {
+      expect(getFeatureAvailability('shopping')).toBe('ready');
     });
 
     it('classifies services as preview', () => {

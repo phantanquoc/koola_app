@@ -93,12 +93,20 @@ export class Message {
    * Optional metadata set ONLY by the MomentsService comment-as-DM bridge.
    * Regular REST endpoints strip this field via service-level guard.
    */
+  // ─── Order Card Metadata (commerce-orders D3) ─────────────────────────
+  // metadata.order is set ONLY by MessagesService.sendMessageWithOrderCard.
+  // Regular REST message creation strips it (same guard as storyReply).
   @Prop({
     type: {
       storyReply: {
         storyId: { type: String },
         mediaKeyPreview: { type: String },
         captionSnippet: { type: String },
+      },
+      order: {
+        orderId: { type: String },
+        code: { type: String },
+        status: { type: String },
       },
     },
     default: null,
@@ -108,6 +116,11 @@ export class Message {
       storyId: string;
       mediaKeyPreview: string;
       captionSnippet: string;
+    };
+    order?: {
+      orderId: string;
+      code: string;
+      status: string;
     };
   } | null;
 

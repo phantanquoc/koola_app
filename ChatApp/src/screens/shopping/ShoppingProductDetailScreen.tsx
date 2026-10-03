@@ -1,11 +1,14 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FlatList,
   Image,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
-  type ImageSourcePropType,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -13,6 +16,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaButton,
+  KoolaErrorState,
+  KoolaSkeleton,
   KoolaText,
   koolaRadii,
   koolaShadows,
@@ -23,100 +28,195 @@ import {
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { ShoppingTabStackParamList } from '../../navigation/types';
-import { shoppingProducts, type ShoppingProduct } from './shoppingMockData';
-import { conversationsApi } from '../../services/api/apiService';
+import { commerceApi, type ProductDetail } from '../../services/api/apiService';
 import { getNotchHeaderHeight } from '../../components/NotchHeader';
 import { useShoppingProductHeader } from '../../navigation/ShoppingHeaderContext';
+import { formatVnd } from '../../utils/formatVnd';
+import { useSellerChat } from './hooks/useSellerChat';
+import { CATEGORY_ICON, addProductToCart, soldLabel } from './shoppingCatalog';
 
 type NavProp = NativeStackNavigationProp<ShoppingTabStackParamList, 'ShoppingProductDetail'>;
 type Route = RouteProp<ShoppingTabStackParamList, 'ShoppingProductDetail'>;
+
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; product: ProductDetail }
+  | { kind: 'notFound' }
+  | { kind: 'error' };
+
+const HERO_ASPECT = 1.4;
 
 const ShoppingProductDetailScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<Route>();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
-  const toast = useKoolaToast();
+  // useKoolaToast() returns a fresh object each render; keep it out of deps.
+  const toastRef = useRef(useKoolaToast());
   const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
+  const productId = route.params.productId;
 
-  // product header is set after product is resolved (below)
+  const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const product = state.kind === 'ready' ? state.product : null;
+  const reqSeqRef = useRef(0);
 
-  const product: ShoppingProduct | undefined = useMemo(
-    () => shoppingProducts.find((p) => p.id === route.params.productId),
-    [route.params.productId],
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const seq = ++reqSeqRef.current;
+      if (!opts?.silent) setState({ kind: 'loading' });
+      try {
+        const detail = await commerceApi.getProduct(productId);
+        if (seq !== reqSeqRef.current) return;
+        setState({ kind: 'ready', product: detail });
+      } catch (err: unknown) {
+        if (seq !== reqSeqRef.current) return;
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        // A silent refresh (image URL renewal) never replaces visible content.
+        if (opts?.silent) return;
+        setState(status === 404 ? { kind: 'notFound' } : { kind: 'error' });
+      }
+    },
+    [productId],
   );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Presigned image URLs expire (≈1h). On the first image error, refetch the
+  // detail ONCE for fresh URLs; a second failure falls back to the glyph.
+  const imageRefetchedRef = useRef(false);
+  const [failedImages, setFailedImages] = useState<Record<number, true>>({});
+  const handleImageError = useCallback(
+    (index: number) => {
+      if (!imageRefetchedRef.current) {
+        imageRefetchedRef.current = true;
+        void load({ silent: true });
+        return;
+      }
+      setFailedImages((m) => (m[index] ? m : { ...m, [index]: true }));
+    },
+    [load],
+  );
+
+  const [imageIndex, setImageIndex] = useState(0);
+  const onGalleryScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const i = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, windowWidth));
+      setImageIndex((prev) => (prev === i ? prev : i));
+    },
+    [windowWidth],
+  );
+
+  const { openSellerChat, contactingSellerId } = useSellerChat();
+  const contacting = !!product && contactingSellerId === product.seller.id;
 
   const handleViewShop = useCallback(() => {
     if (!product) return;
-    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingStorefront', { sellerId: product.seller.id });
+    navigation.navigate('ShoppingStorefront', { sellerId: product.seller.id });
   }, [product, navigation]);
 
-  const handleGoCart = useCallback(() => {
+  const handleOpenCart = useCallback(() => {
+    navigation.navigate('ShoppingCart');
+  }, [navigation]);
+
+  const handleAddToCart = useCallback(() => {
     if (!product) return;
-    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', { productId: product.id });
+    if (addProductToCart(product)) {
+      toastRef.current.show('Đã thêm vào giỏ hàng', 'success');
+    } else {
+      toastRef.current.show('Không thể thêm vào giỏ. Bạn thử lại nhé.', 'warning');
+    }
+  }, [product]);
+
+  // [Mua ngay] = add to cart, then open the cart.
+  const handleBuyNow = useCallback(() => {
+    if (!product) return;
+    if (addProductToCart(product)) {
+      navigation.navigate('ShoppingCart');
+    } else {
+      toastRef.current.show('Không thể thêm vào giỏ. Bạn thử lại nhé.', 'warning');
+    }
   }, [product, navigation]);
 
   const handleShare = useCallback(() => {
-    toast.show('Chia sẻ — đang phát triển', 'info');
-  }, [toast]);
-  const handleCart = useCallback(() => {
-    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', product ? { productId: product.id } : {});
-  }, [navigation, product]);
+    toastRef.current.show('Chia sẻ — đang phát triển', 'info');
+  }, []);
   const handleSearch = useCallback(() => {
-    toast.show('Tìm kiếm — đang phát triển', 'info');
-  }, [toast]);
+    toastRef.current.show('Tìm kiếm — đang phát triển', 'info');
+  }, []);
 
   useShoppingProductHeader({
-    shopName: product?.shop ?? 'Chi tiết sản phẩm',
+    shopName: product?.seller.displayName ?? 'Chi tiết sản phẩm',
     onBack: useCallback(() => navigation.goBack(), [navigation]),
-    onShopPress: handleViewShop,
+    onShopPress: product ? handleViewShop : undefined,
     onShare: handleShare,
-    onCart: handleCart,
+    onCart: handleOpenCart,
     onSearch: handleSearch,
   });
 
-  const [imageFailed, setImageFailed] = useState(false);
-  const [contacting, setContacting] = useState(false);
-
   // NotchHeader is rendered by ShoppingTabStack as a fixed sibling above the
-  // stack (zIndex 10). Content starts right below it — same pattern as
-  // UpgradeScreen / SettingsDetailScreen in PersonalTab.
+  // stack (zIndex 10). Content starts right below it.
   const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + koolaSpacing.sm;
 
-  const handleContactSeller = useCallback(async () => {
-    if (!product) return;
-    setContacting(true);
-    try {
-      const { conversation } = await conversationsApi.startDirectChat(product.seller.id);
-      (navigation as unknown as { navigate: (a: string, b: unknown) => void }).navigate('ChatTab', {
-        screen: 'Chat',
-        params: { conversationId: conversation._id },
-      });
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      const msg =
-        status === 404
-          ? 'Gian hang mau chua co tai khoan that — se ket noi khi backend san sang. Ban co the nhan tin qua tab Ket noi.'
-          : 'Khong the bat dau tro chuyen. Ban thu lai nhe.';
-      toast.show(msg, status === 404 ? 'info' : 'warning');
-    } finally {
-      setContacting(false);
-    }
-  }, [product, navigation, toast]);
+  if (state.kind === 'loading') {
+    return (
+      <View style={styles.host}>
+        <View
+          style={{ paddingTop: scrollPadTop }}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Đang tải sản phẩm">
+          <KoolaSkeleton width="100%" height={windowWidth / HERO_ASPECT} radius={0} />
+          <View style={styles.section}>
+            <KoolaSkeleton width="80%" height={22} radius={koolaRadii.xs} />
+            <KoolaSkeleton width="40%" height={14} radius={koolaRadii.xs} style={{ marginTop: 10 }} />
+            <KoolaSkeleton width="50%" height={26} radius={koolaRadii.xs} style={{ marginTop: 18 }} />
+            <KoolaSkeleton width="100%" height={64} radius={koolaRadii.md} style={{ marginTop: 18 }} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
-  if (!product) {
+  if (state.kind === 'notFound' || state.kind === 'error') {
     return (
       <View style={styles.host}>
         <ScrollView contentContainerStyle={[styles.notFound, { paddingTop: scrollPadTop }]}>
-          <MaterialIcons name="search-off" size={40} color={semantic.text.faint} />
-          <KoolaText tone="muted" style={{ marginTop: 12 }}>Khong tim thay san pham</KoolaText>
+          {state.kind === 'notFound' ? (
+            <>
+              <MaterialIcons name="search-off" size={40} color={semantic.text.faint} />
+              <KoolaText tone="muted" style={{ marginTop: 12 }}>Không tìm thấy sản phẩm</KoolaText>
+              <KoolaText variant="caption" tone="faint" align="center" style={{ marginTop: 4 }}>
+                Sản phẩm có thể đã ngừng bán.
+              </KoolaText>
+              <Pressable
+                onPress={() => navigation.goBack()}
+                style={[styles.backPill, { borderColor: semantic.border.strong }]}
+                accessibilityRole="button"
+                android_ripple={{ color: semantic.border.subtle }}>
+                <KoolaText variant="label" weight="700">Quay lại</KoolaText>
+              </Pressable>
+            </>
+          ) : (
+            <KoolaErrorState
+              title="Không tải được sản phẩm"
+              message="Kiểm tra kết nối mạng rồi thử lại."
+              onRetry={() => void load()}
+            />
+          )}
         </ScrollView>
       </View>
     );
   }
 
-  const showImage = Boolean(product.image) && !imageFailed;
+  const p = state.product;
+  const sold = soldLabel(p.soldCount);
+  const accent = semantic.action.primary;
+  const images = p.imageUrls
+    .map((url, i) => ({ url, key: p.imageKeys[i] ?? String(i), index: i }))
+    .filter((img): img is { url: string; key: string; index: number } => !!img.url && !failedImages[img.index]);
 
   return (
     <View style={styles.host}>
@@ -128,114 +228,151 @@ const ShoppingProductDetailScreen: React.FC = () => {
         ]}
         showsVerticalScrollIndicator={false}>
 
-        <View style={[styles.heroWrap, { backgroundColor: `${product.accent}14` }]}>
-          {showImage ? (
-            <Image
-              source={product.image as ImageSourcePropType}
-              style={styles.heroImage}
-              resizeMode="cover"
-              onError={() => setImageFailed(true)}
+        <View style={[styles.heroWrap, { backgroundColor: `${accent}14`, height: windowWidth / HERO_ASPECT }]}>
+          {images.length > 0 ? (
+            <FlatList
+              data={images}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(img) => img.key}
+              onScroll={onGalleryScroll}
+              scrollEventThrottle={32}
+              renderItem={({ item: img }) => (
+                <Image
+                  // Cells are keyed by media key (keyExtractor), so a refreshed
+                  // presigned URL for the same image swaps source in place.
+                  source={{ uri: img.url }}
+                  style={{ width: windowWidth, height: windowWidth / HERO_ASPECT }}
+                  resizeMode="cover"
+                  onError={() => handleImageError(img.index)}
+                  accessibilityIgnoresInvertColors
+                  accessible
+                  accessibilityLabel={`Ảnh ${img.index + 1} của ${p.name}`}
+                />
+              )}
             />
           ) : (
-            <MaterialIcons name={product.icon as never} size={72} color={product.accent} />
+            <MaterialIcons name={CATEGORY_ICON[p.category] as never} size={72} color={accent} />
           )}
-          {product.badge ? (
-            <View style={styles.heroBadge}>
-              <KoolaText variant="caption" weight="800" tone="surface">{product.badge}</KoolaText>
+          {images.length > 1 ? (
+            <View style={styles.galleryCounter} accessibilityLabel={`Ảnh ${imageIndex + 1} trên ${images.length}`}>
+              <KoolaText variant="caption" weight="700" tone="surface">
+                {Math.min(imageIndex, images.length - 1) + 1}/{images.length}
+              </KoolaText>
             </View>
           ) : null}
         </View>
 
         <View style={styles.section}>
-          <KoolaText variant="heading" weight="800" style={styles.title}>{product.title}</KoolaText>
+          <KoolaText variant="heading" weight="800" style={styles.title}>{p.name}</KoolaText>
           <View style={styles.shopRow}>
             <MaterialIcons name="storefront" size={14} color={semantic.text.muted} />
-            <KoolaText variant="caption" tone="muted" style={{ marginLeft: 6 }}>{product.shop}</KoolaText>
-            {product.seller.verified ? (
-              <View style={[styles.verifiedPill, { backgroundColor: `${semantic.status.success}14` }]}>
-                <MaterialIcons name="verified" size={12} color={semantic.status.success} />
-                <KoolaText variant="caption" weight="700" style={{ marginLeft: 4, color: semantic.status.success }}>Da xac minh</KoolaText>
-              </View>
-            ) : null}
+            <KoolaText variant="caption" tone="muted" style={{ marginLeft: 6 }}>{p.seller.displayName}</KoolaText>
+            <View style={[styles.verifiedPill, { backgroundColor: `${semantic.status.success}14` }]}>
+              <MaterialIcons name="verified" size={12} color={semantic.status.success} />
+              <KoolaText variant="caption" weight="700" style={{ marginLeft: 4, color: semantic.status.success }}>Đã xác minh</KoolaText>
+            </View>
           </View>
         </View>
 
         <View style={styles.section}>
           <View style={styles.priceRow}>
-            <KoolaText variant="title" weight="800" style={{ color: semantic.text.primary }}>{product.price}</KoolaText>
-            {product.originalPrice ? (
-              <KoolaText variant="caption" tone="faint" style={styles.strike}>{product.originalPrice}</KoolaText>
+            <KoolaText variant="title" weight="800" style={{ color: semantic.text.primary }}>{formatVnd(p.price)}</KoolaText>
+            {p.originalPrice ? (
+              <KoolaText variant="caption" tone="faint" style={styles.strike}>{formatVnd(p.originalPrice)}</KoolaText>
             ) : null}
           </View>
-          <KoolaText variant="caption" tone="faint" style={{ marginTop: 4 }}>Gia tham khao · thoa thuan khi trao doi</KoolaText>
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <MaterialIcons name="star" size={14} color={semantic.status.warning} />
-              <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>{product.rating}</KoolaText>
-              <KoolaText variant="caption" tone="muted"> · {product.sold} da quan tam</KoolaText>
+          {sold || p.deliveryText ? (
+            <View style={styles.metaRow}>
+              {sold ? <KoolaText variant="caption" tone="muted">{sold}</KoolaText> : null}
+              {sold && p.deliveryText ? <View style={styles.dot} /> : null}
+              {p.deliveryText ? (
+                <View style={styles.metaItem}>
+                  <MaterialIcons name="local-shipping" size={14} color={semantic.text.muted} />
+                  <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>{p.deliveryText}</KoolaText>
+                </View>
+              ) : null}
             </View>
-            <View style={styles.dot} />
-            <KoolaText variant="caption" tone="muted">{product.delivery}</KoolaText>
-          </View>
-          <View style={styles.tagRow}>
-            {product.tags.map((tag) => (
-              <View key={tag} style={styles.tagChip}>
-                <KoolaText variant="caption" tone="muted" style={styles.tagText}>{tag}</KoolaText>
-              </View>
-            ))}
-          </View>
+          ) : null}
+          {p.tags.length > 0 ? (
+            <View style={styles.tagRow}>
+              {p.tags.map((tag) => (
+                <View key={tag} style={styles.tagChip}>
+                  <KoolaText variant="caption" tone="muted" style={styles.tagText}>{tag}</KoolaText>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
 
-        {product.description ? (
+        {p.description ? (
           <View style={styles.section}>
-            <KoolaText variant="label" weight="700" style={{ marginBottom: 6 }}>Mo ta</KoolaText>
-            <KoolaText variant="body" tone="muted" style={{ lineHeight: 20 }}>{product.description}</KoolaText>
+            <KoolaText variant="label" weight="700" style={{ marginBottom: 6 }}>Mô tả</KoolaText>
+            <KoolaText variant="body" tone="muted" style={{ lineHeight: 20 }}>{p.description}</KoolaText>
           </View>
         ) : null}
 
         <View style={styles.section}>
-          <KoolaText variant="label" weight="700" style={{ marginBottom: 8 }}>Gian hang</KoolaText>
-          <Pressable onPress={handleViewShop} style={styles.sellerCard} android_ripple={{ color: semantic.border.subtle }}>
-            <View style={[styles.sellerAvatar, { backgroundColor: `${product.accent}16` }]}>
-              <MaterialIcons name="storefront" size={22} color={product.accent} />
+          <KoolaText variant="label" weight="700" style={{ marginBottom: 8 }}>Gian hàng</KoolaText>
+          <Pressable
+            onPress={handleViewShop}
+            style={styles.sellerCard}
+            accessibilityRole="button"
+            accessibilityLabel={`Xem gian hàng ${p.seller.displayName}`}
+            android_ripple={{ color: semantic.border.subtle }}>
+            <View style={[styles.sellerAvatar, { backgroundColor: `${accent}16` }]}>
+              {p.seller.logoUrl ? (
+                <Image source={{ uri: p.seller.logoUrl }} style={styles.sellerLogo} accessible={false} />
+              ) : (
+                <MaterialIcons name="storefront" size={22} color={accent} />
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <KoolaText variant="label" weight="800" numberOfLines={1} style={{ flexShrink: 1 }}>{product.seller.name}</KoolaText>
-                {product.seller.verified ? (
-                  <MaterialIcons name="verified" size={14} color={semantic.status.success} style={{ marginLeft: 6 }} />
-                ) : null}
+                <KoolaText variant="label" weight="800" numberOfLines={1} style={{ flexShrink: 1 }}>{p.seller.displayName}</KoolaText>
+                <MaterialIcons name="verified" size={14} color={semantic.status.success} style={{ marginLeft: 6 }} />
               </View>
-              {product.seller.province ? (
+              {p.seller.province ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
                   <MaterialIcons name="place" size={12} color={semantic.text.faint} />
-                  <KoolaText variant="caption" tone="faint" style={{ marginLeft: 4 }}>{product.seller.province}</KoolaText>
+                  <KoolaText variant="caption" tone="faint" style={{ marginLeft: 4 }}>{p.seller.province}</KoolaText>
                 </View>
               ) : null}
             </View>
             <MaterialIcons name="chevron-right" size={20} color={semantic.text.faint} />
           </Pressable>
+          <Pressable
+            onPress={() => void openSellerChat(p.seller.id)}
+            disabled={contacting}
+            style={[styles.chatLink, { borderColor: semantic.border.strong, opacity: contacting ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Nhắn tin với ${p.seller.displayName}`}
+            android_ripple={{ color: semantic.border.subtle }}>
+            <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.text.primary} />
+            <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Nhắn tin với shop</KoolaText>
+          </Pressable>
           <KoolaText variant="caption" tone="faint" style={{ marginTop: 8, lineHeight: 16 }}>
-            App chi la noi trung bay — gia va giao nhan do hai ben tu thoa thuan khi nhan tin.
+            Phí ship và thời gian giao do shop báo khi nhắn tin.
           </KoolaText>
         </View>
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <Pressable
-          onPress={handleGoCart}
+          onPress={handleAddToCart}
           style={[styles.shopBtn, { borderColor: semantic.border.strong }]}
+          accessibilityRole="button"
+          accessibilityLabel="Thêm vào giỏ"
           android_ripple={{ color: semantic.border.subtle }}>
-          <MaterialIcons name="shopping-bag" size={18} color={semantic.text.primary} />
-          <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Mua hang</KoolaText>
+          <MaterialIcons name="add-shopping-cart" size={18} color={semantic.text.primary} />
+          <KoolaText variant="label" weight="700" style={{ marginLeft: 6 }}>Thêm vào giỏ</KoolaText>
         </Pressable>
         <KoolaButton
-          title="Nhắn tin"
-          icon="chat-bubble-outline"
+          title="Mua ngay"
+          icon="shopping-bag"
           variant="primary"
-          loading={contacting}
-          disabled={contacting}
-          onPress={handleContactSeller}
+          onPress={handleBuyNow}
           style={styles.chatBtn}
         />
       </View>
@@ -248,24 +385,31 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
   return StyleSheet.create({
     host: { flex: 1, backgroundColor: 'transparent' },
     notFound: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+    backPill: {
+      marginTop: 16,
+      height: 44,
+      paddingHorizontal: 20,
+      borderRadius: koolaRadii.pill,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     scroll: { flex: 1 },
     scrollContent: { paddingBottom: 24 },
     heroWrap: {
       width: '100%',
-      aspectRatio: 1.4,
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
     },
-    heroImage: { width: '100%', height: '100%' },
-    heroBadge: {
+    galleryCounter: {
       position: 'absolute',
-      left: 12,
-      top: 12,
-      backgroundColor: 'rgba(0,0,0,0.72)',
+      right: 12,
+      bottom: 12,
+      backgroundColor: 'rgba(0,0,0,0.6)',
       paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: koolaRadii.xs,
+      paddingVertical: 3,
+      borderRadius: koolaRadii.pill,
     },
     section: {
       paddingHorizontal: 16,
@@ -313,6 +457,18 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
+      overflow: 'hidden',
+    },
+    sellerLogo: { width: 44, height: 44 },
+    chatLink: {
+      marginTop: 10,
+      height: 44,
+      borderRadius: koolaRadii.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: semantic.surface.level1,
     },
     bottomBar: {
       position: 'absolute',

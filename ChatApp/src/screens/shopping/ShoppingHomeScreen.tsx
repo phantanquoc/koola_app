@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   FlatList,
   Image,
@@ -8,12 +9,13 @@ import {
   StyleSheet,
   TextInput,
   View,
-  type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaChip,
+  KoolaEmptyState,
+  KoolaErrorState,
   KoolaSheet,
   KoolaSkeleton,
   KoolaText,
@@ -29,17 +31,21 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { ShoppingTabStackParamList } from '../../navigation/types';
-import { conversationsApi } from '../../services/api/apiService';
+import { commerceApi } from '../../services/api/apiService';
+import type { CommerceCategory, CommerceSort, ProductCard } from '../../services/api/apiService';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
-import { useComingSoonToast } from '../../hooks/useComingSoonToast';
-import { isPreview, AVAILABILITY_LABELS } from '../../hooks/featureAvailability';
+import { formatVnd } from '../../utils/formatVnd';
+import { useCommerceProductList } from './hooks/useCommerceProductList';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
+import { useSellerChat } from './hooks/useSellerChat';
 import {
-  shoppingAttributeChips,
-  shoppingCategories,
-  shoppingProducts,
-  shoppingSortChips,
-  type ShoppingProduct,
-} from './shoppingMockData';
+  CATEGORY_ICON,
+  SHOPPING_CATEGORIES,
+  SHOPPING_SORT_CHIPS,
+  SHOPPING_TAG_CHIPS,
+  addProductToCart,
+  soldLabel,
+} from './shoppingCatalog';
 
 /**
  * Shopping home — single-column product list (Figma frame 64:2).
@@ -81,46 +87,16 @@ const DOCK_SLIDE = DOCK_H + DOCK_GAP_BOTTOM;
 // Vertical gap between product cards. Shared with the skeleton's row spacing
 // so the two stay in sync and swapping in real content causes no shift.
 const CARD_GAP = 6;
-// Tags shown per card (mock data carries up to 3; capped for uniform row height).
+// Tags shown per card (capped for uniform row height).
 const TAGS_PER_CARD = 2;
 const CHROME_RESERVE =
   DOCK_GAP_TOP + DOCK_H + DOCK_GAP_BOTTOM + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
-
-// shoppingCategories[0] is the { id: 'all' } sentinel. It stays in the mock
-// data file (other code may reference it) but is never rendered as a chip —
-// with categories behind the sheet, "no category selected" already means
-// all products, so a standalone "Tất cả" chip would be redundant.
-const ALL_CATEGORY_ID = 'all';
+// Search input → server query debounce (spec: 300 ms).
+const SEARCH_DEBOUNCE_MS = 300;
 
 type Styles = ReturnType<typeof makeStyles>;
-
-function filterAndSortProducts(
-  query: string,
-  activeAttr: string | null,
-  activeSort: string | null,
-): ShoppingProduct[] {
-  let list = shoppingProducts.slice();
-  const q = query.trim().toLowerCase();
-  if (q) {
-    list = list.filter(
-      (p) =>
-        p.title.toLowerCase().includes(q) ||
-        p.shop.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q)),
-    );
-  }
-  if (activeAttr) {
-    list = list.filter((p) => p.tags.includes(activeAttr));
-  }
-  // Sắp xếp theo dữ liệu mẫu (soldCount/rating) — chỉ để preview, chưa có backend.
-  if (activeSort === 'Được mua nhiều nhất') {
-    list = list.slice().sort((a, b) => b.soldCount - a.soldCount);
-  } else if (activeSort === 'Giá thấp nhất') {
-    const toNum = (s: string) => Number(s.replace(/[.\sđĐ]/g, '')) || 0;
-    list = list.slice().sort((a, b) => toNum(a.price) - toNum(b.price));
-  }
-  return list;
-}
+// Filtering, sorting and pagination are done by the server
+// (GET /commerce/products) — never in the client.
 
 // ── Search dock: flat opaque pill, 40dp (flat dock pass) ────────────────────
 // Flat, no blur/shadow — fill is `semantic.border.subtle`. 40 + hitSlop
@@ -219,25 +195,25 @@ const dockStyles = StyleSheet.create({
 const FilterRow: React.FC<{
   semantic: SemanticTokens;
   styles: Styles;
-  activeSort: string | null;
+  activeSort: CommerceSort | null;
   activeAttr: string | null;
   activeFilterCount: number;
-  onToggleSort: (label: string) => void;
+  onToggleSort: (sort: Exclude<CommerceSort, 'newest'>) => void;
   onToggleAttr: (label: string) => void;
   onOpenFilters: () => void;
 }> = ({ semantic, styles, activeSort, activeAttr, activeFilterCount, onToggleSort, onToggleAttr, onOpenFilters }) => (
   <View style={styles.filterRow}>
     <View style={styles.chipGrid}>
       <View style={styles.chipRowTop}>
-        {shoppingSortChips.map((label) => {
-          const selected = activeSort === label;
+        {SHOPPING_SORT_CHIPS.map(({ sort, label }) => {
+          const selected = activeSort === sort;
           return (
             <Pressable
-              key={label}
+              key={sort}
               accessibilityRole="button"
               accessibilityLabel={label}
               accessibilityState={{ selected }}
-              onPress={() => onToggleSort(label)}
+              onPress={() => onToggleSort(sort)}
               hitSlop={4}
               style={[styles.rowChip, selected && styles.rowChipActive]}>
               <KoolaText
@@ -253,7 +229,7 @@ const FilterRow: React.FC<{
         })}
       </View>
       <View style={styles.chipRowBottom}>
-        {shoppingAttributeChips.map((label) => {
+        {SHOPPING_TAG_CHIPS.map((label) => {
           const selected = activeAttr === label;
           return (
             <Pressable
@@ -300,16 +276,14 @@ const FilterRow: React.FC<{
 // the outer filter row, and two controls bound to one piece of state is
 // redundant UI. Sheet = "Phân loại" + "Xóa lọc".
 //
-// The `{ id: 'all' }` entry stays in shoppingMockData (other code may reference
-// it) but is filtered out at render: with categories behind the sheet, "no
-// category selected" already means all products. No dead end — tapping the
-// active category chip clears it (toggle), and "Xóa lọc" clears all three
-// groups.
+// "No category selected" (null) means all products, so there is no "Tất cả"
+// chip. No dead end — tapping the active category chip clears it (toggle), and
+// "Xóa lọc" clears all three groups.
 const FilterSheet: React.FC<{
   styles: Styles;
-  activeCategory: string;
+  activeCategory: CommerceCategory | null;
   hasActiveFilters: boolean;
-  onToggleCategory: (id: string) => void;
+  onToggleCategory: (id: CommerceCategory) => void;
   onClear: () => void;
   onClose: () => void;
   bottomInset: number;
@@ -338,52 +312,81 @@ const FilterSheet: React.FC<{
         Phân loại
       </KoolaText>
       <View style={styles.sheetChipRow}>
-        {shoppingCategories
-          .filter((category) => category.id !== ALL_CATEGORY_ID)
-          .map((category) => (
-            <View key={category.id} style={styles.sheetChipWrap}>
-              <KoolaChip
-                label={category.label}
-                selected={activeCategory === category.id}
-                onPress={() => onToggleCategory(category.id)}
-                accessibilityLabel={category.label}
-              />
-            </View>
-          ))}
+        {SHOPPING_CATEGORIES.map((category) => (
+          <View key={category.id} style={styles.sheetChipWrap}>
+            <KoolaChip
+              label={category.label}
+              selected={activeCategory === category.id}
+              onPress={() => onToggleCategory(category.id)}
+              accessibilityLabel={category.label}
+            />
+          </View>
+        ))}
       </View>
     </View>
   </KoolaSheet>
 );
 
-// ── Single-column product row (thumbnail + meta + price + cart) ───────────────
+// ── Single-column product row (thumbnail + meta + price + [+ giỏ]) ────────────
 const ProductRow: React.FC<{
-  item: ShoppingProduct;
+  item: ProductCard;
   semantic: SemanticTokens;
   styles: Styles;
-  onOpen: () => void;
-  onChat: () => void;
-}> = React.memo(({ item, semantic, styles, onOpen, onChat }) => {
-  // Ảnh mock là bundled asset nên gần như không thể lỗi, nhưng vẫn theo dõi
-  // onError để ô thumb không bao giờ là một khối màu trống: hỏng ảnh → rơi về
-  // glyph, đúng như khi sản phẩm chưa có `image`.
-  const [imageFailed, setImageFailed] = useState(false);
-  const onImageError = useCallback(() => setImageFailed(true), []);
-  const showImage = Boolean(item.image) && !imageFailed;
+  onOpen: (item: ProductCard) => void;
+  onAddToCart: (item: ProductCard) => void;
+  onChat: (item: ProductCard) => void;
+  /** True while a chat with THIS row's seller is being opened. */
+  chatBusy: boolean;
+}> = React.memo(({ item, semantic, styles, onOpen, onAddToCart, onChat, chatBusy }) => {
+  // Server images are presigned URLs (≈1h). On the first image error,
+  // refetch the product detail ONCE for a fresh URL (design D6, same as PDP);
+  // the glyph shows only if the refresh keeps failing.
+  const [imageUrl, setImageUrl] = useState(item.imageUrl);
+  const imageRefreshedRef = useRef(false);
+  useEffect(() => {
+    setImageUrl(item.imageUrl);
+    imageRefreshedRef.current = false;
+  }, [item.id, item.imageUrl]);
+  const onImageError = useCallback(() => {
+    if (!imageRefreshedRef.current) {
+      imageRefreshedRef.current = true;
+      commerceApi.getProduct(item.id).then(
+        (detail) => {
+          if (detail.imageUrls[0]) {
+            setImageUrl(detail.imageUrls[0]);
+          } else {
+            setImageUrl(null);
+          }
+        },
+        () => {
+          // Refetch failed — collapse to the glyph fallback.
+          setImageUrl(null);
+        },
+      );
+      return;
+    }
+    setImageUrl(null);
+  }, [item.id]);
+  const showImage = Boolean(imageUrl);
+  const sold = soldLabel(item.soldCount);
+  const accent = semantic.action.primary;
 
   return (
   <Pressable
     accessibilityRole="button"
-    accessibilityLabel={item.title}
+    accessibilityLabel={`${item.name}, ${formatVnd(item.price)}`}
     android_ripple={{ color: semantic.border.subtle }}
-    onPress={onOpen}
+    onPress={() => onOpen(item)}
     style={styles.productRowCard}>
-    <View style={[styles.productThumb, { backgroundColor: `${item.accent}16` }]}>
+    <View style={[styles.productThumb, { backgroundColor: `${accent}12` }]}>
       {showImage ? (
-        // Ảnh phủ kín ô vuông, nằm TRÊN nền accent (nền hiện trong lúc decode)
-        // và DƯỚI badge — badge render sau nên vẫn nằm trên cùng. Ảnh chỉ để
-        // trang trí: Pressable cha đã có accessibilityLabel={item.title}.
+        // Ảnh phủ kín ô vuông, nằm TRÊN nền accent (nền hiện trong lúc decode).
+        // Ảnh chỉ để trang trí: Pressable cha đã có accessibilityLabel.
+        // key = imageKey so a refreshed presigned URL for the same image does
+        // not remount/flash the row.
         <Image
-          source={item.image as ImageSourcePropType}
+          key={item.imageKey ?? undefined}
+          source={{ uri: imageUrl as string }}
           style={styles.productThumbImage}
           resizeMode="cover"
           onError={onImageError}
@@ -391,62 +394,39 @@ const ProductRow: React.FC<{
           importantForAccessibility="no"
         />
       ) : (
-        /* 44: the thumb grew 72 → 104 wide and now fills the card's full
-           height, so the glyph scales with it (holding roughly the original
-           30/72 ≈ 0.42 ratio) rather than looking lost in the larger area. */
-        <MaterialIcons name={item.icon as never} size={44} color={item.accent} />
+        /* 44: the thumb fills the card's full height, so the glyph scales
+           with it rather than looking lost in the larger area. */
+        <MaterialIcons name={CATEGORY_ICON[item.category] as never} size={44} color={accent} />
       )}
-      {item.badge ? (
-        <View style={styles.productBadge}>
-          <KoolaText variant="caption" weight="800" tone="surface" numberOfLines={1}>
-            {item.badge}
-          </KoolaText>
-        </View>
-      ) : null}
     </View>
     <View style={styles.productMeta}>
       <KoolaText variant="label" weight="800" numberOfLines={1} style={styles.productTitle}>
-        {item.title}
+        {item.name}
       </KoolaText>
       <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.productShop}>
-        {item.shop}
+        {item.seller?.displayName ?? 'Cửa hàng'}
       </KoolaText>
       <View style={styles.priceRow}>
         <KoolaText variant="label" weight="800" style={styles.priceText} numberOfLines={1}>
-          {item.price}
+          {formatVnd(item.price)}
         </KoolaText>
         {item.originalPrice ? (
           <KoolaText variant="caption" tone="faint" style={styles.strikeText} numberOfLines={1}>
-            {item.originalPrice}
+            {formatVnd(item.originalPrice)}
           </KoolaText>
         ) : null}
       </View>
-      {/* Rating + sold count. The star is decorative — the adjacent numbers
-          carry the meaning, and the outer Pressable already owns
-          accessibilityLabel={item.title} — so the row is wrapped with its own
-          accessible/accessibilityLabel instead of leaving the star to float
-          unannounced next to a bare "4.8". */}
-      <View
-        style={styles.ratingRow}
-        accessible
-        accessibilityLabel={`${item.rating} sao, đã bán ${item.sold}`}>
-        <MaterialIcons
-          name="star"
-          size={12}
-          color={semantic.status.warning}
-          importantForAccessibility="no"
-        />
-        <KoolaText variant="caption" weight="700" style={styles.ratingText} numberOfLines={1}>
-          {item.rating}
-        </KoolaText>
+      {/* Real server soldCount (soldLabel, hidden at 0) + delivery text.
+          Rating is not displayed (no reviews yet). The row keeps a fixed line
+          so every card shares a height. */}
+      <View style={styles.ratingRow}>
         <KoolaText variant="caption" tone="muted" style={styles.soldText} numberOfLines={1}>
-          {' · '}
-          {item.sold} đã bán
+          {[sold, item.deliveryText || null].filter(Boolean).join(' · ') || ' '}
         </KoolaText>
       </View>
       {/* Cap at 2 tags so every card's tag row is exactly one line and all
-          cards share a height. Mock data carries up to 3 tags per product —
-          the full array stays intact, only the render trims. */}
+          cards share a height. The full array stays intact, only the render
+          trims. */}
       <View style={styles.tagRow}>
         {item.tags.slice(0, TAGS_PER_CARD).map((tag) => (
           <View key={tag} style={styles.tagChip}>
@@ -464,12 +444,22 @@ const ProductRow: React.FC<{
         1-2dp rhythm. */}
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Nhắn tin về ${item.title}`}
+      accessibilityLabel={`Nhắn tin với ${item.seller?.displayName ?? 'Cửa hàng'}`}
       android_ripple={{ color: `${semantic.action.primary}1A` }}
-      onPress={onChat}
-      hitSlop={8}
-      style={styles.rowCartBtn}>
+      onPress={() => onChat(item)}
+      disabled={chatBusy || !item.seller?.id}
+      hitSlop={6}
+      style={[styles.rowCartBtn, styles.rowChatBtn, (chatBusy || !item.seller?.id) && { opacity: 0.5 }]}>
       <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.action.primary} />
+    </Pressable>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Thêm ${item.name} vào giỏ`}
+      android_ripple={{ color: `${semantic.action.primary}1A` }}
+      onPress={() => onAddToCart(item)}
+      hitSlop={6}
+      style={styles.rowCartBtn}>
+      <MaterialIcons name="add-shopping-cart" size={16} color={semantic.action.primary} />
     </Pressable>
   </Pressable>
   );
@@ -480,8 +470,6 @@ const ShoppingHomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
-  // Toast must render above the floating tab dock, not under it.
-  const { notify, toast } = useComingSoonToast({ bottom: tabBarInset + 16 });
   const styles = useMemo(
     () => makeStyles(semantic, resolvedScheme),
     [semantic, resolvedScheme],
@@ -499,7 +487,7 @@ const ShoppingHomeScreen: React.FC = () => {
   // interpolations read; raw scroll drives it through a JS listener. All
   // animated props are transform/opacity/height — native-driven.
   const appliedOffset = useRef(new Animated.Value(0)).current;
-  const flatListRef = useRef<FlatList<ShoppingProduct>>(null);
+  const flatListRef = useRef<FlatList<ProductCard>>(null);
   const rawOffsetRef = useRef(0);
   const appliedValueRef = useRef(0);
   const travelRef = useRef(0);
@@ -625,10 +613,12 @@ const ShoppingHomeScreen: React.FC = () => {
   }, [snapToNearestDetent]);
 
   const [query, setQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [activeSort, setActiveSort] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<CommerceCategory | null>(null);
+  const [activeSort, setActiveSort] = useState<Exclude<CommerceSort, 'newest'> | null>(null);
   const [activeAttr, setActiveAttr] = useState<string | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // Server-driven search: the request only fires after 300 ms of quiet.
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
 
   const [contentReady, setContentReady] = useState(false);
   const contentReadyFired = useRef(false);
@@ -643,58 +633,60 @@ const ShoppingHomeScreen: React.FC = () => {
   }, []);
 
   const shoppingNav = useNavigation<NativeStackNavigationProp<ShoppingTabStackParamList>>();
-  const koolaToast = useKoolaToast();
+  // useKoolaToast() returns a fresh object every render — hold it in a ref so
+  // memoized row callbacks stay stable.
+  const koolaToastRef = useRef(useKoolaToast());
 
-  const handleOpenProduct = useCallback((productId: string) => {
-    shoppingNav.navigate('ShoppingProductDetail', { productId });
+  // ── Server-driven list (search / category / tag / sort / pagination) ────
+  const listQuery = useMemo(
+    () => ({
+      q: debouncedQuery,
+      category: activeCategory ?? undefined,
+      tag: activeAttr ?? undefined,
+      sort: activeSort ?? undefined,
+    }),
+    [debouncedQuery, activeCategory, activeAttr, activeSort],
+  );
+  // `enabled: contentReady` keeps the first-mount cost pattern: the request
+  // starts after the tab transition settles (InteractionManager), and the
+  // skeleton covers both the transition and the first page.
+  const list = useCommerceProductList(listQuery, { enabled: contentReady });
+
+  const handleOpenProduct = useCallback((item: ProductCard) => {
+    shoppingNav.navigate('ShoppingProductDetail', { productId: item.id });
   }, [shoppingNav]);
 
-  const handleChatSeller = useCallback(async (product: ShoppingProduct) => {
-    try {
-      const { conversation } = await conversationsApi.startDirectChat(product.seller.id);
-      (shoppingNav as unknown as { navigate: (a: string, b: unknown) => void }).navigate('ChatTab', {
-        screen: 'Chat',
-        params: { conversationId: conversation._id },
-      });
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      koolaToast.show(
-        status === 404
-          ? 'Gian hang mau chua co tai khoan that — se ket noi khi backend san sang.'
-          : 'Khong the bat dau tro chuyen. Ban thu lai nhe.',
-        status === 404 ? 'info' : 'warning',
-      );
-    }
-  }, [shoppingNav, koolaToast]);
+  // Real direct chat with the seller's business account.
+  const { openSellerChat, contactingSellerId } = useSellerChat();
 
-  const products = useMemo(() => {
-    let list = filterAndSortProducts(query, activeAttr, activeSort);
-    if (activeCategory !== 'all') {
-      list = list.filter((p) => p.category === activeCategory);
+  const handleAddToCart = useCallback((item: ProductCard) => {
+    if (addProductToCart(item)) {
+      koolaToastRef.current.show(`Đã thêm "${item.name}" vào giỏ`, 'success');
+    } else {
+      koolaToastRef.current.show('Không thể thêm vào giỏ. Bạn thử lại nhé.', 'warning');
     }
-    return list;
-  }, [query, activeAttr, activeSort, activeCategory]);
+  }, []);
 
-  // Counts all three groups: category (when not the 'all' sentinel) + sort + attr.
+  // Counts all three groups: category + sort + attr.
   const activeFilterCount =
-    (activeCategory !== ALL_CATEGORY_ID ? 1 : 0) + (activeSort ? 1 : 0) + (activeAttr ? 1 : 0);
+    (activeCategory ? 1 : 0) + (activeSort ? 1 : 0) + (activeAttr ? 1 : 0);
 
-  const toggleSort = useCallback((label: string) => {
-    setActiveSort((prev) => (prev === label ? null : label));
+  const toggleSort = useCallback((sort: Exclude<CommerceSort, 'newest'>) => {
+    setActiveSort((prev) => (prev === sort ? null : sort));
   }, []);
 
   const toggleAttr = useCallback((label: string) => {
     setActiveAttr((prev) => (prev === label ? null : label));
   }, []);
 
-  // Tapping the active category clears it back to the 'all' sentinel, so there
-  // is no dead end once a category is picked.
-  const toggleCategory = useCallback((id: string) => {
-    setActiveCategory((prev) => (prev === id ? ALL_CATEGORY_ID : id));
+  // Tapping the active category clears it, so there is no dead end once a
+  // category is picked.
+  const toggleCategory = useCallback((id: CommerceCategory) => {
+    setActiveCategory((prev) => (prev === id ? null : id));
   }, []);
 
   const clearFilters = useCallback(() => {
-    setActiveCategory(ALL_CATEGORY_ID);
+    setActiveCategory(null);
     setActiveSort(null);
     setActiveAttr(null);
   }, []);
@@ -702,29 +694,93 @@ const ShoppingHomeScreen: React.FC = () => {
   const openFilterSheet = useCallback(() => setFilterSheetOpen(true), []);
   const closeFilterSheet = useCallback(() => setFilterSheetOpen(false), []);
 
-  const renderEmpty = () => (
-    <View style={styles.emptyWrap}>
-      <MaterialIcons name="search-off" size={36} color={semantic.text.faint} />
-      <KoolaText variant="label" weight="700" tone="muted" style={{ marginTop: 10 }}>
-        Không tìm thấy sản phẩm
-      </KoolaText>
-      <KoolaText variant="caption" tone="faint" align="center" style={{ marginTop: 4 }}>
-        Thử từ khóa khác hoặc bỏ bớt bộ lọc
-      </KoolaText>
+  const renderSkeletonRows = (count: number) => (
+    <View accessibilityLabel="Đang tải sản phẩm" accessibilityRole="progressbar">
+      {Array.from({ length: count }, (_, i) => (
+        <KoolaSkeleton
+          key={i}
+          width="100%"
+          height={99}
+          radius={koolaRadii.md}
+          style={{ marginTop: i === 0 ? 0 : CARD_GAP }}
+        />
+      ))}
     </View>
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: ShoppingProduct }) => (
-      <ProductRow
-        item={item}
-        onOpen={() => handleOpenProduct(item.id)}
-        onChat={() => handleChatSeller(item)}
-        semantic={semantic}
-        styles={styles}
+  const renderEmpty = () => {
+    if (list.status === 'initialLoading') return renderSkeletonRows(4);
+    if (list.status === 'error') {
+      return (
+        <KoolaErrorState
+          title="Không tải được sản phẩm"
+          message="Kiểm tra kết nối mạng rồi thử lại."
+          onRetry={list.retry}
+          style={styles.emptyWrap}
+        />
+      );
+    }
+    const hasFilters = activeFilterCount > 0 || debouncedQuery.trim().length > 0;
+    return (
+      <KoolaEmptyState
+        icon="search-off"
+        title="Không tìm thấy sản phẩm"
+        message={hasFilters ? 'Thử từ khóa khác hoặc bỏ bớt bộ lọc' : 'Chưa có sản phẩm nào được bán'}
+        actionLabel={activeFilterCount > 0 ? 'Xóa lọc' : undefined}
+        onActionPress={activeFilterCount > 0 ? clearFilters : undefined}
+        style={styles.emptyWrap}
       />
-    ),
-    [handleOpenProduct, handleChatSeller, semantic, styles],
+    );
+  };
+
+  const renderFooter = () => {
+    if (list.status === 'loadingMore') {
+      return (
+        <View style={styles.footer}>
+          <ActivityIndicator color={semantic.action.primary} accessibilityLabel="Đang tải thêm" />
+        </View>
+      );
+    }
+    if (list.status === 'loadMoreError') {
+      return (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Tải thêm thất bại, thử lại"
+          onPress={list.retry}
+          style={styles.footer}>
+          <KoolaText variant="caption" weight="700" tone="primary">
+            Không tải được thêm · Thử lại
+          </KoolaText>
+        </Pressable>
+      );
+    }
+    return null;
+  };
+
+  const handleChatSeller = useCallback(
+    (item: ProductCard) => {
+      if (!item.seller?.id) return;
+      void openSellerChat(item.seller.id);
+    },
+    [openSellerChat],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: ProductCard | undefined }) => {
+      if (!item?.seller) return null;
+      return (
+        <ProductRow
+          item={item}
+          onOpen={handleOpenProduct}
+          onAddToCart={handleAddToCart}
+          onChat={handleChatSeller}
+          chatBusy={contactingSellerId === item.seller?.id}
+          semantic={semantic}
+          styles={styles}
+        />
+      );
+    },
+    [handleOpenProduct, handleAddToCart, handleChatSeller, contactingSellerId, semantic, styles],
   );
 
   return (
@@ -766,14 +822,19 @@ const ShoppingHomeScreen: React.FC = () => {
         <Animated.FlatList
           ref={flatListRef}
           removeClippedSubviews={false}
-          data={products}
-          keyExtractor={(item) => item.id}
+          data={list.items}
+          keyExtractor={(item: ProductCard | undefined, index: number) => item?.id ?? String(index)}
           renderItem={renderItem}
           initialNumToRender={8}
           maxToRenderPerBatch={8}
           windowSize={7}
           updateCellsBatchingPeriod={50}
           ListEmptyComponent={renderEmpty}
+          ListFooterComponent={renderFooter}
+          // Infinite scroll: the hook ignores calls while a page is in flight
+          // or when there is no next page, so repeated onEndReached is safe.
+          onEndReached={list.loadMore}
+          onEndReachedThreshold={0.6}
           contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
           showsVerticalScrollIndicator={false}
           style={styles.screenTransparent}
@@ -829,7 +890,6 @@ const ShoppingHomeScreen: React.FC = () => {
           bottomInset={insets.bottom}
         />
       ) : null}
-      {toast}
     </View>
   );
 };
@@ -1020,8 +1080,7 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     // aspectRatio pass — Yoga/Fabric then falls back to the row's full width and
     // the image bleeds across the whole card, over the title/price/tags.
     // `width/height: '100%'` resolves in the same pass as the parent, so the
-    // image stays inside the square. (productBadge stays absolute safely because
-    // it only pins left+top, never right/bottom.)
+    // image stays inside the square.
     // Repeats productThumb's left-only corner radii — productThumb has no
     // overflow:'hidden' of its own (the card clips at its own edge), so without
     // this the image would square off the thumb's rounded left corners.
@@ -1030,18 +1089,6 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       height: '100%',
       borderTopLeftRadius: koolaRadii.md,
       borderBottomLeftRadius: koolaRadii.md,
-    },
-    productBadge: {
-      position: 'absolute',
-      // Nudged 4→6 now that the thumb is flush in the card's md (14dp) corner:
-      // at 4,4 the badge sat inside the corner's curve and read as clipped.
-      left: 6,
-      top: 6,
-      maxWidth: 76,
-      borderRadius: koolaRadii.xs,
-      backgroundColor: semantic.text.primary,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
     },
     productMeta: {
       flex: 1,
@@ -1090,27 +1137,23 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       alignItems: 'center',
       marginBottom: 2,
     },
-    ratingText: {
-      fontSize: 11,
-      lineHeight: 14,
-      marginLeft: 3,
-    },
     soldText: {
       fontSize: 11,
       lineHeight: 14,
     },
     // nowrap (was 'wrap') is what actually guarantees one line. Capping at 2
-    // tags fits every mock combo at default text size. paddingRight reserves
-    // a lane clear of the absolute rowCartBtn (30 wide + 10 right inset + 6
-    // breathing gap) so long tags truncate against that edge instead of
-    // running underneath the button — this reservation is local to tagRow
-    // only, the title/shop/price/rating rows above keep productMeta's full
-    // width. Tag chips already have flexShrink:1 + numberOfLines={1}, so
+    // tags keeps every card one tag-line tall. paddingRight reserves a lane
+    // clear of the two absolute action buttons (chat + cart: 2×30 wide + 6 gap
+    // between + 10 right inset − 10 already provided by productMeta's
+    // marginRight + 6 breathing gap = 72) so long tags truncate against that
+    // edge instead of running underneath the buttons — this reservation is
+    // local to tagRow only, the title/shop/price rows above keep productMeta's
+    // full width. Tag chips already have flexShrink:1 + numberOfLines={1}, so
     // they truncate rather than collide with the reserved lane.
     tagRow: {
       flexDirection: 'row',
       flexWrap: 'nowrap',
-      paddingRight: 46,
+      paddingRight: 72,
     },
     tagChip: {
       flexShrink: 1,
@@ -1149,10 +1192,22 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // Chat button sits immediately left of the [+ giỏ] button: 10 right inset
+    // + 30 cart width + 6 gap.
+    rowChatBtn: {
+      right: 46,
+    },
     emptyWrap: {
       alignItems: 'center',
       paddingTop: 48,
       paddingBottom: 24,
+    },
+    // Infinite-scroll footer (spinner / retry). 44dp min touch target.
+    footer: {
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
     },
   });
 };

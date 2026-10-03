@@ -1,12 +1,12 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
-  type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -15,6 +15,9 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {
   KoolaButton,
   KoolaChip,
+  KoolaEmptyState,
+  KoolaErrorState,
+  KoolaSkeleton,
   KoolaText,
   koolaRadii,
   koolaShadows,
@@ -25,30 +28,35 @@ import {
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { ShoppingTabStackParamList } from '../../navigation/types';
-import { shoppingProducts, type ShoppingProduct } from './shoppingMockData';
-import { conversationsApi } from '../../services/api/apiService';
+import {
+  commerceApi,
+  type CommerceSort,
+  type ProductCard,
+  type SellerStorefrontResponse,
+} from '../../services/api/apiService';
 import { getNotchHeaderHeight } from '../../components/NotchHeader';
 import { useShoppingProductHeader } from '../../navigation/ShoppingHeaderContext';
+import { formatVnd } from '../../utils/formatVnd';
+import { useCommerceProductList } from './hooks/useCommerceProductList';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
+import { useSellerChat } from './hooks/useSellerChat';
+import { CATEGORY_ICON, soldLabel } from './shoppingCatalog';
 
 type NavProp = NativeStackNavigationProp<ShoppingTabStackParamList, 'ShoppingStorefront'>;
 type Route = RouteProp<ShoppingTabStackParamList, 'ShoppingStorefront'>;
 
-type SortKey = 'all' | 'bestseller' | 'priceLow';
+const SEARCH_DEBOUNCE_MS = 300;
+const SORT_CHIPS: ReadonlyArray<{ sort: CommerceSort; label: string }> = [
+  { sort: 'newest', label: 'Mới nhất' },
+  { sort: 'bestseller', label: 'Bán chạy' },
+  { sort: 'priceLow', label: 'Giá thấp nhất' },
+];
 
-function parsePriceVnd(s: string): number {
-  const digits = s.replace(/[^\d]/g, '');
-  const n = parseInt(digits, 10);
-  return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
-}
-
-const sellerDescriptions: Record<string, string> = {
-  'seller-fresh': 'Rau củ — trái cây Đà Lạt hái mỗi sáng, giao 2h nội thành.',
-  'seller-bep': 'Bếp nấu theo đơn, giao nóng 25 phút — món Việt mỗi ngày.',
-  'seller-tech': 'Phụ kiện chính hãng, đổi mới 7 ngày — giao hôm nay.',
-  'seller-nhaxinh': 'Đồ gia dụng gọn — bền — giao trong ngày.',
-  'seller-beauty': 'Mỹ phẩm chính hãng, freeship toàn quốc.',
-  'seller-choviet': 'Đặc sản miền Tây — gạo, mắm, khô — giao 4h.',
-};
+type ProfileState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: SellerStorefrontResponse }
+  | { kind: 'notFound' }
+  | { kind: 'error' };
 
 const ShoppingStorefrontScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
@@ -56,45 +64,57 @@ const ShoppingStorefrontScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
-  const toast = useKoolaToast();
+  const toastRef = useRef(useKoolaToast());
   const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
   const sellerId = route.params.sellerId;
 
-  const sellerEntry = useMemo(
-    () => shoppingProducts.find((p) => p.seller.id === sellerId),
-    [sellerId],
-  );
-  const seller = sellerEntry?.seller ?? null;
+  // ── Seller profile (GET /commerce/sellers/:id) ──────────────────────────
+  const [profile, setProfile] = useState<ProfileState>({ kind: 'loading' });
+  const profileSeqRef = useRef(0);
+  const loadProfile = useCallback(async () => {
+    const seq = ++profileSeqRef.current;
+    setProfile({ kind: 'loading' });
+    try {
+      const data = await commerceApi.getSeller(sellerId);
+      if (seq === profileSeqRef.current) setProfile({ kind: 'ready', data });
+    } catch (err: unknown) {
+      if (seq !== profileSeqRef.current) return;
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      setProfile(status === 404 ? { kind: 'notFound' } : { kind: 'error' });
+    }
+  }, [sellerId]);
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+  const seller = profile.kind === 'ready' ? profile.data.seller : null;
 
-  const sellerProducts = useMemo(
-    () => shoppingProducts.filter((p) => p.seller.id === sellerId),
-    [sellerId],
-  );
-
-  const stats = useMemo(() => {
-    const count = sellerProducts.length;
-    if (count === 0) return { count: 0, avg: '-' };
-    const avg = sellerProducts.reduce((s, p) => s + p.rating, 0) / count;
-    return { count, avg: avg.toFixed(1) };
-  }, [sellerProducts]);
-
+  // ── Products: same server list contract, scoped by sellerId ────────────
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<SortKey>('all');
+  const [sort, setSort] = useState<CommerceSort>('newest');
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
+  const listQuery = useMemo(
+    () => ({ sellerId, q: debouncedQuery, sort }),
+    [sellerId, debouncedQuery, sort],
+  );
+  // Only list products once the seller is known to be visible.
+  const list = useCommerceProductList(listQuery, { enabled: profile.kind === 'ready' });
+
   const [followed, setFollowed] = useState(false);
-  const [contacting, setContacting] = useState(false);
+  const { openSellerChat, contactingSellerId } = useSellerChat();
+  const contacting = contactingSellerId === sellerId;
 
   const handleShare = useCallback(() => {
-    toast.show('Chia sẻ — đang phát triển', 'info');
-  }, [toast]);
+    toastRef.current.show('Chia sẻ — đang phát triển', 'info');
+  }, []);
   const handleCart = useCallback(() => {
-    (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingCart', {});
+    navigation.navigate('ShoppingCart');
   }, [navigation]);
   const handleSearch = useCallback(() => {
-    toast.show('Tìm kiếm — đang phát triển', 'info');
-  }, [toast]);
+    toastRef.current.show('Tìm kiếm — dùng ô tìm trong gian hàng bên dưới', 'info');
+  }, []);
 
   useShoppingProductHeader({
-    shopName: seller?.name ?? 'Gian hàng',
+    shopName: seller?.displayName ?? 'Gian hàng',
     onBack: useCallback(() => navigation.goBack(), [navigation]),
     onShare: handleShare,
     onCart: handleCart,
@@ -103,61 +123,19 @@ const ShoppingStorefrontScreen: React.FC = () => {
 
   const scrollPadTop = getNotchHeaderHeight(insets.top, 'nav') + koolaSpacing.sm;
 
-  const handleContactSeller = useCallback(async () => {
-    if (!seller) return;
-    setContacting(true);
-    try {
-      const { conversation } = await conversationsApi.startDirectChat(seller.id);
-      (navigation as unknown as { navigate: (a: string, b: unknown) => void }).navigate('ChatTab', {
-        screen: 'Chat',
-        params: { conversationId: conversation._id },
-      });
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      const msg =
-        status === 404
-          ? 'Gian hàng mẫu chưa có tài khoản thật — sẽ kết nối khi backend sẵn sàng. Bạn có thể nhắn tin qua tab Kết nối.'
-          : 'Không thể bắt đầu trò chuyện. Bạn thử lại nhé.';
-      toast.show(msg, status === 404 ? 'info' : 'warning');
-    } finally {
-      setContacting(false);
-    }
-  }, [seller, navigation, toast]);
-
   const handleFollow = useCallback(() => {
-    if (followed) {
-      setFollowed(false);
-      toast.show('Đã bỏ theo dõi', 'info');
-    } else {
-      setFollowed(true);
-      toast.show('Đã theo dõi', 'success');
-    }
-  }, [followed, toast]);
+    toastRef.current.show(followed ? 'Đã bỏ theo dõi' : 'Đã theo dõi', followed ? 'info' : 'success');
+    setFollowed(!followed);
+  }, [followed]);
 
   const handleOpenProduct = useCallback(
     (productId: string) => {
-      (navigation.navigate as unknown as (name: string, params: unknown) => void)('ShoppingProductDetail', { productId });
+      navigation.navigate('ShoppingProductDetail', { productId });
     },
     [navigation],
   );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = sellerProducts;
-    if (q) {
-      list = list.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.shop.toLowerCase().includes(q) ||
-          p.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-    if (sort === 'bestseller') return [...list].sort((a, b) => b.soldCount - a.soldCount);
-    if (sort === 'priceLow') return [...list].sort((a, b) => parsePriceVnd(a.price) - parsePriceVnd(b.price));
-    return list;
-  }, [sellerProducts, query, sort]);
-
-  if (!seller) {
+  if (profile.kind === 'notFound') {
     return (
       <View style={styles.host}>
         <View style={[styles.notFound, { paddingTop: scrollPadTop }]}>
@@ -166,6 +144,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
           <Pressable
             onPress={() => navigation.goBack()}
             style={[styles.backPill, { borderColor: semantic.border.strong }]}
+            accessibilityRole="button"
             android_ripple={{ color: semantic.border.subtle }}>
             <KoolaText variant="label" weight="700">Quay lại</KoolaText>
           </Pressable>
@@ -174,32 +153,40 @@ const ShoppingStorefrontScreen: React.FC = () => {
     );
   }
 
-  const accent = sellerEntry?.accent ?? semantic.action.primary;
-  const descText = sellerDescriptions[seller.id] ?? sellerEntry?.description ?? '';
+  if (profile.kind === 'error') {
+    return (
+      <View style={styles.host}>
+        <View style={[styles.notFound, { paddingTop: scrollPadTop }]}>
+          <KoolaErrorState
+            title="Không tải được gian hàng"
+            message="Kiểm tra kết nối mạng rồi thử lại."
+            onRetry={() => void loadProfile()}
+          />
+        </View>
+      </View>
+    );
+  }
 
-  return (
-    <View style={styles.host}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: scrollPadTop, paddingBottom: 16 + 64 + insets.bottom },
-        ]}
-        showsVerticalScrollIndicator={false}>
-        {/* Header card — no cover banner */}
+  const accent = semantic.action.primary;
+
+  const header = (
+    <View>
+      {seller ? (
         <View style={styles.headerCard}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <View style={[styles.sellerAvatarLg, { backgroundColor: `${accent}16`, borderColor: `${accent}28` }]}>
-              <MaterialIcons name="storefront" size={28} color={accent} />
+              {seller.logoUrl ? (
+                <Image source={{ uri: seller.logoUrl }} style={styles.sellerLogo} accessible={false} />
+              ) : (
+                <MaterialIcons name="storefront" size={28} color={accent} />
+              )}
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <KoolaText variant="heading" weight="800" numberOfLines={1} style={{ flexShrink: 1 }}>
-                  {seller.name}
+                  {seller.displayName}
                 </KoolaText>
-                {seller.verified ? (
-                  <MaterialIcons name="verified" size={16} color={semantic.status.success} style={{ marginLeft: 6 }} />
-                ) : null}
+                <MaterialIcons name="verified" size={16} color={semantic.status.success} style={{ marginLeft: 6 }} accessibilityLabel="Đã xác minh" />
               </View>
               {seller.province ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
@@ -209,29 +196,17 @@ const ShoppingStorefrontScreen: React.FC = () => {
                   </KoolaText>
                 </View>
               ) : null}
-              {descText ? (
+              {seller.tagline || seller.description ? (
                 <KoolaText variant="caption" tone="muted" numberOfLines={2} style={{ marginTop: 6, lineHeight: 16 }}>
-                  {descText}
+                  {seller.tagline || seller.description}
                 </KoolaText>
               ) : null}
               <View style={styles.statsRow}>
                 <View style={styles.statChip}>
                   <MaterialIcons name="inventory-2" size={12} color={semantic.text.muted} />
                   <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>
-                    {stats.count} sản phẩm
+                    {profile.kind === 'ready' ? profile.data.productCount : 0} sản phẩm
                   </KoolaText>
-                </View>
-                <View style={styles.dot} />
-                <View style={styles.statChip}>
-                  <MaterialIcons name="star" size={12} color={semantic.status.warning} />
-                  <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>
-                    {stats.avg}
-                  </KoolaText>
-                </View>
-                <View style={styles.dot} />
-                <View style={styles.statChip}>
-                  <KoolaText variant="caption" weight="700">98%</KoolaText>
-                  <KoolaText variant="caption" tone="muted"> phản hồi</KoolaText>
                 </View>
               </View>
             </View>
@@ -239,6 +214,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
           <View style={styles.headerActions}>
             <Pressable
               onPress={handleFollow}
+              accessibilityRole="button"
+              accessibilityState={{ selected: followed }}
               style={[
                 styles.followBtn,
                 {
@@ -260,9 +237,11 @@ const ShoppingStorefrontScreen: React.FC = () => {
               </KoolaText>
             </Pressable>
             <Pressable
-              onPress={handleContactSeller}
+              onPress={() => void openSellerChat(sellerId)}
               disabled={contacting}
-              style={[styles.msgBtnSmall, { backgroundColor: semantic.action.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Nhắn tin với ${seller.displayName}`}
+              style={[styles.msgBtnSmall, { backgroundColor: semantic.action.primary, opacity: contacting ? 0.6 : 1 }]}
               android_ripple={{ color: 'rgba(255,255,255,0.2)' }}>
               <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.text.onAction} />
               <KoolaText variant="label" weight="700" style={{ marginLeft: 6, color: semantic.text.onAction }}>
@@ -271,71 +250,113 @@ const ShoppingStorefrontScreen: React.FC = () => {
             </Pressable>
           </View>
         </View>
+      ) : (
+        <KoolaSkeleton width="100%" height={150} radius={koolaRadii.md} style={{ marginBottom: 12 }} />
+      )}
 
-        {/* Search in shop — same gray pill as parent ShoppingHome / ChatHome dock */}
-        <View style={[styles.searchWrap, { backgroundColor: semantic.border.subtle }]}>
-          <MaterialIcons name="search" size={18} color={semantic.text.faint} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Tìm trong gian hàng..."
-            placeholderTextColor={semantic.text.faint}
-            style={[styles.searchInput, { color: semantic.text.primary }]}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
-          {query.length > 0 ? (
-            <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <MaterialIcons name="close" size={18} color={semantic.text.faint} />
-            </Pressable>
-          ) : null}
+      {/* Search in shop — server-side (q + sellerId), debounced 300 ms */}
+      <View style={[styles.searchWrap, { backgroundColor: semantic.border.subtle }]}>
+        <MaterialIcons name="search" size={18} color={semantic.text.faint} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Tìm trong gian hàng..."
+          placeholderTextColor={semantic.text.faint}
+          style={[styles.searchInput, { color: semantic.text.primary }]}
+          returnKeyType="search"
+          accessibilityLabel="Tìm trong gian hàng"
+        />
+        {query.length > 0 ? (
+          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm">
+            <MaterialIcons name="close" size={18} color={semantic.text.faint} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Sort chips → server `sort` */}
+      <View style={styles.chipsRow}>
+        {SORT_CHIPS.map((c) => (
+          <KoolaChip key={c.sort} label={c.label} selected={sort === c.sort} onPress={() => setSort(c.sort)} />
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderEmpty = () => {
+    if (profile.kind === 'loading' || list.status === 'initialLoading') {
+      return (
+        <View style={styles.grid} accessibilityRole="progressbar" accessibilityLabel="Đang tải sản phẩm">
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={styles.gridCell}>
+              <KoolaSkeleton width="100%" height={200} radius={koolaRadii.md} />
+            </View>
+          ))}
         </View>
+      );
+    }
+    if (list.status === 'error') {
+      return (
+        <KoolaErrorState
+          title="Không tải được sản phẩm"
+          message="Kiểm tra kết nối mạng rồi thử lại."
+          onRetry={list.retry}
+          style={styles.emptyWrap}
+        />
+      );
+    }
+    return (
+      <KoolaEmptyState
+        icon="search-off"
+        title="Không tìm thấy sản phẩm"
+        message={debouncedQuery.trim() ? 'Thử từ khóa khác nhé' : 'Gian hàng chưa có sản phẩm nào'}
+        style={styles.emptyWrap}
+      />
+    );
+  };
 
-        {/* Filter chips */}
-        <View style={styles.chipsRow}>
-          <KoolaChip
-            label="Tất cả"
-            selected={sort === 'all'}
-            onPress={() => setSort('all')}
-          />
-          <KoolaChip
-            label="Bán chạy"
-            selected={sort === 'bestseller'}
-            onPress={() => setSort('bestseller')}
-          />
-          <KoolaChip
-            label="Giá thấp nhất"
-            selected={sort === 'priceLow'}
-            onPress={() => setSort('priceLow')}
-          />
+  const renderFooter = () => {
+    if (list.status === 'loadingMore') {
+      return (
+        <View style={styles.footer}>
+          <ActivityIndicator color={semantic.action.primary} accessibilityLabel="Đang tải thêm" />
         </View>
+      );
+    }
+    if (list.status === 'loadMoreError') {
+      return (
+        <Pressable onPress={list.retry} style={styles.footer} accessibilityRole="button" accessibilityLabel="Tải thêm thất bại, thử lại">
+          <KoolaText variant="caption" weight="700" tone="primary">Không tải được thêm · Thử lại</KoolaText>
+        </Pressable>
+      );
+    }
+    return null;
+  };
 
-        {/* Grid */}
-        {filtered.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <MaterialIcons name="search-off" size={36} color={semantic.text.faint} />
-            <KoolaText tone="muted" style={{ marginTop: 10 }}>Không tìm thấy sản phẩm</KoolaText>
-            {query ? (
-              <KoolaText variant="caption" tone="faint" style={{ marginTop: 4 }}>
-                Thử từ khóa khác nhé
-              </KoolaText>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.grid}>
-            {filtered.map((item) => (
-              <View key={item.id} style={styles.gridCell}>
-                <StorefrontCard
-                  item={item}
-                  semantic={semantic}
-                  styles={styles}
-                  onPress={() => handleOpenProduct(item.id)}
-                />
-              </View>
-            ))}
+  return (
+    <View style={styles.host}>
+      <FlatList
+        data={profile.kind === 'ready' ? list.items : []}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        renderItem={({ item }) => (
+          <View style={styles.gridCell}>
+            <StorefrontCard item={item} semantic={semantic} styles={styles} onPress={() => handleOpenProduct(item.id)} />
           </View>
         )}
-      </ScrollView>
+        ListHeaderComponent={header}
+        ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        onEndReached={list.loadMore}
+        onEndReachedThreshold={0.6}
+        removeClippedSubviews={false}
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: scrollPadTop, paddingBottom: 16 + 64 + insets.bottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      />
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <KoolaButton
@@ -343,8 +364,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
           icon="chat-bubble-outline"
           variant="primary"
           loading={contacting}
-          disabled={contacting}
-          onPress={handleContactSeller}
+          disabled={contacting || !seller}
+          onPress={() => void openSellerChat(sellerId)}
           style={styles.chatBtn}
         />
       </View>
@@ -353,51 +374,46 @@ const ShoppingStorefrontScreen: React.FC = () => {
 };
 
 const StorefrontCard: React.FC<{
-  item: ShoppingProduct;
+  item: ProductCard;
   semantic: SemanticTokens;
   styles: ReturnType<typeof makeStyles>;
   onPress: () => void;
 }> = React.memo(({ item, semantic, styles, onPress }) => {
   const [imageFailed, setImageFailed] = useState(false);
-  const showImage = Boolean(item.image) && !imageFailed;
+  const showImage = Boolean(item.imageUrl) && !imageFailed;
+  const sold = soldLabel(item.soldCount);
+  const accent = semantic.action.primary;
   return (
     <Pressable
       onPress={onPress}
       style={styles.card}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${formatVnd(item.price)}`}
       android_ripple={{ color: semantic.border.subtle }}>
-      <View style={[styles.cardThumb, { backgroundColor: `${item.accent}14` }]}>
+      <View style={[styles.cardThumb, { backgroundColor: `${accent}14` }]}>
         {showImage ? (
           <Image
-            source={item.image as ImageSourcePropType}
+            key={item.imageKey ?? undefined}
+            source={{ uri: item.imageUrl as string }}
             style={styles.cardImage}
             resizeMode="cover"
             onError={() => setImageFailed(true)}
+            accessible={false}
           />
         ) : (
-          <MaterialIcons name={item.icon as never} size={40} color={item.accent} />
+          <MaterialIcons name={CATEGORY_ICON[item.category] as never} size={40} color={accent} />
         )}
-        {item.badge ? (
-          <View style={styles.cardBadge}>
-            <KoolaText variant="caption" weight="800" tone="surface" numberOfLines={1}>
-              {item.badge}
-            </KoolaText>
-          </View>
-        ) : null}
       </View>
       <View style={styles.cardBody}>
         <KoolaText variant="label" weight="700" numberOfLines={2} style={styles.cardTitle}>
-          {item.title}
+          {item.name}
         </KoolaText>
         <KoolaText variant="label" weight="800" style={{ marginTop: 4, color: semantic.text.primary }}>
-          {item.price}
+          {formatVnd(item.price)}
         </KoolaText>
         <View style={styles.cardMeta}>
-          <MaterialIcons name="star" size={11} color={semantic.status.warning} />
-          <KoolaText variant="caption" weight="700" style={{ marginLeft: 3 }}>
-            {item.rating}
-          </KoolaText>
-          <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
-            · {item.sold}
+          <KoolaText variant="caption" tone="muted" numberOfLines={1}>
+            {sold ?? ' '}
           </KoolaText>
         </View>
       </View>
@@ -412,7 +428,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
     notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
     backPill: {
       marginTop: 16,
-      height: 40,
+      height: 44,
       paddingHorizontal: 20,
       borderRadius: koolaRadii.pill,
       borderWidth: 1,
@@ -421,13 +437,6 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
     },
     scroll: { flex: 1 },
     scrollContent: { paddingHorizontal: 2 },
-    cover: {
-      height: 0,
-      overflow: 'hidden',
-    },
-    coverAccentBar: {
-      display: 'none',
-    },
     headerCard: {
       backgroundColor: semantic.surface.level1,
       borderRadius: koolaRadii.md,
@@ -445,14 +454,15 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
+      overflow: 'hidden',
     },
+    sellerLogo: { width: 56, height: 56 },
     statsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, flexWrap: 'wrap' },
     statChip: { flexDirection: 'row', alignItems: 'center' },
-    dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: semantic.text.faint, marginHorizontal: 8 },
     headerActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
     followBtn: {
       flex: 1,
-      height: 36,
+      height: 44,
       borderRadius: koolaRadii.pill,
       borderWidth: 1,
       flexDirection: 'row',
@@ -462,7 +472,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
     },
     msgBtnSmall: {
       flex: 1,
-      height: 36,
+      height: 44,
       borderRadius: koolaRadii.pill,
       flexDirection: 'row',
       alignItems: 'center',
@@ -481,8 +491,9 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
     },
     searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
     chipsRow: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, rowGap: 4 },
-    gridCell: { width: '48.8%' },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 4 },
+    columnWrapper: { justifyContent: 'space-between', marginBottom: 4 },
+    gridCell: { width: '49.4%' },
     card: {
       backgroundColor: semantic.surface.level1,
       borderRadius: koolaRadii.md,
@@ -500,19 +511,11 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       overflow: 'hidden',
     },
     cardImage: { width: '100%', height: '100%' },
-    cardBadge: {
-      position: 'absolute',
-      left: 8,
-      top: 8,
-      backgroundColor: 'rgba(0,0,0,0.72)',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: koolaRadii.xs,
-    },
     cardBody: { padding: 10 },
     cardTitle: { fontSize: 12, lineHeight: 16, minHeight: 32 },
     cardMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
     emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+    footer: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
     bottomBar: {
       position: 'absolute',
       left: 0,

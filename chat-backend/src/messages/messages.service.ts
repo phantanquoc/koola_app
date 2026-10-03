@@ -978,6 +978,105 @@ export class MessagesService {
     return payload;
   }
 
+  // ─── Order Card Bridge (commerce-orders D3) ─────────────────────────────────
+
+  /**
+   * Service-only card message for an order (commerce-orders D3). Mirrors
+   * sendMessageWithStoryReply: membership check → create with metadata.order →
+   * updateLastMessage → incrementUnread → fan-out via newMessageEmitCallback so
+   * ChatGateway emits `new_message` with zero gateway changes.
+   * Only OrdersService calls this; regular REST creation strips metadata.order.
+   */
+  async sendMessageWithOrderCard(
+    conversationId: string,
+    senderId: string,
+    content: string,
+    order: { orderId: string; code: string; status: string },
+  ): Promise<NewMessagePayload> {
+    await this.verifyMember(conversationId, senderId);
+
+    const message = await this.messageModel.create({
+      conversationId,
+      senderId,
+      type: MessageType.TEXT,
+      content,
+      status: MessageStatus.SENT,
+      mediaUrl: '',
+      mediaMimeType: '',
+      mediaSize: 0,
+      deleted: false,
+      clientMessageId: null,
+      metadata: { order },
+    });
+
+    const preview = content.length > 50 ? content.slice(0, 50) + '…' : content;
+    await this.conversationsService.updateLastMessage(conversationId, preview);
+    await this.unreadService.incrementUnreadCount(conversationId, [senderId]);
+
+    const payload = this.emitNewMessage(message, conversationId, senderId);
+    this.newMessageEmitCallback?.(conversationId, payload);
+    return payload;
+  }
+
+  /**
+   * D2 reconcile check: does a card for this order already exist in the
+   * conversation? Returns the card id or null.
+   */
+  async findOrderCard(
+    conversationId: string,
+    orderId: string,
+  ): Promise<string | null> {
+    const row = await this.messageModel
+      .findOne({ conversationId, 'metadata.order.orderId': orderId })
+      .select('_id')
+      .lean<{ _id: unknown } | null>();
+    return row ? String(row._id) : null;
+  }
+
+  /**
+   * Locate the order-card message via metadata.order.orderId and patch its
+   * status/code in place, then emit via the gateway message_updated path so
+   * open chats refresh live without a reload. Non-fatal — callers must not
+   * fail a status transition if the card refresh fails.
+   */
+  async updateOrderCardStatus(
+    conversationId: string,
+    orderId: string,
+    code: string,
+    status: string,
+  ): Promise<void> {
+    const msg = await this.messageModel.findOne({
+      conversationId,
+      'metadata.order.orderId': orderId,
+    });
+    if (!msg) return;
+    const cur = (msg as unknown as { metadata?: { order?: Record<string, unknown> } }).metadata
+      ?.order;
+    if (!cur) return;
+    (msg as unknown as { metadata: { order: Record<string, unknown> } }).metadata.order = {
+      ...cur,
+      orderId,
+      code,
+      status,
+    };
+    await (msg as unknown as { save: () => Promise<void> }).save();
+    this.messageUpdatedEmitCallback?.(conversationId, String((msg as unknown as { _id: unknown })._id), {
+      order: { orderId, code, status },
+    });
+  }
+
+  private messageUpdatedEmitCallback?: (
+    conversationId: string,
+    messageId: string,
+    metadata: Record<string, unknown>,
+  ) => void;
+
+  setMessageUpdatedEmitCallback(
+    cb: (conversationId: string, messageId: string, metadata: Record<string, unknown>) => void,
+  ): void {
+    this.messageUpdatedEmitCallback = cb;
+  }
+
   // ─── Emit Payloads (for gateway module) ────────────────────────────────────
 
   emitNewMessage(

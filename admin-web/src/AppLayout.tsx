@@ -32,6 +32,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     label: 'Catalog',
     items: [
       { to: '/products', label: 'Products', icon: '▣' },
+      { to: '/orders', label: 'Orders', icon: '◧' },
       { to: '/services', label: 'Services', icon: '⬣' },
     ],
   },
@@ -58,6 +59,7 @@ const routeTitles: Record<string, string> = {
   '/music': 'Music catalog',
   '/reports': 'Báo cáo',
   '/products': 'Sản phẩm',
+  '/orders': 'Đơn hàng',
   '/services': 'Dịch vụ',
   '/health': 'Sức khỏe hệ thống',
   '/broadcast': 'Broadcast',

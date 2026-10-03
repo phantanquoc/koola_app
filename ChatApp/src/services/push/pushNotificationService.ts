@@ -16,6 +16,8 @@ const PENDING_TAP_KEY = '@push_pending_tap';
 export interface PendingNotificationTap {
   type: string;
   conversationId?: string;
+  /** Present for order_update taps (koola://orders/<orderId>). */
+  orderId?: string;
   accountId?: string;
   accountType?: string;
   _receivedAt: number;
@@ -172,7 +174,7 @@ class PushNotificationService {
   private handleNotificationTap(data?: Record<string, string>): void {
     if (!data) return;
 
-    const { type, conversationId, accountId, accountType } = data;
+    const { type, conversationId, accountId, accountType, orderId } = data;
 
     if (type === 'new_message' && conversationId) {
       // Mark badge — the tap will clear it once the account becomes active.
@@ -180,6 +182,20 @@ class PushNotificationService {
         void markAccountBadge(accountId);
       }
       void storePendingTap({ type, conversationId, accountId, accountType });
+      return;
+    }
+
+    if (type === 'order_update' && orderId) {
+      if (accountId) {
+        void markAccountBadge(accountId);
+      }
+      void storePendingTap({
+        type,
+        orderId,
+        conversationId,
+        accountId,
+        accountType,
+      });
     }
   }
 }

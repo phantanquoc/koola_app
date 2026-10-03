@@ -585,6 +585,248 @@ export const accountsApi = {
   },
 };
 
+// ─── Commerce Catalog API (commerce-catalog-live) ───────────────────────────
+// Public endpoints (`@Public()` on the backend) — sent through apiClient anyway
+// so there is one HTTP stack (timeouts, base URL, auth refresh) for the app.
+
+export type CommerceCategory = 'grocery' | 'food' | 'electronics' | 'home' | 'beauty';
+export type CommerceSort = 'newest' | 'bestseller' | 'priceLow';
+
+export interface ProductCardSeller {
+  id: string;
+  displayName: string;
+  verified: true;
+  province: string | null;
+}
+
+export interface ProductCard {
+  id: string;
+  name: string;
+  /** Integer VND. */
+  price: number;
+  originalPrice: number | null;
+  /** Presigned GET (≈1h) for the first image, or null. */
+  imageUrl: string | null;
+  imageKey: string | null;
+  category: CommerceCategory;
+  tags: string[];
+  deliveryText: string;
+  soldCount: number;
+  seller: ProductCardSeller;
+}
+
+export interface ProductListParams {
+  q?: string;
+  category?: CommerceCategory;
+  tag?: string;
+  sellerId?: string;
+  sort?: CommerceSort;
+  page?: number;
+  limit?: number;
+}
+
+export interface ProductListResponse {
+  data: ProductCard[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface ProductDetail extends Omit<ProductCard, 'seller'> {
+  description: string;
+  /** Same order as imageKeys; an entry is null if the server could not sign it. */
+  imageUrls: (string | null)[];
+  imageKeys: string[];
+  seller: ProductCardSeller & {
+    businessCategory: string | null;
+    logoUrl: string | null;
+  };
+}
+
+export interface SellerProfile {
+  id: string;
+  displayName: string;
+  verified: true;
+  province: string | null;
+  businessCategory: string | null;
+  tagline: string | null;
+  description: string | null;
+  logoUrl: string | null;
+}
+
+export interface SellerStorefrontResponse {
+  seller: SellerProfile;
+  productCount: number;
+}
+
+export interface ValidateResult {
+  id: string;
+  available: boolean;
+  price: number | null;
+  name: string | null;
+  imageUrl: string | null;
+  seller: { id: string; displayName: string } | null;
+}
+
+export type CommerceOrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED';
+export type CommerceOrderPayment = 'cod' | 'bank';
+
+export interface CommerceOrderBuyerInfo {
+  name: string;
+  phone: string;
+  address: string;
+  note: string | null;
+}
+
+export interface CommerceOrderItemSnapshot {
+  productId: string;
+  name: string;
+  price: number;
+  imageKey: string | null;
+  qty: number;
+}
+
+export interface CommerceOrderShipping {
+  fee: number | null;
+  carrier: string | null;
+  trackingCode: string | null;
+  expectedDeliveryDate: string | null;
+}
+
+export interface CommerceOrderStatusEntry {
+  status: CommerceOrderStatus;
+  at: string;
+  by: string;
+  note: string | null;
+}
+
+export interface CommerceOrder {
+  id: string;
+  orderCode: string;
+  buyerId: string;
+  sellerId: string;
+  buyerName: string | null;
+  sellerName: string | null;
+  items: CommerceOrderItemSnapshot[];
+  itemCount: number;
+  subtotal: number;
+  shippingFee: number | null;
+  total: number;
+  buyerInfo: CommerceOrderBuyerInfo;
+  payment: CommerceOrderPayment;
+  shipping: CommerceOrderShipping;
+  status: CommerceOrderStatus;
+  statusHistory: CommerceOrderStatusEntry[];
+  conversationId: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CommerceOrderDetailResponse {
+  order: CommerceOrder;
+  seller: { id: string; displayName: string } | null;
+  buyer: { id: string; displayName: string } | null;
+  itemImageUrls: (string | null)[];
+}
+
+export interface CommerceOrderListResponse {
+  data: CommerceOrder[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface CommercePlaceOrderPayload {
+  sellerId: string;
+  items: { productId: string; qty: number }[];
+  buyerInfo: { name: string; phone: string; address: string; note?: string };
+  payment: CommerceOrderPayment;
+  idempotencyKey: string;
+}
+
+export interface CommercePlaceOrderResponse {
+  order: CommerceOrder;
+  conversationId: string;
+}
+
+export interface CommerceListOrdersParams {
+  status?: CommerceOrderStatus;
+  page?: number;
+  limit?: number;
+}
+
+export const commerceApi = {
+  async listProducts(
+    params: ProductListParams,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ProductListResponse> {
+    // Drop empty values so the backend's forbidNonWhitelisted / @IsIn never
+    // sees `category=` or `q=` from a cleared filter.
+    const clean: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === '') continue;
+      clean[k] = v as string | number;
+    }
+    const { data } = await apiClient.get('/commerce/products', {
+      params: clean,
+      signal: opts?.signal,
+    });
+    return data;
+  },
+  async getProduct(id: string): Promise<ProductDetail> {
+    const { data } = await apiClient.get(`/commerce/products/${encodeURIComponent(id)}`);
+    return data;
+  },
+  async getSeller(id: string): Promise<SellerStorefrontResponse> {
+    const { data } = await apiClient.get(`/commerce/sellers/${encodeURIComponent(id)}`);
+    return data;
+  },
+  async validate(ids: string[]): Promise<ValidateResult[]> {
+    const { data } = await apiClient.post('/commerce/products/validate', { ids });
+    return (data as { items: ValidateResult[] }).items;
+  },
+
+  // ── Orders (commerce-orders) ───────────────────────────────────────────
+  async placeOrder(payload: CommercePlaceOrderPayload): Promise<CommercePlaceOrderResponse> {
+    const { data } = await apiClient.post('/commerce/orders', payload);
+    return data as CommercePlaceOrderResponse;
+  },
+  async listMyOrders(params?: CommerceListOrdersParams): Promise<CommerceOrderListResponse> {
+    const { data } = await apiClient.get('/commerce/orders/mine', { params });
+    return data as CommerceOrderListResponse;
+  },
+  async listSellerOrders(params?: CommerceListOrdersParams): Promise<CommerceOrderListResponse> {
+    const { data } = await apiClient.get('/commerce/orders/seller', { params });
+    return data as CommerceOrderListResponse;
+  },
+  async getOrder(id: string): Promise<CommerceOrderDetailResponse> {
+    const { data } = await apiClient.get(`/commerce/orders/${encodeURIComponent(id)}`);
+    return data as CommerceOrderDetailResponse;
+  },
+  async confirmOrder(id: string, body: { shippingFee: number; expectedDeliveryDate: string }): Promise<CommerceOrder> {
+    const { data } = await apiClient.patch(`/commerce/orders/${encodeURIComponent(id)}/confirm`, body);
+    return (data as { order?: CommerceOrder }).order ?? (data as CommerceOrder);
+  },
+  async rejectOrder(id: string, body: { reason: string }): Promise<CommerceOrder> {
+    const { data } = await apiClient.patch(`/commerce/orders/${encodeURIComponent(id)}/reject`, body);
+    return (data as { order?: CommerceOrder }).order ?? (data as CommerceOrder);
+  },
+  async shipOrder(id: string, body: { carrier?: string; trackingCode?: string }): Promise<CommerceOrder> {
+    const { data } = await apiClient.patch(`/commerce/orders/${encodeURIComponent(id)}/ship`, body);
+    return (data as { order?: CommerceOrder }).order ?? (data as CommerceOrder);
+  },
+  async receiveOrder(id: string): Promise<CommerceOrder> {
+    const { data } = await apiClient.patch(`/commerce/orders/${encodeURIComponent(id)}/receive`, {});
+    return (data as { order?: CommerceOrder }).order ?? (data as CommerceOrder);
+  },
+  async cancelOrder(id: string, reason?: string): Promise<CommerceOrder> {
+    const { data } = await apiClient.patch(`/commerce/orders/${encodeURIComponent(id)}/cancel`, reason ? { reason } : {});
+    return (data as { order?: CommerceOrder }).order ?? (data as CommerceOrder);
+  },
+};
+
 // ─── Account Discovery API ───────────────────────────────────────────────────
 
 export interface BusinessAccountItem {

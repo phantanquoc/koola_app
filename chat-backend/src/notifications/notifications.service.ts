@@ -192,6 +192,77 @@ export class NotificationsService {
     }
   }
 
+  // ─── Order Update Push (commerce-orders D4) ─────────────────────────────────
+
+  /** Dedup TTL for order pushes: one push per (user, order, status). */
+  private static readonly ORDER_PUSH_DEDUP_TTL_SECONDS = 24 * 60 * 60;
+
+  /**
+   * Send an order-status push to a single user with a koola://orders deep-link.
+   * Follows sendMentionPush: the same eligibility gates (disabled / online /
+   * no-token / dedup) and the same multicast + invalid-token cleanup path.
+   * Each transition pushes at most once thanks to the per-status dedup key.
+   */
+  async sendOrderPush(params: {
+    recipientUserId: string;
+    title: string;
+    body: string;
+    orderId: string;
+    status: string;
+    conversationId: string;
+  }): Promise<void> {
+    const { recipientUserId, title, body, orderId, status, conversationId } = params;
+
+    const user = await this.usersService.findById(recipientUserId);
+    if (!user) return;
+
+    if (user.settings?.notificationsEnabled === false) return;
+    if (user.isOnline) return; // in-app handled by the new_message socket event
+    if (!user.fcmTokens || user.fcmTokens.length === 0) return;
+
+    // Dedup per (user, order, status) so a retried transition never double-pushes.
+    const dedupKey = `notif:order:${recipientUserId}:${orderId}:${status}`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      NotificationsService.ORDER_PUSH_DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+
+    const payload: FirebaseMessagingPayload = {
+      notification: { title, body },
+      data: {
+        type: 'order_update',
+        orderId,
+        status,
+        conversationId,
+        deepLink: `koola://orders/${orderId}`,
+        accountId: recipientUserId,
+        accountType: (user.accountType as string) ?? 'personal',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    const tokens = user.fcmTokens.map((t) => t.token);
+    try {
+      await this.sendMulticast(recipientUserId, tokens, payload);
+    } catch (err) {
+      this.logger.error(
+        `[Notifications] Failed to send order push to ${recipientUserId}:`,
+        err,
+      );
+    }
+  }
+
   private async sendMulticast(
     recipientId: string,
     tokens: string[],

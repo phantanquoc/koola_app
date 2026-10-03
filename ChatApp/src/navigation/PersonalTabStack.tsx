@@ -12,6 +12,8 @@ import StorageSettingsScreen from '../screens/main/StorageSettingsScreen';
 import AccountListScreen from '../screens/main/AccountListScreen';
 import UpgradeScreen from '../screens/main/UpgradeScreen';
 import SettingsDetailScreen from '../screens/main/SettingsDetailScreen';
+import PersonalOrdersScreen from '../screens/main/personal/PersonalOrdersScreen';
+import PersonalOrderDetailScreen from '../screens/main/personal/PersonalOrderDetailScreen';
 
 const Stack = createNativeStackNavigator<PersonalTabStackParamList>();
 
@@ -47,6 +49,8 @@ const PersonalTabStack: React.FC = () => {
           <Stack.Screen name="AccountList" component={AccountListScreen} />
           <Stack.Screen name="SettingsDetail" component={SettingsDetailScreen} />
           <Stack.Screen name="UpgradeAccount" component={UpgradeScreen} />
+          <Stack.Screen name="PersonalOrders" component={PersonalOrdersScreen} />
+          <Stack.Screen name="PersonalOrderDetail" component={PersonalOrderDetailScreen} />
         </Stack.Navigator>
       </View>
     </PersonalHeaderContext.Provider>

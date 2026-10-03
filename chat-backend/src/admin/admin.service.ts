@@ -11,6 +11,7 @@ import {
   RefreshTokenDocument,
 } from '../auth/refresh-token.schema';
 import { MediaService } from '../media/media.service';
+import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
 import { ListUsersDto } from './dto/list-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
@@ -28,6 +29,9 @@ export class AdminService {
     @InjectModel(RefreshToken.name)
     private readonly refreshTokenModel: Model<RefreshTokenDocument>,
     private readonly mediaService: MediaService,
+    // commerce-catalog D1: every verification/ban mutator re-syncs the
+    // denormalized `CommerceProduct.sellerActive` flag of the affected seller(s).
+    private readonly sellerVisibility: SellerVisibilityService,
   ) {}
 
   // ─── GET /admin/me ──────────────────────────────────────────────────────────
@@ -155,6 +159,7 @@ export class AdminService {
     if (!business) {
       throw new NotFoundException('Business account not found');
     }
+    await this.sellerVisibility.syncSellers([id]);
     return business;
   }
 
@@ -184,6 +189,7 @@ export class AdminService {
     if (!business) {
       throw new NotFoundException('Business account not found');
     }
+    await this.sellerVisibility.syncSellers([id]);
     return business;
   }
 
@@ -259,7 +265,7 @@ export class AdminService {
     }
     const user = await this.userModel
       .findByIdAndUpdate(id, { $set: update }, { new: true })
-      .select('_id');
+      .select('_id accountType');
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -270,6 +276,11 @@ export class AdminService {
       { userId: id, revokedAt: null },
       { $set: { revokedAt: new Date() } },
     );
+
+    // A banned business's products must disappear from the public catalog.
+    if (user.accountType === 'business') {
+      await this.sellerVisibility.syncSellers([id]);
+    }
 
     return { message: 'User banned and all refresh tokens revoked' };
   }
@@ -286,10 +297,15 @@ export class AdminService {
         },
         { new: true },
       )
-      .select('_id');
+      .select('_id accountType');
 
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // An unbanned verified business's products become publicly visible again.
+    if (user.accountType === 'business') {
+      await this.sellerVisibility.syncSellers([id]);
     }
 
     return { message: 'User unbanned' };
@@ -303,6 +319,7 @@ export class AdminService {
         $unset: { rejectionReason: '' },
       },
     );
+    await this.sellerVisibility.syncSellers(ids);
     return {
       modified:
         (res as unknown as { modifiedCount: number }).modifiedCount ?? 0,
@@ -324,6 +341,7 @@ export class AdminService {
         },
       },
     );
+    await this.sellerVisibility.syncSellers(ids);
     return {
       modified:
         (res as unknown as { modifiedCount: number }).modifiedCount ?? 0,

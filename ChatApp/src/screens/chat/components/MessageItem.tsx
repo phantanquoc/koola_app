@@ -64,6 +64,7 @@ import type {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import dayjs from 'dayjs';
 import StoryReferenceCard from '../../../components/moments/StoryReferenceCard';
+import OrderCard from '../../shopping/components/OrderCard';
 import ReactionDisplay from '../../../components/ReactionDisplay';
 import TranslatedText from '../../../components/TranslatedText';
 import UserAvatar from '../../../components/UserAvatar';
@@ -331,9 +332,12 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
           ? (lastInRun ? styles.bubbleTailRight : styles.bubbleGroupedRight)
           : (lastInRun ? styles.bubbleTailLeft : styles.bubbleGroupedLeft);
 
-      // Detect story reply metadata
+      // Detect story reply / order card metadata
       const storyReply = (msg?.metadata as Record<string, unknown> | undefined)?.storyReply as
         | { storyId: string; mediaKeyPreview?: string; captionSnippet?: string; authorId?: string }
+        | undefined;
+      const orderMeta = (msg?.metadata as Record<string, unknown> | undefined)?.order as
+        | { orderId: string; code: string; status: string }
         | undefined;
 
       // Time label — media uses scrim, text uses row
@@ -433,6 +437,11 @@ const MessageItem: React.FC<MessageItemProps> = (props) => {
           {storyReply && (
             <View style={styles.storyRefCardWrapper}>
               <StoryReferenceCard storyReply={storyReply} />
+            </View>
+          )}
+          {orderMeta && (
+            <View style={styles.storyRefCardWrapper}>
+              <OrderCard orderId={orderMeta.orderId} code={orderMeta.code} status={orderMeta.status as any} />
             </View>
           )}
           {wrappedContent}

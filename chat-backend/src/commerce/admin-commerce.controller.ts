@@ -19,6 +19,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { CommerceService } from './commerce.service';
 import { PaginationDto } from '../admin/dto/pagination.dto';
 import {
+  AdminListProductsQueryDto,
   CreateProductDto,
   UpdateProductDto,
   CreateServiceDto,
@@ -27,6 +28,8 @@ import {
   UpdateStoreDto,
 } from './dto/commerce.dto';
 import { AdminAuditService } from '../admin/admin-audit.service';
+import { OrdersService } from './orders/orders.service';
+import { AdminListOrdersQueryDto } from './orders/dto/orders.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { Request } from 'express';
 
@@ -35,14 +38,35 @@ import type { Request } from 'express';
 export class AdminCommerceController {
   constructor(
     private readonly commerce: CommerceService,
+    private readonly orders: OrdersService,
     private readonly audit: AdminAuditService,
   ) {}
 
+  // ─── Orders (read-only, commerce-orders D9) ─────────────────────────────────
+
+  /** All orders with status/seller/buyer filters. No mutation exists. */
+  @Get('orders')
+  listOrders(@Query() dto: AdminListOrdersQueryDto) {
+    return this.orders.listAdmin(dto);
+  }
+
+  @Get('orders/:id')
+  getOrder(@Param('id') id: string) {
+    return this.orders.getAdminById(id);
+  }
+
   // ─── Products ───────────────────────────────────────────────────────────────
 
+  /** All products (incl. inactive / seller-hidden) with seller + visibility. */
   @Get('products')
-  listProducts(@Query() dto: PaginationDto) {
-    return this.commerce.listProducts(dto as any);
+  listProducts(@Query() dto: AdminListProductsQueryDto) {
+    return this.commerce.listAdminProducts(dto);
+  }
+
+  /** Seller picker: verified, non-banned businesses. */
+  @Get('sellers')
+  listSellers() {
+    return this.commerce.listAdminSellers();
   }
 
   @Post('products')
@@ -56,16 +80,16 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.createProduct(dto as any);
+    const item = await this.commerce.createProduct(dto);
     await this.audit.log({
       actorId: u.actorId,
       action: 'create_product',
       targetType: 'product',
-      targetId: String((doc as any)._id),
-      payload: dto as any,
+      targetId: item.id,
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
-    return doc;
+    return item;
   }
 
   @Patch('products/:id')
@@ -79,17 +103,17 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.updateProduct(id, dto as any);
-    if (!doc) throw new NotFoundException('Product not found');
+    // updateProduct throws 404 itself (missing or malformed id).
+    const item = await this.commerce.updateProduct(id, dto);
     await this.audit.log({
       actorId: u.actorId,
       action: 'update_product',
       targetType: 'product',
       targetId: id,
-      payload: dto as any,
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
-    return doc;
+    return item;
   }
 
   @Delete('products/:id')
@@ -103,8 +127,8 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.deleteProduct(id);
-    if (!doc) throw new NotFoundException('Product not found');
+    const deleted = await this.commerce.deleteProduct(id);
+    if (!deleted) throw new NotFoundException('Product not found');
     await this.audit.log({
       actorId: u.actorId,
       action: 'delete_product',
@@ -133,13 +157,13 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.createStore(dto as any);
+    const doc = await this.commerce.createStore(dto);
     await this.audit.log({
       actorId: u.actorId,
       action: 'create_store',
       targetType: 'store',
-      targetId: String((doc as any)._id),
-      payload: dto as any,
+      targetId: String(doc._id),
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
     return doc;
@@ -156,14 +180,14 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.updateStore(id, dto as any);
+    const doc = await this.commerce.updateStore(id, dto);
     if (!doc) throw new NotFoundException('Store not found');
     await this.audit.log({
       actorId: u.actorId,
       action: 'update_store',
       targetType: 'store',
       targetId: id,
-      payload: dto as any,
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
     return doc;
@@ -196,7 +220,7 @@ export class AdminCommerceController {
 
   @Get('services')
   listServices(@Query() dto: PaginationDto) {
-    return this.commerce.listServices(dto as any);
+    return this.commerce.listServices(dto);
   }
 
   @Post('services')
@@ -210,13 +234,13 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.createService(dto as any);
+    const doc = await this.commerce.createService(dto);
     await this.audit.log({
       actorId: u.actorId,
       action: 'create_service',
       targetType: 'service',
-      targetId: String((doc as any)._id),
-      payload: dto as any,
+      targetId: String(doc._id),
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
     return doc;
@@ -233,14 +257,14 @@ export class AdminCommerceController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const doc = await this.commerce.updateService(id, dto as any);
+    const doc = await this.commerce.updateService(id, dto);
     if (!doc) throw new NotFoundException('Service not found');
     await this.audit.log({
       actorId: u.actorId,
       action: 'update_service',
       targetType: 'service',
       targetId: id,
-      payload: dto as any,
+      payload: { ...dto },
       ip: req.ip ?? null,
     });
     return doc;

@@ -38,11 +38,11 @@ export const FEATURE_AVAILABILITY: Record<FeatureKey, FeatureAvailability> = {
   auth: 'ready',
 
   // ── Preview features (mock data, no backend) ────────────────────────────
-  // commerce catalog chưa ship: shopping/services vẫn là mẫu, không có
-  // giao dịch thật nên phải giữ 'preview' để PreviewBanner còn hiển thị.
   shorts: 'preview',
-  shopping: 'preview',
   services: 'preview',
+
+  // ── Ready via commerce-orders (Batch C) ─────────────────────────────────
+  shopping: 'ready',
 
   // ── Unavailable features ────────────────────────────────────────────────
   emojiPicker: 'unavailable',

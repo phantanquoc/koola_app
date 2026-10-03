@@ -110,7 +110,7 @@ const AppInner: React.FC = () => {
     let cancelled = false;
     void consumePendingNotificationTap().then(async (tap) => {
       if (cancelled || !tap) return;
-      const { conversationId, accountId } = tap;
+      const { conversationId, accountId, type, orderId } = tap;
 
       // Switch account if the notification targets a different one
       if (accountId && accountId !== activeAccount?._id) {
@@ -120,6 +120,34 @@ const AppInner: React.FC = () => {
           console.warn('[App] Notification tap: switchAccount failed', err);
           // Fall through — still navigate, best-effort
         }
+      }
+
+      // commerce-orders (3.3): order_update taps route to the account-appropriate detail.
+      // After switchAccount, activeAccount reflects the notification's accountType.
+      if (type === 'order_update' && orderId) {
+        setTimeout(() => {
+          if (navigationRef.isReady()) {
+            const targetAccountType = (tap as { accountType?: string }).accountType;
+            if (targetAccountType === 'business') {
+              (navigationRef.navigate as (...args: unknown[]) => void)('Main', {
+                screen: 'ShoppingTab',
+                params: {
+                  screen: 'ShoppingOrderDetail',
+                  params: { orderId },
+                },
+              });
+            } else {
+              (navigationRef.navigate as (...args: unknown[]) => void)('Main', {
+                screen: 'PersonalTab',
+                params: {
+                  screen: 'PersonalOrderDetail',
+                  params: { orderId },
+                },
+              });
+            }
+          }
+        }, 500);
+        return;
       }
 
       if (conversationId) {

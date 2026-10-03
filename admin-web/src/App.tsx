@@ -13,6 +13,7 @@ import ReportsPage from './pages/ReportsPage';
 import MomentsModerationPage from './pages/MomentsModerationPage';
 import MusicCatalogPage from './pages/MusicCatalogPage';
 import CommerceProductsPage from './pages/CommerceProductsPage';
+import CommerceOrdersPage from './pages/CommerceOrdersPage';
 import CommerceServicesPage from './pages/CommerceServicesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import HealthPage from './pages/HealthPage';
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="music" element={<MusicCatalogPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="products" element={<CommerceProductsPage />} />
+              <Route path="orders" element={<CommerceOrdersPage />} />
               <Route path="services" element={<CommerceServicesPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="health" element={<HealthPage />} />

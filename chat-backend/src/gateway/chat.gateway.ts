@@ -97,6 +97,17 @@ export class ChatGateway
       },
     );
 
+    // Wire order-card metadata refresh → broadcast message_updated with order
+    this.messagesService.setMessageUpdatedEmitCallback(
+      (conversationId, messageId, metadata) => {
+        this.io.to(`conversation:${conversationId}`).emit('message_updated', {
+          messageId,
+          conversationId,
+          metadata,
+        });
+      },
+    );
+
     // Wire pin/unpin emit callbacks → broadcast to conversation room
     this.conversationsService.setPinEmitCallback((conversationId, payload) => {
       this.io

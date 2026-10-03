@@ -11,10 +11,44 @@ import ShoppingHomeScreen from '../screens/shopping/ShoppingHomeScreen';
 import ShoppingProductDetailScreen from '../screens/shopping/ShoppingProductDetailScreen';
 import ShoppingStorefrontScreen from '../screens/shopping/ShoppingStorefrontScreen';
 import ShoppingCartScreen from '../screens/shopping/ShoppingCartScreen';
+import ShoppingCheckoutScreen from '../screens/shopping/ShoppingCheckoutScreen';
+import ShoppingOrdersScreen from '../screens/shopping/ShoppingOrdersScreen';
+import ShoppingOrderDetailScreen from '../screens/shopping/ShoppingOrderDetailScreen';
 import { getNotchHeaderHeight, NotchHeader } from '../components/NotchHeader';
 import { useComingSoonToast } from '../hooks/useComingSoonToast';
+import { useCart, cartBadgeLabel } from '../services/shopping/useCart';
+import { useNavigation } from '@react-navigation/native';
 
 const Stack = createNativeStackNavigator<ShoppingTabStackParamList>();
+
+// ── Header cart icon + badge (commerce-catalog D12) ─────────────────────────
+// Badge = total quantity from the shared cart store; hidden at 0, "99+" above
+// 99. Reads are synchronous MMKV, so the count is right on the first frame.
+const CartIconButton: React.FC<{ onPress?: () => void; color: string }> = ({ onPress, color }) => {
+  const { tokens } = useTheme();
+  const { totalQuantity } = useCart();
+  const badge = cartBadgeLabel(totalQuantity);
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={badge ? `Giỏ hàng, ${totalQuantity} sản phẩm` : 'Giỏ hàng'}
+      style={({ pressed }) => [navStyles.actionBtn, pressed && { opacity: koolaOpacity.pressed }]}>
+      <MaterialIcons name="shopping-cart" size={20} color={color} />
+      {badge ? (
+        <View
+          pointerEvents="none"
+          importantForAccessibility="no-hide-descendants"
+          style={[navStyles.cartBadge, { backgroundColor: tokens.semantic.status.danger, borderColor: tokens.semantic.surface.level1 }]}>
+          <KoolaText variant="caption" weight="800" tone="surface" style={navStyles.cartBadgeText}>
+            {badge}
+          </KoolaText>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+};
 
 const ShoppingTabStack: React.FC = () => {
   const { resolvedScheme, tokens } = useTheme();
@@ -48,6 +82,7 @@ const ShoppingTabStack: React.FC = () => {
           screenOptions={{
             headerShown: false,
             animation: 'slide_from_right',
+            gestureEnabled: true,
             statusBarTranslucent: true,
             navigationBarTranslucent: true,
             statusBarStyle: isDark ? 'light' : 'dark',
@@ -58,12 +93,37 @@ const ShoppingTabStack: React.FC = () => {
             // memory; popping Storefront while ProductDetail is detached desyncs
             // Fabric's ViewGroup child count → "Cannot remove child at index 1"
             // crash (MountItemDispatcher). Keep previous screen mounted.
+            // Navigator-level flag alone is not sufficient on some
+            // react-native-screens versions — per-screen override required.
             detachPreviousScreen: false,
           }}>
           <Stack.Screen name="ShoppingHome" component={ShoppingHomeScreen} />
-          <Stack.Screen name="ShoppingProductDetail" component={ShoppingProductDetailScreen} />
-          <Stack.Screen name="ShoppingStorefront" component={ShoppingStorefrontScreen} />
+          <Stack.Screen
+            name="ShoppingProductDetail"
+            component={ShoppingProductDetailScreen}
+            options={{
+              animation: 'slide_from_right',
+              gestureEnabled: true,
+              // @ts-expect-error detachPreviousScreen valid at runtime (react-native-screens) but NativeStack types lag for per-screen options
+              detachPreviousScreen: false,
+              freezeOnBlur: false,
+            }}
+          />
+          <Stack.Screen
+            name="ShoppingStorefront"
+            component={ShoppingStorefrontScreen}
+            options={{
+              animation: 'slide_from_right',
+              gestureEnabled: true,
+              // @ts-expect-error detachPreviousScreen valid at runtime (react-native-screens) but NativeStack types lag for per-screen options
+              detachPreviousScreen: false,
+              freezeOnBlur: false,
+            }}
+          />
           <Stack.Screen name="ShoppingCart" component={ShoppingCartScreen} />
+          <Stack.Screen name="ShoppingCheckout" component={ShoppingCheckoutScreen} />
+          <Stack.Screen name="ShoppingOrders" component={ShoppingOrdersScreen} />
+          <Stack.Screen name="ShoppingOrderDetail" component={ShoppingOrderDetailScreen} />
         </Stack.Navigator>
         {toast}
       </View>
@@ -79,6 +139,16 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notif
   const isDark = resolvedScheme === 'dark';
   const [messagePressed, setMessagePressed] = useState(false);
   const [notificationPressed, setNotificationPressed] = useState(false);
+  // This header renders beside (not inside) the stack navigator, so
+  // useNavigation() resolves to the parent tab navigator; target the nested
+  // stack screen explicitly.
+  const tabNavigation = useNavigation();
+  const openCart = React.useCallback(() => {
+    (tabNavigation as unknown as { navigate: (name: string, params: unknown) => void }).navigate(
+      'ShoppingTab',
+      { screen: 'ShoppingCart' },
+    );
+  }, [tabNavigation]);
 
   // Product detail variant: ←  |  Shop name (truncated)  |  share  cart  search
   if (config?.variant === 'product') {
@@ -123,14 +193,7 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notif
               style={({ pressed }) => [navStyles.actionBtn, pressed && { opacity: koolaOpacity.pressed }]}>
               <MaterialIcons name="share" size={20} color={tokens.semantic.text.primary} />
             </Pressable>
-            <Pressable
-              onPress={config.onCart}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Giỏ hàng"
-              style={({ pressed }) => [navStyles.actionBtn, pressed && { opacity: koolaOpacity.pressed }]}>
-              <MaterialIcons name="shopping-cart" size={20} color={tokens.semantic.text.primary} />
-            </Pressable>
+            <CartIconButton onPress={config.onCart} color={tokens.semantic.text.primary} />
             <Pressable
               onPress={config.onSearch}
               hitSlop={8}
@@ -174,6 +237,7 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notif
   // exactly the same visuals as before, and as ConnectTab/others do.
   const headerActions = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <CartIconButton onPress={openCart} color={tokens.semantic.text.muted} />
       <Pressable
         onPress={() => notify()}
         onPressIn={() => setMessagePressed(true)}
@@ -259,6 +323,19 @@ const navStyles = StyleSheet.create({
   },
   actionGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, marginLeft: 'auto' },
   actionBtn: { width: 36, height: 36, borderRadius: koolaRadii.pill, alignItems: 'center', justifyContent: 'center' },
+  cartBadge: {
+    position: 'absolute',
+    top: 0,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBadgeText: { fontSize: 10, lineHeight: 12 },
 });
 
 const styles = StyleSheet.create({
