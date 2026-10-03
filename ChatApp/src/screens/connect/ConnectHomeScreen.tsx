@@ -22,6 +22,7 @@ import type { BusinessSort } from '../../types';
 import { KoolaChip, KoolaSheet, KoolaSkeleton, KoolaText, koolaRadii, koolaZIndex, useKoolaToast, useTheme } from '../../ui';
 import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { MOCK_BUSINESSES } from './mockBusinesses';
 
 const DOCK_GAP_TOP = 4;
 const DOCK_H = 40;
@@ -190,6 +191,29 @@ const ConnectHomeScreen: React.FC = () => {
     province: activeProvince || undefined,
   });
   const { handleMessage } = useAccountActions(navigation);
+  // Demo: hợp nhất mock + data thật để luôn thấy card giống ảnh
+  const displayItems = useMemo(() => {
+    const hasActive =
+      effectiveCategory || activeProvince || (activeRelationship !== 'all') || activeSort !== 'latest';
+    // Khi có filter, lọc mock theo filter hiện tại
+    let mocks = MOCK_BUSINESSES as any[];
+    if (hasActive) {
+      mocks = mocks.filter((m) => {
+        if (effectiveCategory && m.businessCategory !== effectiveCategory) return false;
+        if (activeProvince && m.province !== activeProvince) return false;
+        if (activeRelationship !== 'all' && m.relationshipType && m.relationshipType !== activeRelationship) return false;
+        return true;
+      });
+      if (activeSort === 'popular') mocks = [...mocks].sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0));
+      if (activeSort === 'name') mocks = [...mocks].sort((a, b) => a.displayName.localeCompare(b.displayName, 'vi'));
+    }
+    // Trả mock trước, sau đó nối items thật (tránh trùng _id)
+    const realIds = new Set(mocks.map((m) => m._id));
+    const reals = (items as any[]).filter((it) => !realIds.has(it._id));
+    // Khi chưa load xong mà items rỗng, vẫn hiện mock để demo
+    if (items.length === 0) return mocks as any;
+    return [...mocks, ...reals] as any;
+  }, [items, effectiveCategory, activeProvince, activeRelationship, activeSort]);
   const activeFilterCount = (activeCategory !== null ? 1 : 0) + (activeProvince ? 1 : 0) + (activeSort !== 'latest' ? 1 : 0);
   const handleQrPress = useCallback(() => setQrVisible(true), []);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
@@ -258,10 +282,10 @@ const ConnectHomeScreen: React.FC = () => {
   const handleMomentumScrollEnd = useCallback(() => { if (!isDraggingRef.current) snapToNearestDetent(); }, [snapToNearestDetent]);
 
   const renderItem = useCallback(({ item }: { item: BusinessAccountItem }) => (
-    <BusinessCard item={item} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
+    <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
   ), [navigation, handleMessage]);
 
-  if (error && items.length === 0 && !loading) {
+  if (error && displayItems.length === 0 && !loading) {
     return (
       <View style={styles.screen}>
         <View style={{ paddingTop: overlayTop }}><View style={styles.contentInset}><ConnectSearchDock semantic={semantic} onSearchPress={handleSearchPress} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} onFocusChange={handleFocusChange} /></View></View>
@@ -287,7 +311,7 @@ const ConnectHomeScreen: React.FC = () => {
           </View>
         </View>
       ) : (
-        <Animated.FlatList ref={flatListRef} removeClippedSubviews={false} data={items} keyExtractor={(item) => item._id} renderItem={renderItem} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50}
+        <Animated.FlatList ref={flatListRef} removeClippedSubviews={false} data={displayItems} keyExtractor={(item) => item._id} renderItem={renderItem} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50}
           ListHeaderComponent={!bannerDismissed ? <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}><ConnectContextBanner onCreatePress={() => (navigation as any).navigate('PersonalTab', { screen: 'AccountList' })} onDismiss={handleDismissBanner} /></View> : null}
           ListEmptyComponent={loading ? null : <EmptyConnect activeCategory={effectiveCategory} activeRelationship={activeRelationship === 'all' ? undefined : activeRelationship} activeProvince={activeProvince || undefined} activeSort={activeSort} onClearFilters={handleClearFilters} />}
           ListFooterComponent={hasMore ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color={semantic.action.primary} /> : null}

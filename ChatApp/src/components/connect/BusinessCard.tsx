@@ -1,159 +1,208 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import UserAvatar from '../UserAvatar';
-import { KoolaText, koolaRadii, useTheme } from '../../ui';
+import { KoolaText, useTheme } from '../../ui';
 import { koolaShadows, koolaDarkShadows } from '../../ui/theme';
-import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { BusinessAccountItem } from '../../services/api/apiService';
-
-// ─── Category label lookup (module-level, no per-render allocation) ──────────
-import { CATEGORY_LABELS } from '../../screens/connect/constants';
+import type { MockBusiness } from '../../screens/connect/mockBusinesses';
 
 export interface BusinessCardProps {
-  item: BusinessAccountItem;
+  item: BusinessAccountItem | MockBusiness;
   onPress: () => void;
   onMessagePress: () => void;
   messageDisabled?: boolean;
   messageLoading?: boolean;
 }
 
-/**
- * Shared business card component used by ConnectHomeScreen and BusinessSearchScreen.
- * Renders avatar/logo imagery with graceful initials fallback via UserAvatar.
- * Uses useTheme().tokens.semantic for dark-mode correctness + shadow depth tokens.
- */
-const BusinessCard: React.FC<BusinessCardProps> = ({
-  item,
-  onPress,
-  onMessagePress,
-  messageDisabled,
-  messageLoading,
-}) => {
-  const { tokens, resolvedScheme } = useTheme();
-  const semantic = tokens.semantic;
-  const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
+function isMock(item: BusinessAccountItem | MockBusiness): item is MockBusiness {
+  return 'mainProduct' in item || 'rating' in item;
+}
+function formatViews(n: number): string {
+  return n.toLocaleString('vi-VN');
+}
 
-  const categoryLabel =
-    (item.businessCategory ? CATEGORY_LABELS[item.businessCategory] : undefined) ||
-    item.businessCategory ||
-    '';
+const VNFlag: React.FC<{ w?: number; h?: number }> = ({ w = 30, h = 19 }) => (
+  <Svg width={w} height={h} viewBox="0 0 38 24">
+    <Rect x={0} y={0} width={38} height={24} rx={3} fill="#DA251D" />
+    <Path d="M19 6 L20.6 11.2 L26 11.2 L21.7 14.3 L22.9 19.1 L19 16.1 L15.1 19.1 L16.3 14.3 L12 11.2 L17.4 11.2 Z" fill="#FFFF00" />
+  </Svg>
+);
 
-  // Use avatar or logoKey for imagery; UserAvatar handles fallback to initials
-  const imageKey = item.avatar || item.logoKey;
+const DVMark: React.FC<{ size?: number }> = ({ size = 36 }) => (
+  <Svg width={size} height={size} viewBox="0 0 44 44">
+    <Circle cx={22} cy={22} r={20} fill="#EAF2FF" stroke="#C7DEFF" strokeWidth={1} />
+    <Circle cx={22} cy={16} r={7} fill="#FACC15" />
+    <Path d="M22 5 L22 8 M14 9 L16 11.5 M30 9 L28 11.5" stroke="#FACC15" strokeWidth={1.2} strokeLinecap="round" />
+    <Path d="M8 28 Q16 18 22 27 Q28 19 36 28 L36 34 Q22 36 8 34 Z" fill="#22C55E" />
+    <Path d="M10 29 Q16 22 20 28 L18 33 Q12 33 10 29 Z" fill="#0EA5E9" />
+    <Path d="M14 30 L14 20 L18.5 20 Q21 20 21 23 Q21 26 18.5 26 L14 26 Z M16 22 L16 24 L18.2 24 Q19 24 19 23 Q19 22 18.2 22 Z" fill="#1E3A5F" />
+    <Path d="M22 20 L24.1 20 L26.5 25.5 L27.2 27 L27.4 27 L28.1 25.5 L30.5 20 L32.6 20 L28.8 30 L26.2 30 Z" fill="#16A34A" />
+  </Svg>
+);
+
+const Stars: React.FC<{ value: number }> = ({ value }) => (
+  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+    {Array.from({ length: 5 }).map((_, i) => (
+      <MaterialIcons key={i} name={i < value ? 'star' : 'star-border'} size={12} color={i < value ? '#D99A00' : '#CBD5E1'} style={{ marginRight: 1 }} />
+    ))}
+  </View>
+);
+
+const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePress }) => {
+  const { resolvedScheme } = useTheme();
+  const styles = useMemo(() => makeStyles(resolvedScheme), [resolvedScheme]);
+  const mock = isMock(item) ? (item as MockBusiness) : null;
+
+  if (!mock) {
+    return (
+      <Pressable style={styles.card} onPress={onPress} accessibilityRole="button">
+        <DVMark size={32} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <KoolaText weight="800" numberOfLines={1} style={styles.companyName}>{item.displayName}</KoolaText>
+          {item.province ? <KoolaText variant="caption" tone="muted" style={{ fontSize: 11 }}>{item.province}</KoolaText> : null}
+        </View>
+        <Pressable style={styles.ctaGreen} onPress={(e) => { e.stopPropagation(); onMessagePress(); }}>
+          <MaterialIcons name="chat-bubble-outline" size={12} color="#FFFFFF" />
+          <KoolaText weight="700" style={{ color: '#FFFFFF', marginLeft: 5, fontSize: 10 }}>NHẮN TIN</KoolaText>
+        </Pressable>
+      </Pressable>
+    );
+  }
 
   return (
-    <Pressable
-      style={styles.card}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
-      <UserAvatar
-        displayName={item.displayName}
-        avatar={imageKey}
-        size={44}
-      />
-      <View style={styles.content}>
-        <View style={styles.nameRow}>
-          <KoolaText variant="label" weight="700" numberOfLines={1} style={styles.name}>
-            {item.displayName}
-          </KoolaText>
-          {item.verificationStatus === 'verified' && (
-            <MaterialIcons name="verified" size={14} color={semantic.status.success} />
-          )}
-        </View>
-        <View style={styles.meta}>
-          {categoryLabel ? (
-            <KoolaText variant="caption" tone="primary" weight="700" numberOfLines={1} style={styles.metaLabel}>
-              {categoryLabel}
-            </KoolaText>
-          ) : null}
-          {item.province ? (
-            <>
-              <View style={styles.dot} />
-              <MaterialIcons name="location-on" size={11} color={semantic.text.muted} />
-              <KoolaText variant="caption" tone="muted" numberOfLines={1} style={styles.metaLabel}>
-                {item.province}
-              </KoolaText>
-            </>
-          ) : null}
-        </View>
-        {item.tagline ? (
-          <KoolaText variant="caption" tone="muted" numberOfLines={2} style={styles.tagline}>
-            {item.tagline}
-          </KoolaText>
-        ) : null}
+    <Pressable style={styles.card} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
+      <View pointerEvents="none" style={styles.watermark}>
+        <Svg width={180} height={180} viewBox="0 0 240 240" opacity={0.045}>
+          <Path d="M40 165 Q85 60 170 45 Q145 120 105 160 Q65 185 40 165 Z" fill="#94A3B8" />
+        </Svg>
       </View>
-      <Pressable
-        style={styles.cta}
-        onPress={(e) => {
-          e.stopPropagation();
-          onMessagePress();
-        }}
-        disabled={messageDisabled || messageLoading}
-        accessibilityRole="button"
-        accessibilityLabel="Nhắn tin">
-        <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.action.primary} />
-        <KoolaText variant="caption" tone="primary" weight="700" style={{ marginLeft: 4 }}>Nhắn tin</KoolaText>
-      </Pressable>
+
+      {/* Header: logo + tên (1 dòng) + cờ */}
+      <View style={styles.headerRow}>
+        <DVMark size={36} />
+        <KoolaText weight="800" numberOfLines={1} style={[styles.companyName, { flex: 1, marginLeft: 8, marginRight: 6 }]}>
+          {item.displayName}
+        </KoolaText>
+        <View style={styles.flagBox}>
+          <VNFlag w={28} h={18} />
+          <KoolaText weight="800" style={styles.flagValue}> VIỆT NAM</KoolaText>
+        </View>
+      </View>
+
+      <View style={styles.dividerStrong} />
+
+      <View style={styles.row}>
+        <KoolaText weight="800" style={styles.rowLabel}>SẢN PHẨM CHÍNH:</KoolaText>
+        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}> {mock.mainProduct ?? mock.tagline ?? ''}</KoolaText>
+      </View>
+
+      <View style={styles.dividerThin} />
+
+      {/* 1 dòng gộp: sao · thâm niên · vị trí */}
+      <View style={styles.metaRow}>
+        <Stars value={mock.rating ?? 5} />
+        <KoolaText weight="600" style={styles.metaText}>  {mock.yearsActive ?? 5} NĂM</KoolaText>
+        <View style={styles.dot} />
+        <KoolaText weight="600" style={styles.metaText} numberOfLines={1}>{mock.locationLabel ?? mock.province ?? ''}</KoolaText>
+      </View>
+
+      <View style={styles.dividerThin} />
+
+      <View style={styles.certRow}>
+        <KoolaText weight="700" style={styles.certLabel}>CHỨNG CHỈ:</KoolaText>
+        <View style={styles.certGroup}>
+          {(mock.certifications ?? []).map((c) => {
+            if (c.key === 'iso') return <View key={c.key} style={styles.certIso}><KoolaText weight="800" style={styles.certIsoText}>ISO</KoolaText><KoolaText weight="600" style={styles.certIsoSub}>{c.sublabel ?? '9001:2015'}</KoolaText></View>;
+            if (c.key === 'haccp') return <View key={c.key} style={styles.certHaccp}><KoolaText weight="800" style={styles.certHaccpText}>HACCP</KoolaText></View>;
+            if (c.key === 'globalgap') return <View key={c.key} style={styles.certGap}><View style={styles.certGapG}><KoolaText weight="800" style={styles.certGapGText}>G</KoolaText></View><KoolaText weight="700" style={styles.certGapText}>GLOBALG.A.P.</KoolaText></View>;
+            if (c.key === 'vietgap') return <KoolaText key={c.key} weight="800" style={styles.vietgap}>VIETGAP</KoolaText>;
+            return <View key={c.key} style={styles.certGeneric}><KoolaText weight="800" style={{ fontSize: 7, color: '#1E40AF' }}>{c.label}</KoolaText></View>;
+          })}
+        </View>
+      </View>
+
+      <View style={styles.dividerThin} />
+
+      <View style={styles.row}>
+        <KoolaText weight="700" style={styles.certLabel}>CUNG ỨNG:</KoolaText>
+        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}> {mock.supplyCapacity ?? ''}</KoolaText>
+      </View>
+
+      <View style={styles.dividerStrong} />
+
+      {/* Footer 1 dòng */}
+      <View style={styles.footer}>
+        <MaterialIcons name="visibility" size={12} color="#475569" />
+        <KoolaText weight="600" style={styles.footerText}>{formatViews(mock.viewCount ?? 0)}</KoolaText>
+        <View style={styles.dotSm} />
+        <MaterialIcons name="chat-bubble" size={11} color="#475569" />
+        <KoolaText weight="600" style={styles.footerText}>{mock.positiveFeedbackCount ?? 0}</KoolaText>
+        <View style={{ flex: 1 }} />
+        <Pressable style={styles.ctaGreen} onPress={(e) => { e.stopPropagation(); onMessagePress(); }} accessibilityRole="button">
+          <MaterialIcons name="chat-bubble-outline" size={12} color="#FFFFFF" />
+          <KoolaText weight="800" style={styles.ctaText}>NHẮN TIN NGAY</KoolaText>
+        </Pressable>
+      </View>
     </Pressable>
   );
 };
 
-const makeStyles = (t: SemanticTokens, scheme: 'light' | 'dark') =>
+const makeStyles = (scheme: 'light' | 'dark') =>
   StyleSheet.create({
     card: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: t.surface.level1,
-      padding: 14,
-      marginHorizontal: 0,
-      marginBottom: 6,
-      borderRadius: koolaRadii.md,
+      backgroundColor: '#FFFEFB',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#E8E0D0',
+      paddingHorizontal: 10,
+      paddingTop: 8,
+      paddingBottom: 8,
+      marginBottom: 8,
+      overflow: 'hidden',
       ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
     },
-    content: {
-      flex: 1,
-      marginLeft: 12,
-    },
-    nameRow: {
+    watermark: { position: 'absolute', right: -10, bottom: -14 },
+    headerRow: { flexDirection: 'row', alignItems: 'center' },
+    companyName: { color: '#1E3A5F', fontSize: 11.5, lineHeight: 15 },
+    flagBox: {
       flexDirection: 'row',
       alignItems: 'center',
+      borderWidth: 1,
+      borderColor: '#D6CFC0',
+      borderRadius: 6,
+      paddingHorizontal: 5,
+      paddingVertical: 3,
+      backgroundColor: '#FFFFFF',
     },
-    name: {
-      flex: 1,
-      marginRight: 4,
-    },
-    meta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 2,
-      flexWrap: 'wrap',
-      flex: 1,
-    },
-    metaLabel: {
-      flexShrink: 1,
-      marginRight: 4,
-    },
-    dot: {
-      width: 3,
-      height: 3,
-      borderRadius: 1.5,
-      backgroundColor: t.text.faint,
-      marginHorizontal: 2,
-    },
-    tagline: {
-      marginTop: 2,
-    },
-    cta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-      borderRadius: koolaRadii.pill,
-      backgroundColor: t.action.primarySoft,
-      marginLeft: 12,
-    },
+    flagValue: { fontSize: 9, color: '#0F172A' },
+    dividerStrong: { height: 1, backgroundColor: '#1E293B', marginTop: 7, opacity: 0.85 },
+    dividerThin: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DDCB', marginTop: 6 },
+    row: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+    rowLabel: { fontSize: 9.5, color: '#0F172A', letterSpacing: 0.2 },
+    rowValue: { fontSize: 9.5, color: '#334155', flex: 1 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+    metaText: { fontSize: 9.5, color: '#0F172A' },
+    dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#94A3B8', marginHorizontal: 6 },
+    dotSm: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#CBD5E1', marginHorizontal: 6 },
+    certRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+    certLabel: { fontSize: 9.5, color: '#0F172A', letterSpacing: 0.15 },
+    certGroup: { flexDirection: 'row', alignItems: 'center', marginLeft: 6, flex: 1, flexWrap: 'wrap', gap: 4 as never },
+    certIso: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.3, borderColor: '#1E40AF', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+    certIsoText: { fontSize: 7.5, color: '#1E40AF', lineHeight: 8, textAlign: 'center' as const },
+    certIsoSub: { fontSize: 5, color: '#1E40AF', lineHeight: 5.5, textAlign: 'center' as const },
+    certHaccp: { minWidth: 30, height: 24, borderRadius: 12, borderWidth: 1.2, borderColor: '#B45309', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFBEB', paddingHorizontal: 6 },
+    certHaccpText: { fontSize: 7, color: '#92400E', textAlign: 'center' as const },
+    certGap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#16A34A', borderRadius: 999, paddingLeft: 3, paddingRight: 6, height: 22, backgroundColor: '#FFFFFF' },
+    certGapG: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#16A34A', alignItems: 'center', justifyContent: 'center', marginRight: 3 },
+    certGapGText: { fontSize: 9, color: '#FFFFFF', lineHeight: 11 },
+    certGapText: { fontSize: 6.5, color: '#15803D' },
+    vietgap: { fontSize: 10, color: '#15803D' },
+    certGeneric: { borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 999, paddingHorizontal: 6, height: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+    footer: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
+    footerText: { fontSize: 9.5, color: '#334155', marginLeft: 3 },
+    ctaGreen: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A9A4B', paddingHorizontal: 10, height: 26, borderRadius: 7 },
+    ctaText: { color: '#FFFFFF', marginLeft: 5, fontSize: 10, letterSpacing: 0.15 },
   });
 
 export default React.memo(BusinessCard);
