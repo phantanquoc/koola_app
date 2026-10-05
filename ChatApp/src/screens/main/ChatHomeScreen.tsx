@@ -755,11 +755,11 @@ const ChatHomeScreen: React.FC = () => {
   // The wordmark (17h) + search dock (36h) chrome block, pinned to the top with
   // frosted semi-transparent backing matching Shopping/Connect tabs. Sub-tab bar (40h) overlays directly below it.
   // Layout: insets.top + 2 (top) + 17 (wordmark) + 6 (gap) + 36 (dock) = insets.top + 61.
-  const WORDMARK_TOP = 2; // Khớp `paddingTop: 2` của NotchHeader → logo không nhảy vị trí khi đổi tab
-  const WORDMARK_H = 17;  // = chiều cao ảnh wordmark (99×17), không chừa thêm vùng căn giữa
+  const WORDMARK_TOP = 1; // Nhích lên 1px so với trước (2→1)
+  const WORDMARK_H = 15;  // Thu nhỏ 17→15 để logo gọn hơn
   const DOCK_GAP = 6;     // Gap between wordmark and dock
   const DOCK_H = 36;      // Search dock slot height (fixed; pill inside is also a fixed 36, only its gray fill fades)
-  const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 61
+  const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 58
   const tabBarTop = blockH; // Sub-tab bar sits directly below frosted block
   const headerInset = chatHomeContentInset(blockH); // Full chrome inset for scene lists
 
@@ -844,7 +844,7 @@ const ChatHomeScreen: React.FC = () => {
             }}>
             <Image
               source={require('../../assets/logo_koola_wordmark.png')}
-              style={{ width: 99, height: 17 }}
+              style={{ width: 87, height: 15 }}
               resizeMode="contain"
               accessibilityLabel="KOOLA"
             />
