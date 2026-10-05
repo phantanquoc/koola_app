@@ -51,8 +51,8 @@ export interface NotchHeaderProps {
 
 export const NOTCH_WING_INSET = 4;
 
-/** Slightly taller than original 22 — trimmed bottom only on request */
-export const NOTCH_HEADER_CONTENT_H = 24;
+/** Wordmark branch — đồng bộ với ChatHomeScreen (87×15, TOP 1 → block -3 so với 99×17/TOP2) */
+export const NOTCH_HEADER_CONTENT_H = 22;
 /** Taller variant used when the band hosts a back button + title row */
 export const NOTCH_HEADER_NAV_CONTENT_H = 36;
 /** Chat variant's content height: koolaSpacing.sm top gap + the header row +
@@ -293,7 +293,7 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
           bottom: 0,
           alignItems: 'center',
           justifyContent: 'flex-start',
-          paddingTop: 2,
+          paddingTop: 1,
         }}>
         {title ? (
           <KoolaText variant="label" weight="700" style={{ color: tokens.semantic.text.primary }}>
@@ -302,7 +302,7 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
         ) : (
           <Image
             source={require('../assets/logo_koola_wordmark.png')}
-            style={{ width: 99, height: 17 }}
+            style={{ width: 87, height: 15 }}
             resizeMode="contain"
             accessibilityLabel="KOOLA"
           />
