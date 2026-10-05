@@ -947,7 +947,6 @@ const ChatScreen: React.FC = () => {
       showsVerticalScrollIndicator: false,
       removeClippedSubviews: false,
       initialNumToRender: 6,
-      getItemLayout: (_data: unknown, index: number) => ({ length: 72, offset: 72 * index, index }),
       // Real-device recalibration. The conservative pair (5 / 100) was tuned on the
       // emulator, whose weak JS thread starved scrolling whenever a batch landed;
       // on device the bottleneck inverts — a fast flick outruns a 5-row batch that
