@@ -1,11 +1,17 @@
 import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { KoolaText, useTheme } from '../../ui';
 import { koolaShadows, koolaDarkShadows } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 import type { MockBusiness } from '../../screens/connect/mockBusinesses';
+
+function isHttpUri(s: string): boolean {
+  return /^(https?:\/\/|file:\/\/|data:)/i.test(s);
+}
 
 export interface BusinessCardProps {
   item: BusinessAccountItem | MockBusiness;
@@ -50,16 +56,25 @@ const Stars: React.FC<{ value: number }> = ({ value }) => (
 );
 
 const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePress }) => {
-  const { resolvedScheme } = useTheme();
-  const styles = useMemo(() => makeStyles(resolvedScheme), [resolvedScheme]);
+  const { resolvedScheme, tokens } = useTheme();
+  const styles = useMemo(() => makeStyles(resolvedScheme, tokens.semantic), [resolvedScheme, tokens.semantic]);
   const mock = isMock(item) ? (item as MockBusiness) : null;
 
   if (!mock) {
+    const realDemoImage = (item as unknown as { demoImage?: ImageSourcePropType }).demoImage;
+    const avatarStr = typeof (item as BusinessAccountItem).avatar === 'string' ? (item as BusinessAccountItem).avatar as string : '';
+    const hasHttpAvatar = !!avatarStr && isHttpUri(avatarStr);
     return (
       <Pressable style={styles.card} onPress={onPress} accessibilityRole="button">
-        <DVMark size={32} />
+        {realDemoImage ? (
+          <Image source={realDemoImage} style={[styles.avatarImg, styles.avatar38]} />
+        ) : hasHttpAvatar ? (
+          <Image source={{ uri: avatarStr }} style={[styles.avatarImg, styles.avatar38]} />
+        ) : (
+          <DVMark size={38} />
+        )}
         <View style={{ flex: 1, marginLeft: 10 }}>
-          <KoolaText weight="800" numberOfLines={1} style={styles.companyName}>{item.displayName}</KoolaText>
+          <KoolaText weight="800" numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{item.displayName}</KoolaText>
           {item.province ? <KoolaText variant="caption" tone="muted" style={{ fontSize: 11 }}>{item.province}</KoolaText> : null}
         </View>
         <Pressable style={styles.ctaGreen} onPress={(e) => { e.stopPropagation(); onMessagePress(); }}>
@@ -72,21 +87,22 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
 
   return (
     <Pressable style={styles.card} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
+      <View pointerEvents="none" style={styles.washOverlay} />
       <View pointerEvents="none" style={styles.watermark}>
-        <Svg width={180} height={180} viewBox="0 0 240 240" opacity={0.045}>
+        <Svg width={200} height={200} viewBox="0 0 240 240" opacity={0.06}>
           <Path d="M40 165 Q85 60 170 45 Q145 120 105 160 Q65 185 40 165 Z" fill="#94A3B8" />
         </Svg>
       </View>
 
-      {/* Header: logo + tên (1 dòng) + cờ */}
+      {/* Header: logo + tên (2 dòng) + cờ */}
       <View style={styles.headerRow}>
-        <DVMark size={36} />
-        <KoolaText weight="800" numberOfLines={1} style={[styles.companyName, { flex: 1, marginLeft: 8, marginRight: 6 }]}>
+        {mock.demoImage ? <Image source={mock.demoImage} style={[styles.avatarImg, styles.avatar42]} /> : <DVMark size={42} />}
+        <KoolaText weight="800" numberOfLines={2} ellipsizeMode="tail" style={[styles.companyName, { flex: 1, marginLeft: 8, marginRight: 6 }]}>
           {item.displayName}
         </KoolaText>
         <View style={styles.flagBox}>
-          <VNFlag w={28} h={18} />
-          <KoolaText weight="800" style={styles.flagValue}> VIỆT NAM</KoolaText>
+          <VNFlag w={20} h={13} />
+          <KoolaText weight="700" style={styles.flagValue}> VN</KoolaText>
         </View>
       </View>
 
@@ -148,34 +164,52 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
   );
 };
 
-const makeStyles = (scheme: 'light' | 'dark') =>
+const makeStyles = (scheme: 'light' | 'dark', semantic: SemanticTokens) =>
   StyleSheet.create({
     card: {
-      backgroundColor: '#FFFEFB',
+      ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
+      backgroundColor: semantic.surface.level2,
       borderRadius: 12,
-      borderWidth: 1,
-      borderColor: '#E8E0D0',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
       paddingHorizontal: 10,
       paddingTop: 8,
       paddingBottom: 8,
       marginBottom: 8,
       overflow: 'hidden',
-      ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
+    },
+    washOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: '40%' as never,
+      backgroundColor: scheme === 'dark' ? 'rgba(251,146,60,0.06)' : '#FFF8EC',
+      opacity: scheme === 'dark' ? 1 : 0.45,
+      borderTopLeftRadius: 12,
+      borderTopRightRadius: 12,
     },
     watermark: { position: 'absolute', right: -10, bottom: -14 },
-    headerRow: { flexDirection: 'row', alignItems: 'center' },
-    companyName: { color: '#1E3A5F', fontSize: 11.5, lineHeight: 15 },
+    headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
+    avatarImg: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
+      backgroundColor: semantic.surface.level0,
+    },
+    avatar42: { width: 42, height: 42, borderRadius: 21 },
+    avatar38: { width: 38, height: 38, borderRadius: 19 },
+    companyName: { color: '#1E3A5F', fontSize: 12.5, lineHeight: 17 },
     flagBox: {
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: '#D6CFC0',
-      borderRadius: 6,
-      paddingHorizontal: 5,
-      paddingVertical: 3,
-      backgroundColor: '#FFFFFF',
+      borderColor: semantic.border.subtle,
+      borderRadius: 5,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
+      backgroundColor: semantic.surface.level0,
     },
-    flagValue: { fontSize: 9, color: '#0F172A' },
+    flagValue: { fontSize: 7.5, color: '#0F172A' },
     dividerStrong: { height: 1, backgroundColor: '#1E293B', marginTop: 7, opacity: 0.85 },
     dividerThin: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DDCB', marginTop: 6 },
     row: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },

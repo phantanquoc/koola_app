@@ -1,3 +1,4 @@
+import type { ImageSourcePropType } from 'react-native';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 
 /**
@@ -17,6 +18,7 @@ export type MockBusiness = BusinessAccountItem & {
   viewCount?: number;
   positiveFeedbackCount?: number;
   verifiedMark?: boolean;
+  demoImage?: ImageSourcePropType;
 };
 
 export const MOCK_BUSINESSES: MockBusiness[] = [
@@ -43,6 +45,7 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     viewCount: 12500,
     positiveFeedbackCount: 185,
     verifiedMark: true,
+    demoImage: require('../../assets/mock-shopping/rice.jpg'),
   },
   {
     _id: 'mock-02',
@@ -62,6 +65,7 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     supplyCapacity: '500 CONTAINER/NĂM, PHỦ 12 CẢNG QUỐC TẾ',
     viewCount: 8320,
     positiveFeedbackCount: 97,
+    demoImage: require('../../assets/mock-shopping/earbuds.jpg'),
   },
   {
     _id: 'mock-03',
@@ -82,6 +86,7 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     supplyCapacity: '20 TRIỆU TÚI/THÁNG, XUẤT CHÂU ÂU',
     viewCount: 6420,
     positiveFeedbackCount: 63,
+    demoImage: require('../../assets/mock-shopping/mop.jpg'),
   },
   {
     _id: 'mock-04',
@@ -101,6 +106,7 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     supplyCapacity: '80 TẤN/THÁNG, CHUỖI SIÊU THỊ TOÀN QUỐC',
     viewCount: 4180,
     positiveFeedbackCount: 41,
+    demoImage: require('../../assets/mock-shopping/chicken-rice.jpg'),
   },
   {
     _id: 'mock-05',
@@ -121,5 +127,6 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     supplyCapacity: '200 TẤN/THÁNG, XUẤT MỸ & NHẬT',
     viewCount: 9870,
     positiveFeedbackCount: 112,
+    demoImage: require('../../assets/mock-shopping/vegetables.jpg'),
   },
 ];
