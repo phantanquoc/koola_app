@@ -4,7 +4,8 @@
  * B2: PersonalProfileCard displayName numberOfLines 2 (not 1).
  * 1C+A2: PersonalWalletCard falls back to onComingSoon (toast owned by
  *        SettingsScreen, rendered outside ScrollView) + eye disabled.
- * 2B: PersonalSecuritySection logout shows Alert confirm before calling onLogout.
+ * 2B: PersonalSecuritySection logout shows app-root koolaConfirm (no native
+ *     Modal) before calling onLogout.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -75,19 +76,15 @@ describe('Personal locked fixes — static contracts', () => {
     expect(src).toContain("'256.000'");
   });
 
-  it('PersonalSecuritySection: logout goes through rounded Modal confirm before onLogout', () => {
+  it('PersonalSecuritySection: logout goes through app-root koolaConfirm before onLogout', () => {
     const src = read('../components/personal/PersonalSecuritySection.tsx');
     expect(src).toContain('Bạn có chắc muốn đăng xuất?');
-    expect(src).toMatch(/setConfirmVisible/);
-    expect(src).toMatch(/onLogout\(\)/);
-    expect(src).toMatch(/borderRadius/);
-    expect(src).toMatch(/koolaRadii/);
+    expect(src).toMatch(/koolaConfirm\(/);
+    expect(src).toMatch(/onConfirm: onLogout/);
     // Logout Pressable uses handleLogout, not raw onLogout
     expect(src).toMatch(/onPress=\{handleLogout\}/);
     expect(src).not.toMatch(/onPress=\{onLogout\}/);
-    // Rounded modal contract — Modal + overlay + dialog, not Alert
-    expect(src).toContain('<Modal');
-    expect(src).toContain('overlay');
-    expect(src).toContain('dialog');
+    // No native Modal — Fabric Android Modal can lay out 0x0 and freeze touches
+    expect(src).not.toContain('<Modal');
   });
 });
