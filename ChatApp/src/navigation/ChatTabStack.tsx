@@ -70,6 +70,11 @@ const ChatTabStack: React.FC = () => {
           statusBarTranslucent: true,
           navigationBarTranslucent: true,
           statusBarStyle: isDark ? 'light' : 'dark',
+          ...( { cardStyle: { backgroundColor: 'transparent' } } as object),
+          // Fabric fix: native-stack detaches the previous screen off-tree to save
+          // memory; popping while previous is detached desyncs Fabric's ViewGroup
+          // child count. Keep previous screen mounted.
+          ...( { detachPreviousScreen: false } as object),
         }}>
         <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
         <Stack.Screen
@@ -78,7 +83,11 @@ const ChatTabStack: React.FC = () => {
           options={{
             animation: 'slide_from_right',
             animationDuration: 150,
+            gestureEnabled: true,
             freezeOnBlur: true,
+            contentStyle: { backgroundColor: 'transparent' } as never,
+            ...( { cardStyle: { backgroundColor: 'transparent' } } as object),
+            ...( { detachPreviousScreen: false } as object),
           }}
         />
         <Stack.Screen
