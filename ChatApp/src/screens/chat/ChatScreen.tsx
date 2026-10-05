@@ -4,6 +4,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  InteractionManager,
 } from 'react-native';
 import { GiftedChat, SystemMessage, IMessage, SystemMessageProps, DayProps, InputToolbarProps, MessageProps } from 'react-native-gifted-chat';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
@@ -52,6 +53,7 @@ import {
   KoolaEmptyState,
   KoolaErrorState,
   KoolaLoadingState,
+  KoolaSkeleton,
   KoolaText,
   koolaRadii,
   koolaSpacing,
@@ -63,7 +65,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
-import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { getNotchHeaderHeight, NotchHeader } from '../../components/NotchHeader';
 import { useChatNavHeader } from '../../navigation/ChatHeaderContext';
 
 // ─── Palette-aware style factory ─────────────────────────────────────────────
@@ -546,14 +548,19 @@ const ChatScreen: React.FC = () => {
     };
   }, []);
 
-  // Ensure chatReady flips true when isInitialLoading clears (safety for legacy/non-SQLite path)
+  // Orchestrate the initial paint: keep chatReady false (= skeleton / faded
+  // list) until the deferred DB load finishes, then fade the real list in.
   useEffect(() => {
-    if (!isInitialLoading) {
-      setChatReady(true);
-    } else {
-      setChatReady(false);
-    }
+    setChatReady(!isInitialLoading);
   }, [isInitialLoading]);
+
+  // Blur is expensive on the GPU — keep it off during the push animation and
+  // flip it on right after the JS thread goes idle (same gate as the DB read).
+  const [blurReady, setBlurReady] = useState(false);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => setBlurReady(true));
+    return () => task.cancel();
+  }, []);
 
   // ─── Custom renders ────────────────────────────────────────────────────────
 
@@ -891,12 +898,12 @@ const ChatScreen: React.FC = () => {
     isMountedRef,
   });
 
-  // ─── Header: take over the shared notch band while focused ──────────────────
-  // ChatTabStack renders NotchHeader as a fixed sibling that paints above every
-  // screen in the stack (zIndex 10), so a header of our own here would sit under
-  // it. Instead we hand the band our identity + actions and it renders the chat
-  // variant; the band reverts to the KOOLA wordmark when Chat loses focus.
-  // State stays where it is — this only moves where it gets rendered.
+  // ─── Header: rendered in-screen so it slides with push/pop ──────────────────
+  // ChatTabStack hides its fixed band while Chat is focused, so the chat
+  // header lives INSIDE the animated screen view (absolute top, same height
+  // as the band; the list keeps its paddingBottom). No swap, no handover —
+  // the header mounts with the screen and unmounts with it. The band config
+  // below is kept so the shared context plumbing stays intact.
   useChatNavHeader({
     title: chatTitle,
     status: otherUserStatus,
@@ -905,6 +912,21 @@ const ChatScreen: React.FC = () => {
     onHeaderPress: handleHeaderPress,
     onStartCall: handleStartCall,
   });
+
+  // ─── In-screen chat header: fixed inside the animated screen view ──────────
+  // Same callbacks as the shared band config (stable onBack/onHeaderPress/
+  // onStartCall via the hook's refs above) so taps mid-transition behave.
+  const inScreenChat = useMemo(
+    () => ({
+      title: chatTitle,
+      status: otherUserStatus,
+      avatarKey: otherAvatarKey,
+      onBack: () => navigation.goBack(),
+      onHeaderPress: handleHeaderPress,
+      onStartCall: handleStartCall,
+    }),
+    [chatTitle, otherUserStatus, otherAvatarKey, navigation, handleHeaderPress, handleStartCall],
+  );
 
   const playerMediaKey = (playerMessage?.mediaKey as string | undefined) || '';
 
@@ -961,6 +983,11 @@ const ChatScreen: React.FC = () => {
         extends behind the glass header so scrolled data blurs underneath it,
         like the outer tabs. Padding is reserved in listViewProps instead. */}
     <View style={styles.container}>
+      <NotchHeader
+        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+        chat={inScreenChat}
+        blurReady={blurReady}
+      />
       {/* Offline Banner */}
       <OfflineBanner isVisible={isConnected === false} />
 
@@ -994,9 +1021,7 @@ const ChatScreen: React.FC = () => {
             />
           </View>
         )}
-        {/* Empty state — conversation has no messages yet.
-            pointerEvents="none" so the overlay does not swallow taps targeting
-            the absolute-positioned ChatComposer that sits visually below it. */}
+        {/* Empty state — conversation has no messages yet. */}
         {chatReady && !isInitialLoading && !initialLoadError && messages.length === 0 && (
           <View pointerEvents="none" style={styles.stateOverlay}>
             <KoolaEmptyState
@@ -1007,13 +1032,39 @@ const ChatScreen: React.FC = () => {
             />
           </View>
         )}
-        {/* Loading overlay - absolute positioned, doesn't affect layout */}
-        {!chatReady && messages.length === 0 && !initialLoadError && (
-          <View style={styles.stateOverlay}>
-            <KoolaLoadingState
-              title="Đang tải tin nhắn"
-              style={styles.stateContent}
-            />
+        {/* Deferred-load skeleton: covers the ~150ms gap where the DB read
+            is parked behind InteractionManager so frame 0 isn't janked. */}
+        {isInitialLoading && messages.length === 0 && !initialLoadError && (
+          <View style={skeletonStyles.skeletonList} pointerEvents="none">
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const isRight = i % 3 === 0;
+              return (
+                <View
+                  key={i}
+                  style={[
+                    skeletonStyles.skeletonRow,
+                    isRight ? skeletonStyles.skeletonRowRight : skeletonStyles.skeletonRowLeft,
+                  ]}>
+                  {!isRight && (
+                    <KoolaSkeleton width={32} height={32} radius={16} style={{ marginRight: 8 }} />
+                  )}
+                  <View style={{ flex: 1, maxWidth: '68%' }}>
+                    <KoolaSkeleton
+                      width={isRight ? '88%' : i % 2 === 0 ? '72%' : '54%'}
+                      height={14}
+                      radius={8}
+                      style={{ alignSelf: isRight ? 'flex-end' : 'flex-start' }}
+                    />
+                    <KoolaSkeleton
+                      width={isRight ? '62%' : '42%'}
+                      height={14}
+                      radius={8}
+                      style={{ marginTop: 6, alignSelf: isRight ? 'flex-end' : 'flex-start' }}
+                    />
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
         {/* GiftedChat - always rendered (Fabric-safe: no Animated.View wrapper) */}
@@ -1091,5 +1142,28 @@ const ChatScreen: React.FC = () => {
     </BottomSheetModalProvider>
   );
 };
+
+const skeletonStyles = StyleSheet.create({
+  skeletonList: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: koolaSpacing.md,
+    paddingTop: koolaSpacing.lg,
+    gap: 12,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  skeletonRowLeft: {
+    justifyContent: 'flex-start',
+  },
+  skeletonRowRight: {
+    justifyContent: 'flex-end',
+  },
+});
 
 export default ChatScreen;

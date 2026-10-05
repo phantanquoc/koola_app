@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
+import { InteractionManager } from 'react-native';
 import {
   useNavigation,
   type NavigationProp,
@@ -68,9 +69,11 @@ export function useChatHeaderState({
 
   // Fetch conversation details for header name.
   // SQLite-first: populate conversation state synchronously from local DB so
-  // chatTitle is stable on first render, then refresh from network in background.
+  // chatTitle is stable on first render, then refresh from network after the
+  // push animation — the network fetch + JSON parse would otherwise contend
+  // with the JS thread while the navigator is animating.
   useEffect(() => {
-    // 1. Synchronous SQLite read — non-fatal, falls through to network on error
+    // 1. Synchronous SQLite read — single row, negligible cost, keeps title stable.
     try {
       const local = conversationRepository.getById(conversationId);
       if (local) {
@@ -94,30 +97,31 @@ export function useChatHeaderState({
       // non-fatal — network refresh below will populate state
     }
 
-    // 2. Background network refresh for authoritative data (online status, pinnedMessages, populated members)
-    conversationsApi.getDetails(conversationId).then((data: { conversation: Conversation }) => {
-      // Guard: do not setState on a screen that is being/already popped off the stack
-      if (!isFocusedRef.current || !isMountedRef.current) return;
-      const conv = data.conversation || data;
-      setConversation(conv);
-      // Resolve other member's avatar
-      if (conv.type !== 'group') {
-        const other = conv.members.find((m: any) => {
-          const id = typeof m.userId === 'object' ? m.userId._id : m.userId;
-          return id !== currentUserId;
-        });
-        const rawAvatar = other && typeof other.userId === 'object'
-          ? (other.userId as any).avatar
-          : other?.user?.avatar;
-        if (rawAvatar) {
-          setOtherAvatarKey(rawAvatar);
-          getOrDownload(rawAvatar).then((url) => {
-            if (!isFocusedRef.current || !isMountedRef.current) return;
-            if (url) setOtherAvatarUrl(url);
+    // 2. Network refresh deferred past the transition.
+    const task = InteractionManager.runAfterInteractions(() => {
+      conversationsApi.getDetails(conversationId).then((data: { conversation: Conversation }) => {
+        if (!isFocusedRef.current || !isMountedRef.current) return;
+        const conv = data.conversation || (data as unknown as Conversation);
+        setConversation(conv as Conversation);
+        if (conv.type !== 'group') {
+          const other = (conv as Conversation).members.find((m: any) => {
+            const id = typeof m.userId === 'object' ? m.userId._id : m.userId;
+            return id !== currentUserId;
           });
+          const rawAvatar = other && typeof other.userId === 'object'
+            ? (other.userId as any).avatar
+            : (other as any)?.user?.avatar;
+          if (rawAvatar) {
+            setOtherAvatarKey(rawAvatar);
+            getOrDownload(rawAvatar).then((url) => {
+              if (!isFocusedRef.current || !isMountedRef.current) return;
+              if (url) setOtherAvatarUrl(url);
+            });
+          }
         }
-      }
-    }).catch(() => {});
+      }).catch(() => {});
+    });
+    return () => task.cancel();
   }, [conversationId, currentUserId, isFocusedRef, isMountedRef, setConversation]);
 
   // Warm avatar URL from the mediaKey passed via nav params (cache hit is instant).

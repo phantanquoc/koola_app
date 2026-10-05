@@ -43,6 +43,10 @@ export interface NotchHeaderProps {
   /** Optional action icons to render on the right side of the wordmark variant.
    *  Positioned absolutely so they don't push the wordmark left. */
   actions?: React.ReactNode;
+  /** Chat only: when false the BlurView renders with blurAmount 0 so the
+   *  glass effect does not pay GPU cost during the push animation. Defaults
+   *  to true (back-compat for every caller that does not pass it). */
+  blurReady?: boolean;
 }
 
 export const NOTCH_WING_INSET = 4;
@@ -73,18 +77,19 @@ export const getNotchHeaderHeight = (
       ? NOTCH_HEADER_NAV_CONTENT_H
       : NOTCH_HEADER_CONTENT_H);
 
-export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions, blurReady }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top, chat ? 'chat' : onBack ? 'nav' : 'wordmark');
   const isDark = resolvedScheme === 'dark';
+  const effectiveBlurReady = blurReady ?? true;
 
   if (chat) {
     return (
       <View style={[styles.host, { height: flatH, overflow: 'hidden' as const }, style]}>
         <BlurView
           blurType={isDark ? 'dark' : 'light'}
-          blurAmount={18}
+          blurAmount={effectiveBlurReady ? 18 : 0}
           overlayColor={isDark ? 'rgba(28,32,38,0.34)' : 'rgba(255,255,255,0.42)'}
           reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
           style={StyleSheet.absoluteFillObject}>

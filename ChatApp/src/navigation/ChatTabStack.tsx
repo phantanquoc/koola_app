@@ -39,15 +39,17 @@ const ChatTabStack: React.FC = () => {
     [],
   );
 
-  const chatConfig = focusedRouteName === 'Chat' ? headerConfig : null;
   const headerCtx = useMemo(
     () => ({ config: headerConfig, setConfig: setHeaderConfig }),
     [headerConfig],
   );
 
   // ChatHome owns its own glass header block (wordmark + search dock), so we
-  // hide the stack-level wordmark there to avoid a double layer/seam.
-  const showStackHeader = focusedRouteName !== 'ChatHome';
+  // hide the stack-level wordmark there to avoid a double layer/seam. Chat
+  // renders its own header inside its screen view (it slides with the
+  // push/pop animation), so the fixed band stays hidden while Chat is focused.
+  const showStackHeader =
+    focusedRouteName !== 'ChatHome' && focusedRouteName !== 'Chat';
   return (
     <ChatHeaderContext.Provider value={headerCtx}>
     <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
@@ -55,7 +57,6 @@ const ChatTabStack: React.FC = () => {
       {showStackHeader && (
         <NotchHeader
           style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
-          chat={chatConfig ?? undefined}
         />
       )}
       <Stack.Navigator

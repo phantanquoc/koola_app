@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import * as messageRepository from '../../../services/db/messageRepository';
 import * as outboxRepository from '../../../services/db/outboxRepository';
 import type { MessageInput } from '../../../services/db/messageRepository';
@@ -110,6 +111,33 @@ const EARLIER_PAGE_SIZE = 80;
  * "load earlier" well past where a user usually stops.
  */
 const INITIAL_WINDOW_SIZE = 150;
+const CHUNK_1 = 30;
+const CHUNK_2 = 60;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- documents 30+60+60=150 split
+const CHUNK_3 = INITIAL_WINDOW_SIZE - CHUNK_1 - CHUNK_2;
+
+function scheduleRaf(cb: () => void): number {
+  const g = globalThis as unknown as {
+    requestAnimationFrame?: (cb: (time: number) => void) => number;
+  };
+  if (typeof g.requestAnimationFrame === 'function') return g.requestAnimationFrame(cb);
+  return setTimeout(cb, 16) as unknown as number;
+}
+
+function cancelRaf(id: number): void {
+  const g = globalThis as unknown as {
+    cancelAnimationFrame?: (id: number) => void;
+  };
+  if (typeof g.cancelAnimationFrame === 'function') {
+    try {
+      g.cancelAnimationFrame(id);
+    } catch {
+      clearTimeout(id as unknown as NodeJS.Timeout);
+    }
+  } else {
+    clearTimeout(id as unknown as NodeJS.Timeout);
+  }
+}
 
 function loadFromDb(
   conversationId: string,
@@ -130,16 +158,9 @@ export function useMessagesFromDb(
   conversationId: string,
   currentUserId: string,
 ) {
-  const [messages, setMessages] = useState<IMessage[]>(() => {
-    const t0 = Date.now();
-    const result = loadFromDb(conversationId, currentUserId);
-    if (__DEV__) {
-      console.log(`[PERF useMessagesFromDb] MOUNT conv=${conversationId.slice(-6)} totalMs=${Date.now() - t0} count=${result.length}`);
-    }
-    return result;
-  });
+  const [messages, setMessages] = useState<IMessage[]>([]);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
-  const [_isInitialLoading, _setIsInitialLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hasEarlier, setHasEarlier] = useState(true);
   // Mirrors of the two pagination flags and of the loaded window, read by
@@ -149,20 +170,26 @@ export function useMessagesFromDb(
   const isLoadingEarlierRef = useRef(false);
   const visibleMessagesRef = useRef<IMessage[]>([]);
   const mountedRef = useRef(true);
-  const loadedKeyRef = useRef(`${conversationId}:${currentUserId}`);
+  const loadedKeyRef = useRef<string | null>(null);
   // Track how many messages are currently loaded so reload preserves the window
   // (prevents truncation back to the initial window after the user scrolled to
   // load earlier messages)
   const loadedCountRef = useRef(INITIAL_WINDOW_SIZE);
   const currentLoadKey = `${conversationId}:${currentUserId}`;
   const stateMatchesConversation = loadedKeyRef.current === currentLoadKey;
-  const visibleMessages = stateMatchesConversation
-    ? messages
-    : loadFromDb(conversationId, currentUserId);
+  // Before the deferred DB read completes, `messages` is empty — show nothing
+  // (ChatScreen renders a skeleton in this gap) rather than blocking the
+  // navigation animation with a synchronous SQLite query.
+  const visibleMessages = stateMatchesConversation ? messages : [];
   // Kept in sync on every render rather than in an effect: `loadEarlier` can fire
   // from a scroll before an effect has committed, and reading a stale cursor there
   // would re-request a page the list already holds.
   visibleMessagesRef.current = visibleMessages;
+
+  // Chunked hydration — refs so invalidations can cancel pending rAFs without re-render.
+  const isChunkingRef = useRef(false);
+  const raf1Ref = useRef<number | null>(null);
+  const raf2Ref = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -171,20 +198,169 @@ export function useMessagesFromDb(
     };
   }, []);
 
+  // ─── Deferred initial window (chunked 30 + 60 + 60) ────────────────────────
+  // Frame 0 must only paint the shell (header + skeleton + composer). The
+  // SQLite query for up to 150 rows blocks the JS thread long enough to drop
+  // the 300ms stack push animation below 60fps. Deferring to
+  // `runAfterInteractions` lets the navigator finish the gesture, then
+  // hydration is spread over 3 rAF ticks so no single tick exceeds ~16ms.
+
+  useEffect(() => {
+    const key = `${conversationId}:${currentUserId}`;
+    // Already loaded for this key (e.g. invalidation already filled it) — skip.
+    if (loadedKeyRef.current === key) return;
+    setIsInitialLoading(true);
+    isChunkingRef.current = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!mountedRef.current) return;
+      // Key may have changed while interactions were in flight — stale guard.
+      if (`${conversationId}:${currentUserId}` !== key) return;
+      if (loadedKeyRef.current === key) {
+        if (mountedRef.current) setIsInitialLoading(false);
+        return;
+      }
+      try {
+        const t0 = Date.now();
+        const first = loadFromDb(conversationId, currentUserId, CHUNK_1);
+        if (!mountedRef.current) return;
+        if (`${conversationId}:${currentUserId}` !== key) return;
+        loadedKeyRef.current = key;
+        loadedCountRef.current = first.length;
+        setInitialLoadError(null);
+        // Small conversation: single chunk is the whole window.
+        if (first.length < CHUNK_1) {
+          hasEarlierRef.current = false;
+          setHasEarlier(false);
+          setMessages(first);
+          setIsInitialLoading(false);
+          if (__DEV__) {
+            console.log(`[PERF useMessagesFromDb] CHUNK 1/1 conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${first.length}`);
+          }
+          return;
+        }
+        // Large conversation: show first 30 immediately, hydrate remainder behind rAF.
+        hasEarlierRef.current = true;
+        setHasEarlier(true);
+        setMessages(first);
+        setIsInitialLoading(false);
+        if (__DEV__) {
+          console.log(`[PERF useMessagesFromDb] CHUNK 1/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${first.length}`);
+        }
+        isChunkingRef.current = true;
+
+        const runPhase2 = () => {
+          raf1Ref.current = null;
+          if (!mountedRef.current) { isChunkingRef.current = false; return; }
+          if (`${conversationId}:${currentUserId}` !== key) { isChunkingRef.current = false; return; }
+          if (loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
+          try {
+            const t1 = Date.now();
+            const limit2 = CHUNK_1 + CHUNK_2;
+            const second = loadFromDb(conversationId, currentUserId, limit2);
+            if (!mountedRef.current || `${conversationId}:${currentUserId}` !== key || loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
+            const next = second.slice(CHUNK_1);
+            if (next.length > 0) {
+              setMessages((prev) => {
+                const merged = [...prev, ...next];
+                loadedCountRef.current = merged.length;
+                return merged;
+              });
+              if (second.length < limit2) {
+                loadedCountRef.current = second.length;
+              }
+            }
+            if (__DEV__) {
+              console.log(`[PERF useMessagesFromDb] CHUNK 2/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t1} total=${second.length} appended=${next.length}`);
+            }
+            // No more rows or fewer than limit2 — hydration complete.
+            if (second.length < limit2) {
+              const more = false;
+              // Actually if original window is 150 and we only got <90, no more earlier.
+              hasEarlierRef.current = more;
+              setHasEarlier(more);
+              loadedCountRef.current = second.length;
+              isChunkingRef.current = false;
+              return;
+            }
+            // Schedule phase 3.
+            raf2Ref.current = scheduleRaf(() => {
+              raf2Ref.current = null;
+              if (!mountedRef.current) { isChunkingRef.current = false; return; }
+              if (`${conversationId}:${currentUserId}` !== key) { isChunkingRef.current = false; return; }
+              if (loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
+              try {
+                const t2 = Date.now();
+                const third = loadFromDb(conversationId, currentUserId, INITIAL_WINDOW_SIZE);
+                if (!mountedRef.current || `${conversationId}:${currentUserId}` !== key || loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
+                const tail = third.slice(limit2);
+                if (tail.length > 0) {
+                  setMessages((prev) => {
+                    const merged = [...prev, ...tail];
+                    loadedCountRef.current = merged.length;
+                    return merged;
+                  });
+                }
+                if (third.length < limit2) {
+                  loadedCountRef.current = third.length;
+                } else if (tail.length === 0) {
+                  loadedCountRef.current = third.length;
+                }
+                const more = third.length === INITIAL_WINDOW_SIZE;
+                hasEarlierRef.current = more;
+                setHasEarlier(more);
+                loadedCountRef.current = third.length;
+                isChunkingRef.current = false;
+                if (__DEV__) {
+                  console.log(`[PERF useMessagesFromDb] CHUNK 3/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t2} total=${third.length} appended=${tail.length}`);
+                }
+              } catch (err2) {
+                isChunkingRef.current = false;
+                console.warn('[useMessagesFromDb] chunk 3 error:', (err2 as Error)?.message);
+              }
+            });
+          } catch (err2) {
+            isChunkingRef.current = false;
+            console.warn('[useMessagesFromDb] chunk 2 error:', (err2 as Error)?.message);
+          }
+        };
+
+        raf1Ref.current = scheduleRaf(runPhase2);
+      } catch (err) {
+        isChunkingRef.current = false;
+        if (!mountedRef.current) return;
+        setInitialLoadError((err as Error)?.message ?? 'Không thể tải tin nhắn');
+        setIsInitialLoading(false);
+      }
+    });
+    return () => {
+      task.cancel();
+      if (raf1Ref.current !== null) { cancelRaf(raf1Ref.current); raf1Ref.current = null; }
+      if (raf2Ref.current !== null) { cancelRaf(raf2Ref.current); raf2Ref.current = null; }
+      isChunkingRef.current = false;
+    };
+  }, [conversationId, currentUserId]);
+
   // ─── Subscribe to repository invalidations ─────────────────────────────────
   useEffect(() => {
     const key = `${conversationId}:${currentUserId}`;
-    if (loadedKeyRef.current !== key) {
-      loadedKeyRef.current = key;
+    // Conversation switched while this mount lives (rare — ChatScreen usually
+    // unmounts per push). Reset pagination and clear the window; the deferred
+    // load effect above will refill it after the transition. Do NOT do a
+    // synchronous loadFromDb here — that would block the push animation.
+    const cancelChunking = () => {
+      if (raf1Ref.current !== null) { cancelRaf(raf1Ref.current); raf1Ref.current = null; }
+      if (raf2Ref.current !== null) { cancelRaf(raf2Ref.current); raf2Ref.current = null; }
+      isChunkingRef.current = false;
+    };
+
+    if (loadedKeyRef.current !== key && loadedKeyRef.current !== null) {
+      cancelChunking();
+      loadedKeyRef.current = null;
       loadedCountRef.current = INITIAL_WINDOW_SIZE;
       setInitialLoadError(null);
       setHasEarlier(true);
-      // The ref must be reset alongside the state it mirrors. Without this, a
-      // conversation opened after one that had been scrolled to its oldest
-      // message would inherit `hasEarlierRef = false` and refuse to paginate,
-      // while `hasEarlier` state said otherwise.
       hasEarlierRef.current = true;
-      setMessages(loadFromDb(conversationId, currentUserId));
+      setMessages([]);
     }
 
     const handleInvalidation = (payload: any) => {
@@ -192,11 +368,15 @@ export function useMessagesFromDb(
 
       // Legacy path: payload is undefined → full reload
       if (!payload) {
+        cancelChunking();
         const t0 = Date.now();
         const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
         const fresh = loadFromDb(conversationId, currentUserId, limit);
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
+        const more = fresh.length === INITIAL_WINDOW_SIZE;
+        hasEarlierRef.current = more;
+        setHasEarlier(more);
         setMessages(fresh);
         if (__DEV__) {
           console.log(`[PERF useMessagesFromDb] RELOAD conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length} limit=${limit}`);
@@ -208,11 +388,15 @@ export function useMessagesFromDb(
 
       // If order changed (insert/batch with new messages), full reload required
       if (orderChanged) {
+        cancelChunking();
         const t0 = Date.now();
         const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
         const fresh = loadFromDb(conversationId, currentUserId, limit);
         loadedKeyRef.current = key;
         loadedCountRef.current = fresh.length;
+        const more = fresh.length === INITIAL_WINDOW_SIZE;
+        hasEarlierRef.current = more;
+        setHasEarlier(more);
         setMessages(fresh);
         if (__DEV__) {
           console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
@@ -252,24 +436,43 @@ export function useMessagesFromDb(
 
     const unsub = messageRepository.subscribe(conversationId, handleInvalidation);
 
-    // Trigger background sync on mount (respects freshness window)
-    const tSync = Date.now();
-    syncOnOpen(conversationId)
-      .then(() => {
-        if (__DEV__) {
-          console.log(`[PERF useMessagesFromDb] syncOnOpen conv=${conversationId.slice(-6)} ms=${Date.now() - tSync}`);
-        }
-      })
-      .catch((err) =>
-        console.warn('[useMessagesFromDb] syncOnOpen error:', err),
-      );
+    // Background sync — deferred so it never contends with the push animation.
+    const syncTask = InteractionManager.runAfterInteractions(() => {
+      const tSync = Date.now();
+      syncOnOpen(conversationId)
+        .then(() => {
+          if (__DEV__) {
+            console.log(`[PERF useMessagesFromDb] syncOnOpen conv=${conversationId.slice(-6)} ms=${Date.now() - tSync}`);
+          }
+        })
+        .catch((err) =>
+          console.warn('[useMessagesFromDb] syncOnOpen error:', err),
+        );
+    });
 
-    return unsub;
+    return () => {
+      syncTask.cancel();
+      unsub();
+    };
   }, [conversationId, currentUserId]);
 
   const retryInitialLoad = useCallback(() => {
+    // Cancel any in-flight chunking before retry full load.
+    if (raf1Ref.current !== null) { cancelRaf(raf1Ref.current); raf1Ref.current = null; }
+    if (raf2Ref.current !== null) { cancelRaf(raf2Ref.current); raf2Ref.current = null; }
+    isChunkingRef.current = false;
     setInitialLoadError(null);
-    setMessages(loadFromDb(conversationId, currentUserId));
+    try {
+      const fresh = loadFromDb(conversationId, currentUserId);
+      loadedKeyRef.current = `${conversationId}:${currentUserId}`;
+      loadedCountRef.current = fresh.length;
+      const more = fresh.length === INITIAL_WINDOW_SIZE;
+      hasEarlierRef.current = more;
+      setHasEarlier(more);
+      setMessages(fresh);
+    } catch (err) {
+      setInitialLoadError((err as Error)?.message ?? 'Không thể tải tin nhắn');
+    }
   }, [conversationId, currentUserId]);
 
   // ─── Load earlier (cursor-based) ──────────────────────────────────────────
@@ -282,6 +485,7 @@ export function useMessagesFromDb(
   // shallow compare and re-rendering the whole chat list, which is exactly the
   // work the memo boundary exists to prevent.
   const loadEarlier = useCallback(async () => {
+    if (isChunkingRef.current) return;
     if (!hasEarlierRef.current || isLoadingEarlierRef.current) return;
     isLoadingEarlierRef.current = true;
     setIsLoadingEarlier(true);
@@ -623,7 +827,7 @@ export function useMessagesFromDb(
     markAsRead,
     updateUploadProgress,
     isLoadingEarlier,
-    isInitialLoading: _isInitialLoading,
+    isInitialLoading,
     initialLoadError,
     retryInitialLoad,
     hasEarlier,
