@@ -80,6 +80,11 @@ function toMs(val: number | string | Date | undefined | null): number {
   return new Date(val).getTime();
 }
 
+function parseJsonArrayFast(raw: string | null | undefined): unknown[] {
+  if (!raw || raw === '[]' || raw === 'null') return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 function rowToInput(row: DbMessage): MessageInput {
   return {
     id: row.id,
@@ -100,9 +105,9 @@ function rowToInput(row: DbMessage): MessageInput {
     updatedAt: row.updated_at,
     status: row.status,
     deleted: row.deleted === 1,
-    deletedFor: JSON.parse(row.deleted_for || '[]'),
-    readBy: JSON.parse(row.read_by || '[]'),
-    reactions: JSON.parse(row.reactions || '[]'),
+    deletedFor: parseJsonArrayFast(row.deleted_for) as string[],
+    readBy: parseJsonArrayFast(row.read_by) as string[],
+    reactions: parseJsonArrayFast(row.reactions),
     replyTo: row.reply_to,
     replyToPreview: row.reply_to_preview ? JSON.parse(row.reply_to_preview) : null,
   };
@@ -126,9 +131,10 @@ export function list(opts: {
   let sql: string;
   let params: unknown[];
 
+  const COLS = 'id, conversation_id, sender_id, client_message_id, type, content, media_key, media_mime_type, media_size, media_duration, media_thumbnail_key, image_width, image_height, blurhash, created_at, updated_at, status, deleted, deleted_for, read_by, reactions, reply_to, reply_to_preview';
   if (opts.before != null) {
     sql = `
-      SELECT * FROM messages
+      SELECT ${COLS} FROM messages
       WHERE conversation_id = ?
         AND deleted = 0
         AND deleted_for NOT LIKE ?
@@ -139,7 +145,7 @@ export function list(opts: {
     params = [opts.conversationId, `%"${opts.currentUserId}"%`, opts.before, limit];
   } else {
     sql = `
-      SELECT * FROM messages
+      SELECT ${COLS} FROM messages
       WHERE conversation_id = ?
         AND deleted = 0
         AND deleted_for NOT LIKE ?

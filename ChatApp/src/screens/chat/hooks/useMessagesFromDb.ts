@@ -154,6 +154,22 @@ function loadFromDb(
   return result;
 }
 
+function loadBeforeFromDb(
+  conversationId: string,
+  currentUserId: string,
+  before: number,
+  limit: number,
+): IMessage[] {
+  const t0 = Date.now();
+  const rows = messageRepository.listBefore({ conversationId, currentUserId, before, limit });
+  const tQuery = Date.now();
+  const result = rows.map((r) => dbMsgToGifted(r, currentUserId));
+  if (__DEV__) {
+    console.log(`[PERF useMessagesFromDb] LOAD_BEFORE conv=${conversationId.slice(-6)} before=${before} queryMs=${tQuery - t0} mapMs=${Date.now() - tQuery} rows=${rows.length}`);
+  }
+  return result;
+}
+
 export function useMessagesFromDb(
   conversationId: string,
   currentUserId: string,
@@ -255,30 +271,23 @@ export function useMessagesFromDb(
           if (loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
           try {
             const t1 = Date.now();
-            const limit2 = CHUNK_1 + CHUNK_2;
-            const second = loadFromDb(conversationId, currentUserId, limit2);
+            const oldest = first[first.length - 1];
+            const before = (oldest.createdAt as Date).getTime();
+            const second = loadBeforeFromDb(conversationId, currentUserId, before, CHUNK_2);
             if (!mountedRef.current || `${conversationId}:${currentUserId}` !== key || loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
-            const next = second.slice(CHUNK_1);
-            if (next.length > 0) {
+            if (second.length > 0) {
               setMessages((prev) => {
-                const merged = [...prev, ...next];
+                const merged = [...prev, ...second];
                 loadedCountRef.current = merged.length;
                 return merged;
               });
-              if (second.length < limit2) {
-                loadedCountRef.current = second.length;
-              }
             }
             if (__DEV__) {
-              console.log(`[PERF useMessagesFromDb] CHUNK 2/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t1} total=${second.length} appended=${next.length}`);
+              console.log(`[PERF useMessagesFromDb] CHUNK 2/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t1} appended=${second.length}`);
             }
-            // No more rows or fewer than limit2 — hydration complete.
-            if (second.length < limit2) {
-              const more = false;
-              // Actually if original window is 150 and we only got <90, no more earlier.
-              hasEarlierRef.current = more;
-              setHasEarlier(more);
-              loadedCountRef.current = second.length;
+            if (second.length < CHUNK_2) {
+              hasEarlierRef.current = false;
+              setHasEarlier(false);
               isChunkingRef.current = false;
               return;
             }
@@ -290,28 +299,23 @@ export function useMessagesFromDb(
               if (loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
               try {
                 const t2 = Date.now();
-                const third = loadFromDb(conversationId, currentUserId, INITIAL_WINDOW_SIZE);
+                const oldest2 = second[second.length - 1];
+                const before2 = (oldest2.createdAt as Date).getTime();
+                const third = loadBeforeFromDb(conversationId, currentUserId, before2, CHUNK_3);
                 if (!mountedRef.current || `${conversationId}:${currentUserId}` !== key || loadedKeyRef.current !== key) { isChunkingRef.current = false; return; }
-                const tail = third.slice(limit2);
-                if (tail.length > 0) {
+                if (third.length > 0) {
                   setMessages((prev) => {
-                    const merged = [...prev, ...tail];
+                    const merged = [...prev, ...third];
                     loadedCountRef.current = merged.length;
                     return merged;
                   });
                 }
-                if (third.length < limit2) {
-                  loadedCountRef.current = third.length;
-                } else if (tail.length === 0) {
-                  loadedCountRef.current = third.length;
-                }
-                const more = third.length === INITIAL_WINDOW_SIZE;
+                const more = third.length === CHUNK_3;
                 hasEarlierRef.current = more;
                 setHasEarlier(more);
-                loadedCountRef.current = third.length;
                 isChunkingRef.current = false;
                 if (__DEV__) {
-                  console.log(`[PERF useMessagesFromDb] CHUNK 3/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t2} total=${third.length} appended=${tail.length}`);
+                  console.log(`[PERF useMessagesFromDb] CHUNK 3/3 conv=${conversationId.slice(-6)} ms=${Date.now() - t2} appended=${third.length}`);
                 }
               } catch (err2) {
                 isChunkingRef.current = false;
