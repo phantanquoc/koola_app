@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,14 +7,22 @@ import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
-import { koolaSpacing, useTheme } from '../../ui';
-import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
+import { useTheme } from '../../ui';
+import { HeaderSearchDock } from '../../components/HeaderSearchDock';
+import QrScannerModal from './QrScannerModal';
+import GroupCreateModal from '../../components/GroupCreateModal';
 import { PersonalCard } from './components/personal/PersonalCard';
 import { PersonalIconRow } from './components/personal/PersonalIconRow';
 import { PersonalProfileCard } from './components/personal/PersonalProfileCard';
 import { PersonalWalletCard } from './components/personal/PersonalWalletCard';
 import { PersonalAccountInfoCard } from './components/personal/PersonalAccountInfoCard';
 import { PersonalSecuritySection } from './components/personal/PersonalSecuritySection';
+
+// Đồng bộ với ChatHomeScreen: 87×15, TOP 1, DOCK 36
+const WORDMARK_TOP = 1;
+const WORDMARK_H = 15;
+const DOCK_GAP = 6;
+const DOCK_H = 36;
 
 /**
  * Personal home (tab Cá nhân) — the four Figma cards: profile, wallet,
@@ -28,11 +36,17 @@ const SettingsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<PersonalTabStackParamList>>();
-  const { resolvedScheme } = useTheme();
+  const { resolvedScheme, tokens } = useTheme();
   const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast({
     bottom: tabBarInset + 16,
   });
   const styles = useMemo(() => makeScreenStyles(), []);
+
+  const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 58
+  const isDark = resolvedScheme === 'dark';
+
+  const [qrVisible, setQrVisible] = useState(false);
+  const [groupModalVisible, setGroupModalVisible] = useState(false);
 
   // __DEV__ Logo Lab lives in the Chat tab stack, and `MainTabParamList`
   // declares `ChatTab: undefined` — so this stack's typed navigation prop cannot
@@ -40,17 +54,95 @@ const SettingsScreen: React.FC = () => {
   // boundary (no `any`); casting the object rather than the method keeps the
   // navigation object as the receiver.
   const crossTabNavigation = navigation as unknown as {
-    navigate: (name: string, params: { screen: string }) => void;
+    navigate: (name: string, params: { screen: string } | { screen: string; params: object }) => void;
+    getParent: () => { navigate: (name: string, params?: object) => void } | undefined;
   };
 
+  const handleSearchPress = useCallback(() => {
+    // Dùng chung UniversalSearch của Chat tab
+    crossTabNavigation.getParent?.()?.navigate('ChatTab', { screen: 'UniversalSearch' } as never);
+  }, [crossTabNavigation]);
+
+  const handleQrPress = useCallback(() => setQrVisible(true), []);
+  const handleQrClose = useCallback(() => setQrVisible(false), []);
+  const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
+
+  const handleNavigateProfile = useCallback((userId: string) => {
+    navigation.navigate('AccountList' as never);
+    // Nếu cần mở Profile chi tiết, cross-tab:
+    crossTabNavigation.getParent?.()?.navigate('ChatTab', { screen: 'Profile', params: { userId } } as never);
+  }, [navigation, crossTabNavigation]);
+
+  const handleNavigateChat = useCallback((conversationId: string) => {
+    crossTabNavigation.getParent?.()?.navigate('ChatTab', { screen: 'Chat', params: { conversationId } } as never);
+  }, [crossTabNavigation]);
+
+  const handleGroupCreated = useCallback((conv: { _id: string }) => {
+    setGroupModalVisible(false);
+    crossTabNavigation.getParent?.()?.navigate('ChatTab', { screen: 'Chat', params: { conversationId: conv._id } } as never);
+  }, [crossTabNavigation]);
+
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: tokens.semantic.bg.canvas }]}>
+      {/* Header block — wordmark + search dock, đồng bộ 100% ChatHome (87×15, TOP1, H58) */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: blockH,
+          zIndex: 20,
+          overflow: 'hidden',
+        }}>
+        {/* Nền đặc che list trượt sau kính */}
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? '#1C2026' : '#FFFFFF' }]}
+        />
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: insets.top + WORDMARK_TOP,
+            height: WORDMARK_H,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <Image
+            source={require('../../assets/logo_koola_wordmark.png')}
+            style={{ width: 87, height: 15 }}
+            resizeMode="contain"
+            accessibilityLabel="KOOLA"
+          />
+        </View>
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP,
+            height: DOCK_H,
+            paddingHorizontal: 12,
+            justifyContent: 'center',
+          }}>
+          <HeaderSearchDock
+            onSearchPress={handleSearchPress}
+            onQrPress={handleQrPress}
+            onAddPress={handleAddPress}
+          />
+        </View>
+      </View>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + koolaSpacing.lg, paddingBottom: tabBarInset },
+          { paddingTop: blockH + 12, paddingBottom: tabBarInset },
         ]}
         showsVerticalScrollIndicator={false}>
         <PersonalProfileCard
@@ -91,6 +183,17 @@ const SettingsScreen: React.FC = () => {
         )}
       </ScrollView>
       {comingSoonToast}
+      <QrScannerModal
+        visible={qrVisible}
+        onClose={handleQrClose}
+        onNavigateProfile={handleNavigateProfile}
+        onNavigateChat={handleNavigateChat}
+      />
+      <GroupCreateModal
+        visible={groupModalVisible}
+        onClose={() => setGroupModalVisible(false)}
+        onCreated={handleGroupCreated}
+      />
     </View>
   );
 };

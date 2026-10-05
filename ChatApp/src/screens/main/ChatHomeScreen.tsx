@@ -19,6 +19,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { HeaderSearchDock } from '../../components/HeaderSearchDock';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
 import { onChatHomeReset } from '../../navigation/chatTabReset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -620,126 +621,6 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-// Flat pill dock — pill cố định cao 36. Lớp fill xám (lớp con đầu tiên, absolute
-// fill trong pill bo tròn + overflow hidden) mờ dần opacity 1→0 khi sub-tab bar ẩn
-// theo scroll (cùng đường smoothstep với CustomTabBar, chạy trên UI thread) → pill
-// hoà vào nền kính header phía sau, khớp tuyệt đối cả light/dark mà không hardcode
-// màu. Sub-tab bar hiện lại thì fill hiện dần về. Icon, chữ và press feedback từng
-// nút không bị ảnh hưởng; geometry header (blockH/tabBarTop/headerInset) không đổi.
-const ChatSearchDock: React.FC<{
-  hiddenProgress: SharedValue<number>;
-  onSearchPress: () => void;
-  onQrPress: () => void;
-  onAddPress: () => void;
-}> = ({ hiddenProgress, onSearchPress, onQrPress, onAddPress }) => {
-  const { tokens } = useTheme();
-  const sem = tokens.semantic;
-  const [searchPressed, setSearchPressed] = useState(false);
-  const [qrPressed, setQrPressed] = useState(false);
-  const [addPressed, setAddPressed] = useState(false);
-  const pressedStyle = { backgroundColor: sem.action.primarySoft, opacity: 0.82 as const };
-  const fillFadeStyle = useAnimatedStyle(() => {
-    // Kẹp [0,1]: spring snap có thể vọt nhẹ quá biên → opacity luôn nằm trong 0–1.
-    const t = Math.min(1, Math.max(0, hiddenProgress.value));
-    const h = t * t * (3 - 2 * t); // smoothstep — khớp visibilityStyle của sub-tab bar
-    return { opacity: 1 - h };
-  }, [hiddenProgress]);
-  return (
-    <View style={dockStyles.host}>
-      {/* Lớp fill xám — đúng màu pill bên Mua sắm: ShoppingSearchDock dùng
-          `semantic.border.subtle` làm fill (#E4E7EC light / #2F3542 dark), không
-          phải bg.canvas. Absolute fill trong pill bo tròn + overflow hidden nên
-          vẫn bo tròn; mờ dần về 0 khi sub-tab bar ẩn. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: sem.border.subtle }, fillFadeStyle]}
-      />
-      {/* alignSelf 'stretch': hàng nút nhận chiều cao xác định từ pill (cố định 36)
-          để các nút height '100%' lấp đầy pill (host alignItems 'center' không
-          stretch con). Render sau lớp fill nên nằm phía trên. */}
-      <View style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Pressable
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Tìm kiếm"
-              accessibilityHint="Mở tìm kiếm hội thoại"
-              onPress={onSearchPress}
-              onPressIn={() => setSearchPressed(true)}
-              onPressOut={() => setSearchPressed(false)}
-              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-              style={[dockStyles.searchBtn, searchPressed ? pressedStyle : null]}>
-              <MaterialIcons name="search" size={20} color={sem.action.primary} />
-              <KoolaText variant="body" numberOfLines={1} style={{ color: sem.text.muted, lineHeight: 18, flex: 1, fontSize: 11.5 }}>
-                Tìm kiếm
-              </KoolaText>
-            </Pressable>
-            <Pressable
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Quét mã QR"
-              accessibilityHint="Mở quét mã QR"
-              onPress={onQrPress}
-              onPressIn={() => setQrPressed(true)}
-              onPressOut={() => setQrPressed(false)}
-              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-              style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
-              <View style={{ transform: [{ scale: 0.82 }] }}>
-                <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
-              </View>
-            </Pressable>
-            <Pressable
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Tạo nhóm"
-              accessibilityHint="Tạo nhóm mới"
-              onPress={onAddPress}
-              onPressIn={() => setAddPressed(true)}
-              onPressOut={() => setAddPressed(false)}
-              android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-              style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
-              <View style={{ transform: [{ scale: 0.82 }] }}>
-                <MaterialIcons name="add" size={22} color={sem.action.primary} />
-              </View>
-            </Pressable>
-          </View>
-    </View>
-  );
-};
-
-// Chiều cao pill search dock — cố định, chỉ lớp fill xám bên trong là animate.
-const DOCK_PILL_H = 36;
-
-const dockStyles = StyleSheet.create({
-  host: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: DOCK_PILL_H,
-    paddingHorizontal: 4,
-    borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
-    // Nền trong suốt: màu xám do lớp fill con vẽ (mờ dần khi sub-tab bar ẩn).
-    backgroundColor: 'transparent',
-  },
-  searchBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: '100%',
-    paddingLeft: 14,
-    paddingRight: 8,
-    borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
-  },
-  iconBtn: {
-    width: 48,
-    height: '100%', // lấp đầy pill cố định 36 để không bị overflow:hidden cắt
-    borderRadius: koolaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-});
 
 const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
@@ -861,7 +742,7 @@ const ChatHomeScreen: React.FC = () => {
               paddingHorizontal: 12,
               justifyContent: 'center',
             }}>
-            <ChatSearchDock
+            <HeaderSearchDock
               hiddenProgress={hiddenProgress}
               onSearchPress={handleSearchPress}
               onQrPress={handleQrPress}

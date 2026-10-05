@@ -21,18 +21,27 @@ const PersonalTabStack: React.FC = () => {
   const { resolvedScheme, tokens } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const [headerConfig, setHeaderConfig] = useState<PersonalHeaderConfig | null>(null);
+  const [focusedRouteName, setFocusedRouteName] =
+    useState<keyof PersonalTabStackParamList>('PersonalHome');
+  // PersonalHome tự vẽ header block (wordmark + dock) như ChatHome — ẩn stack wordmark ở đó
+  const showStackHeader = focusedRouteName !== 'PersonalHome';
   return (
     <PersonalHeaderContext.Provider value={{ config: headerConfig, setConfig: setHeaderConfig }}>
       <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
         {/* Shared chrome — stays fixed across stack pushes so the notch doesn't slide */}
         <LightFieldBackground />
-        <NotchHeader
-          style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
-          title={headerConfig?.title}
-          onBack={headerConfig?.onBack}
-        />
+        {showStackHeader && (
+          <NotchHeader
+            style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+            title={headerConfig?.title}
+            onBack={headerConfig?.onBack}
+          />
+        )}
 
         <Stack.Navigator
+          screenListeners={({ route }) => ({
+            focus: () => setFocusedRouteName(route.name as keyof PersonalTabStackParamList),
+          })}
           screenOptions={{
             headerShown: false,
             animation: 'slide_from_right',
