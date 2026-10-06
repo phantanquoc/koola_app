@@ -30,6 +30,11 @@ import SupportTabStack from './SupportTabStack';
 import PersonalTabStack from './PersonalTabStack';
 import { requestChatHomeReset } from './chatTabReset';
 import {
+  createTabDockSuppressionStore,
+  noopTabDockSuppressionStore,
+  type TabDockSuppressionStore,
+} from './tabDockSuppressionStore';
+import {
   KoolaText,
   koolaDarkShadows,
   koolaShadows,
@@ -40,18 +45,20 @@ import { koolaDurations, prefersReducedMotion } from '../ui/tokens/motion';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-type TabDockSuppressionContextValue = {
-  isTabDockSuppressed: boolean;
-  suppressTabDock: () => () => void;
-};
-
-const TabDockSuppressionContext = React.createContext<TabDockSuppressionContextValue>({
-  isTabDockSuppressed: false,
-  suppressTabDock: () => () => {},
-});
+// Context carries a STABLE store (never the boolean) so suppress/release does
+// not re-render MainNavigator or the Tab.Navigator — only the tab bar, which
+// subscribes via useSyncExternalStore. See tabDockSuppressionStore.ts.
+const TabDockSuppressionContext = React.createContext<TabDockSuppressionStore>(
+  noopTabDockSuppressionStore,
+);
 
 export function useTabDockSuppression(): () => () => void {
-  return React.useContext(TabDockSuppressionContext).suppressTabDock;
+  return React.useContext(TabDockSuppressionContext).suppress;
+}
+
+function useIsTabDockSuppressed(): boolean {
+  const store = React.useContext(TabDockSuppressionContext);
+  return React.useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
@@ -471,7 +478,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { palette, resolvedScheme } = useTheme();
-  const { isTabDockSuppressed } = React.useContext(TabDockSuppressionContext);
+  const isTabDockSuppressed = useIsTabDockSuppressed();
   const activeRoute = state.routes[state.index] as RouteProp<MainTabParamList, TabName>;
   const isHidden = isTabDockSuppressed || shouldHideTabBar(activeRoute);
   // Measured dock width, UI-thread only — slot math and the border's
@@ -867,27 +874,12 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
 };
 
 const MainNavigator: React.FC = () => {
-  const suppressionIdsRef = React.useRef(new Set<symbol>());
-  const [isTabDockSuppressed, setIsTabDockSuppressed] = React.useState(false);
-
-  const suppressTabDock = React.useCallback(() => {
-    const id = Symbol('tab-dock-suppression');
-    suppressionIdsRef.current.add(id);
-    setIsTabDockSuppressed(true);
-
-    return () => {
-      suppressionIdsRef.current.delete(id);
-      setIsTabDockSuppressed(suppressionIdsRef.current.size > 0);
-    };
-  }, []);
-
-  const suppressionContext = React.useMemo(
-    () => ({ isTabDockSuppressed, suppressTabDock }),
-    [isTabDockSuppressed, suppressTabDock],
-  );
+  // One store per MainNavigator instance (same lifetime as the old ref/state),
+  // created once so the context value never changes identity.
+  const [suppressionStore] = React.useState(createTabDockSuppressionStore);
 
   return (
-    <TabDockSuppressionContext.Provider value={suppressionContext}>
+    <TabDockSuppressionContext.Provider value={suppressionStore}>
       <Tab.Navigator
         tabBar={(props) => <CustomKoolaTabBar {...props} />}
         screenOptions={{

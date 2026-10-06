@@ -48,6 +48,7 @@ export interface MemoizedMessageListProps {
   alwaysShowSend?: boolean;
   infiniteScroll?: boolean;
   minInputToolbarHeight?: number;
+  isKeyboardInternallyHandled?: boolean;
 }
 
 const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
@@ -78,6 +79,7 @@ const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
   alwaysShowSend = true,
   infiniteScroll = true,
   minInputToolbarHeight = 0,
+  isKeyboardInternallyHandled = true,
 }) => {
   return (
     <GiftedChat
@@ -107,6 +109,7 @@ const MemoizedMessageListImpl: React.FC<MemoizedMessageListProps> = ({
       onLongPress={onLongPress}
       bottomOffset={bottomOffset}
       minInputToolbarHeight={minInputToolbarHeight}
+      isKeyboardInternallyHandled={isKeyboardInternallyHandled}
       listViewProps={listViewProps as Record<string, unknown>}
     />
   );

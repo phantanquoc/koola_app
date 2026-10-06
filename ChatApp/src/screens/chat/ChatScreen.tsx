@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
-  InteractionManager,
 } from 'react-native';
 import { GiftedChat, SystemMessage, IMessage, SystemMessageProps, DayProps, InputToolbarProps, MessageProps } from 'react-native-gifted-chat';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
@@ -554,14 +553,6 @@ const ChatScreen: React.FC = () => {
     setChatReady(!isInitialLoading);
   }, [isInitialLoading]);
 
-  // Blur is expensive on the GPU — keep it off during the push animation and
-  // flip it on right after the JS thread goes idle (same gate as the DB read).
-  const [blurReady, setBlurReady] = useState(false);
-  useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => setBlurReady(true));
-    return () => task.cancel();
-  }, []);
-
   // ─── Custom renders ────────────────────────────────────────────────────────
 
   // `ReactionDisplay` is memoized, so the `onPress` it receives must keep its
@@ -986,7 +977,6 @@ const ChatScreen: React.FC = () => {
       <NotchHeader
         style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
         chat={inScreenChat}
-        blurReady={blurReady}
       />
       {/* Offline Banner */}
       <OfflineBanner isVisible={isConnected === false} />
@@ -1094,6 +1084,7 @@ const ChatScreen: React.FC = () => {
             infiniteScroll
             onLongPress={handleLongPress}
             bottomOffset={composerBottomInset}
+            isKeyboardInternallyHandled={false}
             minInputToolbarHeight={0}
             listViewProps={stableListViewProps}
           />

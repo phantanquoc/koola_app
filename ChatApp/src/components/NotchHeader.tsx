@@ -2,7 +2,6 @@ import React from 'react';
 import { Image, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { BlurView } from '@sbaiahmed1/react-native-blur';
 import UserAvatar from './UserAvatar';
 import {
   KoolaIconButton,
@@ -43,10 +42,6 @@ export interface NotchHeaderProps {
   /** Optional action icons to render on the right side of the wordmark variant.
    *  Positioned absolutely so they don't push the wordmark left. */
   actions?: React.ReactNode;
-  /** Chat only: when false the BlurView renders with blurAmount 0 so the
-   *  glass effect does not pay GPU cost during the push animation. Defaults
-   *  to true (back-compat for every caller that does not pass it). */
-  blurReady?: boolean;
 }
 
 export const NOTCH_WING_INSET = 4;
@@ -77,135 +72,120 @@ export const getNotchHeaderHeight = (
       ? NOTCH_HEADER_NAV_CONTENT_H
       : NOTCH_HEADER_CONTENT_H);
 
-export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions, blurReady }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top, chat ? 'chat' : onBack ? 'nav' : 'wordmark');
   const isDark = resolvedScheme === 'dark';
-  const effectiveBlurReady = blurReady ?? true;
 
   if (chat) {
     return (
       <View style={[styles.host, { height: flatH, overflow: 'hidden' as const }, style]}>
-        <BlurView
-          blurType={isDark ? 'dark' : 'light'}
-          blurAmount={effectiveBlurReady ? 18 : 0}
-          overlayColor={isDark ? 'rgba(28,32,38,0.34)' : 'rgba(255,255,255,0.42)'}
-          reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-          style={StyleSheet.absoluteFillObject}>
-          <View
-            pointerEvents="none"
-            style={{
-              ...StyleSheet.absoluteFillObject as unknown as ViewStyle,
-              opacity: 0.32,
-              overflow: 'hidden',
-            }}>
-            <LightFieldBackground windowSized />
-          </View>
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              height: StyleSheet.hairlineWidth,
-              backgroundColor: 'rgba(255,255,255,0.55)',
-            }}
+        <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)' }} />
+        <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, opacity: 0.72, overflow: 'hidden' }}>
+          <LightFieldBackground windowSized />
+        </View>
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: 'rgba(255,255,255,0.55)',
+          }}
+        />
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(37,99,235,0.12)',
+          }}
+        />
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: insets.top,
+            bottom: 0,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: koolaSpacing.lg,
+            paddingTop: koolaSpacing.sm,
+          }}>
+          <KoolaIconButton
+            icon="arrow-back"
+            tone="primary"
+            variant="ghost"
+            size={40}
+            iconSize={24}
+            onPress={chat.onBack}
+            accessibilityLabel="Quay lại"
           />
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: StyleSheet.hairlineWidth,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(37,99,235,0.12)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: insets.top,
-              bottom: 0,
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: koolaSpacing.lg,
-              paddingTop: koolaSpacing.sm,
-            }}>
-            <KoolaIconButton
-              icon="arrow-back"
-              tone="primary"
-              variant="ghost"
-              size={40}
-              iconSize={24}
-              onPress={chat.onBack}
-              accessibilityLabel="Quay lại"
-            />
-            <Pressable
-              style={chatStyles.headerCenter}
-              onPress={chat.onHeaderPress}
-              accessibilityRole="button"
-              accessibilityLabel={`Xem thông tin ${chat.title}`}>
-              <View>
-                <UserAvatar displayName={chat.title} avatar={chat.avatarKey || undefined} size={38} />
-                {chat.status === 'Đang hoạt động' && (
-                  <View
-                    style={[
-                      chatStyles.onlineDot,
-                      {
-                        backgroundColor: tokens.semantic.status.success,
-                        borderColor: tokens.semantic.surface.level1,
-                      },
-                    ]}
-                    accessibilityElementsHidden
-                    importantForAccessibility="no"
-                  />
-                )}
-              </View>
-              <View style={{ flexShrink: 1, marginLeft: koolaSpacing.sm, maxWidth: 220 }}>
-                <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>
-                  {chat.title}
-                </KoolaText>
-                {/* Fixed minHeight always reserves space for the status line so
-                    late-arriving status does not shift name/avatar/call actions. */}
-                <View style={chatStyles.statusLine}>
-                  {chat.status ? (
-                    <KoolaText
-                      variant="caption"
-                      tone={chat.status === 'Đang hoạt động' ? 'success' : 'muted'}
-                      numberOfLines={1}>
-                      {chat.status}
-                    </KoolaText>
-                  ) : null}
-                </View>
-              </View>
-            </Pressable>
-            <View style={chatStyles.headerRight}>
-              <KoolaIconButton
-                icon="call"
-                tone="primary"
-                variant="soft"
-                size={40}
-                iconSize={22}
-                onPress={() => chat.onStartCall('audio')}
-                accessibilityLabel="Gọi thoại"
-              />
-              <KoolaIconButton
-                icon="videocam"
-                tone="primary"
-                variant="soft"
-                size={40}
-                iconSize={22}
-                onPress={() => chat.onStartCall('video')}
-                accessibilityLabel="Gọi video"
-              />
+          <Pressable
+            style={chatStyles.headerCenter}
+            onPress={chat.onHeaderPress}
+            accessibilityRole="button"
+            accessibilityLabel={`Xem thông tin ${chat.title}`}>
+            <View>
+              <UserAvatar displayName={chat.title} avatar={chat.avatarKey || undefined} size={38} />
+              {chat.status === 'Đang hoạt động' && (
+                <View
+                  style={[
+                    chatStyles.onlineDot,
+                    {
+                      backgroundColor: tokens.semantic.status.success,
+                      borderColor: tokens.semantic.surface.level1,
+                    },
+                  ]}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+              )}
             </View>
+            <View style={{ flexShrink: 1, marginLeft: koolaSpacing.sm, maxWidth: 220 }}>
+              <KoolaText variant="label" tone="ink" weight="600" numberOfLines={1}>
+                {chat.title}
+              </KoolaText>
+              <View style={chatStyles.statusLine}>
+                {chat.status ? (
+                  <KoolaText
+                    variant="caption"
+                    tone={chat.status === 'Đang hoạt động' ? 'success' : 'muted'}
+                    numberOfLines={1}>
+                    {chat.status}
+                  </KoolaText>
+                ) : null}
+              </View>
+            </View>
+          </Pressable>
+          <View style={chatStyles.headerRight}>
+            <KoolaIconButton
+              icon="call"
+              tone="primary"
+              variant="soft"
+              size={40}
+              iconSize={22}
+              onPress={() => chat.onStartCall('audio')}
+              accessibilityLabel="Gọi thoại"
+            />
+            <KoolaIconButton
+              icon="videocam"
+              tone="primary"
+              variant="soft"
+              size={40}
+              iconSize={22}
+              onPress={() => chat.onStartCall('video')}
+              accessibilityLabel="Gọi video"
+            />
           </View>
-        </BlurView>
+        </View>
       </View>
     );
   }

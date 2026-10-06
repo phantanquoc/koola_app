@@ -81,10 +81,17 @@ const ChatTabStack: React.FC = () => {
           name="Chat"
           component={ChatScreen}
           options={{
-            animation: 'slide_from_right',
-            animationDuration: 150,
+            // `transparentModal` renders Chat in a separate Android Dialog
+            // window outside the main Activity, which breaks safe-area insets
+            // (header collapses) and keyboard resize (keyboard covers the UI
+            // instead of pushing the composer up). Reverted to a normal card
+            // screen. `ios_from_right` maps to rns_ios_from_right_* tweens on
+            // config_shortAnimTime (~200ms, accelerate_decelerate) — faster
+            // than `slide_from_right`'s config_mediumAnimTime (~400ms) while
+            // staying in the main window.
+            animation: 'ios_from_right',
             gestureEnabled: true,
-            freezeOnBlur: true,
+            freezeOnBlur: false,
             contentStyle: { backgroundColor: 'transparent' } as never,
             ...( { cardStyle: { backgroundColor: 'transparent' } } as object),
             ...( { detachPreviousScreen: false } as object),

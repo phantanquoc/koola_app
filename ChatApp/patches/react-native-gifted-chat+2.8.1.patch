@@ -1,16 +1,18 @@
 diff --git a/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js b/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
-index 4fc42d2..651867c 100644
+index 4fc42d2..75a37ca 100644
 --- a/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
 +++ b/node_modules/react-native-gifted-chat/lib/GiftedChat/index.js
-@@ -279,7 +279,7 @@ function GiftedChat(props) {
+@@ -279,9 +279,7 @@ function GiftedChat(props) {
      </GiftedChatContext.Provider>);
  }
  function GiftedChatWrapper(props) {
 -    return (<KeyboardProvider>
-+    return (<KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
-       <GiftedChat {...props}/>
-     </KeyboardProvider>);
+-      <GiftedChat {...props}/>
+-    </KeyboardProvider>);
++    return (<GiftedChat {...props}/>);
  }
+ GiftedChatWrapper.append = (currentMessages = [], messages, inverted = true) => {
+     if (!Array.isArray(messages))
 diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
 index 2615e91..b49c75c 100644
 --- a/node_modules/react-native-gifted-chat/lib/MessageContainer/components/DayAnimated/index.js
@@ -112,10 +114,49 @@ index 17535e3..a57dd93 100644
  //# sourceMappingURL=index.js.map
 \ No newline at end of file
 diff --git a/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js b/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
-index 964b436..24cb3d8 100644
+index 964b436..d445b00 100644
 --- a/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
 +++ b/node_modules/react-native-gifted-chat/lib/MessageContainer/index.js
-@@ -188,9 +188,11 @@ function MessageContainer(props) {
+@@ -162,20 +162,21 @@ function MessageContainer(props) {
+                 height,
+                 createdAt: new Date(props.item.createdAt).getTime(),
+             };
++            // PERF: dropped the per-mount `for...of Object.entries(value)` scan that
++            // hunted for a same-day entry to delete before writing the new one. That
++            // scan ran synchronously on the UI thread (worklet) on EVERY cell mount —
++            // during a decelerating fling, VirtualizedList's low-priority batching
++            // (velocity < 2 => Batchinator, 50ms) lands several mounts together, so
++            // several of these scans landed in the same frame, which is exactly the
++            // jank window users feel as the scroll comes to rest. A duplicate same-day
++            // entry left behind here is harmless: every reader (`Item`,
++            // `DayAnimated`) does `Object.values(...).sort(by y).find(...)`, which
++            // naturally picks the nearest entry regardless of how many stale same-day
++            // entries exist. The real cleanup already happens on every `messages`
++            // change in the `useEffect` below (keyed by `_id`, not by day), which is
++            // off the per-frame mount path. Just write the entry.
+             daysPositions.modify(value => {
+                 'worklet';
+-                const isSameDay = (date1, date2) => {
+-                    const d1 = new Date(date1);
+-                    const d2 = new Date(date2);
+-                    return (d1.getDate() === d2.getDate() &&
+-                        d1.getMonth() === d2.getMonth() &&
+-                        d1.getFullYear() === d2.getFullYear());
+-                };
+-                for (const [key, item] of Object.entries(value))
+-                    if (isSameDay(newValue.createdAt, item.createdAt) && (inverted ? item.y <= newValue.y : item.y >= newValue.y)) {
+-                        delete value[key];
+-                        break;
+-                    }
+                 // @ts-expect-error: https://docs.swmansion.com/react-native-reanimated/docs/core/useSharedValue#remarks
+                 value[props.item._id] = newValue;
+                 return value;
+@@ -184,13 +185,15 @@ function MessageContainer(props) {
+         return (<View {...props} onLayout={handleOnLayout}>
+         {props.children}
+       </View>);
+-    }, [daysPositions, inverted]);
++    }, [daysPositions]);
      const scrollHandler = useAnimatedScrollHandler({
          onScroll: event => {
              scrolledY.value = event.contentOffset.y;
@@ -129,7 +170,7 @@ index 964b436..24cb3d8 100644
      // removes unrendered days positions when messages are added/removed
      useEffect(() => {
          Object.keys(daysPositions.value).forEach(key => {
-@@ -217,7 +219,7 @@ function MessageContainer(props) {
+@@ -217,7 +220,7 @@ function MessageContainer(props) {
        {isScrollToBottomEnabled
              ? renderScrollToBottomWrapper()
              : null}
@@ -139,15 +180,19 @@ index 964b436..24cb3d8 100644
  }
  export default MessageContainer;
 diff --git a/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx b/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
-index 3e0bcd0..c852a99 100644
+index 3e0bcd0..aeccefa 100644
 --- a/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
 +++ b/node_modules/react-native-gifted-chat/src/GiftedChat/index.tsx
-@@ -449,7 +449,7 @@ function GiftedChat<TMessage extends IMessage = IMessage> (
+@@ -448,11 +448,7 @@ function GiftedChat<TMessage extends IMessage = IMessage> (
+ }
  
  function GiftedChatWrapper<TMessage extends IMessage = IMessage> (props: GiftedChatProps<TMessage>) {
-   return (
+-  return (
 -    <KeyboardProvider>
-+    <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
-       <GiftedChat<TMessage> {...props} />
-     </KeyboardProvider>
-   )
+-      <GiftedChat<TMessage> {...props} />
+-    </KeyboardProvider>
+-  )
++  return <GiftedChat<TMessage> {...props} />
+ }
+ 
+ GiftedChatWrapper.append = <TMessage extends IMessage>(

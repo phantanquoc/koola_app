@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { useAfterTransition } from '../../../hooks/useAfterTransition';
 import * as messageRepository from '../../../services/db/messageRepository';
 import * as outboxRepository from '../../../services/db/outboxRepository';
 import type { MessageInput } from '../../../services/db/messageRepository';
@@ -202,10 +202,19 @@ export function useMessagesFromDb(
   // would re-request a page the list already holds.
   visibleMessagesRef.current = visibleMessages;
 
+  const runAfterTransition = useAfterTransition();
+
   // Chunked hydration — refs so invalidations can cancel pending rAFs without re-render.
   const isChunkingRef = useRef(false);
   const raf1Ref = useRef<number | null>(null);
   const raf2Ref = useRef<number | null>(null);
+  // Coalesce rapid orderChanged invalidations (syncOnOpen batch). Without this,
+  // 4-5 RELOAD(orderChanged) fire within ~1s of opening a busy conv and each
+  // does loadFromDb + setMessages(137 rows) on the JS thread — exactly during
+  // the push animation. 120ms trailing debounce + runAfterTransition
+  // (native-stack never creates an InteractionManager handle).
+  const pendingOrderChangedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingOrderChangedTaskRef = useRef<{ cancel: () => void } | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -217,9 +226,10 @@ export function useMessagesFromDb(
   // ─── Deferred initial window (chunked 30 + 60 + 60) ────────────────────────
   // Frame 0 must only paint the shell (header + skeleton + composer). The
   // SQLite query for up to 150 rows blocks the JS thread long enough to drop
-  // the 300ms stack push animation below 60fps. Deferring to
-  // `runAfterInteractions` lets the navigator finish the gesture, then
-  // hydration is spread over 3 rAF ticks so no single tick exceeds ~16ms.
+  // the push animation below 60fps. Deferring until the native-stack
+  // transitionEnd (via useAfterTransition) lets the navigator finish the
+  // gesture, then hydration is spread over 3 rAF ticks so no single tick
+  // exceeds ~16ms.
 
   useEffect(() => {
     const key = `${conversationId}:${currentUserId}`;
@@ -227,7 +237,7 @@ export function useMessagesFromDb(
     if (loadedKeyRef.current === key) return;
     setIsInitialLoading(true);
     isChunkingRef.current = false;
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = runAfterTransition(() => {
       if (!mountedRef.current) return;
       // Key may have changed while interactions were in flight — stale guard.
       if (`${conversationId}:${currentUserId}` !== key) return;
@@ -342,7 +352,7 @@ export function useMessagesFromDb(
       if (raf2Ref.current !== null) { cancelRaf(raf2Ref.current); raf2Ref.current = null; }
       isChunkingRef.current = false;
     };
-  }, [conversationId, currentUserId]);
+  }, [conversationId, currentUserId, runAfterTransition]);
 
   // ─── Subscribe to repository invalidations ─────────────────────────────────
   useEffect(() => {
@@ -390,21 +400,45 @@ export function useMessagesFromDb(
 
       const { kind, messageIds, orderChanged } = payload;
 
-      // If order changed (insert/batch with new messages), full reload required
+      // If order changed (insert/batch with new messages), full reload required.
+      // Debounce: syncOnOpen can emit 4-5 orderChanged in ~1s for a busy conv;
+      // doing a synchronous loadFromDb+setMessages for each re-renders 100+ rows
+      // on the JS thread and janks the push. Coalesce to one trailing
+      // reload 120ms after the last signal, deferred until the push enter-
+      // transition finishes (useAfterTransition).
       if (orderChanged) {
         cancelChunking();
-        const t0 = Date.now();
-        const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
-        const fresh = loadFromDb(conversationId, currentUserId, limit);
-        loadedKeyRef.current = key;
-        loadedCountRef.current = fresh.length;
-        const more = fresh.length === INITIAL_WINDOW_SIZE;
-        hasEarlierRef.current = more;
-        setHasEarlier(more);
-        setMessages(fresh);
-        if (__DEV__) {
-          console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+        if (pendingOrderChangedRef.current) {
+          clearTimeout(pendingOrderChangedRef.current);
+          pendingOrderChangedRef.current = null;
         }
+        if (pendingOrderChangedTaskRef.current) {
+          pendingOrderChangedTaskRef.current.cancel();
+          pendingOrderChangedTaskRef.current = null;
+        }
+        pendingOrderChangedRef.current = setTimeout(() => {
+          pendingOrderChangedRef.current = null;
+          if (!mountedRef.current) return;
+          const task = runAfterTransition(() => {
+            pendingOrderChangedTaskRef.current = null;
+            if (!mountedRef.current) return;
+            if (loadedKeyRef.current !== key && loadedKeyRef.current !== null) return;
+            const t0 = Date.now();
+            const limit = Math.max(INITIAL_WINDOW_SIZE, loadedCountRef.current);
+            const fresh = loadFromDb(conversationId, currentUserId, limit);
+            if (!mountedRef.current) return;
+            loadedKeyRef.current = key;
+            loadedCountRef.current = fresh.length;
+            const more = fresh.length === limit && limit >= INITIAL_WINDOW_SIZE;
+            hasEarlierRef.current = more;
+            setHasEarlier(more);
+            setMessages(fresh);
+            if (__DEV__) {
+              console.log(`[PERF useMessagesFromDb] RELOAD(orderChanged/debounced) conv=${conversationId.slice(-6)} ms=${Date.now() - t0} count=${fresh.length}`);
+            }
+          });
+          pendingOrderChangedTaskRef.current = task;
+        }, 120);
         return;
       }
 
@@ -440,8 +474,9 @@ export function useMessagesFromDb(
 
     const unsub = messageRepository.subscribe(conversationId, handleInvalidation);
 
-    // Background sync — deferred so it never contends with the push animation.
-    const syncTask = InteractionManager.runAfterInteractions(() => {
+    // Background sync — deferred until the push enter-transition finishes so it
+    // never contends with the animation.
+    const syncTask = runAfterTransition(() => {
       const tSync = Date.now();
       syncOnOpen(conversationId)
         .then(() => {
@@ -456,9 +491,17 @@ export function useMessagesFromDb(
 
     return () => {
       syncTask.cancel();
+      if (pendingOrderChangedRef.current) {
+        clearTimeout(pendingOrderChangedRef.current);
+        pendingOrderChangedRef.current = null;
+      }
+      if (pendingOrderChangedTaskRef.current) {
+        pendingOrderChangedTaskRef.current.cancel();
+        pendingOrderChangedTaskRef.current = null;
+      }
       unsub();
     };
-  }, [conversationId, currentUserId]);
+  }, [conversationId, currentUserId, runAfterTransition]);
 
   const retryInitialLoad = useCallback(() => {
     // Cancel any in-flight chunking before retry full load.

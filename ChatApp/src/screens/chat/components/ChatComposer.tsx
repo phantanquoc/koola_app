@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from '@sbaiahmed1/react-native-blur';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import {
   KoolaIconButton,
   koolaDarkShadows,
@@ -20,12 +20,12 @@ import {
   prefersReducedMotion,
   useTheme,
 } from '../../../ui';
+import { LightFieldBackground } from '../../main/components/personal/LightFieldBackground';
 
-// Glass dock — BlurView (same glass as MainNavigator TabDockBackground).
-// blurAmount 18, blurType dark/light, overlayColor light rgba(255,255,255,0.62)
-// / dark rgba(28,32,38,0.52), reducedTransparencyFallbackColor, innerEdge
-// 55%/10%, bottomHairline 12%, border 0.5 rgba(255,255,255,0.18), shadow xl
-// stripped bg. Keeps the two floating docks (tab bar + composer) as one family.
+// Frosted chrome — tint + bloom (same recipe as ChatHome header block and
+// NotchHeader chat variant). No BlurView: the blur's per-frame cost over the
+// scrolling list was the jank source. Tint + bloom is a static composite.
+// Mirrors CHROME_TINT_* / CHROME_BLOOM_OPACITY in ChatHomeScreen.tsx.
 const DOCK_RADIUS = 26;
 
 export const CHAT_COMPOSER_DOCK_HEIGHT = 46;
@@ -65,11 +65,13 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
     const insets = useSafeAreaInsets();
     const bottomPad = Math.max(insets.bottom, koolaSpacing.sm);
     const exitProgress = useSharedValue(exiting ? 1 : 0);
+    const keyboard = useReanimatedKeyboardAnimation();
     const { tokens, resolvedScheme } = useTheme();
 
     const isDark = resolvedScheme === 'dark';
-    // Shadow — strip backgroundColor so BlurView glass shows through.
-    // Mirrors MainNavigator dockElevation (dark: hairline via border; light: shadow).
+    // Shadow + tint live on the wrapper so the shadow isn't clipped by the
+    // dock's overflow:hidden. Background tint is kept outside the BlurView
+    // stack — the glass is tint+bloom, not a blur.
     const dockElevation = useMemo(() => {
       if (isDark) {
         const { backgroundColor: _bg, borderTopWidth: _btw, borderTopColor: _btc, ...rest } =
@@ -87,9 +89,15 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
       });
     }, [exiting, exitProgress]);
 
-    const exitStyle = useAnimatedStyle(() => ({
+    // Only the composer follows the keyboard (UI-thread, no JS hop).
+    // GiftedChat's internal whole-list translate is disabled via
+    // isKeyboardInternallyHandled={false} — translating a FlatList of 100+
+    // rows is the jank source. keyboard.height is 0 hidden, negative when
+    // shown (GiftedChat does translateY: height - offset), so adding it
+    // moves the absolute dock up exactly with the keyboard.
+    const animatedStyle = useAnimatedStyle(() => ({
       opacity: 1 - exitProgress.value,
-      transform: [{ translateY: 24 * exitProgress.value }],
+      transform: [{ translateY: keyboard.height.value + 24 * exitProgress.value }],
     }));
 
     const clear = useCallback(() => {
@@ -118,7 +126,7 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
     }, [clear, onSend]);
 
     return (
-      <Animated.View pointerEvents="box-none" style={[styles.host, { paddingBottom: bottomPad }, exitStyle]}>
+      <Animated.View pointerEvents="box-none" style={[styles.host, { paddingBottom: bottomPad }, animatedStyle]}>
         <View style={[styles.shadowWrap, dockElevation]}>
           <View
             accessibilityState={{ disabled: !!disabled, busy: !!disabled }}
@@ -126,15 +134,13 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
               styles.dock,
               disabled ? styles.dockDisabled : null,
             ]}>
-            <BlurView
-              blurType={isDark ? 'dark' : 'light'}
-              blurAmount={18}
-              overlayColor={isDark ? 'rgba(28,32,38,0.34)' : 'rgba(255,255,255,0.42)'}
-              reducedTransparencyFallbackColor={isDark ? '#1C2026' : '#FFFFFF'}
-              style={styles.dockBlurFill}>
-              <View pointerEvents="none" style={[styles.innerEdge, isDark && styles.innerEdgeDark]} />
-              <View pointerEvents="none" style={styles.bottomHairline} />
-              <View style={styles.row}>
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)' }]} />
+            <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, opacity: 0.52, overflow: 'hidden' }}>
+              <LightFieldBackground windowSized />
+            </View>
+            <View pointerEvents="none" style={[styles.innerEdge, isDark && styles.innerEdgeDark]} />
+            <View pointerEvents="none" style={styles.bottomHairline} />
+            <View style={styles.row}>
               {onPressEmoji && (
                 <KoolaIconButton
                   icon="sentiment-satisfied-alt"
@@ -212,7 +218,6 @@ const ChatComposer = React.forwardRef<ChatComposerHandle, ChatComposerProps>(
                 </>
               )}
             </View>
-            </BlurView>
           </View>
         </View>
       </Animated.View>
@@ -233,9 +238,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     zIndex: koolaZIndex.sticky,
   },
-  // Glass shadow wrapper. Shadow lives on this View so it isn't clipped by
+  // Chrome shadow wrapper. Shadow lives on this View so it isn't clipped by
   // `dock`'s overflow:hidden. backgroundColor is stripped (see dockElevation)
-  // so BlurView glass shows through. Mirrors MainNavigator shadowWrap.
+  // so the tint shows through.
   shadowWrap: {
     borderRadius: DOCK_RADIUS,
   },
@@ -245,18 +250,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 0.5,
     borderColor: 'rgba(255,255,255,0.18)',
-    overflow: 'hidden',
-  },
-  // BlurView glass fill — mirrors ChatSearchDock/TabDock pattern.
-  // Content (innerEdge + row) MUST be BlurView children so isRendering()
-  // excludes them from the captured snapshot; see ChatSearchDock note.
-  dockBlurFill: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderRadius: DOCK_RADIUS,
     overflow: 'hidden',
   },
   // 1px inner top edge.

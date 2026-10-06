@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
-import { InteractionManager } from 'react-native';
 import {
   useNavigation,
   type NavigationProp,
 } from '@react-navigation/native';
+import { useAfterTransition } from '../../../hooks/useAfterTransition';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { conversationsApi } from '../../../services/api/apiService';
 import {
@@ -55,6 +55,7 @@ export function useChatHeaderState({
   isMountedRef,
 }: UseChatHeaderStateArgs): UseChatHeaderStateResult {
   const navigation = useNavigation<NavigationProp<ChatTabStackParamList>>();
+  const runAfterTransition = useAfterTransition();
 
   // Seed avatar from nav params so the header doesn't flash a placeholder
   // while waiting for /conversations/:id to resolve.
@@ -97,8 +98,10 @@ export function useChatHeaderState({
       // non-fatal — network refresh below will populate state
     }
 
-    // 2. Network refresh deferred past the transition.
-    const task = InteractionManager.runAfterInteractions(() => {
+    // 2. Network refresh deferred until the push enter-transition finishes.
+    // `InteractionManager.runAfterInteractions` is not usable here — native-stack
+    // never creates an interaction handle, so it would fire mid-slide.
+    const task = runAfterTransition(() => {
       conversationsApi.getDetails(conversationId).then((data: { conversation: Conversation }) => {
         if (!isFocusedRef.current || !isMountedRef.current) return;
         const conv = data.conversation || (data as unknown as Conversation);
@@ -122,7 +125,7 @@ export function useChatHeaderState({
       }).catch(() => {});
     });
     return () => task.cancel();
-  }, [conversationId, currentUserId, isFocusedRef, isMountedRef, setConversation]);
+  }, [conversationId, currentUserId, isFocusedRef, isMountedRef, runAfterTransition, setConversation]);
 
   // Warm avatar URL from the mediaKey passed via nav params (cache hit is instant).
   useEffect(() => {
