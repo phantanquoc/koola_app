@@ -214,19 +214,21 @@ Before declaring a task done:
 - **Never** use `find`/`grep` bash commands when `Glob`/`Grep` tools are available
 - **Never** force-push to `master` without explicit request
 
-## Context Engine — Auto Bridge (Harness Rule)
+## Context Engine — Auto Call Rule (Harness Rule)
 
-This harness has **no native MCP manager** — `.mcp.json` (`/mcp-repo/d__desktop_app_koola`) is not auto-loaded.
-Context Engine runs at `http://127.0.0.1:6699`. You **MUST** load the bridge as the **first action in every new session**
-before any codebase question or edit, so `codebase-retrieval` works like Claude Code per `CLAUDE.md §6-9`:
+`codebase-retrieval` is available as a **native MCP tool** (`mcp__codebase-retrieval__codebase-retrieval`) — no bridge needed.
+You **MUST** call it **EVERY TIME** you need codebase info — not just the first call in a session, but **every distinct question/trace/explore**, even in a long session:
 
-```python
-exec(open("scripts/context-engine-bridge.py", encoding="utf-8").read())
-ce("natural language question — e.g. How does AuthContext restore session and connect socket?")
+```
+mcp__codebase-retrieval__codebase-retrieval({
+  information_request: "natural language question — e.g. How does AuthContext restore session and connect socket?"
+})
 # -> snippets with file#L, then Read the returned ranges before editing
 ```
 
-If `ce()` fails with connection error, tell the user to start/restart Context Engine (tray icon → `127.0.0.1:6699` listening).
+Self-check before ANY `Grep`/`Glob`/`Read`/`Explore subagent` for codebase questions: "Đã call `codebase-retrieval` cho câu hỏi NÀY chưa? Chưa → call ngay."
+
+Legacy `scripts/context-engine-bridge.py` / `ce("...")` is deprecated — do NOT use it. If the MCP call fails with connection error, tell the user to start/restart Context Engine (tray icon → `127.0.0.1:6699` listening).
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

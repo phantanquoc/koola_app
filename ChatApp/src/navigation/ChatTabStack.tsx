@@ -48,8 +48,12 @@ const ChatTabStack: React.FC = () => {
   // hide the stack-level wordmark there to avoid a double layer/seam. Chat
   // renders its own header inside its screen view (it slides with the
   // push/pop animation), so the fixed band stays hidden while Chat is focused.
+  // UniversalSearch has its own search header (back + input) — hide the stack
+  // band there too to avoid the KOOLA wordmark painting behind the search bar.
   const showStackHeader =
-    focusedRouteName !== 'ChatHome' && focusedRouteName !== 'Chat';
+    focusedRouteName !== 'ChatHome' &&
+    focusedRouteName !== 'Chat' &&
+    focusedRouteName !== 'UniversalSearch';
   return (
     <ChatHeaderContext.Provider value={headerCtx}>
     <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>

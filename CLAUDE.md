@@ -1,9 +1,13 @@
 # CLAUDE.md
 
+> ### ⚠️ HARD RULE — CONTEXT ENGINE FIRST (áp dụng MỌI session, kể cả session dài)
+> **Mọi lần** hỏi về codebase / tìm code / trace logic / explore / "code ở đâu" — **BẮT BUỘC** gọi `mcp__codebase-retrieval__codebase-retrieval` **TRƯỚC** mọi `Grep`/`Glob`/`Read`/`Explore subagent`.
+> - Không chỉ lần đầu session — mà là **mọi lần** trong session, dù đã call trước đó.
+> - Cấm dùng GitNexus (`query`/`context`/`impact`) để thay thế cho explore/trace — chỉ dùng `codebase-retrieval` theo memory `[[feedback_explore_use_context_engine]]`.
+> - Nếu chưa call `codebase-retrieval` cho câu hỏi hiện tại → chưa được phép đọc file hay search.
+> - Vi phạm = bỏ qua chỉ dẫn dự án.
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-When asked about the codebase, project structure, or to find code, always use the context-engine MCP tool (codebase-retrieval) in the root workspace first before reading individual files. Use `codebase-retrieval` instead of the Explore subagent for codebase exploration and search tasks.
 
 When you need to read a specific file but don't know the exact line range, use the file-retrieval MCP tool instead of reading the entire file. Describe what information you need and it returns only the relevant snippets with line numbers. Use the Read tool with the returned line ranges (expanded as needed) to get current content before making edits.
 
@@ -253,7 +257,7 @@ Both are loaded into Claude's context. Read CLAUDE.md to **think correctly**, AG
 ## Context Engine — Auto Call Rule (Harness Rule)
 
 `codebase-retrieval` is available as a **native MCP tool** (`mcp__codebase-retrieval__codebase-retrieval`) — no bridge needed.
-You **MUST** call it as the **first action in every new session** before any codebase question, trace, or explore, so it works like Claude Code per `CLAUDE.md §6-9`:
+You **MUST** call it **EVERY TIME** you need codebase info — not just the first call in a session, but **every distinct question/trace/explore**, even in a long session:
 
 ```
 mcp__codebase-retrieval__codebase-retrieval({
@@ -261,6 +265,8 @@ mcp__codebase-retrieval__codebase-retrieval({
 })
 # -> snippets with file#L, then Read the returned ranges before editing
 ```
+
+Self-check before ANY `Grep`/`Glob`/`Read`/`Explore subagent` for codebase questions: "Đã call `codebase-retrieval` cho câu hỏi NÀY chưa? Chưa → call ngay."
 
 Legacy `scripts/context-engine-bridge.py` / `ce("...")` is deprecated — do NOT use it. If the MCP call fails with connection error, tell the user to start/restart Context Engine (tray icon → `127.0.0.1:6699` listening).
 
