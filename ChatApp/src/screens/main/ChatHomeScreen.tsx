@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet, Image } from 'react-native';
+import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import { LightFieldBackground } from './components/personal/LightFieldBackground';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
@@ -19,7 +19,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { HeaderSearchDock } from '../../components/HeaderSearchDock';
+import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
 import { onChatHomeReset } from '../../navigation/chatTabReset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -308,7 +308,9 @@ const CHROME_SHADOW_H = 14;
  * tan dần về 0 tại `solidUntil` (đáy status bar) — không phủ wordmark/dock;
  * phần còn lại tới đáy block (đáy dock) giữ đúng độ trong của tấm kính.
  * Nằm trong header block cố định nên không trượt theo sub-tab bar.
+ * @deprecated moved to ChromeHeaderBox — kept for reference
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ChromeEdgeScrim: React.FC<{ isDark: boolean; height: number; solidUntil: number }> = ({
   isDark,
   height,
@@ -372,13 +374,12 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
   const isDark = resolvedScheme === 'dark';
 
   const barStyles = useMemo(() => ({
-    // Tấm kính chung: phủ từ y=0 (sau header) tới đáy sub-tab bar.
+    // Kính phủ y=0 tới đáy sub-tab bar; height anim riêng qua glassHeightStyle (wrapper không bọc kính nữa).
     glass: {
       position: 'absolute' as const,
       top: 0,
       left: 0,
       right: 0,
-      height: top + CHAT_SUB_TAB_BAR_HEIGHT,
       zIndex: 10,
     },
     glassClip: {
@@ -399,12 +400,9 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
       right: 0,
       top: '100%' as const,
     },
+    // Container nằm trong bar wrapper (đã absolute top=blockH), nên không tự absolute top nữa.
     container: {
-      position: 'absolute' as const,
-      top,
-      left: 0,
-      right: 0,
-      zIndex: 11,
+      position: 'relative' as const,
       backgroundColor: 'transparent',
       paddingHorizontal: 4,
       paddingTop: 0,
@@ -416,11 +414,13 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
       justifyContent: 'space-between' as const,
       position: 'relative' as const,
     },
-  }), [semantic, top]);
+  }), [semantic]);
 
-  const visibilityStyle = useAnimatedStyle(() => {
+  // Wrapper chỉ bọc vùng sub-tab (top=blockH) để overflow:hidden cắt icon
+  // trước khi nó trượt vào header. Kính đứng yên riêng ở y=0 → không translate.
+  const barVisibilityStyle = useAnimatedStyle(() => {
     const t = visibilityContext?.hiddenProgress.value ?? 0;
-    const h = t * t * (3 - 2 * t); // smoothstep: êm ở 2 đầu, vẫn nhạy khi vừa đổi hướng
+    const h = t * t * (3 - 2 * t);
     return {
       height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - h),
       opacity: 1 - h,
@@ -428,11 +428,16 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     };
   }, [visibilityContext]);
 
-  // Kính chỉ trượt lên theo tab bar (translateY, không đổi height → không relayout).
-  const glassStyle = useAnimatedStyle(() => {
+  const barWrapperStyle = useAnimatedStyle(() => {
     const t = visibilityContext?.hiddenProgress.value ?? 0;
     const h = t * t * (3 - 2 * t);
-    return { transform: [{ translateY: -CHAT_SUB_TAB_BAR_HEIGHT * h }] };
+    return { height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - h) };
+  }, [visibilityContext]);
+
+  const glassHeightStyle = useAnimatedStyle(() => {
+    const t = visibilityContext?.hiddenProgress.value ?? 0;
+    const h = t * t * (3 - 2 * t);
+    return { height: top + CHAT_SUB_TAB_BAR_HEIGHT * (1 - h) };
   }, [visibilityContext]);
 
   // Bóng đổ = chrome "nổi" khỏi nội dung; chỉ hiện khi có data cuộn phía sau.
@@ -463,7 +468,7 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
 
   return (
     <>
-      <Animated.View pointerEvents="none" style={[barStyles.glass, glassStyle]}>
+      <Animated.View pointerEvents="none" style={[barStyles.glass, glassHeightStyle]}>
         <View style={barStyles.glassClip}>
           <View
             style={[
@@ -480,8 +485,21 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
           <ChromeShadow isDark={isDark} />
         </Animated.View>
       </Animated.View>
-      <Animated.View style={[barStyles.container, visibilityStyle]} accessibilityRole="tablist">
-        <View style={barStyles.row}>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          {
+            position: 'absolute',
+            top,
+            left: 0,
+            right: 0,
+            overflow: 'hidden',
+            zIndex: 11,
+          },
+          barWrapperStyle,
+        ]}>
+        <Animated.View style={[barStyles.container, barVisibilityStyle]} accessibilityRole="tablist">
+          <View style={barStyles.row}>
           {state.routes.map((route, index) => {
             const meta = SUB_TAB_META[route.name as keyof ChatSubTabParamList];
             if (!meta) return null;
@@ -511,6 +529,7 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
             );
           })}
         </View>
+        </Animated.View>
       </Animated.View>
     </>
   );
@@ -633,14 +652,7 @@ const ChatHomeScreen: React.FC = () => {
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
 
   // ─── Frosted header block geometry ──────────────────────────────────────────
-  // The wordmark (17h) + search dock (36h) chrome block, pinned to the top with
-  // frosted semi-transparent backing matching Shopping/Connect tabs. Sub-tab bar (40h) overlays directly below it.
-  // Layout: insets.top + 2 (top) + 17 (wordmark) + 6 (gap) + 36 (dock) = insets.top + 61.
-  const WORDMARK_TOP = 1; // Nhích lên 1px so với trước (2→1)
-  const WORDMARK_H = 15;  // Thu nhỏ 17→15 để logo gọn hơn
-  const DOCK_GAP = 6;     // Gap between wordmark and dock
-  const DOCK_H = 36;      // Search dock slot height (fixed; pill inside is also a fixed 36, only its gray fill fades)
-  const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 58
+  const blockH = getChromeBoxHeight(insets.top);
   const tabBarTop = blockH; // Sub-tab bar sits directly below frosted block
   const headerInset = chatHomeContentInset(blockH); // Full chrome inset for scene lists
 
@@ -678,78 +690,40 @@ const ChatHomeScreen: React.FC = () => {
   return (
     <ChatHomeHeaderInsetContext.Provider value={headerInset}>
       <View style={screenStyles.container}>
-        {/* Sticky frosted header block — wordmark + search dock matching Shopping/Connect tabs */}
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: blockH,
-            zIndex: 20,
-            overflow: 'hidden',
-          }}>
-          {/* Nền kính (tint + bloom) do CustomTabBar vẽ bên dưới khối này — 1 tấm
-              liền cho cả header + sub-tab bar. Trước khi nested tabs mount
-              (shell), dùng nền đặc tạm để header không trong suốt trên skeleton. */}
-          {!contentReady ? (
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: isDark ? CHROME_FALLBACK_DARK : CHROME_FALLBACK_LIGHT },
-              ]}
-            />
-          ) : (
-            // Scroll-edge scrim (kiểu iOS 26): chỉ phủ vùng status bar, nhạt
-            // dần về 0 tại đáy status bar → giờ/pin luôn sạch; wordmark, dock
-            // và sub-tab bar vẫn thấy mờ data phía sau qua tấm kính.
-            <ChromeEdgeScrim
-              isDark={isDark}
-              height={blockH}
-              solidUntil={insets.top}
-            />
-          )}
-          {/* KOOLA wordmark — same geometry as NotchHeader wordmark branch (logo top = insets.top + 2) */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: insets.top + WORDMARK_TOP,
-              height: WORDMARK_H,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            <Image
-              source={require('../../assets/logo_koola_wordmark.png')}
-              style={{ width: 87, height: 15 }}
-              resizeMode="contain"
-              accessibilityLabel="KOOLA"
-            />
-          </View>
-          {/* Command dock (search + QR + add) — 6dp below wordmark, fixed 36h slot + pill 36; fill xám mờ dần khi sub-tab ẩn */}
-          <View
-            pointerEvents="box-none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP,
-              height: DOCK_H,
-              paddingHorizontal: 12,
-              justifyContent: 'center',
-            }}>
-            <HeaderSearchDock
-              hiddenProgress={hiddenProgress}
-              onSearchPress={handleSearchPress}
-              onQrPress={handleQrPress}
-              onAddPress={handleAddPress}
-            />
-          </View>
-        </View>
+        <ChromeHeaderBox
+          insetsTop={insets.top}
+          isDark={isDark}
+          contentReady={contentReady}
+          withGlass={false}
+          onSearchPress={handleSearchPress}
+          hiddenProgress={hiddenProgress}
+          rightActions={
+            <>
+              <Pressable
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã QR"
+                onPress={handleQrPress}
+                android_ripple={{ color: tokens.semantic.action.primarySoft, borderless: false, radius: 24 }}
+                style={{ width: 48, height: '100%', borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <View style={{ transform: [{ scale: 0.82 }] }}>
+                  <MaterialIcons name="qr-code-scanner" size={22} color={tokens.semantic.action.primary} />
+                </View>
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Tạo nhóm"
+                onPress={handleAddPress}
+                android_ripple={{ color: tokens.semantic.action.primarySoft, borderless: false, radius: 24 }}
+                style={{ width: 48, height: '100%', borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <View style={{ transform: [{ scale: 0.82 }] }}>
+                  <MaterialIcons name="add" size={22} color={tokens.semantic.action.primary} />
+                </View>
+              </Pressable>
+            </>
+          }
+        />
         {!contentReady ? (
           <ChatHomeShell styles={screenStyles} />
         ) : (

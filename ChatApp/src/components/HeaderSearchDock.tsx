@@ -46,9 +46,12 @@ const dockStyles = StyleSheet.create({
 export const HeaderSearchDock: React.FC<{
   hiddenProgress?: SharedValue<number>;
   onSearchPress: () => void;
-  onQrPress: () => void;
-  onAddPress: () => void;
-}> = ({ hiddenProgress, onSearchPress, onQrPress, onAddPress }) => {
+  rightActions?: React.ReactNode;
+  /** @deprecated use rightActions */
+  onQrPress?: () => void;
+  /** @deprecated use rightActions */
+  onAddPress?: () => void;
+}> = ({ hiddenProgress, onSearchPress, rightActions, onQrPress, onAddPress }) => {
   const { tokens } = useTheme();
   const sem = tokens.semantic;
   const [searchPressed, setSearchPressed] = useState(false);
@@ -61,6 +64,46 @@ export const HeaderSearchDock: React.FC<{
     const h = t * t * (3 - 2 * t);
     return { opacity: 1 - h };
   }, [hiddenProgress]);
+
+  let effectiveRightActions: React.ReactNode = rightActions;
+  if (!effectiveRightActions && (onQrPress || onAddPress)) {
+    effectiveRightActions = (
+      <>
+        {onQrPress ? (
+          <Pressable
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Quét mã QR"
+            accessibilityHint="Mở quét mã QR"
+            onPress={onQrPress}
+            onPressIn={() => setQrPressed(true)}
+            onPressOut={() => setQrPressed(false)}
+            android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+            style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
+            <View style={{ transform: [{ scale: 0.82 }] }}>
+              <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
+            </View>
+          </Pressable>
+        ) : null}
+        {onAddPress ? (
+          <Pressable
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Tạo nhóm"
+            accessibilityHint="Tạo nhóm mới"
+            onPress={onAddPress}
+            onPressIn={() => setAddPressed(true)}
+            onPressOut={() => setAddPressed(false)}
+            android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+            style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
+            <View style={{ transform: [{ scale: 0.82 }] }}>
+              <MaterialIcons name="add" size={22} color={sem.action.primary} />
+            </View>
+          </Pressable>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <View style={dockStyles.host}>
@@ -84,34 +127,7 @@ export const HeaderSearchDock: React.FC<{
             Tìm kiếm
           </KoolaText>
         </Pressable>
-        <Pressable
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Quét mã QR"
-          accessibilityHint="Mở quét mã QR"
-          onPress={onQrPress}
-          onPressIn={() => setQrPressed(true)}
-          onPressOut={() => setQrPressed(false)}
-          android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-          style={[dockStyles.iconBtn, qrPressed ? pressedStyle : null]}>
-          <View style={{ transform: [{ scale: 0.82 }] }}>
-            <MaterialIcons name="qr-code-scanner" size={22} color={sem.action.primary} />
-          </View>
-        </Pressable>
-        <Pressable
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Tạo nhóm"
-          accessibilityHint="Tạo nhóm mới"
-          onPress={onAddPress}
-          onPressIn={() => setAddPressed(true)}
-          onPressOut={() => setAddPressed(false)}
-          android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
-          style={[dockStyles.iconBtn, addPressed ? pressedStyle : null]}>
-          <View style={{ transform: [{ scale: 0.82 }] }}>
-            <MaterialIcons name="add" size={22} color={sem.action.primary} />
-          </View>
-        </Pressable>
+        {effectiveRightActions}
       </View>
     </View>
   );

@@ -55,3 +55,27 @@ The system SHALL deliver notifications for all accounts a device's root owns thr
 - **WHEN** notifications exist for more than one owned account
 - **THEN** the UI SHALL distinguish which account each notification belongs to
 
+
+### Requirement: Connect Home Header Uses Shared Frosted Box With Search-Only Dock
+
+The Kết nối home header SHALL render the shared `FrostedHeaderBox` (wordmark 87x15 at TOP 1, ChromeEdgeScrim, box height `insets.top + 58`, dock pill 36) as its frosted chrome. Its dock SHALL show only the search action with no right icon buttons; per-tab icons are reserved for a follow-up and SHALL NOT be added in this change. While `ConnectHome` is focused, the stack-level `NotchHeader` wordmark SHALL be hidden. The list content SHALL start below the shared box plus the filter row reserve.
+
+#### Scenario: Connect header matches Chat geometry
+
+- **WHEN** the user switches between the Trò chuyện and Kết nối tabs at rest
+- **THEN** the wordmark size and position, the dock pill height and position, and the glass scrim appearance SHALL be identical between the two tabs
+
+#### Scenario: Connect dock is search-only
+
+- **WHEN** the user views the Kết nối header pill
+- **THEN** only the search action is visible; no QR or add icons are present
+
+#### Scenario: No double wordmark on Connect
+
+- **WHEN** `ConnectHome` is the focused route
+- **THEN** no stack-level KOOLA wordmark is visible behind or above the shared box
+
+#### Scenario: Connect list not hidden under box
+
+- **WHEN** the user opens Kết nối at scroll position 0
+- **THEN** the first business card is fully visible below the frosted box plus filter row

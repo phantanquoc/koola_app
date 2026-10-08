@@ -19,6 +19,8 @@ const ConnectTabStack: React.FC = () => {
   const { notify, toast } = useComingSoonToast();
   const [messagePressed, setMessagePressed] = useState(false);
   const [notificationPressed, setNotificationPressed] = useState(false);
+  const [focusedRouteName, setFocusedRouteName] = useState<keyof ConnectTabStackParamList>('ConnectHome');
+  const showStackHeader = focusedRouteName !== 'ConnectHome';
 
   const headerActions = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -80,11 +82,16 @@ const ConnectTabStack: React.FC = () => {
   return (
     <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
       <LightFieldBackground />
-      <NotchHeader
-        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
-        actions={headerActions}
-      />
+      {showStackHeader && (
+        <NotchHeader
+          style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+          actions={headerActions}
+        />
+      )}
       <Stack.Navigator
+        screenListeners={({ route }) => ({
+          focus: () => setFocusedRouteName(route.name as keyof ConnectTabStackParamList),
+        })}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',

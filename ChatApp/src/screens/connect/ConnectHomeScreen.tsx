@@ -1,14 +1,14 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, FlatList, Animated, InteractionManager, ScrollView, RefreshControl, ActivityIndicator, StyleSheet, Pressable, TextInput } from 'react-native';
+import { View, FlatList, InteractionManager, ScrollView, RefreshControl, ActivityIndicator, StyleSheet, Pressable, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { Easing, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
 import EmptyConnect from '../../components/connect/EmptyConnect';
 import ListErrorState from '../../components/connect/ListErrorState';
-import BusinessCardSkeleton from '../../components/connect/BusinessCardSkeleton';
 import BusinessCard from '../../components/connect/BusinessCard';
 import ConnectContextBanner from '../../components/connect/ConnectContextBanner';
 import QrScannerModal from '../main/QrScannerModal';
@@ -16,72 +16,17 @@ import { useAccountDiscovery } from '../../hooks/useAccountDiscovery';
 import { conversationsApi } from '../../services/api/apiService';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
-import { BUSINESS_CATEGORIES, RELATIONSHIP_FILTERS } from './constants';
+import { RELATIONSHIP_FILTERS } from './constants';
 import { VN_PROVINCES, normalizeVN } from '../../constants/provinces';
 import type { BusinessSort } from '../../types';
-import { KoolaChip, KoolaSheet, KoolaSkeleton, KoolaText, koolaRadii, koolaZIndex, useKoolaToast, useTheme } from '../../ui';
-import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
+import { KoolaChip, KoolaSheet, KoolaSkeleton, KoolaText, koolaRadii, useKoolaToast, useTheme } from '../../ui';
+import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { MOCK_BUSINESSES } from './mockBusinesses';
+import { BUSINESS_CATEGORIES } from './constants';
 
-const DOCK_GAP_TOP = 4;
-const DOCK_H = 40;
-const DOCK_GAP_BOTTOM = 8;
 const FILTER_ROW_H = 44;
-const FILTER_ROW_H_COLLAPSED = 40;
-const FILTER_ROW_GAP_BOTTOM = 12;
-const FILTER_ROW_GAP_COLLAPSED = 8;
-const DOCK_HIDE_THRESHOLD = 120;
-const DOCK_HIDE_MID = DOCK_HIDE_THRESHOLD / 2;
-const DOCK_SLIDE = DOCK_H + DOCK_GAP_BOTTOM;
-const CHROME_RESERVE = DOCK_GAP_TOP + DOCK_H + DOCK_GAP_BOTTOM + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
-
-type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
-
-function useAccountActions(navigation: ConnectNavProp) {
-  const toast = useKoolaToast();
-  const navigateToChat = useCallback((conversationId: string) => {
-    (navigation as any).navigate('ChatTab', { screen: 'Chat', params: { conversationId } });
-  }, [navigation]);
-  const handleMessage = useCallback(async (account: BusinessAccountItem) => {
-    try { const { conversation } = await conversationsApi.startDirectChat(account._id); navigateToChat(conversation._id); }
-    catch (err) { if (__DEV__) console.warn('Start direct chat failed:', err); toast.show('Không thể bắt đầu trò chuyện. Bạn thử lại nhé.', 'danger'); }
-  }, [navigateToChat, toast]);
-  return { handleMessage };
-}
-
-const ConnectSearchDock: React.FC<{ semantic: SemanticTokens; onSearchPress: () => void; activeFilterCount: number; onOpenFilters: () => void; onFocusChange?: (f: boolean) => void }> = ({ semantic, onSearchPress, activeFilterCount, onOpenFilters, onFocusChange }) => {
-  const [focused, setFocused] = useState(false);
-  const handleFocus = useCallback(() => { setFocused(true); onFocusChange?.(true); }, [onFocusChange]);
-  const handleBlur = useCallback(() => { setFocused(false); onFocusChange?.(false); }, [onFocusChange]);
-  return (
-    <View style={[dockStyles.pill, { backgroundColor: semantic.border.subtle }]}>
-      {focused ? <View pointerEvents="none" style={[dockStyles.focusRing, { borderColor: semantic.focus.ring }]} /> : null}
-      <View style={dockStyles.contentRow}>
-        <MaterialIcons name="search" size={20} color={semantic.text.faint} style={dockStyles.searchIcon} />
-        <Pressable style={{ flex: 1 }} onPress={onSearchPress} accessibilityRole="button" accessibilityLabel="Tìm doanh nghiệp">
-          <TextInput editable={false} pointerEvents="none" placeholder="Tìm doanh nghiệp..." placeholderTextColor={semantic.text.faint} style={[dockStyles.searchInput, { color: semantic.text.primary }]} onFocus={handleFocus} onBlur={handleBlur} />
-        </Pressable>
-        <View style={[dockStyles.divider, { backgroundColor: semantic.border.strong }]} />
-        <Pressable accessibilityRole="button" accessibilityLabel={activeFilterCount > 0 ? 'Lọc, ' + activeFilterCount + ' bộ lọc đang áp dụng' : 'Lọc'} onPress={onOpenFilters} hitSlop={6} style={dockStyles.filterBtn}>
-          <MaterialIcons name="filter-list" size={20} color={semantic.action.primary} />
-          {activeFilterCount > 0 ? <View style={dockStyles.filterBadge}><KoolaText variant="caption" weight="800" tone="surface" style={dockStyles.filterBadgeText}>{activeFilterCount}</KoolaText></View> : null}
-        </Pressable>
-      </View>
-    </View>
-  );
-};
-const dockStyles = StyleSheet.create({
-  pill: { height: DOCK_H, borderRadius: koolaRadii.pill, overflow: 'hidden', justifyContent: 'center' },
-  focusRing: { ...StyleSheet.absoluteFillObject, borderRadius: koolaRadii.pill, borderWidth: 1.5 },
-  contentRow: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, paddingRight: 8 },
-  searchIcon: { marginRight: 6 },
-  searchInput: { flex: 1, fontSize: 15, height: DOCK_H, paddingVertical: 0, textAlignVertical: 'center' },
-  divider: { width: StyleSheet.hairlineWidth, height: 20, marginHorizontal: 8, opacity: 1 },
-  filterBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  filterBadge: { position: 'absolute', top: -2, right: -4, minWidth: 16, height: 16, borderRadius: koolaRadii.pill, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EF4444' },
-  filterBadgeText: { fontSize: 10, lineHeight: 12 },
-});
+const FILTER_GAP = 8;
 
 const FilterRow: React.FC<{ styles: ReturnType<typeof makeStyles>; activeRelationship: string; onSelectRelationship: (slug: string) => void }> = ({ styles, activeRelationship, onSelectRelationship }) => (
   <View style={styles.filterRow}>
@@ -142,7 +87,7 @@ const ConnectFilterSheet: React.FC<{ styles: ReturnType<typeof makeStyles>; acti
         <KoolaText variant="label" weight="700" tone="muted" style={styles.sheetSectionTitle}>Sắp xếp</KoolaText>
         <View style={styles.sheetChipRow}>{SORT_OPTIONS.map((opt) => <View key={opt.value} style={styles.sheetChipWrap}><KoolaChip label={opt.label} selected={activeSort === opt.value} onPress={() => onSortChange(opt.value)} /></View>)}</View>
         <KoolaText variant="label" weight="700" tone="muted" style={styles.sheetSectionTitle}>Khu vực</KoolaText>
-        <View style={styles.sheetChipRow}><View style={styles.sheetChipWrap}><KoolaChip label={activeProvince ? activeProvince : 'Tất cả tỉnh/thành'} selected={!!activeProvince} onPress={() => setProvinceOpen(true)} /></View>{!!activeProvince ? <View style={styles.sheetChipWrap}><KoolaChip label="Xóa tỉnh/thành" selected={false} onPress={() => onProvinceChange('')} /></View> : null}</View>
+        <View style={styles.sheetChipRow}><View style={styles.sheetChipWrap}><KoolaChip label={activeProvince ? activeProvince : 'Tất cả tỉnh/thành'} selected={Boolean(activeProvince)} onPress={() => setProvinceOpen(true)} /></View>{activeProvince ? <View style={styles.sheetChipWrap}><KoolaChip label="Xóa tỉnh/thành" selected={false} onPress={() => onProvinceChange('')} /></View> : null}</View>
         <KoolaText variant="label" weight="700" tone="muted" style={styles.sheetSectionTitle}>Ngành nghề</KoolaText>
         <View style={styles.sheetChipRow}>{BUSINESS_CATEGORIES.filter((c) => c.slug !== 'all').map((cat) => <View key={cat.slug} style={styles.sheetChipWrap}><KoolaChip label={cat.label} selected={activeCategory === cat.slug} onPress={() => onToggleCategory(cat.slug)} /></View>)}</View>
       </View>
@@ -153,6 +98,20 @@ const ConnectFilterSheet: React.FC<{ styles: ReturnType<typeof makeStyles>; acti
 
 const BANNER_DISMISSED_KEY = 'connect_banner_dismissed';
 
+type ConnectNavProp = NativeStackNavigationProp<ConnectTabStackParamList>;
+
+function useAccountActions(navigation: ConnectNavProp) {
+  const toast = useKoolaToast();
+  const navigateToChat = useCallback((conversationId: string) => {
+    (navigation as any).navigate('ChatTab', { screen: 'Chat', params: { conversationId } });
+  }, [navigation]);
+  const handleMessage = useCallback(async (account: BusinessAccountItem) => {
+    try { const { conversation } = await conversationsApi.startDirectChat(account._id); navigateToChat(conversation._id); }
+    catch (err) { if (__DEV__) console.warn('Start direct chat failed:', err); toast.show('Không thể bắt đầu trò chuyện. Bạn thử lại nhé.', 'danger'); }
+  }, [navigateToChat, toast]);
+  return { handleMessage };
+}
+
 const ConnectHomeScreen: React.FC = () => {
   const navigation = useNavigation<ConnectNavProp>();
   const tabBarInset = useTabBarBottomInset();
@@ -160,9 +119,58 @@ const ConnectHomeScreen: React.FC = () => {
   const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
   const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
-  const notchPad = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + 4;
-  const overlayTop = notchPad;
-  const listTopPad = notchPad + CHROME_RESERVE;
+  const isDark = resolvedScheme === 'dark';
+  const blockH = getChromeBoxHeight(insets.top);
+  const filterTop = blockH + FILTER_GAP;
+  const listTopPad = blockH + FILTER_GAP + FILTER_ROW_H + FILTER_GAP;
+
+  const hiddenProgress = useSharedValue(0);
+  const scrolledProgress = useSharedValue(0);
+  const prevOffsetY = useSharedValue(0);
+  const travel = useSharedValue(0);
+
+  const handleScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      const offsetY = Math.max(0, event.contentOffset.y);
+      if (offsetY > 8 && scrolledProgress.value !== 1) {
+        scrolledProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+      } else if (offsetY <= 4 && scrolledProgress.value !== 0) {
+        scrolledProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+      }
+      if (offsetY <= 4) {
+        if (hiddenProgress.value !== 0) {
+          hiddenProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+        }
+        travel.value = 0;
+        prevOffsetY.value = offsetY;
+        return;
+      }
+      const delta = offsetY - prevOffsetY.value;
+      if (delta === 0) return;
+      // Accumulate travel in dominant direction; reset on direction flip.
+      if ((delta > 0 && travel.value < 0) || (delta < 0 && travel.value > 0)) {
+        travel.value = delta;
+      } else {
+        travel.value += delta;
+      }
+      prevOffsetY.value = offsetY;
+      if (travel.value > 8 && hiddenProgress.value !== 1) {
+        hiddenProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+      } else if (travel.value < -8 && hiddenProgress.value !== 0) {
+        hiddenProgress.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+      }
+    },
+  });
+
+  const filterVisibilityStyle = useAnimatedStyle(() => {
+    const t = Math.min(1, Math.max(0, hiddenProgress.value));
+    const h = t * t * (3 - 2 * t);
+    return {
+      height: FILTER_ROW_H * (1 - h),
+      opacity: 1 - h,
+      transform: [{ translateY: -FILTER_ROW_H * h }],
+    };
+  }, []);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRelationship, setActiveRelationship] = useState('all');
@@ -191,11 +199,9 @@ const ConnectHomeScreen: React.FC = () => {
     province: activeProvince || undefined,
   });
   const { handleMessage } = useAccountActions(navigation);
-  // Demo: hợp nhất mock + data thật để luôn thấy card giống ảnh
   const displayItems = useMemo(() => {
     const hasActive =
       effectiveCategory || activeProvince || (activeRelationship !== 'all') || activeSort !== 'latest';
-    // Khi có filter, lọc mock theo filter hiện tại
     let mocks = MOCK_BUSINESSES as any[];
     if (hasActive) {
       mocks = mocks.filter((m) => {
@@ -207,79 +213,17 @@ const ConnectHomeScreen: React.FC = () => {
       if (activeSort === 'popular') mocks = [...mocks].sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0));
       if (activeSort === 'name') mocks = [...mocks].sort((a, b) => a.displayName.localeCompare(b.displayName, 'vi'));
     }
-    // Trả mock trước, sau đó nối items thật (tránh trùng _id)
     const realIds = new Set(mocks.map((m) => m._id));
     const reals = (items as any[]).filter((it) => !realIds.has(it._id));
-    // Khi chưa load xong mà items rỗng, vẫn hiện mock để demo
     if (items.length === 0) return mocks as any;
     return [...mocks, ...reals] as any;
   }, [items, effectiveCategory, activeProvince, activeRelationship, activeSort]);
-  const activeFilterCount = (activeCategory !== null ? 1 : 0) + (activeProvince ? 1 : 0) + (activeSort !== 'latest' ? 1 : 0);
-  const handleQrPress = useCallback(() => setQrVisible(true), []);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
   const handleNavigateProfile = useCallback((userId: string) => { (navigation as any).navigate('Profile', { userId }); }, [navigation]);
   const handleNavigateChat = useCallback((conversationId: string) => { (navigation as any).navigate('ChatTab', { screen: 'Chat', params: { conversationId } }); }, [navigation]);
-  const openFilterSheet = useCallback(() => setFilterSheetOpen(true), []);
   const closeFilterSheet = useCallback(() => setFilterSheetOpen(false), []);
   const handleSearchPress = useCallback(() => navigation.navigate('BusinessSearch'), [navigation]);
   const toggleCategory = useCallback((slug: string) => { setActiveCategory((prev) => (prev === slug ? null : slug)); }, []);
-
-  const appliedOffset = useRef(new Animated.Value(0)).current;
-  const flatListRef = useRef<FlatList<BusinessAccountItem>>(null);
-  const rawOffsetRef = useRef(0);
-  const appliedValueRef = useRef(0);
-  const travelRef = useRef(0);
-  const directionRef = useRef<1 | -1 | 0>(0);
-  const isDraggingRef = useRef(false);
-  const dockFocusedRef = useRef(false);
-  const [dockHidden, setDockHidden] = useState(false);
-  useEffect(() => {
-    const id = appliedOffset.addListener(({ value }: { value: number }) => {
-      appliedValueRef.current = value;
-      const hidden = value >= DOCK_HIDE_THRESHOLD - 1;
-      setDockHidden((prev) => (prev === hidden ? prev : hidden));
-    });
-    return () => appliedOffset.removeListener(id);
-  }, [appliedOffset]);
-  const HYSTERESIS = 10;
-  const dockTranslateY = appliedOffset.interpolate({ inputRange: [0, DOCK_HIDE_THRESHOLD], outputRange: [0, -DOCK_SLIDE], extrapolate: 'clamp' });
-  const dockOpacity = appliedOffset.interpolate({ inputRange: [0, DOCK_HIDE_MID, DOCK_HIDE_THRESHOLD], outputRange: [1, 0.5, 0], extrapolate: 'clamp' });
-  const filterTranslateY = appliedOffset.interpolate({ inputRange: [0, DOCK_HIDE_THRESHOLD], outputRange: [0, -DOCK_SLIDE], extrapolate: 'clamp' });
-  const filterRowHeight = appliedOffset.interpolate({ inputRange: [0, DOCK_HIDE_THRESHOLD], outputRange: [FILTER_ROW_H, FILTER_ROW_H_COLLAPSED], extrapolate: 'clamp' });
-  const filterRowGapHeight = appliedOffset.interpolate({ inputRange: [0, DOCK_HIDE_THRESHOLD], outputRange: [FILTER_ROW_GAP_BOTTOM, FILTER_ROW_GAP_COLLAPSED], extrapolate: 'clamp' });
-  const snapToNearestDetent = useCallback(() => {
-    if (dockFocusedRef.current) {
-      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-      rawOffsetRef.current = 0; travelRef.current = 0; directionRef.current = -1; return;
-    }
-    const v = appliedValueRef.current;
-    if (v > 20 && v < 100) {
-      const target = v < DOCK_HIDE_MID ? 0 : DOCK_HIDE_THRESHOLD;
-      Animated.timing(appliedOffset, { toValue: target, duration: 180, useNativeDriver: false }).start();
-      flatListRef.current?.scrollToOffset({ offset: target, animated: true });
-      rawOffsetRef.current = target; travelRef.current = 0; directionRef.current = target === 0 ? -1 : 1;
-    }
-  }, [appliedOffset]);
-  const handleFocusChange = useCallback((focused: boolean) => {
-    dockFocusedRef.current = focused;
-    if (focused) {
-      travelRef.current = 0; directionRef.current = -1;
-      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      if (rawOffsetRef.current > 0) { flatListRef.current?.scrollToOffset({ offset: 0, animated: true }); rawOffsetRef.current = 0; }
-    }
-  }, [appliedOffset]);
-  const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const y = Math.max(0, e.nativeEvent.contentOffset.y);
-    if (dockFocusedRef.current) { if (appliedValueRef.current !== 0) appliedOffset.setValue(0); rawOffsetRef.current = y; return; }
-    const delta = y - rawOffsetRef.current; rawOffsetRef.current = y;
-    if (y <= 4) { travelRef.current = 0; directionRef.current = -1; appliedOffset.setValue(0); return; }
-    if (delta > 0) { travelRef.current = Math.max(0, travelRef.current) + delta; directionRef.current = 1; appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y)); }
-    else if (delta < 0) { travelRef.current = Math.min(0, travelRef.current) + delta; if (travelRef.current < -HYSTERESIS) { directionRef.current = -1; appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y)); } }
-  }, [appliedOffset]);
-  const handleScrollBeginDrag = useCallback(() => { isDraggingRef.current = true; }, []);
-  const handleScrollEndDrag = useCallback(() => { isDraggingRef.current = false; snapToNearestDetent(); }, [snapToNearestDetent]);
-  const handleMomentumScrollEnd = useCallback(() => { if (!isDraggingRef.current) snapToNearestDetent(); }, [snapToNearestDetent]);
 
   const renderItem = useCallback(({ item }: { item: BusinessAccountItem }) => (
     <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
@@ -288,8 +232,8 @@ const ConnectHomeScreen: React.FC = () => {
   if (error && displayItems.length === 0 && !loading) {
     return (
       <View style={styles.screen}>
-        <View style={{ paddingTop: overlayTop }}><View style={styles.contentInset}><ConnectSearchDock semantic={semantic} onSearchPress={handleSearchPress} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} onFocusChange={handleFocusChange} /></View></View>
-        <ListErrorState message={error} onRetry={refresh} />
+        <ChromeHeaderBox insetsTop={insets.top} isDark={isDark} contentReady={contentReady} onSearchPress={handleSearchPress} />
+        <View style={{ paddingTop: listTopPad }}><ListErrorState message={error} onRetry={refresh} /></View>
       </View>
     );
   }
@@ -297,21 +241,21 @@ const ConnectHomeScreen: React.FC = () => {
   return (
     <View style={styles.screen}>
       {!contentReady ? (
-        <View style={[styles.screen, { paddingTop: overlayTop }]}>
+        <View style={[styles.screen, { paddingTop: blockH }]}>
           <View style={styles.contentInset}>
-            <KoolaSkeleton width="100%" height={DOCK_H} radius={koolaRadii.pill} />
-            <View style={{ flexDirection: 'row', marginTop: DOCK_GAP_BOTTOM, alignItems: 'center' }}>
+            <KoolaSkeleton width="100%" height={36} radius={koolaRadii.pill} />
+            <View style={{ flexDirection: 'row', marginTop: FILTER_GAP, alignItems: 'center' }}>
               <KoolaSkeleton width={80} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
               <KoolaSkeleton width={90} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
               <KoolaSkeleton width={110} height={FILTER_ROW_H} radius={koolaRadii.pill} />
             </View>
           </View>
           <View style={styles.listContent}>
-            {[0, 1, 2].map((i) => <KoolaSkeleton key={i} width="100%" height={88} radius={koolaRadii.md} style={{ marginTop: i === 0 ? FILTER_ROW_GAP_BOTTOM : 6 }} />)}
+            {[0, 1, 2].map((i) => <KoolaSkeleton key={i} width="100%" height={88} radius={koolaRadii.md} style={{ marginTop: i === 0 ? FILTER_GAP : 6 }} />)}
           </View>
         </View>
       ) : (
-        <Animated.FlatList ref={flatListRef} removeClippedSubviews={false} data={displayItems} keyExtractor={(item) => item._id} renderItem={renderItem} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50}
+        <Animated.FlatList removeClippedSubviews={false} data={displayItems as any} keyExtractor={(item: any) => item._id} renderItem={renderItem as any} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50}
           ListHeaderComponent={!bannerDismissed ? <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}><ConnectContextBanner onCreatePress={() => (navigation as any).navigate('PersonalTab', { screen: 'AccountList' })} onDismiss={handleDismissBanner} /></View> : null}
           ListEmptyComponent={loading ? null : <EmptyConnect activeCategory={effectiveCategory} activeRelationship={activeRelationship === 'all' ? undefined : activeRelationship} activeProvince={activeProvince || undefined} activeSort={activeSort} onClearFilters={handleClearFilters} />}
           ListFooterComponent={hasMore ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color={semantic.action.primary} /> : null}
@@ -319,23 +263,19 @@ const ConnectHomeScreen: React.FC = () => {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={semantic.action.primary} />}
           contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
           showsVerticalScrollIndicator={false} style={styles.screenTransparent}
-          onScroll={handleScroll} scrollEventThrottle={16} onScrollBeginDrag={handleScrollBeginDrag} onScrollEndDrag={handleScrollEndDrag} onMomentumScrollEnd={handleMomentumScrollEnd}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         />
       )}
       {contentReady ? (
-        <View style={[styles.overlayChrome, { top: overlayTop }]} pointerEvents="box-none">
-          <View style={styles.contentInset} pointerEvents="box-none">
-            <Animated.View pointerEvents={dockHidden ? 'none' : 'auto'} style={{ transform: [{ translateY: dockTranslateY }], opacity: dockOpacity }}>
-              <ConnectSearchDock semantic={semantic} onSearchPress={handleSearchPress} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} onFocusChange={handleFocusChange} />
-            </Animated.View>
-            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowHeight, marginTop: DOCK_GAP_BOTTOM, overflow: 'hidden' }}>
-              <View style={{ height: FILTER_ROW_H }}><FilterRow styles={styles} activeRelationship={activeRelationship} onSelectRelationship={handleSelectRelationship} /></View>
-            </Animated.View>
-            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowGapHeight }} />
-          </View>
-        </View>
+        <>
+          <ChromeHeaderBox insetsTop={insets.top} isDark={isDark} contentReady={contentReady} onSearchPress={handleSearchPress} hiddenProgress={hiddenProgress} scrolledProgress={scrolledProgress} />
+          <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: filterTop, left: 0, right: 0, paddingHorizontal: 12, overflow: 'hidden' }, filterVisibilityStyle]}>
+            <FilterRow styles={styles} activeRelationship={activeRelationship} onSelectRelationship={handleSelectRelationship} />
+          </Animated.View>
+        </>
       ) : null}
-      {filterSheetOpen ? <ConnectFilterSheet styles={styles} activeCategory={activeCategory} activeProvince={activeProvince} activeSort={activeSort} hasActiveFilters={activeFilterCount > 0} onToggleCategory={toggleCategory} onProvinceChange={setActiveProvince} onSortChange={setActiveSort} onClear={handleClearFilters} onClose={closeFilterSheet} bottomInset={insets.bottom} /> : null}
+      {filterSheetOpen ? <ConnectFilterSheet styles={styles} activeCategory={activeCategory} activeProvince={activeProvince} activeSort={activeSort} hasActiveFilters={activeCategory !== null || Boolean(activeProvince) || activeSort !== 'latest'} onToggleCategory={toggleCategory} onProvinceChange={setActiveProvince} onSortChange={setActiveSort} onClear={handleClearFilters} onClose={closeFilterSheet} bottomInset={insets.bottom} /> : null}
       <QrScannerModal visible={qrVisible} onClose={handleQrClose} onNavigateProfile={handleNavigateProfile} onNavigateChat={handleNavigateChat} />
     </View>
   );
@@ -347,7 +287,6 @@ const makeStyles = (semantic: SemanticTokens, _scheme: 'light' | 'dark') =>
     screenTransparent: { flex: 1, backgroundColor: 'transparent' },
     listContent: { paddingHorizontal: 6 },
     contentInset: { paddingHorizontal: 12 },
-    overlayChrome: { position: 'absolute', left: 0, right: 0, paddingTop: DOCK_GAP_TOP, zIndex: koolaZIndex.sticky },
     filterRow: { flexDirection: 'row', alignItems: 'center', height: FILTER_ROW_H },
     chipScroller: { flex: 1 },
     chipScrollerContent: { alignItems: 'center', paddingRight: 12 },

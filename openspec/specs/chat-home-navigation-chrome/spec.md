@@ -5,7 +5,7 @@ TBD - created by archiving change redesign-chat-home-chrome. Update Purpose afte
 ## Requirements
 ### Requirement: Search-first Chat home header
 
-The Chat home header SHALL present universal search, QR scanning, and add in one shared command dock with visually separated touch targets.
+The Chat home header SHALL present universal search, QR scanning, and add in one shared command dock with visually separated touch targets. The header's frosted chrome (wordmark 87x15 at TOP 1, dock pill 36, gap 6, box height insets.top + 58, ChromeEdgeScrim background) SHALL be rendered by the shared `FrostedHeaderBox` component. Chat SHALL pass QR and add as `rightActions` to that shared dock.
 
 #### Scenario: User opens universal search
 
