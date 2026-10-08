@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -28,6 +28,29 @@ function formatViews(n: number): string {
   return n.toLocaleString('vi-VN');
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function darkenHex(hex: string, amount: number): string {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  let r = (n >> 16) & 255;
+  let g = (n >> 8) & 255;
+  let b = n & 255;
+  r = Math.max(0, Math.round(r * (1 - amount)));
+  g = Math.max(0, Math.round(g * (1 - amount)));
+  b = Math.max(0, Math.round(b * (1 - amount)));
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const VNFlag: React.FC<{ w?: number; h?: number }> = ({ w = 30, h = 19 }) => (
   <Svg width={w} height={h} viewBox="0 0 38 24">
     <Rect x={0} y={0} width={38} height={24} rx={3} fill="#DA251D" />
@@ -47,25 +70,42 @@ const DVMark: React.FC<{ size?: number }> = ({ size = 36 }) => (
   </Svg>
 );
 
-const Stars: React.FC<{ value: number }> = ({ value }) => (
+const Stars: React.FC<{ value: number; semantic: SemanticTokens }> = ({ value, semantic }) => (
   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
     {Array.from({ length: 5 }).map((_, i) => (
-      <MaterialIcons key={i} name={i < value ? 'star' : 'star-border'} size={12} color={i < value ? '#D99A00' : '#CBD5E1'} style={{ marginRight: 1 }} />
+      <MaterialIcons
+        key={i}
+        name={i < value ? 'star' : 'star-border'}
+        size={13}
+        color={i < value ? semantic.status.warning : semantic.border.strong}
+        style={{ marginRight: 1 }}
+      />
     ))}
   </View>
 );
 
-const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePress }) => {
+const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePress, messageDisabled, messageLoading }) => {
   const { resolvedScheme, tokens } = useTheme();
-  const styles = useMemo(() => makeStyles(resolvedScheme, tokens.semantic), [resolvedScheme, tokens.semantic]);
+  const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
   const mock = isMock(item) ? (item as MockBusiness) : null;
+  const [cardPressed, setCardPressed] = React.useState(false);
+  const [ctaPressed, setCtaPressed] = React.useState(false);
+  const ctaBg = tokens.semantic.status.success;
+  const ctaPressedBg = useMemo(() => darkenHex(ctaBg, 0.12), [ctaBg]);
 
   if (!mock) {
     const realDemoImage = (item as unknown as { demoImage?: ImageSourcePropType }).demoImage;
-    const avatarStr = typeof (item as BusinessAccountItem).avatar === 'string' ? (item as BusinessAccountItem).avatar as string : '';
+    const avatarStr = typeof (item as BusinessAccountItem).avatar === 'string' ? ((item as BusinessAccountItem).avatar as string) : '';
     const hasHttpAvatar = !!avatarStr && isHttpUri(avatarStr);
     return (
-      <Pressable style={styles.card} onPress={onPress} accessibilityRole="button">
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => setCardPressed(true)}
+        onPressOut={() => setCardPressed(false)}
+        android_ripple={{ color: tokens.semantic.border.subtle }}
+        accessibilityRole="button"
+        accessibilityLabel={`Xem hồ sơ ${item.displayName}`}
+        style={[styles.card, cardPressed && styles.cardPressed]}>
         {realDemoImage ? (
           <Image source={realDemoImage} style={[styles.avatarImg, styles.avatar38]} />
         ) : hasHttpAvatar ? (
@@ -74,23 +114,64 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
           <DVMark size={38} />
         )}
         <View style={{ flex: 1, marginLeft: 10 }}>
-          <KoolaText weight="800" numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{item.displayName}</KoolaText>
-          {item.province ? <KoolaText variant="caption" tone="muted" style={{ fontSize: 11 }}>{item.province}</KoolaText> : null}
+          <KoolaText weight="800" numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>
+            {item.displayName}
+          </KoolaText>
+          {item.province ? (
+            <KoolaText weight="600" style={styles.metaText} numberOfLines={1}>
+              {item.province}
+            </KoolaText>
+          ) : null}
         </View>
-        <Pressable style={styles.ctaGreen} onPress={(e) => { e.stopPropagation(); onMessagePress(); }}>
-          <MaterialIcons name="chat-bubble-outline" size={12} color="#FFFFFF" />
-          <KoolaText weight="700" style={{ color: '#FFFFFF', marginLeft: 5, fontSize: 10 }}>NHẮN TIN</KoolaText>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onMessagePress();
+          }}
+          onPressIn={(e) => {
+            e.stopPropagation();
+            setCtaPressed(true);
+          }}
+          onPressOut={() => setCtaPressed(false)}
+          disabled={!!messageDisabled || !!messageLoading}
+          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+          accessibilityRole="button"
+          accessibilityLabel="Nhắn tin"
+          accessibilityState={{ disabled: !!messageDisabled || !!messageLoading, busy: !!messageLoading }}
+          style={[
+            styles.ctaGreen,
+            { backgroundColor: ctaPressed ? ctaPressedBg : ctaBg },
+            ctaPressed && styles.ctaPressed,
+            (messageDisabled || messageLoading) && styles.ctaDisabled,
+          ]}>
+          {messageLoading ? (
+            <ActivityIndicator size="small" color={tokens.semantic.text.onAction} />
+          ) : (
+            <>
+              <MaterialIcons name="chat-bubble-outline" size={12} color={tokens.semantic.text.onAction} />
+              <KoolaText weight="800" style={styles.ctaText}>
+                NHẮN TIN
+              </KoolaText>
+            </>
+          )}
         </Pressable>
       </Pressable>
     );
   }
 
   return (
-    <Pressable style={styles.card} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Xem hồ sơ ${item.displayName}`}>
-      <View pointerEvents="none" style={styles.washOverlay} />
-      <View pointerEvents="none" style={styles.watermark}>
-        <Svg width={200} height={200} viewBox="0 0 240 240" opacity={0.06}>
-          <Path d="M40 165 Q85 60 170 45 Q145 120 105 160 Q65 185 40 165 Z" fill="#94A3B8" />
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setCardPressed(true)}
+      onPressOut={() => setCardPressed(false)}
+      android_ripple={{ color: tokens.semantic.border.subtle }}
+      accessibilityRole="button"
+      accessibilityLabel={`Xem hồ sơ ${item.displayName}`}
+      style={[styles.card, cardPressed && styles.cardPressed]}>
+      <View pointerEvents="none" style={styles.washOverlay} accessible={false} />
+      <View pointerEvents="none" style={styles.watermark} accessible={false}>
+        <Svg width={200} height={200} viewBox="0 0 240 240">
+          <Path d="M40 165 Q85 60 170 45 Q145 120 105 160 Q65 185 40 165 Z" fill={hexToRgba(tokens.semantic.text.faint, 0.05)} />
         </Svg>
       </View>
 
@@ -102,69 +183,163 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
         </KoolaText>
         <View style={styles.flagBox}>
           <VNFlag w={20} h={13} />
-          <KoolaText weight="700" style={styles.flagValue}> VN</KoolaText>
+          <KoolaText weight="700" style={styles.flagValue}>
+            {' '}
+            VN
+          </KoolaText>
         </View>
       </View>
 
-      <View style={styles.dividerStrong} />
+      <View style={styles.divider} accessible={false} />
 
       <View style={styles.row}>
-        <KoolaText weight="800" style={styles.rowLabel}>SẢN PHẨM CHÍNH:</KoolaText>
-        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}> {mock.mainProduct ?? mock.tagline ?? ''}</KoolaText>
+        <KoolaText weight="700" style={styles.rowLabel}>
+          SẢN PHẨM CHÍNH:
+        </KoolaText>
+        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}>
+          {' '}
+          {mock.mainProduct ?? mock.tagline ?? ''}
+        </KoolaText>
       </View>
 
-      <View style={styles.dividerThin} />
+      <View style={styles.divider} accessible={false} />
 
       {/* 1 dòng gộp: sao · thâm niên · vị trí */}
       <View style={styles.metaRow}>
-        <Stars value={mock.rating ?? 5} />
-        <KoolaText weight="600" style={styles.metaText}>  {mock.yearsActive ?? 5} NĂM</KoolaText>
-        <View style={styles.dot} />
-        <KoolaText weight="600" style={styles.metaText} numberOfLines={1}>{mock.locationLabel ?? mock.province ?? ''}</KoolaText>
+        <Stars value={mock.rating ?? 5} semantic={tokens.semantic} />
+        <KoolaText weight="600" style={styles.metaText}>
+          {'  '}
+          {mock.yearsActive ?? 5} NĂM
+        </KoolaText>
+        <View style={styles.dot} accessible={false} />
+        <KoolaText weight="600" style={styles.metaText} numberOfLines={1}>
+          {mock.locationLabel ?? mock.province ?? ''}
+        </KoolaText>
       </View>
 
-      <View style={styles.dividerThin} />
+      <View style={styles.divider} accessible={false} />
 
       <View style={styles.certRow}>
-        <KoolaText weight="700" style={styles.certLabel}>CHỨNG CHỈ:</KoolaText>
+        <KoolaText weight="700" style={styles.certLabel}>
+          CHỨNG CHỈ:
+        </KoolaText>
         <View style={styles.certGroup}>
           {(mock.certifications ?? []).map((c) => {
-            if (c.key === 'iso') return <View key={c.key} style={styles.certIso}><KoolaText weight="800" style={styles.certIsoText}>ISO</KoolaText><KoolaText weight="600" style={styles.certIsoSub}>{c.sublabel ?? '9001:2015'}</KoolaText></View>;
-            if (c.key === 'haccp') return <View key={c.key} style={styles.certHaccp}><KoolaText weight="800" style={styles.certHaccpText}>HACCP</KoolaText></View>;
-            if (c.key === 'globalgap') return <View key={c.key} style={styles.certGap}><View style={styles.certGapG}><KoolaText weight="800" style={styles.certGapGText}>G</KoolaText></View><KoolaText weight="700" style={styles.certGapText}>GLOBALG.A.P.</KoolaText></View>;
-            if (c.key === 'vietgap') return <KoolaText key={c.key} weight="800" style={styles.vietgap}>VIETGAP</KoolaText>;
-            return <View key={c.key} style={styles.certGeneric}><KoolaText weight="800" style={{ fontSize: 7, color: '#1E40AF' }}>{c.label}</KoolaText></View>;
+            if (c.key === 'iso')
+              return (
+                <View key={c.key} style={styles.certIso}>
+                  <KoolaText weight="800" style={styles.certIsoText}>
+                    ISO
+                  </KoolaText>
+                  <KoolaText weight="600" style={styles.certIsoSub}>
+                    {c.sublabel ?? '9001:2015'}
+                  </KoolaText>
+                </View>
+              );
+            if (c.key === 'haccp')
+              return (
+                <View key={c.key} style={styles.certHaccp}>
+                  <KoolaText weight="800" style={styles.certHaccpText}>
+                    HACCP
+                  </KoolaText>
+                </View>
+              );
+            if (c.key === 'globalgap')
+              return (
+                <View key={c.key} style={styles.certGap}>
+                  <View style={styles.certGapG}>
+                    <KoolaText weight="800" style={styles.certGapGText}>
+                      G
+                    </KoolaText>
+                  </View>
+                  <KoolaText weight="700" style={styles.certGapText}>
+                    GLOBALG.A.P.
+                  </KoolaText>
+                </View>
+              );
+            if (c.key === 'vietgap')
+              return (
+                <View key={c.key} style={styles.vietgapPill}>
+                  <KoolaText weight="800" style={styles.vietgapText}>
+                    VIETGAP
+                  </KoolaText>
+                </View>
+              );
+            return (
+              <View key={c.key} style={styles.certGeneric}>
+                <KoolaText weight="800" style={styles.certGenericText}>
+                  {c.label}
+                </KoolaText>
+              </View>
+            );
           })}
         </View>
       </View>
 
-      <View style={styles.dividerThin} />
+      <View style={styles.divider} accessible={false} />
 
       <View style={styles.row}>
-        <KoolaText weight="700" style={styles.certLabel}>CUNG ỨNG:</KoolaText>
-        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}> {mock.supplyCapacity ?? ''}</KoolaText>
+        <KoolaText weight="700" style={styles.certLabel}>
+          CUNG ỨNG:
+        </KoolaText>
+        <KoolaText weight="600" style={styles.rowValue} numberOfLines={1}>
+          {' '}
+          {mock.supplyCapacity ?? ''}
+        </KoolaText>
       </View>
 
-      <View style={styles.dividerStrong} />
+      <View style={styles.divider} accessible={false} />
 
       {/* Footer 1 dòng */}
       <View style={styles.footer}>
-        <MaterialIcons name="visibility" size={12} color="#475569" />
-        <KoolaText weight="600" style={styles.footerText}>{formatViews(mock.viewCount ?? 0)}</KoolaText>
-        <View style={styles.dotSm} />
-        <MaterialIcons name="chat-bubble" size={11} color="#475569" />
-        <KoolaText weight="600" style={styles.footerText}>{mock.positiveFeedbackCount ?? 0}</KoolaText>
+        <MaterialIcons name="visibility" size={12} color={tokens.semantic.text.faint} />
+        <KoolaText weight="600" style={styles.footerText}>
+          {formatViews(mock.viewCount ?? 0)}
+        </KoolaText>
+        <View style={styles.dotSm} accessible={false} />
+        <MaterialIcons name="chat-bubble" size={11} color={tokens.semantic.text.faint} />
+        <KoolaText weight="600" style={styles.footerText}>
+          {mock.positiveFeedbackCount ?? 0}
+        </KoolaText>
         <View style={{ flex: 1 }} />
-        <Pressable style={styles.ctaGreen} onPress={(e) => { e.stopPropagation(); onMessagePress(); }} accessibilityRole="button">
-          <MaterialIcons name="chat-bubble-outline" size={12} color="#FFFFFF" />
-          <KoolaText weight="800" style={styles.ctaText}>NHẮN TIN NGAY</KoolaText>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onMessagePress();
+          }}
+          onPressIn={(e) => {
+            e.stopPropagation();
+            setCtaPressed(true);
+          }}
+          onPressOut={() => setCtaPressed(false)}
+          disabled={!!messageDisabled || !!messageLoading}
+          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+          accessibilityRole="button"
+          accessibilityLabel="Nhắn tin ngay"
+          accessibilityState={{ disabled: !!messageDisabled || !!messageLoading, busy: !!messageLoading }}
+          style={[
+            styles.ctaGreen,
+            { backgroundColor: ctaPressed ? ctaPressedBg : ctaBg },
+            ctaPressed && styles.ctaPressed,
+            (messageDisabled || messageLoading) && styles.ctaDisabled,
+          ]}>
+          {messageLoading ? (
+            <ActivityIndicator size="small" color={tokens.semantic.text.onAction} />
+          ) : (
+            <>
+              <MaterialIcons name="chat-bubble-outline" size={12} color={tokens.semantic.text.onAction} />
+              <KoolaText weight="800" style={styles.ctaText}>
+                NHẮN TIN NGAY
+              </KoolaText>
+            </>
+          )}
         </Pressable>
       </View>
     </Pressable>
   );
 };
 
-const makeStyles = (scheme: 'light' | 'dark', semantic: SemanticTokens) =>
+const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     card: {
       ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
@@ -172,11 +347,16 @@ const makeStyles = (scheme: 'light' | 'dark', semantic: SemanticTokens) =>
       borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.subtle,
-      paddingHorizontal: 10,
-      paddingTop: 8,
-      paddingBottom: 8,
+      paddingHorizontal: 12,
+      paddingTop: 10,
+      paddingBottom: 10,
       marginBottom: 8,
       overflow: 'hidden',
+      gap: 8,
+    },
+    cardPressed: {
+      opacity: 0.96,
+      transform: [{ scale: 0.985 }],
     },
     washOverlay: {
       position: 'absolute',
@@ -184,12 +364,12 @@ const makeStyles = (scheme: 'light' | 'dark', semantic: SemanticTokens) =>
       left: 0,
       right: 0,
       height: '40%' as never,
-      backgroundColor: scheme === 'dark' ? 'rgba(251,146,60,0.06)' : '#FFF8EC',
-      opacity: scheme === 'dark' ? 1 : 0.45,
+      backgroundColor: scheme === 'dark' ? hexToRgba(semantic.action.primarySoft, 0.1) : hexToRgba(semantic.action.primarySoft, 0.06),
+      opacity: 1,
       borderTopLeftRadius: 12,
       borderTopRightRadius: 12,
     },
-    watermark: { position: 'absolute', right: -10, bottom: -14 },
+    watermark: { position: 'absolute', right: -10, bottom: -14, opacity: 1 },
     headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
     avatarImg: {
       borderWidth: StyleSheet.hairlineWidth,
@@ -198,45 +378,104 @@ const makeStyles = (scheme: 'light' | 'dark', semantic: SemanticTokens) =>
     },
     avatar42: { width: 42, height: 42, borderRadius: 21 },
     avatar38: { width: 38, height: 38, borderRadius: 19 },
-    companyName: { color: '#1E3A5F', fontSize: 12.5, lineHeight: 17 },
+    companyName: { color: semantic.text.primary, fontSize: 14, lineHeight: 18, fontWeight: '800' },
     flagBox: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 1,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: semantic.border.subtle,
-      borderRadius: 5,
-      paddingHorizontal: 4,
+      borderRadius: 6,
+      paddingHorizontal: 5,
       paddingVertical: 2,
       backgroundColor: semantic.surface.level0,
     },
-    flagValue: { fontSize: 7.5, color: '#0F172A' },
-    dividerStrong: { height: 1, backgroundColor: '#1E293B', marginTop: 7, opacity: 0.85 },
-    dividerThin: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DDCB', marginTop: 6 },
-    row: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-    rowLabel: { fontSize: 9.5, color: '#0F172A', letterSpacing: 0.2 },
-    rowValue: { fontSize: 9.5, color: '#334155', flex: 1 },
-    metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-    metaText: { fontSize: 9.5, color: '#0F172A' },
-    dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#94A3B8', marginHorizontal: 6 },
-    dotSm: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#CBD5E1', marginHorizontal: 6 },
-    certRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-    certLabel: { fontSize: 9.5, color: '#0F172A', letterSpacing: 0.15 },
-    certGroup: { flexDirection: 'row', alignItems: 'center', marginLeft: 6, flex: 1, flexWrap: 'wrap', gap: 4 as never },
-    certIso: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.3, borderColor: '#1E40AF', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
-    certIsoText: { fontSize: 7.5, color: '#1E40AF', lineHeight: 8, textAlign: 'center' as const },
-    certIsoSub: { fontSize: 5, color: '#1E40AF', lineHeight: 5.5, textAlign: 'center' as const },
-    certHaccp: { minWidth: 30, height: 24, borderRadius: 12, borderWidth: 1.2, borderColor: '#B45309', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFBEB', paddingHorizontal: 6 },
-    certHaccpText: { fontSize: 7, color: '#92400E', textAlign: 'center' as const },
-    certGap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#16A34A', borderRadius: 999, paddingLeft: 3, paddingRight: 6, height: 22, backgroundColor: '#FFFFFF' },
-    certGapG: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#16A34A', alignItems: 'center', justifyContent: 'center', marginRight: 3 },
-    certGapGText: { fontSize: 9, color: '#FFFFFF', lineHeight: 11 },
-    certGapText: { fontSize: 6.5, color: '#15803D' },
-    vietgap: { fontSize: 10, color: '#15803D' },
-    certGeneric: { borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 999, paddingHorizontal: 6, height: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
-    footer: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
-    footerText: { fontSize: 9.5, color: '#334155', marginLeft: 3 },
-    ctaGreen: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A9A4B', paddingHorizontal: 10, height: 26, borderRadius: 7 },
-    ctaText: { color: '#FFFFFF', marginLeft: 5, fontSize: 10, letterSpacing: 0.15 },
+    flagValue: { fontSize: 9, color: semantic.text.primary, fontWeight: '700' },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle },
+    row: { flexDirection: 'row', alignItems: 'center' },
+    rowLabel: { fontSize: 11, color: semantic.text.muted, fontWeight: '700', letterSpacing: 0.4 },
+    rowValue: { fontSize: 11, color: semantic.text.primary, fontWeight: '600', flex: 1 },
+    metaRow: { flexDirection: 'row', alignItems: 'center' },
+    metaText: { fontSize: 11, color: semantic.text.muted, fontWeight: '600' },
+    dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: semantic.border.strong, marginHorizontal: 6 },
+    dotSm: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: semantic.border.strong, marginHorizontal: 6 },
+    certRow: { flexDirection: 'row', alignItems: 'center' },
+    certLabel: { fontSize: 11, color: semantic.text.muted, fontWeight: '700', letterSpacing: 0.4 },
+    certGroup: { flexDirection: 'row', alignItems: 'center', marginLeft: 6, flex: 1, flexWrap: 'wrap', gap: 6 as never },
+    certIso: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.brand.blue,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: semantic.surface.level0,
+    },
+    certIsoText: { fontSize: 7.5, color: semantic.brand.blue, lineHeight: 8, textAlign: 'center' as const, fontWeight: '800' },
+    certIsoSub: { fontSize: 5, color: semantic.brand.blue, lineHeight: 5.5, textAlign: 'center' as const, fontWeight: '600' },
+    certHaccp: {
+      minWidth: 30,
+      height: 22,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.status.warning,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: semantic.surface.level0,
+      paddingHorizontal: 8,
+    },
+    certHaccpText: { fontSize: 7, color: semantic.status.warning, textAlign: 'center' as const, fontWeight: '800' },
+    certGap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.status.success,
+      borderRadius: 999,
+      paddingLeft: 3,
+      paddingRight: 8,
+      height: 22,
+      backgroundColor: semantic.surface.level0,
+      gap: 3,
+    },
+    certGapG: { width: 16, height: 16, borderRadius: 8, backgroundColor: semantic.status.success, alignItems: 'center', justifyContent: 'center' },
+    certGapGText: { fontSize: 9, color: semantic.text.onAction, lineHeight: 11, fontWeight: '800' },
+    certGapText: { fontSize: 10, color: semantic.status.success, fontWeight: '700' },
+    vietgapPill: {
+      height: 22,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.status.success,
+      backgroundColor: hexToRgba(semantic.status.success, 0.12),
+      paddingHorizontal: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    vietgapText: { fontSize: 10, color: semantic.status.success, fontWeight: '800' },
+    certGeneric: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      height: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: semantic.surface.level0,
+    },
+    certGenericText: { fontSize: 10, color: semantic.brand.blue, fontWeight: '800' },
+    footer: { flexDirection: 'row', alignItems: 'center' },
+    footerText: { fontSize: 11, color: semantic.text.faint, fontWeight: '600', marginLeft: 3, fontVariant: ['tabular-nums'] as never },
+    ctaGreen: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 44,
+      paddingHorizontal: 12,
+      borderRadius: 7,
+      gap: 5,
+    },
+    ctaPressed: { opacity: 0.96, transform: [{ scale: 0.97 }] },
+    ctaDisabled: { opacity: 0.55 },
+    ctaText: { color: semantic.text.onAction, fontSize: 11, letterSpacing: 0.4, fontWeight: '800' },
   });
 
 export default React.memo(BusinessCard);

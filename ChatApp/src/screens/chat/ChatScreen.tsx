@@ -13,6 +13,7 @@ import type { ChatScreenNavigationProp, ChatScreenRouteProp } from '../../naviga
 import { useAuth } from '../../contexts/AuthContext';
 import { socketService } from '../../services/socket/SocketService';
 import { getFromMemory } from '../../services/media/mediaCacheService';
+import { notifyNativePopping, performNativeBack } from '../../services/nativeBack';
 import type { Conversation, Message } from '../../types';
 import { useMessages } from './hooks/useMessages';
 import { useTargetMessage } from './hooks/useTargetMessage';
@@ -169,6 +170,8 @@ const ChatScreen: React.FC = () => {
     };
 
     const unsubscribeRemove = navigation.addListener('beforeRemove', () => {
+      // Pop is committed: native must never restore a shrunk back-card now.
+      notifyNativePopping();
       isRemoving = true;
       setIsComposerExiting(true);
       scheduleComposerExitRelease();
@@ -899,7 +902,7 @@ const ChatScreen: React.FC = () => {
     title: chatTitle,
     status: otherUserStatus,
     avatarKey: otherAvatarKey,
-    onBack: () => navigation.goBack(),
+    onBack: () => performNativeBack(() => navigation.goBack()),
     onHeaderPress: handleHeaderPress,
     onStartCall: handleStartCall,
   });
@@ -912,7 +915,7 @@ const ChatScreen: React.FC = () => {
       title: chatTitle,
       status: otherUserStatus,
       avatarKey: otherAvatarKey,
-      onBack: () => navigation.goBack(),
+      onBack: () => performNativeBack(() => navigation.goBack()),
       onHeaderPress: handleHeaderPress,
       onStartCall: handleStartCall,
     }),
@@ -973,7 +976,9 @@ const ChatScreen: React.FC = () => {
         The list is intentionally not clipped by the screen container — it
         extends behind the glass header so scrolled data blurs underneath it,
         like the outer tabs. Padding is reserved in listViewProps instead. */}
-    <View style={styles.container}>
+    {/* nativeID lets MainActivity locate this card for the native back
+        shrink (KoolaBack / predictive back); collapsable keeps it a real view. */}
+    <View style={styles.container} nativeID="chat-screen-card" collapsable={false}>
       <NotchHeader
         style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
         chat={inScreenChat}

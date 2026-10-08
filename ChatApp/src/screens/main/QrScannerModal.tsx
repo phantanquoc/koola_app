@@ -20,6 +20,7 @@ import UserAvatar from '../../components/UserAvatar';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
 import { KoolaText, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { acquireBackIntercept } from '../../services/nativeBack';
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
@@ -285,7 +286,12 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({
       onClose();
       return true;
     });
-    return () => handler.remove();
+    // JS consumes back while open → native skips any card shrink.
+    const releaseIntercept = acquireBackIntercept();
+    return () => {
+      handler.remove();
+      releaseIntercept();
+    };
   }, [visible, onClose]);
 
   if (!visible) return null;

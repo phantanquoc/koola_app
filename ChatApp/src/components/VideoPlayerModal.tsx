@@ -25,6 +25,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { getOrDownload, getFromMemory, invalidateKey } from '../services/media/mediaCacheService';
 import apiClient from '../services/api/apiService';
 import { koolaRadii } from '../ui';
+import { acquireBackIntercept } from '../services/nativeBack';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -235,7 +236,12 @@ const VideoPlayerModal: React.FC<Props> = ({ visible, uri, onClose }) => {
       handleClose();
       return true;
     });
-    return () => sub.remove();
+    // JS consumes back while open → native skips the Chat card shrink.
+    const releaseIntercept = acquireBackIntercept();
+    return () => {
+      sub.remove();
+      releaseIntercept();
+    };
   }, [visible, handleClose]);
 
   const handleProgress = useCallback(

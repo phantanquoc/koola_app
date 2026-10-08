@@ -4,6 +4,7 @@ import { KoolaText } from './KoolaText';
 import { useTheme } from './ThemeProvider';
 import { koolaOpacity, koolaRadii, koolaSpacing } from './theme';
 import type { SemanticTokens } from './tokens/semantic';
+import { acquireBackIntercept } from '../services/nativeBack';
 
 // App-root confirm dialog rendered as an in-tree absolute overlay instead of
 // react-native <Modal>. On RN 0.76 Fabric/Android the Modal's dialog window can
@@ -109,9 +110,14 @@ export const KoolaConfirmHost: React.FC = () => {
       settle(requestId, false);
       return true;
     });
+    // JS consumes back while the dialog is up → native skips the card shrink.
+    const releaseIntercept = acquireBackIntercept();
     // Android has no accessibilityViewIsModal; move TalkBack focus into the card.
     if (cardRef.current) AccessibilityInfo.sendAccessibilityEvent(cardRef.current, 'focus');
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      releaseIntercept();
+    };
   }, [requestId]);
 
   if (!request) return null;
