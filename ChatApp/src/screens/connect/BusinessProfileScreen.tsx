@@ -14,7 +14,7 @@ import type { ConnectTabStackParamList } from '../../navigation/types';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
-import { CATEGORY_LABELS } from './constants';
+import { CATEGORY_LABELS, relationshipLabel } from './constants';
 import {
   KoolaBadge,
   KoolaButton,
@@ -165,7 +165,7 @@ const BusinessProfileScreen: React.FC = () => {
             color={palette.muted}
           />
           <KoolaText variant="caption" tone="muted" weight="800" style={styles.typeRowLabel}>
-            {account.relationshipType === 'partner' ? 'Đối tác' : 'Nhà cung cấp'}
+            {relationshipLabel(account.relationshipType)}
           </KoolaText>
         </KoolaSurface>
       ) : null}

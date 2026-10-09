@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, FlatList, InteractionManager, ScrollView, RefreshControl, ActivityIndicator, StyleSheet, Pressable, TextInput } from 'react-native';
+import { View, FlatList, InteractionManager, RefreshControl, ActivityIndicator, StyleSheet, Pressable, TextInput, AccessibilityInfo } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import Animated, { Easing, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectTabStackParamList } from '../../navigation/types';
@@ -20,28 +21,98 @@ import { RELATIONSHIP_FILTERS } from './constants';
 import { VN_PROVINCES, normalizeVN } from '../../constants/provinces';
 import type { BusinessSort } from '../../types';
 import { KoolaChip, KoolaSheet, KoolaSkeleton, KoolaText, koolaRadii, useKoolaToast, useTheme } from '../../ui';
+import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
-import type { SemanticTokens } from '../../ui/tokens/semantic';
+import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
+import { HeaderDockAction } from '../../components/HeaderSearchDock';
 import { MOCK_BUSINESSES } from './mockBusinesses';
+import { filterMocks, mergeDiscoveryItems } from './mockFilters';
 import { BUSINESS_CATEGORIES } from './constants';
 
-const FILTER_ROW_H = 44;
-const FILTER_GAP = 8;
+const SUB_MENU_BAR_H = 40;
+/** Bar stack order — above the glass sheet (zIndex 10), below the header box (20). */
+const SUB_MENU_BAR_Z = 11;
 
-const FilterRow: React.FC<{ styles: ReturnType<typeof makeStyles>; activeRelationship: string; onSelectRelationship: (slug: string) => void }> = ({ styles, activeRelationship, onSelectRelationship }) => (
-  <View style={styles.filterRow}>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroller} contentContainerStyle={styles.chipScrollerContent}>
+/**
+ * Sub-menu relationship bar — the Connect counterpart of Chat's sub-tab bar.
+ * Text-only, three evenly divided items, no pill backgrounds and no horizontal
+ * scroller. Active item = primary-coloured label + the same 20×2 gradient
+ * underline Chat uses; the gradient is painted via SVG (not gradient-filled
+ * text, which would need either a masked-view dependency or `SvgText` and so
+ * bypass `KoolaText`'s font-scaling contract).
+ */
+const RelationshipSubMenu: React.FC<{ activeRelationship: string; onSelectRelationship: (slug: string) => void }> = ({ activeRelationship, onSelectRelationship }) => {
+  const { tokens, resolvedScheme } = useTheme();
+  const semantic = tokens.semantic;
+  const isDark = resolvedScheme === 'dark';
+  const gradOrange = isDark ? '#FF9A3D' : '#FF8A1A';
+  const gradBlue = isDark ? '#4D8DF7' : '#2563EB';
+  const instanceId = React.useId();
+  const gradId = `connectSubMenu-${instanceId.replace(/:/g, '_')}`;
+
+  return (
+    <View style={subMenuStyles.row}>
       {RELATIONSHIP_FILTERS.map((rel) => {
         const selected = activeRelationship === rel.slug;
         return (
-          <Pressable key={rel.slug} accessibilityRole="button" accessibilityLabel={rel.label} accessibilityState={{ selected }} onPress={() => { if (selected && rel.slug !== 'all') onSelectRelationship('all'); else if (!selected) onSelectRelationship(rel.slug); }} hitSlop={4} style={[styles.rowChip, selected && styles.rowChipActive]}>
-            <KoolaText variant="caption" weight="800" tone={selected ? 'surface' : 'muted'} numberOfLines={1}>{rel.label}</KoolaText>
+          <Pressable
+            key={rel.slug}
+            accessibilityRole="button"
+            accessibilityLabel={rel.label}
+            accessibilityState={{ selected }}
+            onPress={() => { if (selected && rel.slug !== 'all') onSelectRelationship('all'); else if (!selected) onSelectRelationship(rel.slug); }}
+            style={subMenuStyles.item}>
+            <KoolaText
+              variant="caption"
+              weight="700"
+              numberOfLines={1}
+              style={{ color: selected ? semantic.action.primary : semantic.text.muted }}>
+              {rel.label}
+            </KoolaText>
+            {selected ? (
+              <View style={subMenuStyles.underline}>
+                <Svg width={20} height={2} viewBox="0 0 20 2">
+                  <Defs>
+                    <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+                      <Stop offset="0" stopColor={gradOrange} />
+                      <Stop offset="1" stopColor={gradBlue} />
+                    </SvgLinearGradient>
+                  </Defs>
+                  <Rect x="0" y="0" width="20" height="2" rx="1" fill={`url(#${gradId})`} />
+                </Svg>
+              </View>
+            ) : null}
           </Pressable>
         );
       })}
-    </ScrollView>
-  </View>
-);
+    </View>
+  );
+};
+
+const subMenuStyles = StyleSheet.create({
+  // No `gap`: RN 0.76/Hermes breaks row containers that combine `gap` with
+  // `flex: 1` children. Space-between + child flex handles the division.
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: SUB_MENU_BAR_H,
+    paddingHorizontal: 4,
+  },
+  item: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+  },
+  underline: {
+    position: 'absolute',
+    bottom: 5,
+    width: 20,
+    height: 2,
+    borderRadius: 1,
+  },
+});
 
 const SORT_OPTIONS: { value: BusinessSort; label: string }[] = [
   { value: 'latest', label: 'Mới nhất' },
@@ -118,16 +189,32 @@ const ConnectHomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const semantic = tokens.semantic;
-  const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
+  const styles = useMemo(() => makeStyles(), []);
   const isDark = resolvedScheme === 'dark';
   const blockH = getChromeBoxHeight(insets.top);
-  const filterTop = blockH + FILTER_GAP;
-  const listTopPad = blockH + FILTER_GAP + FILTER_ROW_H + FILTER_GAP;
+  const subMenuTop = blockH;
+  // Resting inset = header block + sub-menu bar. No filter-row strip: the
+  // sub-menu bar IS the strip, and it collapses into the header on scroll.
+  const listTopPad = blockH + SUB_MENU_BAR_H;
 
   const hiddenProgress = useSharedValue(0);
   const scrolledProgress = useSharedValue(0);
   const prevOffsetY = useSharedValue(0);
   const travel = useSharedValue(0);
+  // UI-thread copy of the platform reduce-motion flag. Read synchronously by the
+  // scroll worklet (calling prefersReducedMotion() inside a worklet would hop
+  // threads), kept in sync when the system setting toggles mid-session.
+  const reduceMotionSV = useSharedValue(prefersReducedMotion());
+  useEffect(() => {
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled: boolean) => {
+      reduceMotionSV.value = enabled;
+    });
+    return () => {
+      if (sub && typeof (sub as { remove?: () => void }).remove === 'function') {
+        (sub as { remove: () => void }).remove();
+      }
+    };
+  }, [reduceMotionSV]);
 
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -136,6 +223,15 @@ const ConnectHomeScreen: React.FC = () => {
         scrolledProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
       } else if (offsetY <= 4 && scrolledProgress.value !== 0) {
         scrolledProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+      }
+      // Reduce-motion: keep the sub-menu bar pinned visible and skip every
+      // scroll-driven animation (the lift shadow above still applies — it is
+      // depth, not motion).
+      if (reduceMotionSV.value) {
+        if (hiddenProgress.value !== 0) hiddenProgress.value = 0;
+        travel.value = 0;
+        prevOffsetY.value = offsetY;
+        return;
       }
       if (offsetY <= 4) {
         if (hiddenProgress.value !== 0) {
@@ -162,13 +258,13 @@ const ConnectHomeScreen: React.FC = () => {
     },
   });
 
-  const filterVisibilityStyle = useAnimatedStyle(() => {
+  const subMenuVisibilityStyle = useAnimatedStyle(() => {
     const t = Math.min(1, Math.max(0, hiddenProgress.value));
     const h = t * t * (3 - 2 * t);
     return {
-      height: FILTER_ROW_H * (1 - h),
+      height: SUB_MENU_BAR_H * (1 - h),
       opacity: 1 - h,
-      transform: [{ translateY: -FILTER_ROW_H * h }],
+      transform: [{ translateY: -SUB_MENU_BAR_H * h }],
     };
   }, []);
 
@@ -200,23 +296,13 @@ const ConnectHomeScreen: React.FC = () => {
   });
   const { handleMessage } = useAccountActions(navigation);
   const displayItems = useMemo(() => {
-    const hasActive =
-      effectiveCategory || activeProvince || (activeRelationship !== 'all') || activeSort !== 'latest';
-    let mocks = MOCK_BUSINESSES as any[];
-    if (hasActive) {
-      mocks = mocks.filter((m) => {
-        if (effectiveCategory && m.businessCategory !== effectiveCategory) return false;
-        if (activeProvince && m.province !== activeProvince) return false;
-        if (activeRelationship !== 'all' && m.relationshipType && m.relationshipType !== activeRelationship) return false;
-        return true;
-      });
-      if (activeSort === 'popular') mocks = [...mocks].sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0));
-      if (activeSort === 'name') mocks = [...mocks].sort((a, b) => a.displayName.localeCompare(b.displayName, 'vi'));
-    }
-    const realIds = new Set(mocks.map((m) => m._id));
-    const reals = (items as any[]).filter((it) => !realIds.has(it._id));
-    if (items.length === 0) return mocks as any;
-    return [...mocks, ...reals] as any;
+    const mocks = filterMocks(MOCK_BUSINESSES, {
+      category: effectiveCategory,
+      province: activeProvince || undefined,
+      relationship: activeRelationship,
+      sort: activeSort,
+    });
+    return mergeDiscoveryItems(mocks, items as unknown as typeof mocks);
   }, [items, effectiveCategory, activeProvince, activeRelationship, activeSort]);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
   const handleNavigateProfile = useCallback((userId: string) => { (navigation as any).navigate('Profile', { userId }); }, [navigation]);
@@ -229,11 +315,67 @@ const ConnectHomeScreen: React.FC = () => {
     <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
   ), [navigation, handleMessage]);
 
+  const activeSecondaryFilterCount =
+    (activeSort !== 'latest' ? 1 : 0) + (activeProvince ? 1 : 0) + (activeCategory !== null ? 1 : 0);
+  const handleQrPress = useCallback(() => setQrVisible(true), []);
+  const handleFilterPress = useCallback(() => setFilterSheetOpen(true), []);
+
+  // Sheets are hosted once and stay mounted only while open; shared by the
+  // normal and error branches so both states keep the dock actions working.
+  const bottomSheets = (
+    <>
+      {filterSheetOpen ? <ConnectFilterSheet styles={styles} activeCategory={activeCategory} activeProvince={activeProvince} activeSort={activeSort} hasActiveFilters={activeSecondaryFilterCount > 0} onToggleCategory={toggleCategory} onProvinceChange={setActiveProvince} onSortChange={setActiveSort} onClear={handleClearFilters} onClose={closeFilterSheet} bottomInset={insets.bottom} /> : null}
+      <QrScannerModal visible={qrVisible} onClose={handleQrClose} onNavigateProfile={handleNavigateProfile} onNavigateChat={handleNavigateChat} />
+    </>
+  );
+
+  // Single chrome composition shared by the normal list, the skeleton, and the
+  // error branch — glass-less header box (the sheet paints the glass), the
+  // unified glass sheet, and the text sub-menu bar. Extracted so the three
+  // states cannot drift into different chrome shapes.
+  const chrome = contentReady ? (
+    <>
+      <ChromeGlassSheet blockH={blockH} barH={SUB_MENU_BAR_H} hiddenProgress={hiddenProgress} scrolledProgress={scrolledProgress} />
+      <ChromeHeaderBox
+        insetsTop={insets.top}
+        isDark={isDark}
+        contentReady={contentReady}
+        withGlass={false}
+        onSearchPress={handleSearchPress}
+        hiddenProgress={hiddenProgress}
+        rightActions={
+          <>
+            <HeaderDockAction
+              icon="qr-code-scanner"
+              onPress={handleQrPress}
+              accessibilityLabel="Quét mã QR"
+              accessibilityHint="Mở quét mã QR"
+            />
+            <HeaderDockAction
+              icon="filter-alt"
+              onPress={handleFilterPress}
+              accessibilityLabel="Bộ lọc"
+              accessibilityHint="Mở bộ lọc tìm kiếm"
+              badgeCount={activeSecondaryFilterCount}
+              badgeAccessibilityText={`${activeSecondaryFilterCount} bộ lọc đang áp dụng`}
+            />
+          </>
+        }
+      />
+      <Animated.View
+        pointerEvents="box-none"
+        style={[{ position: 'absolute', top: subMenuTop, left: 0, right: 0, overflow: 'hidden', zIndex: SUB_MENU_BAR_Z }, subMenuVisibilityStyle]}>
+        <RelationshipSubMenu activeRelationship={activeRelationship} onSelectRelationship={handleSelectRelationship} />
+      </Animated.View>
+    </>
+  ) : null;
+
   if (error && displayItems.length === 0 && !loading) {
     return (
       <View style={styles.screen}>
-        <ChromeHeaderBox insetsTop={insets.top} isDark={isDark} contentReady={contentReady} onSearchPress={handleSearchPress} />
+        {chrome}
         <View style={{ paddingTop: listTopPad }}><ListErrorState message={error} onRetry={refresh} /></View>
+        {bottomSheets}
       </View>
     );
   }
@@ -241,17 +383,12 @@ const ConnectHomeScreen: React.FC = () => {
   return (
     <View style={styles.screen}>
       {!contentReady ? (
-        <View style={[styles.screen, { paddingTop: blockH }]}>
+        <View style={[styles.screen, { paddingTop: listTopPad }]}>
           <View style={styles.contentInset}>
-            <KoolaSkeleton width="100%" height={36} radius={koolaRadii.pill} />
-            <View style={{ flexDirection: 'row', marginTop: FILTER_GAP, alignItems: 'center' }}>
-              <KoolaSkeleton width={80} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={90} height={FILTER_ROW_H} radius={koolaRadii.pill} style={{ marginRight: 8 }} />
-              <KoolaSkeleton width={110} height={FILTER_ROW_H} radius={koolaRadii.pill} />
-            </View>
+            <KoolaSkeleton width="100%" height={SUB_MENU_BAR_H} radius={koolaRadii.pill} />
           </View>
           <View style={styles.listContent}>
-            {[0, 1, 2].map((i) => <KoolaSkeleton key={i} width="100%" height={88} radius={koolaRadii.md} style={{ marginTop: i === 0 ? FILTER_GAP : 6 }} />)}
+            {[0, 1, 2].map((i) => <KoolaSkeleton key={i} width="100%" height={88} radius={koolaRadii.md} style={{ marginTop: i === 0 ? 8 : 6 }} />)}
           </View>
         </View>
       ) : (
@@ -267,31 +404,18 @@ const ConnectHomeScreen: React.FC = () => {
           scrollEventThrottle={16}
         />
       )}
-      {contentReady ? (
-        <>
-          <ChromeHeaderBox insetsTop={insets.top} isDark={isDark} contentReady={contentReady} onSearchPress={handleSearchPress} hiddenProgress={hiddenProgress} scrolledProgress={scrolledProgress} />
-          <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: filterTop, left: 0, right: 0, paddingHorizontal: 12, overflow: 'hidden' }, filterVisibilityStyle]}>
-            <FilterRow styles={styles} activeRelationship={activeRelationship} onSelectRelationship={handleSelectRelationship} />
-          </Animated.View>
-        </>
-      ) : null}
-      {filterSheetOpen ? <ConnectFilterSheet styles={styles} activeCategory={activeCategory} activeProvince={activeProvince} activeSort={activeSort} hasActiveFilters={activeCategory !== null || Boolean(activeProvince) || activeSort !== 'latest'} onToggleCategory={toggleCategory} onProvinceChange={setActiveProvince} onSortChange={setActiveSort} onClear={handleClearFilters} onClose={closeFilterSheet} bottomInset={insets.bottom} /> : null}
-      <QrScannerModal visible={qrVisible} onClose={handleQrClose} onNavigateProfile={handleNavigateProfile} onNavigateChat={handleNavigateChat} />
+      {chrome}
+      {bottomSheets}
     </View>
   );
 };
 
-const makeStyles = (semantic: SemanticTokens, _scheme: 'light' | 'dark') =>
+const makeStyles = () =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: 'transparent' },
     screenTransparent: { flex: 1, backgroundColor: 'transparent' },
     listContent: { paddingHorizontal: 6 },
     contentInset: { paddingHorizontal: 12 },
-    filterRow: { flexDirection: 'row', alignItems: 'center', height: FILTER_ROW_H },
-    chipScroller: { flex: 1 },
-    chipScrollerContent: { alignItems: 'center', paddingRight: 12 },
-    rowChip: { height: 36, minHeight: 36, borderRadius: koolaRadii.pill, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.strong, marginRight: 8 },
-    rowChipActive: { backgroundColor: semantic.action.primary, borderColor: semantic.action.primary },
     sheetContent: { paddingHorizontal: 20, paddingTop: 4 },
     sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
     sheetClearBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },

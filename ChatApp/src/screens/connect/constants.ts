@@ -1,10 +1,34 @@
 import type { BusinessCategory } from '../../types';
 
+/**
+ * Display names for `User.relationshipType`.
+ *
+ * Single source of truth: every surface that renders this field (Connect
+ * sub-menu bar, EmptyConnect, BusinessProfileScreen badge, AccountListScreen
+ * sign-up picker) MUST read from here so the same slug never shows two names.
+ * The slugs themselves are unchanged — the backend enum stays
+ * `'partner' | 'supplier'`.
+ */
+export const RELATIONSHIP_LABELS: Record<'partner' | 'supplier', string> = {
+  partner: 'Yêu cầu mua',
+  supplier: 'Yêu cầu bán',
+};
+
 export const RELATIONSHIP_FILTERS = [
   { slug: 'all', label: 'Tất cả' },
-  { slug: 'partner', label: 'Đối tác' },
-  { slug: 'supplier', label: 'Nhà cung cấp' },
+  { slug: 'partner', label: RELATIONSHIP_LABELS.partner },
+  { slug: 'supplier', label: RELATIONSHIP_LABELS.supplier },
 ];
+
+/**
+ * Safe lookup for a runtime `relationshipType` value (which arrives as a plain
+ * string from API/nav params). Returns `undefined` for a missing or unknown
+ * slug so callers can fall back rather than render "undefined".
+ */
+export function relationshipLabel(slug?: string | null): string | undefined {
+  if (!slug) return undefined;
+  return RELATIONSHIP_LABELS[slug as 'partner' | 'supplier'];
+}
 
 export const BUSINESS_CATEGORIES: BusinessCategory[] = [
   { slug: 'all', label: 'Tất cả', icon: 'apps' },

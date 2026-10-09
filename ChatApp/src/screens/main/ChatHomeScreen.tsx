@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
-import { LightFieldBackground } from './components/personal/LightFieldBackground';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
@@ -20,6 +19,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
+import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
+import { HeaderDockAction } from '../../components/HeaderSearchDock';
 import type { ChatSubTabParamList, ChatTabStackParamList } from '../../navigation/types';
 import { onChatHomeReset } from '../../navigation/chatTabReset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -287,64 +288,29 @@ const tabItemStyles = {
   },
 };
 
-// ─── Floating frosted chrome ─────────────────────────────────────────────────
-// Header (wordmark + dock) và sub-tab bar dùng CHUNG 1 tấm kính phủ màu duy
-// nhất (render trong CustomTabBar, nằm dưới header): tint trắng mờ + bloom
-// LightField — giữ đúng hiệu ứng cũ, KHÔNG blur. Một tấm = không đường nối,
-// bloom bắt đầu từ y=0 nên khớp nền trang. Cảm giác "nổi" đến từ bóng đổ
-// (ChromeShadow) hiện dần khi có data cuộn phía sau.
-//
-// Khi ẩn sub-tab bar, tấm kính chỉ TRƯỢT lên (translateY) — không đổi height.
-const CHROME_TINT_LIGHT = 'rgba(255,255,255,0.84)';
-const CHROME_TINT_DARK = 'rgba(15,20,25,0.72)';
-const CHROME_BLOOM_OPACITY = 0.72;
-const CHROME_FALLBACK_LIGHT = '#FFFFFF';
-const CHROME_FALLBACK_DARK = '#1C2026';
-/** Chiều cao dải bóng đổ dưới chrome khi "nổi" lên khỏi nội dung. */
-const CHROME_SHADOW_H = 14;
-
-/**
- * Scrim dọc phủ trên tấm kính trong vùng header: chỉ phủ vùng status bar,
- * tan dần về 0 tại `solidUntil` (đáy status bar) — không phủ wordmark/dock;
- * phần còn lại tới đáy block (đáy dock) giữ đúng độ trong của tấm kính.
- * Nằm trong header block cố định nên không trượt theo sub-tab bar.
- * @deprecated moved to ChromeHeaderBox — kept for reference
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const ChromeEdgeScrim: React.FC<{ isDark: boolean; height: number; solidUntil: number }> = ({
-  isDark,
-  height,
-  solidUntil,
-}) => {
-  const color = isDark ? CHROME_FALLBACK_DARK : CHROME_FALLBACK_LIGHT;
-  const solidStop = Math.min(1, Math.max(0, solidUntil / height));
-  return (
-    <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height={height}>
-      <Defs>
-        <SvgLinearGradient id="chatChromeEdgeScrim" x1="0" y1="0" x2="0" y2="1">
-          {/* Nhẹ: chỉ đỡ thêm cho giờ/pin; từ wordmark trở xuống giữ đúng
-              độ trong của tấm kính (user muốn vẫn thấy data mờ phía sau). */}
-          <Stop offset="0" stopColor={color} stopOpacity="0.5" />
-          <Stop offset={String(solidStop)} stopColor={color} stopOpacity="0" />
-          <Stop offset="1" stopColor={color} stopOpacity="0" />
-        </SvgLinearGradient>
-      </Defs>
-      <Rect width="100%" height={height} fill="url(#chatChromeEdgeScrim)" />
-    </Svg>
-  );
+// Container nằm trong bar wrapper (đã absolute top=blockH), nên không tự absolute top nữa.
+const barStyles = {
+  container: {
+    position: 'relative' as const,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 4,
+    paddingTop: 0,
+    overflow: 'hidden' as const,
+  },
+  row: {
+    flexDirection: 'row' as const,
+    alignItems: 'stretch' as const,
+    justifyContent: 'space-between' as const,
+    position: 'relative' as const,
+  },
 };
 
-const ChromeShadow: React.FC<{ isDark: boolean }> = ({ isDark }) => (
-  <Svg width="100%" height={CHROME_SHADOW_H}>
-    <Defs>
-      <SvgLinearGradient id="chatChromeShadow" x1="0" y1="0" x2="0" y2="1">
-        <Stop offset="0" stopColor="#000000" stopOpacity={isDark ? '0.36' : '0.12'} />
-        <Stop offset="1" stopColor="#000000" stopOpacity="0" />
-      </SvgLinearGradient>
-    </Defs>
-    <Rect width="100%" height={CHROME_SHADOW_H} fill="url(#chatChromeShadow)" />
-  </Svg>
-);
+// ─── Floating frosted chrome ─────────────────────────────────────────────────
+// Header (wordmark + dock) và sub-tab bar dùng CHUNG 1 tấm kính phủ màu duy
+// nhất, render bởi `ChromeGlassSheet` (single source: tint + bloom + hairline +
+// bóng đổ + height animation). Một tấm = không đường nối, bloom bắt đầu từ y=0
+// nên khớp nền trang. Cảm giác "nổi" đến từ bóng đổ hiện dần khi có data cuộn
+// phía sau.
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
 // Overlays the sub-tab scenes (absolute, directly below the glass header block)
@@ -373,49 +339,6 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
 
   const isDark = resolvedScheme === 'dark';
 
-  const barStyles = useMemo(() => ({
-    // Kính phủ y=0 tới đáy sub-tab bar; height anim riêng qua glassHeightStyle (wrapper không bọc kính nữa).
-    glass: {
-      position: 'absolute' as const,
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 10,
-    },
-    glassClip: {
-      ...StyleSheet.absoluteFillObject,
-      overflow: 'hidden' as const,
-    },
-    hairline: {
-      position: 'absolute' as const,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: semantic.border.subtle,
-    },
-    shadow: {
-      position: 'absolute' as const,
-      left: 0,
-      right: 0,
-      top: '100%' as const,
-    },
-    // Container nằm trong bar wrapper (đã absolute top=blockH), nên không tự absolute top nữa.
-    container: {
-      position: 'relative' as const,
-      backgroundColor: 'transparent',
-      paddingHorizontal: 4,
-      paddingTop: 0,
-      overflow: 'hidden' as const,
-    },
-    row: {
-      flexDirection: 'row' as const,
-      alignItems: 'stretch' as const,
-      justifyContent: 'space-between' as const,
-      position: 'relative' as const,
-    },
-  }), [semantic]);
-
   // Wrapper chỉ bọc vùng sub-tab (top=blockH) để overflow:hidden cắt icon
   // trước khi nó trượt vào header. Kính đứng yên riêng ở y=0 → không translate.
   const barVisibilityStyle = useAnimatedStyle(() => {
@@ -433,22 +356,6 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
     const h = t * t * (3 - 2 * t);
     return { height: CHAT_SUB_TAB_BAR_HEIGHT * (1 - h) };
   }, [visibilityContext]);
-
-  const glassHeightStyle = useAnimatedStyle(() => {
-    const t = visibilityContext?.hiddenProgress.value ?? 0;
-    const h = t * t * (3 - 2 * t);
-    return { height: top + CHAT_SUB_TAB_BAR_HEIGHT * (1 - h) };
-  }, [visibilityContext]);
-
-  // Bóng đổ = chrome "nổi" khỏi nội dung; chỉ hiện khi có data cuộn phía sau.
-  const shadowStyle = useAnimatedStyle(() => ({
-    opacity: visibilityContext?.scrolledProgress.value ?? 0,
-  }), [visibilityContext]);
-
-  // Chỉ 1 cách phân tách tại 1 thời điểm: hairline lúc nghỉ, bóng đổ lúc cuộn.
-  const hairlineStyle = useAnimatedStyle(() => ({
-    opacity: 1 - (visibilityContext?.scrolledProgress.value ?? 0),
-  }), [visibilityContext]);
 
   useEffect(() => {
     if (state.index !== 0 && visibilityContext) {
@@ -468,23 +375,12 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
 
   return (
     <>
-      <Animated.View pointerEvents="none" style={[barStyles.glass, glassHeightStyle]}>
-        <View style={barStyles.glassClip}>
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? CHROME_TINT_DARK : CHROME_TINT_LIGHT },
-            ]}
-          />
-          <View style={[StyleSheet.absoluteFill, { opacity: CHROME_BLOOM_OPACITY }]}>
-            <LightFieldBackground windowSized />
-          </View>
-          <Animated.View style={[barStyles.hairline, hairlineStyle]} />
-        </View>
-        <Animated.View style={[barStyles.shadow, shadowStyle]}>
-          <ChromeShadow isDark={isDark} />
-        </Animated.View>
-      </Animated.View>
+      <ChromeGlassSheet
+        blockH={top}
+        barH={CHAT_SUB_TAB_BAR_HEIGHT}
+        hiddenProgress={visibilityContext?.hiddenProgress}
+        scrolledProgress={visibilityContext?.scrolledProgress}
+      />
       <Animated.View
         pointerEvents="box-none"
         style={[
@@ -699,28 +595,18 @@ const ChatHomeScreen: React.FC = () => {
           hiddenProgress={hiddenProgress}
           rightActions={
             <>
-              <Pressable
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Quét mã QR"
+              <HeaderDockAction
+                icon="qr-code-scanner"
                 onPress={handleQrPress}
-                android_ripple={{ color: tokens.semantic.action.primarySoft, borderless: false, radius: 24 }}
-                style={{ width: 48, height: '100%', borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <View style={{ transform: [{ scale: 0.82 }] }}>
-                  <MaterialIcons name="qr-code-scanner" size={22} color={tokens.semantic.action.primary} />
-                </View>
-              </Pressable>
-              <Pressable
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Tạo nhóm"
+                accessibilityLabel="Quét mã QR"
+                accessibilityHint="Mở quét mã QR"
+              />
+              <HeaderDockAction
+                icon="add"
                 onPress={handleAddPress}
-                android_ripple={{ color: tokens.semantic.action.primarySoft, borderless: false, radius: 24 }}
-                style={{ width: 48, height: '100%', borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <View style={{ transform: [{ scale: 0.82 }] }}>
-                  <MaterialIcons name="add" size={22} color={tokens.semantic.action.primary} />
-                </View>
-              </Pressable>
+                accessibilityLabel="Tạo nhóm"
+                accessibilityHint="Tạo nhóm mới"
+              />
             </>
           }
         />

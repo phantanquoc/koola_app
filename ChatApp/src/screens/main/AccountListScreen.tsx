@@ -34,7 +34,7 @@ import {
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import type { Account, CreateBusinessAccountPayload } from '../../types';
-import { BUSINESS_CATEGORIES } from '../connect/constants';
+import { BUSINESS_CATEGORIES, RELATIONSHIP_LABELS } from '../connect/constants';
 import { useDocumentUpload } from './hooks/useDocumentUpload';
 import type { DocumentUploadStatus } from './hooks/useDocumentUpload';
 
@@ -55,9 +55,11 @@ const getVerificationColor = (status: string, p: Palette): string => {
   }
 };
 
+// Labels come from the shared map so the sign-up picker shows exactly what
+// buyers see on Connect (a business self-declaring `supplier` reads "Yêu cầu bán").
 const RELATIONSHIP_OPTIONS: { value: 'partner' | 'supplier'; label: string }[] = [
-  { value: 'partner', label: 'Đối tác' },
-  { value: 'supplier', label: 'Nhà cung cấp' },
+  { value: 'partner', label: RELATIONSHIP_LABELS.partner },
+  { value: 'supplier', label: RELATIONSHIP_LABELS.supplier },
 ];
 
 const FORM_CATEGORIES = BUSINESS_CATEGORIES.filter((c) => c.slug !== 'all');

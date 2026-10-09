@@ -14,8 +14,14 @@ const dockStyles = StyleSheet.create({
     height: DOCK_PILL_H,
     paddingHorizontal: 4,
     borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
     backgroundColor: 'transparent',
+  },
+  // Only the animated fill is clipped to the pill; the host itself must not clip
+  // or the dock actions' count badges (top -4 / right -8) get cut in half.
+  fillClip: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
   },
   searchBtn: {
     flex: 1,
@@ -36,7 +42,85 @@ const dockStyles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  iconBtnHost: {
+    width: 48,
+    height: '100%',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: koolaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
+
+export type HeaderDockActionProps = {
+  /** MaterialIcons glyph name, rendered at size 22 in the primary action color. */
+  icon: string;
+  onPress: () => void;
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+  /** Optional count badge; hidden when 0 or undefined. */
+  badgeCount?: number;
+  /** Appended to the accessibility label when a badge is shown. */
+  badgeAccessibilityText?: string;
+};
+
+/**
+ * Dock icon action — the shared geometry for every right-side action in a
+ * `HeaderSearchDock` pill: 48dp wide, full height, pill radius, glyph 22 scaled
+ * 0.82. Chat renders QR + add through it, Connect renders QR + filter.
+ *
+ * The Pressable clips its own ripple (`overflow: 'hidden'`); the badge therefore
+ * lives on the unclipped host View beside it, positioned `top -4 / right -8`.
+ */
+export const HeaderDockAction: React.FC<HeaderDockActionProps> = ({
+  icon,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+  badgeCount = 0,
+  badgeAccessibilityText,
+}) => {
+  const { tokens } = useTheme();
+  const sem = tokens.semantic;
+  const [pressed, setPressed] = useState(false);
+  const showBadge = badgeCount > 0;
+  const resolvedLabel = showBadge && badgeAccessibilityText
+    ? `${accessibilityLabel}, ${badgeAccessibilityText}`
+    : accessibilityLabel;
+
+  return (
+    <View style={dockStyles.iconBtnHost}>
+      <Pressable
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={resolvedLabel}
+        accessibilityHint={accessibilityHint}
+        onPress={onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        android_ripple={{ color: sem.action.primarySoft, borderless: false, radius: 24 }}
+        style={[dockStyles.iconBtn, pressed ? { backgroundColor: sem.action.primarySoft, opacity: 0.82 } : null]}>
+        <View style={{ transform: [{ scale: 0.82 }] }}>
+          <MaterialIcons name={icon} size={22} color={sem.action.primary} />
+        </View>
+      </Pressable>
+      {showBadge ? (
+        <View pointerEvents="none" style={[dockStyles.badge, { backgroundColor: sem.status.danger }]}>
+          <KoolaText variant="caption" weight="700" style={{ color: sem.text.onAction, fontSize: 10, lineHeight: 12 }} numberOfLines={1}>
+            {badgeCount > 99 ? '99+' : String(badgeCount)}
+          </KoolaText>
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 /**
  * Dock Tìm kiếm | QR | Tạo nhóm — dùng chung ChatHome + PersonalHome.
@@ -107,10 +191,11 @@ export const HeaderSearchDock: React.FC<{
 
   return (
     <View style={dockStyles.host}>
-      <Animated.View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: sem.border.subtle }, fillFadeStyle]}
-      />
+      <View pointerEvents="none" style={dockStyles.fillClip}>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { backgroundColor: sem.border.subtle }, fillFadeStyle]}
+        />
+      </View>
       <View style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Pressable
           hitSlop={8}

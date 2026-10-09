@@ -15,11 +15,19 @@ The Kết nối discovery surface SHALL list `User` documents where `accountType
 - **THEN** it SHALL NOT appear in the discovery list
 
 ### Requirement: Discovery Filters Preserved
-The discovery surface SHALL preserve the existing filtering and navigation: relationship sub-tabs (`partner` / `supplier` via `relationshipType`), province filter, category filter (`businessCategory`), sort, and text search by business name.
+The discovery surface SHALL preserve the existing filtering and navigation: relationship sub-menu items (`partner` / `supplier` via `relationshipType`), province filter, category filter (`businessCategory`), sort, and text search by business name.
+
+The relationship items SHALL be labelled `Tất cả`, `Yêu cầu mua` (slug `partner`), and `Yêu cầu bán` (slug `supplier`). These display labels SHALL come from a single shared label map, and every surface that renders a business's `relationshipType` SHALL read from that same map so the field never displays two different names for the same value. The underlying slugs and the backend `relationshipType` enum SHALL remain `'partner' | 'supplier'`.
+
+When a relationship filter other than `all` is active, businesses that carry no `relationshipType` SHALL be excluded from the displayed list. This SHALL hold for both API-supplied and mock-supplied businesses.
 
 #### Scenario: Filter by relationship type
-- **WHEN** the user selects the "Đối tác" sub-tab
+- **WHEN** the user selects the "Yêu cầu mua" sub-menu item
 - **THEN** the list SHALL contain only verified business accounts with `relationshipType: 'partner'`
+
+#### Scenario: Business without a relationship is excluded when filtering
+- **WHEN** a relationship filter other than `all` is active and a business has no `relationshipType`
+- **THEN** that business SHALL NOT appear in the displayed list
 
 #### Scenario: Filter by province and category
 - **WHEN** the user applies a province and a category filter
@@ -28,6 +36,10 @@ The discovery surface SHALL preserve the existing filtering and navigation: rela
 #### Scenario: Search by name
 - **WHEN** the user searches a business name substring
 - **THEN** the list SHALL contain matching verified business accounts
+
+#### Scenario: Relationship label is consistent across surfaces
+- **WHEN** a business has `relationshipType: 'supplier'`
+- **THEN** every surface that renders its relationship name SHALL display `Yêu cầu bán`
 
 ### Requirement: Direct Messaging With The Business Identity
 Card actions in the discovery surface ("Nhắn tin" / "Kết nối") SHALL open a direct conversation with the business account id itself (not with a human owner), using the existing direct-conversation flow.
@@ -54,28 +66,3 @@ The system SHALL deliver notifications for all accounts a device's root owns thr
 #### Scenario: Per-account badge distinction
 - **WHEN** notifications exist for more than one owned account
 - **THEN** the UI SHALL distinguish which account each notification belongs to
-
-
-### Requirement: Connect Home Header Uses Shared Frosted Box With Search-Only Dock
-
-The Kết nối home header SHALL render the shared `FrostedHeaderBox` (wordmark 87x15 at TOP 1, ChromeEdgeScrim, box height `insets.top + 58`, dock pill 36) as its frosted chrome. Its dock SHALL show only the search action with no right icon buttons; per-tab icons are reserved for a follow-up and SHALL NOT be added in this change. While `ConnectHome` is focused, the stack-level `NotchHeader` wordmark SHALL be hidden. The list content SHALL start below the shared box plus the filter row reserve.
-
-#### Scenario: Connect header matches Chat geometry
-
-- **WHEN** the user switches between the Trò chuyện and Kết nối tabs at rest
-- **THEN** the wordmark size and position, the dock pill height and position, and the glass scrim appearance SHALL be identical between the two tabs
-
-#### Scenario: Connect dock is search-only
-
-- **WHEN** the user views the Kết nối header pill
-- **THEN** only the search action is visible; no QR or add icons are present
-
-#### Scenario: No double wordmark on Connect
-
-- **WHEN** `ConnectHome` is the focused route
-- **THEN** no stack-level KOOLA wordmark is visible behind or above the shared box
-
-#### Scenario: Connect list not hidden under box
-
-- **WHEN** the user opens Kết nối at scroll position 0
-- **THEN** the first business card is fully visible below the frosted box plus filter row

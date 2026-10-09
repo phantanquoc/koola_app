@@ -1,12 +1,7 @@
 import React from 'react';
-import { CATEGORY_LABELS } from '../../screens/connect/constants';
+import { CATEGORY_LABELS, relationshipLabel } from '../../screens/connect/constants';
 import { KoolaState } from '../../ui';
 import type { BusinessSort } from '../../types';
-
-const RELATIONSHIP_LABELS: Record<string, string> = {
-  partner: 'Đối tác',
-  supplier: 'Nhà cung cấp',
-};
 
 interface EmptyConnectProps {
   activeCategory?: string;
@@ -33,8 +28,7 @@ const EmptyConnect: React.FC<EmptyConnectProps> = ({
     const categoryName = CATEGORY_LABELS[activeCategory] || activeCategory;
     title = `Chưa có doanh nghiệp nào trong ngành ${categoryName}`;
   } else if (activeRelationship) {
-    const relName =
-      RELATIONSHIP_LABELS[activeRelationship] || activeRelationship;
+    const relName = relationshipLabel(activeRelationship) || activeRelationship;
     title = `Chưa có ${relName} nào được tìm thấy`;
   } else if (activeProvince) {
     title = `Chưa có doanh nghiệp nào tại ${activeProvince}`;
