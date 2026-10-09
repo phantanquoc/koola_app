@@ -7,6 +7,7 @@ import type { BusinessAccountItem } from '../../services/api/apiService';
  * screenshot while keeping `BusinessAccountItem` compatibility.
  */
 export type MockBusiness = BusinessAccountItem & {
+  shortName?: string;
   // Rich card fields (mirror the screenshot rows)
   mainProduct?: string;
   rating?: number; // 0-5
@@ -21,10 +22,33 @@ export type MockBusiness = BusinessAccountItem & {
   demoImage?: ImageSourcePropType;
 };
 
+export interface MockGalleryImage {
+  source: ImageSourcePropType;
+  caption?: string;
+}
+
+export interface MockServiceItem {
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export type MockBusinessDetail = MockBusiness & {
+  coverImage?: ImageSourcePropType;
+  aboutLong?: string;
+  highlights?: string[];
+  gallery?: MockGalleryImage[];
+  services?: MockServiceItem[];
+  foundedYear?: number;
+  employeeCount?: string;
+  exportMarkets?: string[];
+};
+
 export const MOCK_BUSINESSES: MockBusiness[] = [
   {
     _id: 'mock-dv-001',
     displayName: 'CÔNG TY CỔ PHẦN ĐẦU TƯ VÀ PHÁT TRIỂN NÔNG NGHIỆP CÔNG NGHỆ CAO ĐẠI VIỆT',
+    shortName: 'ĐẠI VIỆT',
     businessCategory: 'food-beverage',
     province: 'TP. Hồ Chí Minh',
     verificationStatus: 'verified',
@@ -135,3 +159,47 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
     demoImage: require('../../assets/mock-shopping/vegetables.jpg'),
   },
 ];
+
+// ── Rich detail for the mini-web profile (dùng khi businessId là mock hoặc fetch fail ở DEV) ──
+
+export const MOCK_BUSINESS_DETAIL: MockBusinessDetail = {
+  ...MOCK_BUSINESSES[0],
+  avatar: 'https://picsum.photos/seed/daiviet-logo/300/300',
+  coverImage: require('../../assets/mock-shopping/vegetables.jpg'),
+  aboutLong:
+    'Đại Việt là đơn vị tiên phong trong chuỗi giá trị cà phê — tiêu sạch từ nông trại đến bàn ăn. Với 15 năm vận hành, 120ha vùng nguyên liệu đạt VietGAP/GlobalG.A.P., nhà máy rang xay công suất 100 tấn/tháng và hệ thống truy xuất nguồn gốc QR trên từng lô hàng. Chúng tôi cung cấp cà phê nhân, cà phê rang, tiêu đen — trắng đạt chuẩn xuất khẩu EU, Mỹ, Nhật.',
+  highlights: [
+    '120ha vùng nguyên liệu VietGAP · GlobalG.A.P.',
+    'Công suất 100 tấn/tháng · xuất khẩu 12 quốc gia',
+    'Chứng nhận ISO 9001 · HACCP · VietGAP · GlobalG.A.P.',
+    'Truy xuất QR theo lô · giao hàng toàn quốc 48h',
+  ],
+  gallery: [
+    { source: require('../../assets/mock-shopping/rice.jpg'), caption: 'Vùng nguyên liệu' },
+    { source: require('../../assets/mock-shopping/vegetables.jpg'), caption: 'Nhà máy rang xay' },
+    { source: require('../../assets/mock-shopping/chicken-rice.jpg'), caption: 'Dây chuyền đóng gói' },
+    { source: require('../../assets/mock-shopping/skincare.jpg'), caption: 'Sản phẩm xuất khẩu' },
+  ],
+  services: [
+    { name: 'Cà phê nhân & rang xay', description: 'Arabica · Robusta · Blend theo yêu cầu', icon: 'local-cafe' },
+    { name: 'Tiêu sạch xuất khẩu', description: 'Tiêu đen, tiêu trắng, tiêu sọ đạt ASTA', icon: 'eco' },
+    { name: 'Gia công & OEM', description: 'Đóng gói private label, MOQ linh hoạt', icon: 'precision-manufacturing' },
+  ],
+  foundedYear: 2010,
+  employeeCount: '80–120',
+  exportMarkets: ['EU', 'Mỹ', 'Nhật', 'Hàn Quốc', 'Singapore'],
+  website: 'https://daiviet-agri.vn',
+  contactEmail: 'kinhdoanh@daiviet-agri.vn',
+  contactPhone: '028 3822 1234',
+  address: 'Tòa nhà Đại Việt, Lô B2-3, Đường số 8, KCN Tân Tạo, P. Tân Tạo A, Q. Bình Tân, TP. Hồ Chí Minh',
+  description:
+    'Cà phê hạt và tiêu sạch cao cấp — truy xuất nguồn gốc, đạt chuẩn xuất khẩu quốc tế.',
+};
+
+export function getMockDetailById(businessId: string): MockBusinessDetail | undefined {
+  if (businessId === MOCK_BUSINESS_DETAIL._id) return MOCK_BUSINESS_DETAIL;
+  const base = MOCK_BUSINESSES.find((b) => b._id === businessId);
+  if (!base) return undefined;
+  // Fallback: enrich any other mock with the same detail shell
+  return { ...MOCK_BUSINESS_DETAIL, ...base, _id: base._id, displayName: base.displayName };
+}

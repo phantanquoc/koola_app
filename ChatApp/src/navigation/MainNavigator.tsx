@@ -64,6 +64,7 @@ function useIsTabDockSuppressed(): boolean {
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
 const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true };
 const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail: true, ShoppingStorefront: true, ShoppingCart: true };
+const FULLSCREEN_CONNECT_ROUTES: Record<string, true> = { BusinessProfile: true, BusinessSearch: true };
 export const TAB_BAR_FLOATING_INSET = 86;
 
 const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
@@ -139,6 +140,12 @@ function shouldHideTabBar(route: RouteProp<MainTabParamList, TabName>): boolean 
       route as RouteProp<MainTabParamList, 'ShoppingTab'>,
     ) ?? 'ShoppingHome';
     return !!FULLSCREEN_SHOPPING_ROUTES[focused];
+  }
+  if (route.name === 'ConnectTab') {
+    const focused = getFocusedRouteNameFromRoute(
+      route as RouteProp<MainTabParamList, 'ConnectTab'>,
+    ) ?? 'ConnectHome';
+    return !!FULLSCREEN_CONNECT_ROUTES[focused];
   }
   return false;
 }

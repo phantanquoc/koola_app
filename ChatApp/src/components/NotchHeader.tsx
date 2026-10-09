@@ -42,6 +42,8 @@ export interface NotchHeaderProps {
   /** Optional action icons to render on the right side of the wordmark variant.
    *  Positioned absolutely so they don't push the wordmark left. */
   actions?: React.ReactNode;
+  /** Transparent background — no frost/bloom, only back button visible. */
+  transparent?: boolean;
 }
 
 export const NOTCH_WING_INSET = 4;
@@ -72,7 +74,7 @@ export const getNotchHeaderHeight = (
       ? NOTCH_HEADER_NAV_CONTENT_H
       : NOTCH_HEADER_CONTENT_H);
 
-export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions }) => {
+export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, chat, actions, transparent }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
   const flatH = getNotchHeaderHeight(insets.top, chat ? 'chat' : onBack ? 'nav' : 'wordmark');
@@ -191,24 +193,29 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
   }
 
   if (onBack) {
+    const isTransparent = !!transparent;
     return (
       <View style={[styles.host, { height: flatH, overflow: 'hidden' as const }, style]}>
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-            backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)',
-          }}
-        />
-        <View
-          pointerEvents="none"
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.72, overflow: 'hidden' }}>
-          <LightFieldBackground windowSized />
-        </View>
+        {!isTransparent && (
+          <>
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)',
+              }}
+            />
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.72, overflow: 'hidden' }}>
+              <LightFieldBackground windowSized />
+            </View>
+          </>
+        )}
         <View
           style={{
             position: 'absolute',
@@ -219,7 +226,8 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
             flexDirection: 'row',
             alignItems: 'center',
             paddingHorizontal: 8,
-          }}>
+          }}
+          collapsable={false}>
           <Pressable
             onPress={onBack}
             hitSlop={10}
@@ -227,17 +235,35 @@ export const NotchHeader: React.FC<NotchHeaderProps> = ({ style, title, onBack, 
             accessibilityLabel="Quay lại"
             style={({ pressed }) => [
               navStyles.backBtn,
-              { backgroundColor: koolaIconWell[resolvedScheme] },
+              {
+                backgroundColor: isTransparent ? 'rgba(0,0,0,0.38)' : koolaIconWell[resolvedScheme],
+              },
               pressed && { opacity: koolaOpacity.pressed },
             ]}>
-            <MaterialIcons name="arrow-back" size={22} color={tokens.semantic.text.primary} />
+            <MaterialIcons
+              name="arrow-back"
+              size={22}
+              color={isTransparent ? '#FFFFFF' : tokens.semantic.text.primary}
+            />
           </Pressable>
-          <KoolaText
-            variant="heading"
-            weight="700"
-            style={{ color: tokens.semantic.text.primary, marginLeft: 8 }}>
-            {title}
-          </KoolaText>
+          {!!title && !isTransparent ? (
+            <KoolaText
+              variant="heading"
+              weight="700"
+              style={{ color: tokens.semantic.text.primary, marginLeft: 8 }}>
+              {title}
+            </KoolaText>
+          ) : null}
+          {isTransparent && !!title ? (
+            <KoolaText weight="800" numberOfLines={1} style={{ color: '#FFFFFF', fontSize: 14, marginLeft: 8, flex: 1, textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
+              {title}
+            </KoolaText>
+          ) : isTransparent ? (
+            <View style={{ marginLeft: 8, flex: 1 }} />
+          ) : null}
+          {actions ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginLeft: 8 }}>{actions}</View>
+          ) : null}
         </View>
       </View>
     );
