@@ -33,12 +33,28 @@ export interface MockServiceItem {
   icon: string;
 }
 
+export interface MockBusinessProduct {
+  id: string;
+  name: string;
+  price: string;
+  originalPrice?: string;
+  rating: number;
+  soldCount: number;
+  badge?: string;
+  category: string;
+  description: string;
+  accent: string;
+  icon: string;
+  image: ImageSourcePropType;
+}
+
 export type MockBusinessDetail = MockBusiness & {
   coverImage?: ImageSourcePropType;
   aboutLong?: string;
   highlights?: string[];
   gallery?: MockGalleryImage[];
   services?: MockServiceItem[];
+  products?: MockBusinessProduct[];
   foundedYear?: number;
   employeeCount?: string;
   exportMarkets?: string[];
@@ -160,6 +176,29 @@ export const MOCK_BUSINESSES: MockBusiness[] = [
   },
 ];
 
+export const MOCK_BUSINESS_PRODUCTS: MockBusinessProduct[] = [
+  { id: 'bp-01', name: 'Cà phê Arabica Cầu Đất 500g', price: '185.000đ', originalPrice: '220.000đ', rating: 4.9, soldCount: 3420, badge: 'Bán chạy', category: 'Cà phê', description: 'Cà phê Arabica Cầu Đất rang medium, hương hoa quả, hậu vị socola. Đóng gói van 1 chiều giữ hương 6 tháng.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/vegetables.jpg') },
+  { id: 'bp-02', name: 'Cà phê Robusta Buôn Ma 1kg', price: '149.000đ', rating: 4.8, soldCount: 2890, category: 'Cà phê', description: 'Robusta Buôn Ma Thuột đậm đà, crema dày, phù hợp pha phin và espresso. Rang mộc không tẩm.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/rice.jpg') },
+  { id: 'bp-03', name: 'Tiêu đen Đắk Lắk 500g', price: '89.000đ', badge: 'Hàng mới', rating: 4.7, soldCount: 1560, category: 'Tiêu', description: 'Tiêu đen hạt to đều, thơm nồng, đạt chuẩn ASTA. Đóng hũ thủy tinh có nắp vặn.', accent: '#2D2A26', icon: 'eco', image: require('../../assets/mock-shopping/chicken-rice.jpg') },
+  { id: 'bp-04', name: 'Tiêu trắng Muntok 250g', price: '125.000đ', originalPrice: '149.000đ', rating: 4.8, soldCount: 980, badge: '-16%', category: 'Tiêu', description: 'Tiêu trắng bóc vỏ thủ công, cay thanh, dùng cho hải sản và súp. Xuất khẩu EU.', accent: '#2D2A26', icon: 'eco', image: require('../../assets/mock-shopping/skincare.jpg') },
+  { id: 'bp-05', name: 'Cà phê Blend Đậm Đà 1kg', price: '169.000đ', rating: 4.6, soldCount: 2100, category: 'Cà phê', description: 'Blend 70% Robusta + 30% Arabica, cân bằng đắng — chua — ngọt, hợp pha phin truyền thống.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/earbuds.jpg') },
+  { id: 'bp-06', name: 'Tiêu sọ Phú Quốc 200g', price: '95.000đ', badge: 'Giới hạn', rating: 4.9, soldCount: 720, category: 'Tiêu', description: 'Tiêu sọ Phú Quốc hạt tròn trắng ngà, thơm dịu, cay ấm. Thu hoạch thủ công, phơi nắng tự nhiên.', accent: '#2D2A26', icon: 'eco', image: require('../../assets/mock-shopping/mop.jpg') },
+  { id: 'bp-07', name: 'Cà phê túi lọc 10 gói', price: '75.000đ', rating: 4.7, soldCount: 1850, badge: 'Tiện lợi', category: 'Cà phê', description: 'Cà phê túi lọc dùng như trà, tiện mang đi làm — đi du lịch. 10 gói x 12g, hương giữ nguyên.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/rice.jpg') },
+  { id: 'bp-08', name: 'Combo Quà Tết 3 vị', price: '349.000đ', originalPrice: '420.000đ', rating: 4.9, soldCount: 540, badge: '-17%', category: 'Combo', description: 'Hộp quà Tết: 500g Arabica + 250g tiêu đen + túi canvas. Thiết kế sang, biếu tặng ý nghĩa.', accent: '#B91C1C', icon: 'card-giftcard', image: require('../../assets/mock-shopping/vegetables.jpg') },
+  { id: 'bp-09', name: 'Cà phê cold brew chai 250ml', price: '39.000đ', rating: 4.5, soldCount: 2650, category: 'Cà phê', description: 'Cold brew ủ lạnh 18h, ít chua, mượt mà. Chai 250ml, bảo quản lạnh 7 ngày.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/chicken-rice.jpg') },
+  { id: 'bp-10', name: 'Muối tiêu chanh 150g', price: '32.000đ', rating: 4.6, soldCount: 3100, badge: 'Bán chạy', category: 'Gia vị', description: 'Muối tiêu chanh xay mịn, chấm trái cây — hải sản đều ngon. Hũ 150g nắp vặn.', accent: '#F59E0B', icon: 'eco', image: require('../../assets/mock-shopping/earbuds.jpg') },
+  { id: 'bp-11', name: 'Cà phê honey 500g', price: '195.000đ', rating: 4.8, soldCount: 1120, category: 'Cà phê', description: 'Cà phê chế biến honey, ngọt mật ong, thể chất dày, hậu vị kéo dài. Rang light-medium.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/skincare.jpg') },
+  { id: 'bp-12', name: 'Tiêu xanh ngâm giấm 300g', price: '68.000đ', rating: 4.4, soldCount: 890, category: 'Tiêu', description: 'Tiêu xanh tươi ngâm giấm gạo, giòn cay, dùng kèm bít tết hoặc salad. Hũ 300g.', accent: '#2D2A26', icon: 'eco', image: require('../../assets/mock-shopping/mop.jpg') },
+  { id: 'bp-13', name: 'Bột cà phê hòa tan 200g', price: '79.000đ', originalPrice: '99.000đ', rating: 4.3, soldCount: 1450, badge: '-20%', category: 'Cà phê', description: 'Bột cà phê hòa tan nguyên chất, tan nhanh, không vón. Hũ 200g ~ 40 ly.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/rice.jpg') },
+  { id: 'bp-14', name: 'Set phin nhôm + ly sứ', price: '119.000đ', rating: 4.7, soldCount: 680, badge: 'Quà tặng', category: 'Dụng cụ', description: 'Phin nhôm 7cm + ly sứ trắng 250ml, combo pha phin tại nhà chuẩn vị.', accent: '#64748B', icon: 'precision-manufacturing', image: require('../../assets/mock-shopping/vegetables.jpg') },
+  { id: 'bp-15', name: 'Cà phê decaf 250g', price: '165.000đ', rating: 4.5, soldCount: 420, category: 'Cà phê', description: 'Cà phê decaf tách 97% caffeine bằng nước, giữ hương. Dành cho người nhạy caffeine.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/chicken-rice.jpg') },
+  { id: 'bp-16', name: 'Tiêu hồng 100g', price: '145.000đ', rating: 4.9, soldCount: 360, badge: 'Cao cấp', category: 'Tiêu', description: 'Tiêu hồng hiếm, thơm nồng kiểu trái cây khô, dùng cho món Âu. Hũ 100g.', accent: '#2D2A26', icon: 'eco', image: require('../../assets/mock-shopping/earbuds.jpg') },
+  { id: 'bp-17', name: 'Cà phê rang bơ 500g', price: '135.000đ', rating: 4.6, soldCount: 1980, category: 'Cà phê', description: 'Cà phê rang bơ truyền thống, béo thơm, hợp gu đậm. Đóng túi zip có van.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/skincare.jpg') },
+  { id: 'bp-18', name: 'Hộp quà Doanh nghiệp 2kg', price: '520.000đ', originalPrice: '650.000đ', rating: 4.8, soldCount: 210, badge: '-20%', category: 'Combo', description: 'Hộp quà doanh nghiệp: 1kg Arabica + 500g Robusta + 500g tiêu đen, kèm thiệp. Đặt từ 10 hộp có chiết khấu.', accent: '#B91C1C', icon: 'card-giftcard', image: require('../../assets/mock-shopping/mop.jpg') },
+  { id: 'bp-19', name: 'Cà phê espresso viên nén 30 viên', price: '155.000đ', rating: 4.7, soldCount: 890, category: 'Cà phê', description: 'Viên nén tương thích Nespresso, 30 viên/hộp, crema đẹp, tiện pha máy.', accent: '#6F4E37', icon: 'local-cafe', image: require('../../assets/mock-shopping/rice.jpg') },
+  { id: 'bp-20', name: 'Sốt tiêu đen 250ml', price: '42.000đ', rating: 4.4, soldCount: 1340, category: 'Gia vị', description: 'Sốt tiêu đen sánh mịn, dùng cho bò bít tết, xào. Chai 250ml, không chất bảo quản.', accent: '#F59E0B', icon: 'eco', image: require('../../assets/mock-shopping/vegetables.jpg') },
+];
+
 // ── Rich detail for the mini-web profile (dùng khi businessId là mock hoặc fetch fail ở DEV) ──
 
 export const MOCK_BUSINESS_DETAIL: MockBusinessDetail = {
@@ -185,6 +224,7 @@ export const MOCK_BUSINESS_DETAIL: MockBusinessDetail = {
     { name: 'Tiêu sạch xuất khẩu', description: 'Tiêu đen, tiêu trắng, tiêu sọ đạt ASTA', icon: 'eco' },
     { name: 'Gia công & OEM', description: 'Đóng gói private label, MOQ linh hoạt', icon: 'precision-manufacturing' },
   ],
+  products: MOCK_BUSINESS_PRODUCTS,
   foundedYear: 2010,
   employeeCount: '80–120',
   exportMarkets: ['EU', 'Mỹ', 'Nhật', 'Hàn Quốc', 'Singapore'],

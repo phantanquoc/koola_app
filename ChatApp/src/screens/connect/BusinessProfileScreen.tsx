@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, Linking, Pressable, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Image, Linking, Modal, Pressable, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
 import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -34,7 +34,11 @@ type BusinessProfileNavProp = NativeStackNavigationProp<ConnectTabStackParamList
 
 type DetailAccount = BusinessAccountItem | MockBusinessDetail;
 function isMockDetail(a: DetailAccount): a is MockBusinessDetail {
-  return Array.isArray((a as MockBusinessDetail).gallery) || Array.isArray((a as MockBusinessDetail).services);
+  return (
+    Array.isArray((a as MockBusinessDetail).gallery) ||
+    Array.isArray((a as MockBusinessDetail).services) ||
+    Array.isArray((a as MockBusinessDetail).products)
+  );
 }
 
 function countryFlag(label?: string): string {
@@ -57,6 +61,7 @@ const BusinessProfileScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const toast = useKoolaToast();
   const [activeTab, setActiveTab] = useState<BusinessTabId>('about');
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const scrollY = React.useRef(new (require('react-native').Animated.Value)(0)).current as any;
   // Chrome-style: only fade between 48-96 like before
   const chromeOpacity = React.useMemo(
@@ -464,7 +469,7 @@ const BusinessProfileScreen: React.FC = () => {
         palette={palette}
         styles={styles}
         hasAbout={!!detail?.aboutLong || !!account.tagline}
-        hasProducts={!!detail?.services?.length}
+        hasProducts={!!(detail?.products?.length ?? detail?.services?.length)}
         hasCerts={!!detail?.certifications?.length}
         hasContact={!!(account.website || account.contactEmail || account.contactPhone || account.address)}
       />
@@ -516,7 +521,7 @@ const BusinessProfileScreen: React.FC = () => {
           ) : null}
 
           {detail?.services?.length ? (
-            <InfoSection title="Sản phẩm & dịch vụ" palette={palette} styles={styles}>
+            <InfoSection title="Sản phẩm" palette={palette} styles={styles}>
               {detail.services.map((s) => (
                 <View key={s.name} style={styles.serviceRow}>
                   <View style={[styles.serviceIcon, { backgroundColor: palette.canvas, borderColor: palette.line }]}>
@@ -594,29 +599,67 @@ const BusinessProfileScreen: React.FC = () => {
         </>
       ) : null}
 
-      {/* Tab: Sản phẩm & dịch vụ */}
+      {/* Tab: Sản phẩm */}
       {activeTab === 'products' ? (
-        detail?.services?.length ? (
-          <InfoSection title="Sản phẩm & dịch vụ" palette={palette} styles={styles}>
-            {detail.services.map((s) => (
-              <View key={s.name} style={styles.serviceRow}>
-                <View style={[styles.serviceIcon, { backgroundColor: palette.canvas, borderColor: palette.line }]}>
-                  <MaterialIcons name={s.icon as never} size={18} color={palette.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <KoolaText variant="label" weight="700">
-                    {s.name}
-                  </KoolaText>
-                  <KoolaText variant="caption" tone="muted">
-                    {s.description}
-                  </KoolaText>
-                </View>
+        detail?.products?.length ? (
+          <View style={{ marginBottom: 12 }}>
+            <KoolaSurface variant="flat" style={styles.section}>
+              <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
+                {'SẢN PHẨM'}
+              </KoolaText>
+              <View style={styles.productGrid}>
+                {detail.products.map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => setSelectedProductId(p.id)}
+                    style={styles.productCell}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${p.name}, ${p.price}`}>
+                    <View style={[styles.productCard, { backgroundColor: palette.surface, borderColor: palette.line }]}>
+                      <View style={[styles.productThumb, { backgroundColor: `${p.accent}14` }]}>
+                        <Image source={p.image} style={styles.productImage} resizeMode="cover" />
+                      </View>
+                      <View style={styles.productBody}>
+                        <KoolaText variant="label" weight="700" numberOfLines={2} style={styles.productTitle}>
+                          {p.name}
+                        </KoolaText>
+                        <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ marginTop: 2 }}>
+                          {p.category}
+                        </KoolaText>
+                        <KoolaText variant="label" weight="800" style={{ marginTop: 4 }}>
+                          {p.price}
+                        </KoolaText>
+                        {p.originalPrice ? (
+                          <KoolaText variant="caption" tone="muted" style={{ textDecorationLine: 'line-through', fontSize: 11 }}>
+                            {p.originalPrice}
+                          </KoolaText>
+                        ) : null}
+                        <View style={styles.productMeta}>
+                          <MaterialIcons name="star" size={12} color="#F59E0B" />
+                          <KoolaText variant="caption" weight="700" style={{ marginLeft: 3, fontSize: 11 }}>
+                            {p.rating.toFixed(1)}
+                          </KoolaText>
+                          <KoolaText variant="caption" tone="muted" style={{ marginLeft: 6, fontSize: 11 }}>
+                            Đã bán {p.soldCount.toLocaleString('vi-VN')}
+                          </KoolaText>
+                        </View>
+                        {p.badge ? (
+                          <View style={[styles.productBadge, { backgroundColor: palette.danger }]}>
+                            <KoolaText variant="caption" weight="800" style={{ color: '#FFF', fontSize: 10 }}>
+                              {p.badge}
+                            </KoolaText>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
               </View>
-            ))}
-          </InfoSection>
+            </KoolaSurface>
+          </View>
         ) : (
           <KoolaSurface variant="flat" style={[styles.section, { padding: 16, alignItems: 'center' }]}>
-            <KoolaText tone="muted">Chưa có sản phẩm & dịch vụ.</KoolaText>
+            <KoolaText tone="muted">Chưa có sản phẩm.</KoolaText>
           </KoolaSurface>
         )
       ) : null}
@@ -717,6 +760,49 @@ const BusinessProfileScreen: React.FC = () => {
         Hồ sơ minh hoạ — dữ liệu demo cho mục đích trình bày giao diện.
       </KoolaText>
       </Animated.ScrollView>
+
+      {/* Product detail popup */}
+      {(() => {
+        const selected = detail?.products?.find((p) => p.id === selectedProductId) ?? null;
+        if (!selected) return null;
+        return (
+          <Modal visible={!!selectedProductId} transparent animationType="fade" onRequestClose={() => setSelectedProductId(null)}>
+            <Pressable style={styles.modalBackdrop} onPress={() => setSelectedProductId(null)}>
+              <Pressable style={[styles.modalCard, { backgroundColor: palette.surface }]} onPress={(e) => e.stopPropagation()}>
+                <Image source={selected.image} style={styles.modalImage} resizeMode="cover" />
+                {selected.badge ? (
+                  <View style={[styles.modalBadge, { backgroundColor: palette.danger }]}>
+                    <KoolaText variant="caption" weight="800" style={{ color: '#FFF', fontSize: 11 }}>{selected.badge}</KoolaText>
+                  </View>
+                ) : null}
+                <Pressable onPress={() => setSelectedProductId(null)} style={styles.modalClose} hitSlop={10}>
+                  <MaterialIcons name="close" size={20} color={palette.ink} />
+                </Pressable>
+                <View style={{ padding: 16 }}>
+                  <KoolaText variant="heading" weight="800">{selected.name}</KoolaText>
+                  <KoolaText variant="caption" tone="muted" style={{ marginTop: 4 }}>{selected.category}</KoolaText>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+                    <KoolaText variant="heading" weight="800" style={{ color: palette.primary }}>{selected.price}</KoolaText>
+                    {selected.originalPrice ? (
+                      <KoolaText variant="caption" tone="muted" style={{ textDecorationLine: 'line-through' }}>{selected.originalPrice}</KoolaText>
+                    ) : null}
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                    <MaterialIcons name="star" size={14} color="#F59E0B" />
+                    <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>{selected.rating.toFixed(1)}</KoolaText>
+                    <KoolaText variant="caption" tone="muted" style={{ marginLeft: 8 }}>Đã bán {selected.soldCount.toLocaleString('vi-VN')}</KoolaText>
+                  </View>
+                  <KoolaText variant="body" tone="muted" style={{ marginTop: 12, lineHeight: 20 }}>{selected.description}</KoolaText>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                    <KoolaButton title="Đóng" variant="secondary" onPress={() => setSelectedProductId(null)} style={{ flex: 1 }} />
+                    <KoolaButton title="Nhắn tin" variant="primary" icon="chat-bubble-outline" onPress={() => { setSelectedProductId(null); handleMessage(); }} style={{ flex: 1 }} />
+                  </View>
+                </View>
+              </Pressable>
+            </Pressable>
+          </Modal>
+        );
+      })()}
     </>
   );
 };
@@ -725,7 +811,7 @@ type BusinessTabId = 'about' | 'products' | 'certs' | 'contact';
 
 const TAB_LABELS: Record<BusinessTabId, string> = {
   about: 'Giới thiệu',
-  products: 'Sản phẩm & DV',
+  products: 'Sản phẩm',
   certs: 'Chứng nhận',
   contact: 'Liên hệ',
 };
@@ -983,6 +1069,54 @@ const makeStyles = (p: Palette) =>
     contactText: { flex: 1, marginLeft: 9 },
     actions: { flexDirection: 'row', gap: 12, marginTop: 6 },
     footnote: { textAlign: 'center', marginTop: 14, opacity: 0.7 },
+    productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+    productCell: { width: '48.5%' },
+    productCard: {
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      overflow: 'hidden',
+      ...koolaShadows.sm,
+    },
+    productThumb: { width: '100%', aspectRatio: 1.15, overflow: 'hidden' },
+    productImage: { width: '100%', height: '100%' },
+    productBody: { padding: 10 },
+    productTitle: { fontSize: 12, lineHeight: 16, minHeight: 32 },
+    productMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    productBadge: {
+      position: 'absolute',
+      top: 8,
+      left: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: koolaRadii.pill,
+    },
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16 },
+    modalCard: {
+      borderRadius: koolaRadii.lg,
+      overflow: 'hidden',
+      maxHeight: '85%',
+      ...koolaShadows.md,
+    },
+    modalImage: { width: '100%', aspectRatio: 1.4, backgroundColor: '#F3F4F6' },
+    modalBadge: {
+      position: 'absolute',
+      top: 12,
+      left: 12,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: koolaRadii.pill,
+    },
+    modalClose: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: 'rgba(255,255,255,0.92)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
   });
 
 export default BusinessProfileScreen;
