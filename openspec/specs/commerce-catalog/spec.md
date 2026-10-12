@@ -84,7 +84,7 @@ Every `CommerceProduct` SHALL carry a `sellerId` referencing a `User` with `acco
 
 ### Requirement: Seller storefront endpoint
 
-`GET /commerce/sellers/:id` SHALL be public and return `{ seller: { id, displayName, verified, province, businessCategory, tagline, description, logoUrl | null }, productCount }` for a verified, non-banned business. The storefront's products SHALL be fetched through `GET /commerce/products?sellerId=:id` (same search/sort/pagination contract).
+`GET /commerce/sellers/:id` SHALL be public and return `{ seller: { id, displayName, verified, province, businessCategory, tagline, description, logoUrl | null, followerCount, totalSoldCount, rating, reviewCount }, productCount }` for a verified, non-banned business. `followerCount`, `totalSoldCount`, `rating`, and `reviewCount` SHALL be included with mock values until real metrics are implemented. The storefront's products SHALL be fetched through `GET /commerce/products?sellerId=:id` (same search/sort/pagination contract).
 
 #### Scenario: Storefront of verified business
 - **WHEN** a client requests a verified business id

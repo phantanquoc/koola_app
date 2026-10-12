@@ -58,13 +58,13 @@ const ShoppingTabStack: React.FC = () => {
     useState<keyof ShoppingTabStackParamList>('ShoppingHome');
   const { notify, toast } = useComingSoonToast();
 
-  // Gate: KOOLA wordmark only on ShoppingHome. When a product/storefront
-  // screen is focused, its config must be shown even if the previous
-  // screen's useFocusEffect cleanup (setConfig(null)) races after the next
-  // screen's focus effect — same race fixed in ChatTabStack via
-  // focusedRouteName. DetachPreviousScreen:false keeps both mounted but
-  // blur/focus still fire in the same commit.
-  const displayConfig = focusedRouteName === 'ShoppingHome' ? null : headerConfig;
+  // Gate: KOOLA wordmark only on ShoppingHome. ProductDetail uses headerConfig
+  // (variant 'product'). Storefront has inline glass header, so hide the
+  // parent header entirely — same pattern as BusinessProfileScreen in ConnectTab.
+  const displayConfig =
+    focusedRouteName === 'ShoppingHome' || focusedRouteName === 'ShoppingStorefront'
+      ? null
+      : headerConfig;
   const headerCtx = React.useMemo(
     () => ({ config: headerConfig, setConfig: setHeaderConfig }),
     [headerConfig],
@@ -149,6 +149,11 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notif
       { screen: 'ShoppingCart' },
     );
   }, [tabNavigation]);
+
+  // Hide header entirely when config is null (e.g., ShoppingStorefront has inline glass header)
+  if (config === null) {
+    return null;
+  }
 
   // Product detail variant: ←  |  Shop name (truncated)  |  share  cart  search
   if (config?.variant === 'product') {

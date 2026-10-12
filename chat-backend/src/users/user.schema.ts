@@ -86,6 +86,10 @@ export class User {
   @Prop()
   logoKey?: string;
 
+  /** MinIO/S3 key for the business cover/banner image */
+  @Prop()
+  coverKey?: string;
+
   /** MinIO/S3 key for the business license image */
   @Prop()
   licenseImageKey?: string;

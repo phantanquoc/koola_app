@@ -204,7 +204,7 @@ export const MOCK_BUSINESS_PRODUCTS: MockBusinessProduct[] = [
 export const MOCK_BUSINESS_DETAIL: MockBusinessDetail = {
   ...MOCK_BUSINESSES[0],
   avatar: 'https://picsum.photos/seed/daiviet-logo/300/300',
-  coverImage: require('../../assets/mock-shopping/vegetables.jpg'),
+  coverImage: require('../../assets/mock-shopping/bg_header.png'),
   aboutLong:
     'Đại Việt là đơn vị tiên phong trong chuỗi giá trị cà phê — tiêu sạch từ nông trại đến bàn ăn. Với 15 năm vận hành, 120ha vùng nguyên liệu đạt VietGAP/GlobalG.A.P., nhà máy rang xay công suất 100 tấn/tháng và hệ thống truy xuất nguồn gốc QR trên từng lô hàng. Chúng tôi cung cấp cà phê nhân, cà phê rang, tiêu đen — trắng đạt chuẩn xuất khẩu EU, Mỹ, Nhật.',
   highlights: [

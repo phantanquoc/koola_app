@@ -653,6 +653,15 @@ export interface SellerProfile {
   tagline: string | null;
   description: string | null;
   logoUrl: string | null;
+  coverImageUrl: string | null;
+  followerCount?: number;
+  totalSoldCount?: number;
+  rating?: number;
+  reviewCount?: number;
+  foundedYear?: number | null;
+  employeeCount?: string | null;
+  exportMarketsCount?: number | null;
+  viewCount?: number | null;
 }
 
 export interface SellerStorefrontResponse {

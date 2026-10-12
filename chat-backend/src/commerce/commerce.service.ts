@@ -97,6 +97,11 @@ export interface SellerStorefront {
     tagline: string | null;
     description: string | null;
     logoUrl: string | null;
+    coverImageUrl: string | null;
+    followerCount: number;
+    totalSoldCount: number;
+    rating: number;
+    reviewCount: number;
   };
   productCount: number;
 }
@@ -157,10 +162,11 @@ type LeanSeller = Pick<
   | 'tagline'
   | 'description'
   | 'logoKey'
+  | 'coverKey'
 > & { _id: Types.ObjectId };
 
 const SELLER_FIELDS =
-  '_id displayName accountType verificationStatus isBanned province businessCategory tagline description logoKey';
+  '_id displayName accountType verificationStatus isBanned province businessCategory tagline description logoKey coverKey';
 
 /** Public visibility predicate shared by listing, detail, storefront, validate. */
 const PUBLIC_FILTER = { active: true, sellerActive: true } as const;
@@ -300,6 +306,13 @@ export class CommerceService {
         tagline: seller.tagline ?? null,
         description: seller.description ?? null,
         logoUrl: seller.logoKey ? await this.presign(seller.logoKey) : null,
+        coverImageUrl: (seller as unknown as Record<string, string | undefined>).coverKey
+          ? await this.presign((seller as unknown as Record<string, string>).coverKey)
+          : null,
+        followerCount: 1200,
+        totalSoldCount: 15000,
+        rating: 4.8,
+        reviewCount: 324,
       },
       productCount,
     };
