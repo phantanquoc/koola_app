@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, Linking, Modal, Pressable, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -12,7 +12,6 @@ import { getNotchHeaderHeight } from '../../components/NotchHeader';
 import type { BusinessAccountItem } from '../../services/api/apiService';
 import { accountDiscoveryApi, conversationsApi } from '../../services/api/apiService';
 import { MOCK_BUSINESS_DETAIL, getMockDetailById, type MockBusinessDetail } from './mockBusinesses';
-import UserAvatar from '../../components/UserAvatar';
 import { CATEGORY_LABELS, relationshipLabel } from './constants';
 import {
   KoolaBadge,
@@ -50,6 +49,91 @@ function countryFlag(label?: string): string {
   return '🌐';
 }
 
+const UnifiedLightField: React.FC<{ isDark: boolean }> = ({ isDark }) => {
+  if (isDark) {
+    return (
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgLinearGradient id="uniVertDark" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#0F1A2A" stopOpacity="1" />
+            <Stop offset="0.5" stopColor="#1A2E4A" stopOpacity="1" />
+            <Stop offset="1" stopColor="#162035" stopOpacity="1" />
+          </SvgLinearGradient>
+          <RadialGradient id="uniBloomDark1" cx="30%" cy="15%" r="55%">
+            <Stop offset="0" stopColor="#1E3A5F" stopOpacity="0.5" />
+            <Stop offset="1" stopColor="#1E3A5F" stopOpacity="0" />
+          </RadialGradient>
+          <RadialGradient id="uniBloomDark2" cx="80%" cy="35%" r="50%">
+            <Stop offset="0" stopColor="#1A4D5E" stopOpacity="0.35" />
+            <Stop offset="1" stopColor="#1A4D5E" stopOpacity="0" />
+          </RadialGradient>
+          <RadialGradient id="uniBloomDark3" cx="50%" cy="75%" r="45%">
+            <Stop offset="0" stopColor="#1E3A5F" stopOpacity="0.2" />
+            <Stop offset="1" stopColor="#1E3A5F" stopOpacity="0" />
+          </RadialGradient>
+          <SvgLinearGradient id="uniStreakDark1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+            <Stop offset="0.4" stopColor="#4A90A8" stopOpacity="0.06" />
+            <Stop offset="0.6" stopColor="#4A90A8" stopOpacity="0.03" />
+            <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id="uniStreakDark2" x1="100%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+            <Stop offset="0.5" stopColor="#2A7A9B" stopOpacity="0.04" />
+            <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+          </SvgLinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#uniVertDark)" />
+        <Rect width="100%" height="100%" fill="url(#uniBloomDark1)" />
+        <Rect width="100%" height="100%" fill="url(#uniBloomDark2)" />
+        <Rect width="100%" height="100%" fill="url(#uniBloomDark3)" />
+        <Rect width="100%" height="100%" fill="url(#uniStreakDark1)" />
+        <Rect width="100%" height="100%" fill="url(#uniStreakDark2)" />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+      <Defs>
+        <SvgLinearGradient id="uniVert" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor="#E8F4FF" stopOpacity="1" />
+          <Stop offset="0.45" stopColor="#F0F7FF" stopOpacity="1" />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="1" />
+        </SvgLinearGradient>
+        <RadialGradient id="uniBloom1" cx="25%" cy="20%" r="55%">
+          <Stop offset="0" stopColor="#D0E8FF" stopOpacity="0.55" />
+          <Stop offset="1" stopColor="#D0E8FF" stopOpacity="0" />
+        </RadialGradient>
+        <RadialGradient id="uniBloom2" cx="75%" cy="40%" r="50%">
+          <Stop offset="0" stopColor="#E0F0FF" stopOpacity="0.4" />
+          <Stop offset="1" stopColor="#E0F0FF" stopOpacity="0" />
+        </RadialGradient>
+        <RadialGradient id="uniBloom3" cx="50%" cy="80%" r="45%">
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.5" />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </RadialGradient>
+        <SvgLinearGradient id="uniStreak1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+          <Stop offset="0.35" stopColor="#A8D0F0" stopOpacity="0.07" />
+          <Stop offset="0.55" stopColor="#A8D0F0" stopOpacity="0.04" />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </SvgLinearGradient>
+        <SvgLinearGradient id="uniStreak2" x1="100%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+          <Stop offset="0.5" stopColor="#B8E0FF" stopOpacity="0.05" />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </SvgLinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill="url(#uniVert)" />
+      <Rect width="100%" height="100%" fill="url(#uniBloom1)" />
+      <Rect width="100%" height="100%" fill="url(#uniBloom2)" />
+      <Rect width="100%" height="100%" fill="url(#uniBloom3)" />
+      <Rect width="100%" height="100%" fill="url(#uniStreak1)" />
+      <Rect width="100%" height="100%" fill="url(#uniStreak2)" />
+    </Svg>
+  );
+};
+
 const BusinessProfileScreen: React.FC = () => {
   const route = useRoute<BusinessProfileRouteProp>();
   const navigation = useNavigation<BusinessProfileNavProp>();
@@ -60,7 +144,7 @@ const BusinessProfileScreen: React.FC = () => {
   const headerH = getNotchHeaderHeight(insets.top, 'nav');
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const toast = useKoolaToast();
-  const [activeTab, setActiveTab] = useState<BusinessTabId>('about');
+  const [showAllProducts, setShowAllProducts] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const scrollY = React.useRef(new (require('react-native').Animated.Value)(0)).current as any;
   // Chrome-style: only fade between 48-96 like before
@@ -78,10 +162,6 @@ const BusinessProfileScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [messaging, setMessaging] = useState(false);
-
-  // Animation state for hero section
-  const sloganOpacity = useRef(new Animated.Value(0)).current;
-  const statsOpacity = useRef(new Animated.Value(0)).current;
 
   const fetchAccount = useCallback(async () => {
     setLoading(true);
@@ -119,33 +199,6 @@ const BusinessProfileScreen: React.FC = () => {
   useEffect(() => {
     fetchAccount();
   }, [fetchAccount]);
-
-  // Trigger entrance animation when account loads
-  useEffect(() => {
-    if (!account || prefersReducedMotion()) {
-      // Skip animation if data not ready or reduce motion enabled
-      sloganOpacity.setValue(1);
-      statsOpacity.setValue(1);
-      return;
-    }
-
-    // Staggered fade-in: slogan first, then stats
-    Animated.sequence([
-      Animated.timing(sloganOpacity, {
-        toValue: 1,
-        duration: koolaDurations.normal, // 180ms
-        easing: Easing.bezier(0.0, 0.0, 0.2, 1.0), // decelerate
-        useNativeDriver: true,
-      }),
-      Animated.timing(statsOpacity, {
-        toValue: 1,
-        duration: koolaDurations.normal,
-        delay: 60, // Stagger by 60ms
-        easing: Easing.bezier(0.0, 0.0, 0.2, 1.0),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [account, sloganOpacity, statsOpacity]);
 
   const handleMessage = useCallback(async () => {
     if (!account) return;
@@ -210,8 +263,6 @@ const BusinessProfileScreen: React.FC = () => {
     (account.businessCategory ? CATEGORY_LABELS[account.businessCategory] : undefined) ||
     account.businessCategory ||
     '';
-  const imageKey = account.avatar || account.logoKey;
-  const headerTitle = (detail?.shortName ?? (account as MockBusinessDetail | null)?.shortName ?? '') as string;
 
   return (
     <>
@@ -229,18 +280,6 @@ const BusinessProfileScreen: React.FC = () => {
             <LightFieldBackground windowSized />
           </Animated.View>
         </View>
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: StyleSheet.hairlineWidth,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(37,99,235,0.14)',
-            opacity: (chromeOpacity as any).interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' } as any),
-          }}
-        />
         <Animated.View
           pointerEvents="none"
           style={{ position: 'absolute', left: 0, right: 0, bottom: -18, height: 18, opacity: chromeOpacity }}>
@@ -268,17 +307,11 @@ const BusinessProfileScreen: React.FC = () => {
           <View style={[styles.inlineBackBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
             <MaterialIcons name="arrow-back" size={22} color="#FFFFFF" />
           </View>
-          {!!headerTitle ? (
-            <KoolaText weight="800" numberOfLines={1} style={[styles.inlineHeaderTitle, { color: '#FFFFFF', textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }]}>
-              {headerTitle}
-            </KoolaText>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
+          <View style={styles.searchDock}>
+            <MaterialIcons name="search" size={18} color="rgba(255,255,255,0.7)" />
+            <KoolaText variant="caption" style={{ marginLeft: 8, color: 'rgba(255,255,255,0.7)' }}>Tìm trong trang</KoolaText>
+          </View>
           <View style={styles.inlineHeaderActions}>
-            <View style={[styles.inlineIconBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
-              <MaterialIcons name="search" size={20} color="#FFFFFF" />
-            </View>
             <View style={[styles.inlineIconBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
               <MaterialIcons name="share" size={18} color="#FFFFFF" />
             </View>
@@ -303,17 +336,11 @@ const BusinessProfileScreen: React.FC = () => {
             style={[styles.inlineBackBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
             <MaterialIcons name="arrow-back" size={22} color={tokens.semantic.text.primary} />
           </Pressable>
-          {!!headerTitle ? (
-            <KoolaText weight="800" numberOfLines={1} style={[styles.inlineHeaderTitle, { color: tokens.semantic.text.primary, textShadowColor: 'transparent' }]}>
-              {headerTitle}
-            </KoolaText>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
+          <Pressable onPress={() => toast.show('Sắp ra mắt', 'info')} hitSlop={8} style={[styles.searchDock, styles.searchDockSolid, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
+            <MaterialIcons name="search" size={18} color={tokens.semantic.text.primary} />
+            <KoolaText variant="caption" weight="600" style={{ marginLeft: 8, color: tokens.semantic.text.primary }}>Tìm trong trang</KoolaText>
+          </Pressable>
           <View style={styles.inlineHeaderActions}>
-            <Pressable onPress={() => toast.show('Sắp ra mắt', 'info')} hitSlop={8} style={[styles.inlineIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
-              <MaterialIcons name="search" size={20} color={tokens.semantic.text.primary} />
-            </Pressable>
             <Pressable onPress={() => toast.show('Đã sao chép liên kết', 'info')} hitSlop={8} style={[styles.inlineIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
               <MaterialIcons name="share" size={18} color={tokens.semantic.text.primary} />
             </Pressable>
@@ -329,286 +356,92 @@ const BusinessProfileScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}>
-        {/* Cover — full-bleed behind transparent header + status bar (overlay) */}
-        {detail?.coverImage ? (
-          <View style={[styles.coverWrap, { marginTop: -headerH - 40, height: 230 + headerH, paddingTop: headerH, borderTopLeftRadius: 0, borderTopRightRadius: 0 }]}>
-            <Image source={detail.coverImage} style={styles.coverImage} resizeMode="cover" />
-            <View style={styles.coverScrim} />
+        <View style={[styles.unifiedField, { marginTop: -headerH - 40, paddingTop: headerH + 72, paddingBottom: 14, minHeight: 250 + headerH }]}>
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <UnifiedLightField isDark={isDark} />
           </View>
-        ) : (
-          <View style={[styles.coverWrap, styles.coverPlaceholder, { marginTop: -headerH, height: 72 + headerH, paddingTop: headerH }]} />
-        )}
-
-      {/* Hero — avatar gối 1/3 trên banner, 2/3 dưới */}
-      <KoolaSurface variant="raised" style={[styles.hero, styles.heroFullBleed, detail?.coverImage ? styles.heroOverCover : null, { marginTop: -40 }]}>
-        <View style={styles.heroHeader}>
-          <View style={styles.avatarOverlapWrap}>
-            <UserAvatar displayName={account.displayName} avatar={imageKey} size={65} />
-          </View>
-          <View style={styles.heroNameWrap}>
-            <KoolaText numberOfLines={2} style={styles.companyName}>
-              {account.displayName}
-            </KoolaText>
-            {account.verificationStatus === 'verified' ? (
-              <MaterialIcons name="verified" size={14} color={palette.success} style={{ marginLeft: 5, marginTop: 1 }} />
-            ) : null}
-          </View>
-        </View>
-        <View style={styles.badgeRow}>
-          {categoryLabel ? (
-            <View style={styles.badgeItem}>
-              <KoolaBadge label={categoryLabel} tone="primary" />
-            </View>
-          ) : null}
-          {account.province ? (
-            <View style={styles.badgeItem}>
-              <KoolaBadge label={account.province} tone="muted" />
-            </View>
-          ) : null}
-          {detail?.foundedYear ? (
-            <View style={styles.badgeItem}>
-              <KoolaBadge label={`Từ ${detail.foundedYear}`} tone="muted" />
-            </View>
-          ) : null}
-        </View>
-        {detail ? (
-          <View style={styles.metaRow}>
-            {detail.countryLabel ? (
-              <View style={styles.metaItem}>
-                <KoolaText style={{ fontSize: 13, marginRight: 3 }}>{countryFlag(detail.countryLabel)}</KoolaText>
-                <KoolaText variant="caption" weight="700" tone="muted">
-                  {detail.countryLabel}
-                </KoolaText>
+          <View style={styles.heroContent}>
+            <View style={styles.heroSplit}>
+              <View style={styles.heroLeft}>
+                <View style={styles.heroNameRow}>
+                  <KoolaText numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{account.displayName}</KoolaText>
+                  {account.verificationStatus === 'verified' ? <MaterialIcons name="verified" size={14} color={palette.success} style={{ marginLeft: 5, marginTop: 1 }} /> : null}
+                </View>
+                {(detail?.countryLabel || account.province) ? (
+                  <View style={styles.heroAddressRow}>
+                    <KoolaText style={{ fontSize: 13, marginRight: 4 }}>{countryFlag(detail?.countryLabel ?? account.province)}</KoolaText>
+                    <KoolaText variant="caption" weight="700" tone="muted" numberOfLines={1}>
+                      {[account.province, detail?.countryLabel].filter(Boolean).join(' · ') || detail?.countryLabel || account.province}
+                    </KoolaText>
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-            {typeof detail.rating === 'number' ? (
-              <View style={styles.metaItem}>
-                <MaterialIcons name="star" size={14} color="#F59E0B" />
-                <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>
-                  {detail.rating.toFixed(1)}
-                </KoolaText>
-              </View>
-            ) : null}
-            {detail.viewCount ? (
-              <View style={styles.metaItem}>
-                <MaterialIcons name="visibility" size={14} color={palette.muted} />
-                <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
-                  {detail.viewCount.toLocaleString('vi-VN')} lượt xem
-                </KoolaText>
-              </View>
-            ) : null}
-            {detail.yearsActive ? (
-              <View style={styles.metaItem}>
-                <MaterialIcons name="history" size={14} color={palette.muted} />
-                <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
-                  {detail.yearsActive} năm
-                </KoolaText>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-      </KoolaSurface>
-
-      {/* Slogan pill — thay cho dòng "Yêu cầu mua · ..." */}
-      {detail?.mainProduct ? (
-        <Animated.View style={{ opacity: sloganOpacity }}>
-          <KoolaSurface variant="soft" style={styles.typeRow}>
-            <MaterialIcons name="format-quote" size={17} color={palette.muted} />
-            <KoolaText
-              variant="label"
-              tone="muted"
-              weight="500"
-              style={[
-                styles.typeRowLabel,
-                {
-                  fontStyle: 'italic',
-                  flex: 1,
-                  letterSpacing: 0.3,
-                  textTransform: 'capitalize',
-                },
-              ]}
-              numberOfLines={2}>
-              {detail.mainProduct.toLowerCase()}
-            </KoolaText>
-          </KoolaSurface>
-        </Animated.View>
-      ) : account.relationshipType ? (
-        <KoolaSurface variant="soft" style={styles.typeRow}>
-          <MaterialIcons
-            name={account.relationshipType === 'partner' ? 'handshake' : 'local-shipping'}
-            size={17}
-            color={palette.muted}
-          />
-          <KoolaText variant="caption" tone="muted" weight="800" style={styles.typeRowLabel}>
-            {relationshipLabel(account.relationshipType)}
-          </KoolaText>
-        </KoolaSurface>
-      ) : null}
-
-      {/* Stats */}
-      {detail ? (
-        <Animated.View style={{ opacity: statsOpacity }}>
-          <View
-            style={styles.statsRow}
-            accessible
-            accessibilityRole="summary"
-            accessibilityLabel={`Công ty thành lập năm ${detail.foundedYear ?? 'không rõ'}, có ${detail.employeeCount ?? 'không rõ'} nhân sự, xuất khẩu ${detail.exportMarkets?.length ?? 0} quốc gia`}>
-            <Stat label="Thành lập" value={String(detail.foundedYear ?? '—')} palette={palette} styles={styles} isPrimary />
-            <View style={styles.statsDivider} />
-            <Stat label="Nhân sự" value={detail.employeeCount ?? '—'} palette={palette} styles={styles} />
-            <View style={styles.statsDivider} />
-            <Stat label="Thị trường" value={`${detail.exportMarkets?.length ?? 0} QG`} palette={palette} styles={styles} />
-          </View>
-        </Animated.View>
-      ) : null}
-
-      {/* Tabs */}
-      <BusinessTabs
-        active={activeTab}
-        onChange={setActiveTab}
-        palette={palette}
-        styles={styles}
-        hasAbout={!!detail?.aboutLong || !!account.tagline}
-        hasProducts={!!(detail?.products?.length ?? detail?.services?.length)}
-        hasCerts={!!detail?.certifications?.length}
-        hasContact={!!(account.website || account.contactEmail || account.contactPhone || account.address)}
-      />
-
-      {/* Tab: Giới thiệu — full thông tin */}
-      {activeTab === 'about' ? (
-        <>
-          {detail?.aboutLong ? (
-            <InfoSection title="Giới thiệu" palette={palette} styles={styles}>
-              <KoolaText variant="body" tone="muted" style={{ lineHeight: 21 }}>
-                {detail.aboutLong}
-              </KoolaText>
-              {detail.highlights?.length ? (
-                <View style={{ marginTop: 12 }}>
-                  {detail.highlights.map((h) => (
-                    <View key={h} style={styles.bulletRow}>
-                      <View style={[styles.bulletDot, { backgroundColor: palette.primary }]} />
-                      <KoolaText variant="body" tone="muted" style={{ flex: 1 }}>
-                        {h}
-                      </KoolaText>
+              <View style={styles.heroRight}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {typeof detail?.rating === 'number' ? (
+                    <View style={[styles.metaItem, { marginRight: 12 }]}>
+                      <MaterialIcons name="star" size={14} color="#F59E0B" />
+                      <KoolaText variant="caption" weight="700" style={{ marginLeft: 4 }}>{detail.rating.toFixed(1)}</KoolaText>
                     </View>
-                  ))}
+                  ) : null}
+                  {detail?.viewCount ? (
+                    <View style={styles.metaItem}>
+                      <MaterialIcons name="visibility" size={14} color={palette.muted} />
+                      <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>{detail.viewCount.toLocaleString('vi-VN')}</KoolaText>
+                    </View>
+                  ) : null}
                 </View>
-              ) : null}
-            </InfoSection>
-          ) : account.tagline ? (
-            <InfoSection title="Giới thiệu" palette={palette} styles={styles}>
-              <KoolaText variant="body" tone="muted">
-                {account.tagline}
-              </KoolaText>
-            </InfoSection>
-          ) : null}
-
-          {detail?.gallery?.length ? (
-            <InfoSection title="Hình ảnh" palette={palette} styles={styles}>
-              <RNScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryContent}>
-                {detail.gallery.map((g, idx) => (
-                  <View key={idx} style={styles.galleryItem}>
-                    <Image source={g.source} style={styles.galleryImage} resizeMode="cover" />
-                    {g.caption ? (
-                      <KoolaText variant="caption" tone="muted" weight="600" style={styles.galleryCaption} numberOfLines={1}>
-                        {g.caption}
-                      </KoolaText>
-                    ) : null}
+                {detail?.yearsActive ? (
+                  <View style={[styles.metaItem, { marginTop: 6 }]}>
+                    <MaterialIcons name="history" size={14} color={palette.muted} />
+                    <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>{detail.yearsActive} năm</KoolaText>
                   </View>
-                ))}
-              </RNScrollView>
-            </InfoSection>
-          ) : null}
+                ) : null}
+              </View>
+            </View>
+          </View>
+        </View>
 
-          {detail?.services?.length ? (
-            <InfoSection title="Sản phẩm" palette={palette} styles={styles}>
-              {detail.services.map((s) => (
-                <View key={s.name} style={styles.serviceRow}>
-                  <View style={[styles.serviceIcon, { backgroundColor: palette.canvas, borderColor: palette.line }]}>
-                    <MaterialIcons name={s.icon as never} size={18} color={palette.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <KoolaText variant="label" weight="700">
-                      {s.name}
-                    </KoolaText>
-                    <KoolaText variant="caption" tone="muted">
-                      {s.description}
-                    </KoolaText>
-                  </View>
-                </View>
-              ))}
-            </InfoSection>
-          ) : null}
+        <View style={styles.bannerWrap}>
+          <Image source={(detail as any)?.bannerImage ?? require('../../assets/mock-shopping/vegetables.jpg')} style={styles.bannerImage} resizeMode="cover" />
+        </View>
 
-          {detail?.certifications?.length ? (
-            <InfoSection title="Chứng nhận" palette={palette} styles={styles}>
-              <View style={styles.certRow}>
-                {detail.certifications.map((c) => (
-                  <View key={c.key} style={styles.certPill}>
-                    <KoolaText variant="caption" weight="800" style={{ textAlign: 'center' }}>
-                      {c.label}
+        {/* Single-page sequential content (no tabs) */}
+        {detail?.aboutLong ? (
+          <InfoSection title="Năng lực cạnh tranh & Cam kết" palette={palette} styles={styles}>
+            <KoolaText variant="body" tone="muted" style={{ lineHeight: 21 }}>
+              {detail.aboutLong}
+            </KoolaText>
+            {detail.highlights?.length ? (
+              <View style={{ marginTop: 12 }}>
+                {detail.highlights.map((h) => (
+                  <View key={h} style={styles.bulletRow}>
+                    <View style={[styles.bulletDot, { backgroundColor: palette.primary }]} />
+                    <KoolaText variant="body" tone="muted" style={{ flex: 1 }}>
+                      {h}
                     </KoolaText>
-                    {c.sublabel ? (
-                      <KoolaText variant="caption" tone="muted" style={{ fontSize: 10, textAlign: 'center' }}>
-                        {c.sublabel}
-                      </KoolaText>
-                    ) : null}
                   </View>
                 ))}
               </View>
-            </InfoSection>
-          ) : null}
+            ) : null}
+          </InfoSection>
+        ) : account.tagline ? (
+          <InfoSection title="Năng lực cạnh tranh & Cam kết" palette={palette} styles={styles}>
+            <KoolaText variant="body" tone="muted">
+              {account.tagline}
+            </KoolaText>
+          </InfoSection>
+        ) : null}
 
-          {account.website || account.contactEmail || account.contactPhone ? (
-            <InfoSection title="Liên hệ" palette={palette} styles={styles}>
-              {account.website ? (
-                <ContactRow
-                  icon="language"
-                  label={account.website}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(account.website!)}
-                />
-              ) : null}
-              {account.contactEmail ? (
-                <ContactRow
-                  icon="email"
-                  label={account.contactEmail}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(`mailto:${account.contactEmail}`)}
-                />
-              ) : null}
-              {account.contactPhone ? (
-                <ContactRow
-                  icon="phone"
-                  label={account.contactPhone}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(`tel:${account.contactPhone}`)}
-                />
-              ) : null}
-            </InfoSection>
-          ) : null}
 
-          {account.address ? (
-            <InfoSection title="Địa chỉ" palette={palette} styles={styles}>
-              <ContactRow icon="place" label={account.address} palette={palette} styles={styles} />
-            </InfoSection>
-          ) : null}
-        </>
-      ) : null}
-
-      {/* Tab: Sản phẩm */}
-      {activeTab === 'products' ? (
-        detail?.products?.length ? (
+        {detail?.products?.length ? (
           <View style={{ marginBottom: 12 }}>
             <KoolaSurface variant="flat" style={styles.section}>
               <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
-                {'SẢN PHẨM'}
+                SẢN PHẨM
               </KoolaText>
               <View style={styles.productGrid}>
-                {detail.products.map((p) => (
+                {(showAllProducts ? detail.products : detail.products.slice(0, 4)).map((p) => (
                   <Pressable
                     key={p.id}
                     onPress={() => setSelectedProductId(p.id)}
@@ -655,18 +488,18 @@ const BusinessProfileScreen: React.FC = () => {
                   </Pressable>
                 ))}
               </View>
+              {detail.products.length > 4 ? (
+                <Pressable onPress={() => { if (showAllProducts) setShowAllProducts(false); else (navigation as any).navigate('ShoppingTab', { screen: 'ShoppingHome' }); }} style={[styles.viewMoreBtn, { borderColor: palette.line }]}>
+                  <KoolaText variant="label" weight="700" style={{ color: palette.primary }}>{showAllProducts ? 'Thu gọn' : `Xem chi tiết — ${detail.products.length} sản phẩm`}</KoolaText>
+                  <MaterialIcons name={showAllProducts ? 'expand-less' : 'chevron-right'} size={18} color={palette.primary} />
+                </Pressable>
+              ) : null}
             </KoolaSurface>
           </View>
-        ) : (
-          <KoolaSurface variant="flat" style={[styles.section, { padding: 16, alignItems: 'center' }]}>
-            <KoolaText tone="muted">Chưa có sản phẩm.</KoolaText>
-          </KoolaSurface>
-        )
-      ) : null}
+        ) : null}
 
-      {/* Tab: Chứng nhận */}
-      {activeTab === 'certs' ? (
-        detail?.certifications?.length ? (
+
+        {detail?.certifications?.length ? (
           <InfoSection title="Chứng nhận" palette={palette} styles={styles}>
             <View style={styles.certRow}>
               {detail.certifications.map((c) => (
@@ -683,83 +516,66 @@ const BusinessProfileScreen: React.FC = () => {
               ))}
             </View>
           </InfoSection>
-        ) : (
-          <KoolaSurface variant="flat" style={[styles.section, { padding: 16, alignItems: 'center' }]}>
-            <KoolaText tone="muted">Chưa có chứng nhận.</KoolaText>
-          </KoolaSurface>
-        )
-      ) : null}
+        ) : null}
 
-      {/* Tab: Liên hệ */}
-      {activeTab === 'contact' ? (
-        <>
-          {account.website || account.contactEmail || account.contactPhone ? (
-            <InfoSection title="Liên hệ" palette={palette} styles={styles}>
-              {account.website ? (
-                <ContactRow
-                  icon="language"
-                  label={account.website}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(account.website!)}
-                />
-              ) : null}
-              {account.contactEmail ? (
-                <ContactRow
-                  icon="email"
-                  label={account.contactEmail}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(`mailto:${account.contactEmail}`)}
-                />
-              ) : null}
-              {account.contactPhone ? (
-                <ContactRow
-                  icon="phone"
-                  label={account.contactPhone}
-                  palette={palette}
-                  styles={styles}
-                  onPress={() => Linking.openURL(`tel:${account.contactPhone}`)}
-                />
-              ) : null}
-            </InfoSection>
-          ) : null}
+        {/* Địa chỉ / Liên hệ đã xóa theo yêu cầu */}
 
-          {account.address ? (
-            <InfoSection title="Địa chỉ" palette={palette} styles={styles}>
-              <ContactRow icon="place" label={account.address} palette={palette} styles={styles} />
-            </InfoSection>
-          ) : null}
-          {!account.website && !account.contactEmail && !account.contactPhone && !account.address ? (
-            <KoolaSurface variant="flat" style={[styles.section, { padding: 16, alignItems: 'center' }]}>
-              <KoolaText tone="muted">Chưa có thông tin liên hệ.</KoolaText>
-            </KoolaSurface>
-          ) : null}
-        </>
-      ) : null}
+        {/* Đánh giá gần nhất */}
+        <InfoSection title="Đánh giá" palette={palette} styles={styles}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MaterialIcons name="star" size={18} color="#F59E0B" />
+              <KoolaText variant="heading" weight="800" style={{ marginLeft: 4 }}>{detail?.rating?.toFixed(1) ?? '5.0'}</KoolaText>
+            </View>
+            <KoolaText variant="caption" tone="muted" style={{ marginLeft: 8 }}>· {detail?.positiveFeedbackCount ?? 185} đánh giá</KoolaText>
+          </View>
+          {[
+            { name: 'Minh T.', avatar: 'M', rating: 5, time: '2 ngày trước', text: 'Cà phê thơm, đóng gói cẩn thận. Giao hàng nhanh, sẽ ủng hộ tiếp!' },
+            { name: 'Lan Anh', avatar: 'L', rating: 5, time: '1 tuần trước', text: 'Tiêu đen chất lượng, hạt đều và thơm nồng. Đóng hũ thủy tinh rất đẹp.' },
+            { name: 'Hoàng N.', avatar: 'H', rating: 4, time: '2 tuần trước', text: 'Blend đậm đà đúng gu, pha phin rất ngon. Trừ 1 sao vì ship hơi lâu.' },
+          ].map((r) => (
+            <View key={r.name} style={styles.reviewRow}>
+              <View style={[styles.reviewAvatar, { backgroundColor: palette.canvas, borderColor: palette.line }]}>
+                <KoolaText variant="label" weight="800" style={{ color: palette.primary }}>{r.avatar}</KoolaText>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <KoolaText variant="label" weight="700">{r.name}</KoolaText>
+                  <KoolaText variant="caption" tone="muted" style={{ fontSize: 11 }}>{r.time}</KoolaText>
+                </View>
+                <View style={{ flexDirection: 'row', marginTop: 2 }}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <MaterialIcons key={i} name="star" size={12} color={i < r.rating ? '#F59E0B' : palette.line} />
+                  ))}
+                </View>
+                <KoolaText variant="caption" tone="muted" style={{ marginTop: 4, lineHeight: 17 }}>{r.text}</KoolaText>
+              </View>
+            </View>
+          ))}
+          <Pressable onPress={() => toast.show('Sắp ra mắt — xem tất cả đánh giá', 'info')} style={[styles.viewMoreBtn, { borderColor: palette.line }]}>
+            <KoolaText variant="label" weight="700" style={{ color: palette.primary }}>Xem tất cả đánh giá</KoolaText>
+            <MaterialIcons name="chevron-right" size={18} color={palette.primary} />
+          </Pressable>
+        </InfoSection>
 
-      <View style={styles.actions}>
-        <KoolaButton
-          title="Nhắn tin"
-          icon="chat-bubble-outline"
-          variant="primary"
-          loading={messaging}
-          disabled={messaging}
-          onPress={handleMessage}
-          style={{ flex: 1 }}
-        />
-        <KoolaButton
-          title="Chia sẻ"
-          icon="share"
-          variant="secondary"
-          onPress={() => toast.show('Đã sao chép liên kết hồ sơ', 'info')}
-          style={{ flex: 1 }}
-        />
-      </View>
-      <KoolaText variant="caption" tone="muted" style={styles.footnote}>
-        Hồ sơ minh hoạ — dữ liệu demo cho mục đích trình bày giao diện.
-      </KoolaText>
+        <KoolaText variant="caption" tone="muted" style={styles.footnote}>
+          Hồ sơ minh hoạ — dữ liệu demo cho mục đích trình bày giao diện.
+        </KoolaText>
       </Animated.ScrollView>
+
+      {/* Nút Nhắn tin nổi — luôn thấy dù scroll */}
+      <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: 16 + insets.bottom }]}>
+        <Pressable
+          onPress={handleMessage}
+          disabled={messaging}
+          style={({ pressed }) => [styles.fabBtn, { backgroundColor: '#FFFFFF', opacity: pressed || messaging ? 0.9 : 1, borderWidth: 1, borderColor: '#0A7AFF', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'center' }]}>
+          <View style={[styles.fabIconWrap, { backgroundColor: 'rgba(10,122,255,0.12)' }]}>
+            <MaterialIcons name="chat-bubble" size={18} color="#0A7AFF" />
+          </View>
+          <KoolaText variant="label" weight="800" style={{ color: '#0A7AFF', marginLeft: 8, marginRight: 6, fontSize: 14, flexShrink: 0 }}>{messaging ? 'Đang mở...' : 'Nhắn tin ngay'}</KoolaText>
+          <MaterialIcons name="arrow-forward" size={16} color="#0A7AFF" style={{ flexShrink: 0 }} />
+        </Pressable>
+      </View>
 
       {/* Product detail popup */}
       {(() => {
@@ -806,47 +622,6 @@ const BusinessProfileScreen: React.FC = () => {
     </>
   );
 };
-
-type BusinessTabId = 'about' | 'products' | 'certs' | 'contact';
-
-const TAB_LABELS: Record<BusinessTabId, string> = {
-  about: 'Giới thiệu',
-  products: 'Sản phẩm',
-  certs: 'Chứng nhận',
-  contact: 'Liên hệ',
-};
-
-const BusinessTabs: React.FC<{
-  active: BusinessTabId;
-  onChange: (id: BusinessTabId) => void;
-  palette: Palette;
-  styles: ReturnType<typeof makeStyles>;
-  hasAbout: boolean;
-  hasProducts: boolean;
-  hasCerts: boolean;
-  hasContact: boolean;
-}> = ({ active, onChange, palette, styles }) => (
-  <View style={styles.tabsRow}>
-    {(Object.keys(TAB_LABELS) as BusinessTabId[]).map((id) => {
-      const isActive = active === id;
-      return (
-        <Pressable
-          key={id}
-          onPress={() => onChange(id)}
-          style={[styles.tabItem, isActive && styles.tabItemActive]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: isActive }}>
-          <KoolaText
-            variant="caption"
-            weight={isActive ? '800' : '600'}
-            style={{ color: isActive ? palette.primary : palette.muted }}>
-            {TAB_LABELS[id]}
-          </KoolaText>
-        </Pressable>
-      );
-    })}
-  </View>
-);
 
 interface ContactRowProps {
   icon: string;
@@ -945,98 +720,24 @@ const makeStyles = (p: Palette) =>
       justifyContent: 'center',
       backgroundColor: 'rgba(0,0,0,0.38)',
     },
+    searchDock: { flex: 1, height: 36, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginLeft: 12, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.38)' },
+    searchDockSolid: {},
     container: { flex: 1, backgroundColor: p.canvas },
-    content: { paddingHorizontal: 16, paddingBottom: 40, paddingTop: 0 },
+    content: { paddingHorizontal: 16, paddingBottom: 80, paddingTop: 0 },
     centerState: { flex: 1 },
     loadingCard: { margin: 16, padding: 18 },
     loadingCardItem: { marginBottom: 14 },
-    coverWrap: {
-      height: 188,
-      marginHorizontal: -16,
-      marginBottom: 12,
-      overflow: 'hidden',
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-    },
-    coverPlaceholder: {
-      backgroundColor: p.line,
-    },
-    coverImage: { width: '100%', height: '100%' },
-    coverScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
-    hero: {
-      paddingHorizontal: 12,
-      paddingTop: 0,
-      paddingBottom: 12,
-      marginBottom: 12,
-      ...koolaShadows.sm,
-    },
-    heroHeader: { flexDirection: 'row', alignItems: 'center' },
-    avatarOverlapWrap: {
-      width: 69,
-      height: 69,
-      marginTop: -20,
-      borderRadius: 34.5,
-      borderWidth: 3,
-      borderColor: p.surface,
-      overflow: 'hidden',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: p.surface,
-      ...koolaShadows.sm,
-    },
-    heroNameWrap: { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center' },
-    heroFullBleed: {
-      marginHorizontal: -16,
-      borderRadius: 0,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      borderLeftWidth: 0,
-      borderRightWidth: 0,
-    },
-    heroOverCover: { marginTop: -18 },
+    unifiedField: { marginHorizontal: -16, overflow: 'hidden', borderRadius: 0, marginBottom: 12, justifyContent: 'flex-end' },
+    bannerWrap: { height: 140, borderRadius: koolaRadii.lg, overflow: 'hidden', backgroundColor: p.line, marginBottom: 12 },
+    bannerImage: { width: '100%', height: '100%' },
+    heroContent: { paddingHorizontal: 16 },
+    heroSplit: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    heroLeft: { flex: 2 },
+    heroRight: { flex: 1, alignItems: 'flex-start', gap: 8, paddingLeft: 8 },
+    heroNameRow: { flexDirection: 'row', alignItems: 'center' },
+    heroAddressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
     companyName: { flex: 1, fontSize: 12.5, fontWeight: '800', lineHeight: 16, color: p.ink },
-    badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10 },
-    badgeItem: { marginRight: 8, marginBottom: 4 },
-    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'nowrap' },
     metaItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
-    typeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      marginBottom: 12,
-    },
-    typeRowLabel: { marginLeft: 8 },
-    statsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: p.surface,
-      borderRadius: koolaRadii.lg,
-      borderWidth: 1,
-      borderColor: p.line,
-      paddingVertical: 14,
-      marginBottom: 12,
-    },
-    statItem: { flex: 1, alignItems: 'center' },
-    statsDivider: { width: StyleSheet.hairlineWidth, backgroundColor: p.line, alignSelf: 'stretch', marginHorizontal: 8 },
-    tabsRow: {
-      flexDirection: 'row',
-      gap: 8,
-      marginBottom: 12,
-      flexWrap: 'wrap',
-    },
-    tabItem: {
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: koolaRadii.pill,
-      borderWidth: 1,
-      borderColor: p.line,
-      backgroundColor: p.surface,
-    },
-    tabItemActive: {
-      borderColor: p.primary,
-      backgroundColor: p.primary + '14',
-    },
     section: { marginBottom: 12 },
     sectionTitle: { marginBottom: 9 },
     bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
@@ -1069,6 +770,9 @@ const makeStyles = (p: Palette) =>
     contactText: { flex: 1, marginLeft: 9 },
     actions: { flexDirection: 'row', gap: 12, marginTop: 6 },
     footnote: { textAlign: 'center', marginTop: 14, opacity: 0.7 },
+    fabWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', zIndex: 6, paddingHorizontal: 16 },
+    fabBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 13, paddingHorizontal: 24, borderRadius: 999 },
+    fabIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
     productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
     productCell: { width: '48.5%' },
     productCard: {
@@ -1090,6 +794,10 @@ const makeStyles = (p: Palette) =>
       paddingVertical: 2,
       borderRadius: koolaRadii.pill,
     },
+    reviewRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.line },
+    reviewAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    viewMoreBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12, paddingVertical: 10, borderRadius: koolaRadii.md, borderWidth: 1, gap: 6 },
+    statItem: { flex: 1, alignItems: 'center' },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16 },
     modalCard: {
       borderRadius: koolaRadii.lg,
