@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, FlatList, InteractionManager, RefreshControl, ActivityIndicator, StyleSheet, Pressable, TextInput, AccessibilityInfo } from 'react-native';
+import { View, FlatList, InteractionManager, RefreshControl, ActivityIndicator, StyleSheet, TextInput, AccessibilityInfo, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -21,10 +21,11 @@ import { RELATIONSHIP_FILTERS } from './constants';
 import { VN_PROVINCES, normalizeVN } from '../../constants/provinces';
 import type { BusinessSort } from '../../types';
 import { KoolaChip, KoolaSheet, KoolaSkeleton, KoolaText, koolaRadii, useKoolaToast, useTheme } from '../../ui';
+import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
 import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
-import { HeaderDockAction } from '../../components/HeaderSearchDock';
+import { HeaderDockAction, HeaderDockGhostAction } from '../../components/HeaderSearchDock';
 import { MOCK_BUSINESSES } from './mockBusinesses';
 import { filterMocks, mergeDiscoveryItems } from './mockFilters';
 import { BUSINESS_CATEGORIES } from './constants';
@@ -196,6 +197,15 @@ const ConnectHomeScreen: React.FC = () => {
   // Resting inset = header block + sub-menu bar. No filter-row strip: the
   // sub-menu bar IS the strip, and it collapses into the header on scroll.
   const listTopPad = blockH + SUB_MENU_BAR_H;
+  const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast();
+  // Both wordmark-row icons go through the shared ghost geometry so they stay
+  // in sync with HeaderSearchDock (size 36, glyph 20, muted, ghost press).
+  const headerActions = (
+    <>
+      <HeaderDockGhostAction icon="chat-bubble-outline" onPress={() => notifyComingSoon()} accessibilityLabel="Tin nhắn" />
+      <HeaderDockGhostAction icon="notifications-none" onPress={() => notifyComingSoon()} accessibilityLabel="Thông báo" />
+    </>
+  );
 
   const hiddenProgress = useSharedValue(0);
   const scrolledProgress = useSharedValue(0);
@@ -252,8 +262,8 @@ const ConnectHomeScreen: React.FC = () => {
       prevOffsetY.value = offsetY;
       if (travel.value > 8 && hiddenProgress.value !== 1) {
         hiddenProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
-      } else if (travel.value < -8 && hiddenProgress.value !== 0) {
-        hiddenProgress.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+      } else if (travel.value < -20 && hiddenProgress.value !== 0) {
+        hiddenProgress.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
       }
     },
   });
@@ -332,7 +342,9 @@ const ConnectHomeScreen: React.FC = () => {
   // Single chrome composition shared by the normal list, the skeleton, and the
   // error branch — glass-less header box (the sheet paints the glass), the
   // unified glass sheet, and the text sub-menu bar. Extracted so the three
-  // states cannot drift into different chrome shapes.
+  // states cannot drift into different chrome shapes. headerActions (message +
+  // notif) live INSIDE the shared box so we keep one top:0 sheet — no second
+  // NotchHeader that would clip the dock.
   const chrome = contentReady ? (
     <>
       <ChromeGlassSheet blockH={blockH} barH={SUB_MENU_BAR_H} hiddenProgress={hiddenProgress} scrolledProgress={scrolledProgress} />
@@ -342,6 +354,7 @@ const ConnectHomeScreen: React.FC = () => {
         contentReady={contentReady}
         withGlass={false}
         onSearchPress={handleSearchPress}
+        headerActions={headerActions}
         hiddenProgress={hiddenProgress}
         rightActions={
           <>
@@ -376,6 +389,7 @@ const ConnectHomeScreen: React.FC = () => {
         {chrome}
         <View style={{ paddingTop: listTopPad }}><ListErrorState message={error} onRetry={refresh} /></View>
         {bottomSheets}
+        {comingSoonToast}
       </View>
     );
   }
@@ -406,6 +420,7 @@ const ConnectHomeScreen: React.FC = () => {
       )}
       {chrome}
       {bottomSheets}
+      {comingSoonToast}
     </View>
   );
 };

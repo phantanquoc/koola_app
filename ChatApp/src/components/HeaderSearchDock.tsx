@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { KoolaText, koolaRadii, useTheme } from '../ui';
+import { KoolaText, koolaIconWell, koolaOpacity, koolaRadii, useTheme } from '../ui';
 
 // Pill cố định 36 — geometry khớp ChatHomeScreen (DOCK_H), chỉ fill xám animate.
 const DOCK_PILL_H = 36;
@@ -46,6 +46,20 @@ const dockStyles = StyleSheet.create({
     width: 48,
     height: '100%',
   },
+  ghostHost: {
+    width: 48,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ghostBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   badge: {
     position: 'absolute',
     top: -4,
@@ -79,6 +93,51 @@ export type HeaderDockActionProps = {
  * The Pressable clips its own ripple (`overflow: 'hidden'`); the badge therefore
  * lives on the unclipped host View beside it, positioned `top -4 / right -8`.
  */
+// Shared constants for the two icon families so header ghost and dock pill never drift.
+export const HEADER_GHOST_SIZE = 36;
+export const HEADER_GHOST_ICON = 20;
+export const DOCK_PILL_ICON = 22;
+
+export const HeaderDockGhostAction: React.FC<HeaderDockActionProps> = ({
+  icon,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+  badgeCount = 0,
+  badgeAccessibilityText,
+}) => {
+  const { tokens, resolvedScheme } = useTheme();
+  const sem = tokens.semantic;
+  const [pressed, setPressed] = React.useState(false);
+  const showBadge = badgeCount > 0;
+  const resolvedLabel = showBadge && badgeAccessibilityText ? `${accessibilityLabel}, ${badgeAccessibilityText}` : accessibilityLabel;
+  return (
+    <View style={dockStyles.ghostHost}>
+      <Pressable
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={resolvedLabel}
+        accessibilityHint={accessibilityHint}
+        onPress={onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        style={[
+          dockStyles.ghostBtn,
+          pressed && { backgroundColor: koolaIconWell[resolvedScheme], opacity: koolaOpacity.pressed },
+        ]}>
+        <MaterialIcons name={icon} size={HEADER_GHOST_ICON} color={sem.text.muted} />
+      </Pressable>
+      {showBadge ? (
+        <View pointerEvents="none" style={[dockStyles.badge, { backgroundColor: sem.status.danger }]}>
+          <KoolaText variant="caption" weight="700" style={{ color: sem.text.onAction, fontSize: 10, lineHeight: 12 }} numberOfLines={1}>
+            {badgeCount > 99 ? '99+' : String(badgeCount)}
+          </KoolaText>
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
 export const HeaderDockAction: React.FC<HeaderDockActionProps> = ({
   icon,
   onPress,

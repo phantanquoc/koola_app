@@ -72,6 +72,8 @@ export type ChromeHeaderBoxProps = {
   withGlass?: boolean;
   onSearchPress: () => void;
   rightActions?: React.ReactNode;
+  /** Icons beside the wordmark (e.g. Connect's message/notification). Rendered absolute at the wordmark row so they don't push it. */
+  headerActions?: React.ReactNode;
   hiddenProgress?: SharedValue<number>;
   scrolledProgress?: SharedValue<number>;
 };
@@ -83,6 +85,7 @@ export const ChromeHeaderBox: React.FC<ChromeHeaderBoxProps> = ({
   withGlass = true,
   onSearchPress,
   rightActions,
+  headerActions,
   hiddenProgress,
   scrolledProgress,
 }) => {
@@ -172,6 +175,24 @@ export const ChromeHeaderBox: React.FC<ChromeHeaderBoxProps> = ({
           accessibilityLabel="KOOLA"
         />
       </View>
+      {headerActions ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            right: 16,
+            // 16 = 12 (dock container pad) + 4 (Host pad) so the rightmost ghost
+            // edge aligns with the dock's QR/filter edge. gap 6 matches the dock
+            // inner row gap. Height 36 centered on the 15px wordmark strip.
+            top: insetsTop + CHROME_BOX_WORDMARK_TOP + (CHROME_BOX_WORDMARK_H - 36) / 2,
+            height: 36,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+          }}>
+          {headerActions}
+        </View>
+      ) : null}
       <View
         pointerEvents="box-none"
         style={{
