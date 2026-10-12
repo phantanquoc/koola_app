@@ -45,17 +45,17 @@ export type ServiceProvider = {
 
 export const serviceCategories: ServiceCategory[] = [
   { id: 'all', label: 'Tất cả', icon: 'apps' },
-  { id: 'repair', label: 'Sửa chữa', icon: 'build' },
-  { id: 'delivery', label: 'Giao hàng', icon: 'local-shipping' },
-  { id: 'food', label: 'Đặt đồ ăn', icon: 'restaurant' },
-  { id: 'home', label: 'Nhà cửa', icon: 'home' },
+  { id: 'jobs', label: 'Việc làm', icon: 'work' },
+  { id: 'real_estate', label: 'Bất động sản', icon: 'home-work' },
+  { id: 'cleaning', label: 'Vệ sinh', icon: 'cleaning-services' },
+  { id: 'dining', label: 'Ăn uống', icon: 'restaurant' },
 ];
 
 export const services: ServiceItem[] = [
   {
     id: 'sv1',
     title: 'Sửa điện nước tại nhà',
-    category: 'repair',
+    category: 'jobs',
     subtitle: 'Thợ xác minh, báo giá trước khi làm',
     price: 'Từ 120.000đ',
     eta: '30-45 phút',
@@ -71,7 +71,7 @@ export const services: ServiceItem[] = [
   {
     id: 'sv2',
     title: 'Giao hàng nội thành',
-    category: 'delivery',
+    category: 'jobs',
     subtitle: 'Xe máy, xe tải nhỏ, giao nhanh trong ngày',
     price: 'Từ 18.000đ',
     eta: '15 phút nhận đơn',
@@ -87,7 +87,7 @@ export const services: ServiceItem[] = [
   {
     id: 'sv3',
     title: 'Đặt đồ ăn gần bạn',
-    category: 'food',
+    category: 'dining',
     subtitle: 'Quán cơm, cafe, món Việt, đồ uống',
     price: 'Ưu đãi đến 25%',
     eta: '20-35 phút',
@@ -103,7 +103,7 @@ export const services: ServiceItem[] = [
   {
     id: 'sv4',
     title: 'Vệ sinh máy lạnh',
-    category: 'repair',
+    category: 'cleaning',
     subtitle: 'Kiểm tra gas, vệ sinh dàn lạnh, bảo hành 7 ngày',
     price: 'Từ 180.000đ',
     eta: 'Trong 2 giờ',
@@ -118,7 +118,7 @@ export const services: ServiceItem[] = [
   {
     id: 'sv5',
     title: 'Dọn dẹp nhà theo giờ',
-    category: 'home',
+    category: 'real_estate',
     subtitle: 'Nhân sự có hồ sơ, dụng cụ cơ bản',
     price: 'Từ 75.000đ/giờ',
     eta: 'Hôm nay',
@@ -133,7 +133,7 @@ export const services: ServiceItem[] = [
   {
     id: 'sv6',
     title: 'Giặt ủi lấy tận nơi',
-    category: 'home',
+    category: 'cleaning',
     subtitle: 'Áo sơ mi, chăn ga, đồ công sở',
     price: 'Từ 35.000đ/kg',
     eta: '24 giờ',
