@@ -366,26 +366,34 @@ const BusinessProfileScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}>
-        <View style={[styles.unifiedField, { marginTop: -headerH - 40, paddingTop: headerH + 52, paddingBottom: 10, minHeight: 210 + headerH }]}>
+        <View style={[styles.unifiedField, { marginTop: -headerH - 40, paddingTop: headerH + 64, paddingBottom: 10, minHeight: 222 + headerH }]}>
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <UnifiedLightField isDark={isDark} />
           </View>
           <View style={styles.heroContent}>
             <View style={styles.heroSplit}>
               <View style={styles.heroLeft}>
-                <View style={styles.heroNameRow}>
-                  <KoolaText numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{account.displayName}</KoolaText>
-                </View>
                 {account.verificationStatus === 'verified' ? (
-                  <View style={styles.verifiedBadgeRow}>
-                    <MaterialIcons name="verified" size={14} color={palette.success} />
-                    <KoolaText variant="caption" weight="700" style={{ marginLeft: 5, color: palette.success }}>
+                  <View style={[styles.verifiedBadgeRow, { marginTop: 0, marginBottom: 4 }]}>
+                    <MaterialIcons name="verified" size={10} color={palette.success} />
+                    <KoolaText weight="700" style={{ marginLeft: 3, color: palette.success, fontSize: 10, lineHeight: 13 }}>
                       Doanh nghiệp đã xác thực
                     </KoolaText>
                   </View>
                 ) : null}
+                <View style={styles.heroNameRow}>
+                  <KoolaText numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{account.displayName}</KoolaText>
+                </View>
+                {(account as any).address || (detail as any)?.address ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                    <MaterialIcons name="location-on" size={10} color={palette.muted} style={{ marginRight: 3 }} />
+                    <KoolaText variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1, fontSize: 10, lineHeight: 13 }}>
+                      {(account as any).address ?? (detail as any)?.address}
+                    </KoolaText>
+                  </View>
+                ) : null}
               </View>
-              <View style={styles.heroRight}>
+              <View style={[styles.heroRight, account.verificationStatus === 'verified' ? { marginTop: 17 } : null]}>
                 {(detail?.countryLabel || account.province) ? (
                   <View style={[styles.heroAddressRow, { justifyContent: 'flex-end' }]}>
                     <KoolaText style={{ fontSize: 13, marginRight: 4 }}>{countryFlag(detail?.countryLabel ?? account.province)}</KoolaText>
