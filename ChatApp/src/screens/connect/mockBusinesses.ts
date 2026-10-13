@@ -63,7 +63,7 @@ export type MockBusinessDetail = MockBusiness & {
 export const MOCK_BUSINESSES: MockBusiness[] = [
   {
     _id: 'mock-dv-001',
-    displayName: 'CÔNG TY CỔ PHẦN ĐẦU TƯ VÀ PHÁT TRIỂN NÔNG NGHIỆP CÔNG NGHỆ CAO ĐẠI VIỆT',
+    displayName: 'CÔNG TY CỔ PHẦN ĐẦU TƯ VÀ PHÁT TRIỂN ĐẠI VIỆT',
     shortName: 'ĐẠI VIỆT',
     businessCategory: 'food-beverage',
     province: 'TP. Hồ Chí Minh',

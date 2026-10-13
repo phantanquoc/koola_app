@@ -20,8 +20,11 @@ import {
   KoolaState,
   KoolaSurface,
   KoolaText,
+  koolaCardElevations,
+  koolaGlowShadows,
   koolaRadii,
   koolaShadows,
+  koolaSpacing,
   useKoolaToast,
   useTheme,
 } from '../../ui';
@@ -147,6 +150,13 @@ const BusinessProfileScreen: React.FC = () => {
   const [showAllProducts, setShowAllProducts] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const scrollY = React.useRef(new (require('react-native').Animated.Value)(0)).current as any;
+  const bannerEnter = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    if (prefersReducedMotion()) { bannerEnter.setValue(1); return; }
+    Animated.timing(bannerEnter, { toValue: 1, duration: 520, delay: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [bannerEnter]);
+  const bannerParallaxY = (scrollY as any).interpolate({ inputRange: [-80, 0, 140], outputRange: [-10, 0, 10], extrapolate: 'clamp' as const });
+  const bannerParallaxScale = (scrollY as any).interpolate({ inputRange: [-80, 0, 200], outputRange: [1.06, 1, 1.02], extrapolate: 'clamp' as const });
   // Chrome-style: only fade between 48-96 like before
   const chromeOpacity = React.useMemo(
     () =>
@@ -356,7 +366,7 @@ const BusinessProfileScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}>
-        <View style={[styles.unifiedField, { marginTop: -headerH - 40, paddingTop: headerH + 72, paddingBottom: 14, minHeight: 250 + headerH }]}>
+        <View style={[styles.unifiedField, { marginTop: -headerH - 40, paddingTop: headerH + 52, paddingBottom: 10, minHeight: 210 + headerH }]}>
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <UnifiedLightField isDark={isDark} />
           </View>
@@ -365,19 +375,32 @@ const BusinessProfileScreen: React.FC = () => {
               <View style={styles.heroLeft}>
                 <View style={styles.heroNameRow}>
                   <KoolaText numberOfLines={2} ellipsizeMode="tail" style={styles.companyName}>{account.displayName}</KoolaText>
-                  {account.verificationStatus === 'verified' ? <MaterialIcons name="verified" size={14} color={palette.success} style={{ marginLeft: 5, marginTop: 1 }} /> : null}
                 </View>
-                {(detail?.countryLabel || account.province) ? (
-                  <View style={styles.heroAddressRow}>
-                    <KoolaText style={{ fontSize: 13, marginRight: 4 }}>{countryFlag(detail?.countryLabel ?? account.province)}</KoolaText>
-                    <KoolaText variant="caption" weight="700" tone="muted" numberOfLines={1}>
-                      {[account.province, detail?.countryLabel].filter(Boolean).join(' · ') || detail?.countryLabel || account.province}
+                {account.verificationStatus === 'verified' ? (
+                  <View style={styles.verifiedBadgeRow}>
+                    <MaterialIcons name="verified" size={14} color={palette.success} />
+                    <KoolaText variant="caption" weight="700" style={{ marginLeft: 5, color: palette.success }}>
+                      Doanh nghiệp đã xác thực
                     </KoolaText>
                   </View>
                 ) : null}
               </View>
               <View style={styles.heroRight}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {(detail?.countryLabel || account.province) ? (
+                  <View style={[styles.heroAddressRow, { justifyContent: 'flex-end' }]}>
+                    <KoolaText style={{ fontSize: 13, marginRight: 4 }}>{countryFlag(detail?.countryLabel ?? account.province)}</KoolaText>
+                    <KoolaText variant="caption" weight="700" tone="muted" numberOfLines={1}>
+                      {(() => {
+                        const provRaw = account.province ?? '';
+                        const cRaw = detail?.countryLabel ?? '';
+                        const prov = provRaw === 'TP. Hồ Chí Minh' || provRaw === 'Thành phố Hồ Chí Minh' ? 'TP.HCM' : provRaw.replace('Thành phố ', 'TP. ').replace('Tỉnh ', '');
+                        const country = cRaw ? (/việt\s*nam/i.test(cRaw) ? 'VN' : cRaw.length > 4 ? cRaw.slice(0, 2).toUpperCase() : cRaw.toUpperCase()) : '';
+                        return [prov, country].filter(Boolean).join(' · ');
+                      })()}
+                    </KoolaText>
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, justifyContent: 'flex-end' }}>
                   {typeof detail?.rating === 'number' ? (
                     <View style={[styles.metaItem, { marginRight: 12 }]}>
                       <MaterialIcons name="star" size={14} color="#F59E0B" />
@@ -391,20 +414,24 @@ const BusinessProfileScreen: React.FC = () => {
                     </View>
                   ) : null}
                 </View>
-                {detail?.yearsActive ? (
-                  <View style={[styles.metaItem, { marginTop: 6 }]}>
-                    <MaterialIcons name="history" size={14} color={palette.muted} />
-                    <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>{detail.yearsActive} năm</KoolaText>
-                  </View>
-                ) : null}
               </View>
             </View>
           </View>
         </View>
 
-        <View style={styles.bannerWrap}>
-          <Image source={(detail as any)?.bannerImage ?? require('../../assets/mock-shopping/vegetables.jpg')} style={styles.bannerImage} resizeMode="cover" />
-        </View>
+        <Animated.View style={[styles.bannerWrap, { opacity: bannerEnter, transform: [{ translateY: Animated.add(bannerEnter.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }), bannerParallaxY as any) as any }, { scale: Animated.multiply(bannerEnter.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }), bannerParallaxScale as any) as any }] }]}>
+          <Animated.Image source={(detail as any)?.bannerImage ?? require('../../assets/mock-shopping/vegetables.jpg')} style={styles.bannerImage} resizeMode="cover" />
+          {/* soft inner shadow + top-edge sheen overlay */}
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <View style={{ flex: 1, borderRadius: koolaRadii.lg, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)' }} />
+          </View>
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: koolaRadii.lg, overflow: 'hidden' }]}>
+            {/* top sheen */}
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.55)' }} />
+            {/* bottom inner shadow */}
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 22, backgroundColor: 'rgba(0,0,0,0.06)' }} />
+          </View>
+        </Animated.View>
 
         {/* Single-page sequential content (no tabs) */}
         {detail?.aboutLong ? (
@@ -437,9 +464,13 @@ const BusinessProfileScreen: React.FC = () => {
         {detail?.products?.length ? (
           <View style={{ marginBottom: 12 }}>
             <KoolaSurface variant="flat" style={styles.section}>
-              <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
-                SẢN PHẨM
-              </KoolaText>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionIconWell}>
+                  <MaterialIcons name="inventory-2" size={14} color={palette.primary} />
+                </View>
+                <KoolaText variant="label" weight="800" style={styles.sectionTitleNew}>SẢN PHẨM</KoolaText>
+              </View>
+              <View style={styles.sectionDivider} />
               <View style={styles.productGrid}>
                 {(showAllProducts ? detail.products : detail.products.slice(0, 4)).map((p) => (
                   <Pressable
@@ -648,15 +679,32 @@ interface InfoSectionProps {
   children: React.ReactNode;
   palette: Palette;
   styles: ReturnType<typeof makeStyles>;
+  icon?: string;
 }
-const InfoSection: React.FC<InfoSectionProps> = ({ title, children, palette, styles }) => (
-  <KoolaSurface variant="flat" style={styles.section}>
-    <KoolaText variant="caption" tone="primary" weight="800" style={styles.sectionTitle}>
-      {title.toUpperCase()}
-    </KoolaText>
-    {children}
-  </KoolaSurface>
-);
+const SECTION_ICON: Record<string, string> = {
+  'NĂNG LỰC CẠNH TRANH & CAM KẾT': 'verified',
+  'CHỨNG NHẬN': 'workspace-premium',
+  'ĐÁNH GIÁ': 'star',
+  'SẢN PHẨM': 'inventory-2',
+};
+const InfoSection: React.FC<InfoSectionProps> = ({ title, children, palette, styles, icon }) => {
+  const upper = title.toUpperCase();
+  const iconName = icon ?? SECTION_ICON[upper] ?? 'info';
+  return (
+    <KoolaSurface variant="flat" style={styles.section}>
+      <View style={styles.sectionHeaderRow}>
+        <View style={styles.sectionIconWell}>
+          <MaterialIcons name={iconName as any} size={14} color={palette.primary} />
+        </View>
+        <KoolaText variant="label" weight="800" style={styles.sectionTitleNew}>
+          {upper}
+        </KoolaText>
+      </View>
+      <View style={styles.sectionDivider} />
+      {children}
+    </KoolaSurface>
+  );
+};
 
 const Stat: React.FC<{
   label: string;
@@ -728,17 +776,22 @@ const makeStyles = (p: Palette) =>
     loadingCard: { margin: 16, padding: 18 },
     loadingCardItem: { marginBottom: 14 },
     unifiedField: { marginHorizontal: -16, overflow: 'hidden', borderRadius: 0, marginBottom: 12, justifyContent: 'flex-end' },
-    bannerWrap: { height: 140, borderRadius: koolaRadii.lg, overflow: 'hidden', backgroundColor: p.line, marginBottom: 12 },
-    bannerImage: { width: '100%', height: '100%' },
+    bannerWrap: { height: 180, marginHorizontal: -5, borderRadius: koolaRadii.lg, overflow: 'hidden', backgroundColor: p.line, marginBottom: 12, ...koolaShadows.md, shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+    bannerImage: { width: '100%', height: '100%', transform: [{ scale: 1 }] },
     heroContent: { paddingHorizontal: 16 },
     heroSplit: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     heroLeft: { flex: 2 },
-    heroRight: { flex: 1, alignItems: 'flex-start', gap: 8, paddingLeft: 8 },
+    heroRight: { flex: 1, alignItems: 'flex-end', gap: 4, paddingLeft: 8 },
+    verifiedBadgeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
     heroNameRow: { flexDirection: 'row', alignItems: 'center' },
-    heroAddressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+    heroAddressRow: { flexDirection: 'row', alignItems: 'center' },
     companyName: { flex: 1, fontSize: 12.5, fontWeight: '800', lineHeight: 16, color: p.ink },
     metaItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
-    section: { marginBottom: 12 },
+    section: { marginBottom: 12, borderRadius: koolaRadii.lg, padding: koolaSpacing.lg, ...koolaShadows.sm, shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2, overflow: 'hidden' },
+    sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    sectionIconWell: { width: 28, height: 28, borderRadius: koolaRadii.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: p.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: p.line },
+    sectionTitleNew: { flex: 1, color: p.ink, letterSpacing: 0.4 },
+    sectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: p.line, marginTop: 10, marginBottom: 12 },
     sectionTitle: { marginBottom: 9 },
     bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
     bulletDot: { width: 6, height: 6, borderRadius: 3, marginTop: 7, marginRight: 8 },
