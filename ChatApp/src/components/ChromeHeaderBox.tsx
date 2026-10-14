@@ -76,6 +76,8 @@ export type ChromeHeaderBoxProps = {
   headerActions?: React.ReactNode;
   hiddenProgress?: SharedValue<number>;
   scrolledProgress?: SharedValue<number>;
+  /** When provided, renders this instead of HeaderSearchDock (e.g. Shopping inline search input). */
+  dockContent?: React.ReactNode;
 };
 
 export const ChromeHeaderBox: React.FC<ChromeHeaderBoxProps> = ({
@@ -88,6 +90,7 @@ export const ChromeHeaderBox: React.FC<ChromeHeaderBoxProps> = ({
   headerActions,
   hiddenProgress,
   scrolledProgress,
+  dockContent,
 }) => {
   const blockH = getChromeBoxHeight(insetsTop);
   const { tokens } = useTheme();
@@ -204,11 +207,13 @@ export const ChromeHeaderBox: React.FC<ChromeHeaderBoxProps> = ({
           paddingHorizontal: 12,
           justifyContent: 'center',
         }}>
-        <HeaderSearchDock
-          hiddenProgress={hiddenProgress}
-          onSearchPress={onSearchPress}
-          rightActions={rightActions}
-        />
+        {dockContent ?? (
+          <HeaderSearchDock
+            hiddenProgress={hiddenProgress}
+            onSearchPress={onSearchPress}
+            rightActions={rightActions}
+          />
+        )}
       </View>
     </View>
   );

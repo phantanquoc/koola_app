@@ -237,7 +237,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
         <KoolaSurface variant="raised" style={[styles.hero, styles.heroFullBleed, styles.heroOverCover]}>
           <View style={styles.heroHeader}>
             <View style={styles.avatarOverlapWrap}>
-              <UserAvatar displayName={seller.displayName} avatar={seller.logoUrl ?? undefined} size={65} />
+              <UserAvatar displayName={seller.displayName} avatar={seller.logoUrl ?? undefined} size={80} />
             </View>
             <View style={styles.heroNameWrap}>
               <KoolaText numberOfLines={2} style={styles.companyName}>
@@ -749,11 +749,11 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
     },
     heroHeader: { flexDirection: 'row', alignItems: 'center' },
     avatarOverlapWrap: {
-      width: 69,
-      height: 69,
-      marginTop: -20,
-      borderRadius: 34.5,
-      borderWidth: 3,
+      width: 84,
+      height: 84,
+      marginTop: -24,
+      borderRadius: 42,
+      borderWidth: 4,
       borderColor: semantic.surface.level1,
       overflow: 'hidden',
       alignItems: 'center',
@@ -770,7 +770,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       borderLeftWidth: 0,
       borderRightWidth: 0,
     },
-    heroOverCover: { marginTop: -40 },
+    heroOverCover: { marginTop: -48 },
     companyName: { flex: 1, fontSize: 12.5, fontWeight: '800', lineHeight: 16, color: semantic.text.primary },
     badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10 },
     badgeItem: { marginRight: 8, marginBottom: 4 },

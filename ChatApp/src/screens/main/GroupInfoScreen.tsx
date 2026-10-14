@@ -149,7 +149,9 @@ const GroupInfoScreen: React.FC = () => {
     <SafeAreaView style={s.ctr} edges={['bottom','left','right']}>
       {renderHeader()}
       <View style={s.hdr}>
-        <UserAvatar displayName={conversation.name || 'Nhóm'} size={72} />
+        <View style={s.avatarOverlapWrap}>
+          <UserAvatar displayName={conversation.name || 'Nhóm'} size={80} />
+        </View>
         {editingName ? (
           <View style={s.editRow}>
             <TextInput style={s.editIn} value={newName} onChangeText={setNewName} placeholder="Tên mới" placeholderTextColor="#999" autoFocus />
@@ -251,6 +253,22 @@ const s = StyleSheet.create({
     width: 44,
   },
   hdr: { alignItems: 'center', paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  avatarOverlapWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 4,
+    borderColor: '#fff',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+  },
   gName: { fontSize: 22, fontWeight: 'bold', color: '#333', marginTop: 12, textAlign: 'center' },
   hint: { fontSize: 12, color: '#2196F3', textAlign: 'center', marginTop: 2 },
   mCount: { fontSize: 14, color: '#999', marginTop: 4 },

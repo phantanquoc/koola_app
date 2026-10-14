@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   Image,
   InteractionManager,
@@ -22,13 +21,11 @@ import {
   koolaRadii,
   koolaDarkShadows,
   koolaShadows,
-  koolaZIndex,
   useKoolaToast,
   useTheme,
 } from '../../ui';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { NOTCH_HEADER_CONTENT_H, NOTCH_WING_INSET } from '../../components/NotchHeader';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { ShoppingTabStackParamList } from '../../navigation/types';
 import { commerceApi } from '../../services/api/apiService';
@@ -46,51 +43,25 @@ import {
   addProductToCart,
   soldLabel,
 } from './shoppingCatalog';
+import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
+import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
 
 /**
  * Shopping home — single-column product list (Figma frame 64:2).
  *
- * Chrome layout (fixed, floats over the list):
- *   [flat search pill 40 + filter icon]  →  [chips-only scroller 44]  →  list
- *
- * Search is a flat opaque pill (fill `border.subtle`, no blur/shadow, focus
- * ring is an overlay). The filter entry point ("Lọc" icon + badge) lives inside
- * the dock (divider + icon-only button) so FilterRow below is chips-only.
- * Scroll hides the dock over 120dp with snap at ~60dp; filter row slides into
- * the vacated space (44→40 height compression, same offset — no seam).
- *
- * Notch is hosted by ShoppingTabStack (fixed chrome); this screen owns search,
- * the filter row, the filter sheet and the product list.
+ * Chrome: shared ChromeGlassSheet + ChromeHeaderBox (single source with
+ * Chat/Connect). Header is fixed — no scroll-hide animation (choice B).
+ * FilterRow stays scroll-fixed directly below the header block (glass
+ * extends through it: barH = FILTER_ROW_H).
  */
 
-// Chrome reserve above the first product row: 4 gap + 40 dock + 8 gap
-// + 44 filter row + 12 gap (at rest; collapses 12→8 when chrome hides).
-// The list pads by this max reserve so nothing is clipped at scroll 0 while
-// rows still slide behind the pill on scroll. The 12→8 collapse is realized
-// as an Animated spacer inside overlayChrome (not as FlatList padding) so
-// CHROME_RESERVE / listTopPad stay static and the FlatList avoids a
-// layout reflow on every scroll frame.
-const DOCK_GAP_TOP = 4;
-// 40 + hitSlop covers the 44dp minimum touch target (ui-dna.md:275): the pill
-// is visually 40dp while the TextInput's hitSlop top/bottom 2 brings its
-// effective area to 44dp. CHROME_RESERVE below recomputes from this.
-const DOCK_H = 40;
-const DOCK_GAP_BOTTOM = 8;
 const FILTER_ROW_H = 72;
-const FILTER_ROW_H_COLLAPSED = 72;
 const FILTER_ROW_GAP_BOTTOM = 12;
-const FILTER_ROW_GAP_COLLAPSED = 8;
-// Scroll-driven chrome: dock hides over 120dp, snap at midpoint (~60dp).
-const DOCK_HIDE_THRESHOLD = 120;
-const DOCK_HIDE_MID = DOCK_HIDE_THRESHOLD / 2;
-const DOCK_SLIDE = DOCK_H + DOCK_GAP_BOTTOM;
 // Vertical gap between product cards. Shared with the skeleton's row spacing
 // so the two stay in sync and swapping in real content causes no shift.
 const CARD_GAP = 6;
 // Tags shown per card (capped for uniform row height).
 const TAGS_PER_CARD = 2;
-const CHROME_RESERVE =
-  DOCK_GAP_TOP + DOCK_H + DOCK_GAP_BOTTOM + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
 // Search input → server query debounce (spec: 300 ms).
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -98,39 +69,34 @@ type Styles = ReturnType<typeof makeStyles>;
 // Filtering, sorting and pagination are done by the server
 // (GET /commerce/products) — never in the client.
 
-// ── Search dock: flat opaque pill, 40dp (flat dock pass) ────────────────────
-// Flat, no blur/shadow — fill is `semantic.border.subtle`. 40 + hitSlop
-// covers the 44dp minimum (ui-dna.md:275) without a shadowWrap. Focus ring is
-// an absolutely-positioned overlay so it doesn't eat into the content box.
-const ShoppingSearchDock: React.FC<{
+// ── Inline search field rendered inside ChromeHeaderBox dock slot ────────────
+// 36dp pill to match CHROME_BOX_DOCK_H; fill is `border.subtle`.
+const SHOPPING_DOCK_H = 36;
+
+const ShoppingHeaderSearch: React.FC<{
   semantic: SemanticTokens;
   value: string;
   onChangeText: (t: string) => void;
-  onFocusChange?: (f: boolean) => void;
-}> = ({ semantic, value, onChangeText, onFocusChange }) => {
+}> = ({ semantic, value, onChangeText }) => {
   const [focused, setFocused] = useState(false);
-  const handleFocus = useCallback(() => { setFocused(true); onFocusChange?.(true); }, [onFocusChange]);
-  const handleBlur = useCallback(() => { setFocused(false); onFocusChange?.(false); }, [onFocusChange]);
-
   return (
-    <View style={[dockStyles.pill, { backgroundColor: semantic.border.subtle }]}>
+    <View style={[shoppingDockStyles.pill, { backgroundColor: semantic.border.subtle }]}>
       {focused ? (
-        <View pointerEvents="none" style={[dockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
+        <View pointerEvents="none" style={[shoppingDockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
       ) : null}
-      <View style={dockStyles.contentRow}>
-        <MaterialIcons name="search" size={20} color={semantic.text.faint} style={dockStyles.searchIcon} />
+      <View style={shoppingDockStyles.contentRow}>
+        <MaterialIcons name="search" size={20} color={semantic.text.faint} style={shoppingDockStyles.searchIcon} />
         <TextInput
           value={value}
           onChangeText={onChangeText}
           placeholder="Tìm kiếm sản phẩm..."
           placeholderTextColor={semantic.text.faint}
-          style={[dockStyles.searchInput, { color: semantic.text.primary }]}
+          style={[shoppingDockStyles.searchInput, { color: semantic.text.primary }]}
           returnKeyType="search"
           underlineColorAndroid="transparent"
           accessibilityLabel="Tìm kiếm sản phẩm"
-          hitSlop={{ top: 2, bottom: 2 }}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
         {value.length > 0 ? (
           <Pressable
@@ -138,7 +104,7 @@ const ShoppingSearchDock: React.FC<{
             accessibilityLabel="Xóa tìm kiếm"
             onPress={() => onChangeText('')}
             hitSlop={6}
-            style={dockStyles.searchClear}>
+            style={shoppingDockStyles.searchClear}>
             <MaterialIcons name="close" size={20} color={semantic.text.muted} />
           </Pressable>
         ) : null}
@@ -147,9 +113,9 @@ const ShoppingSearchDock: React.FC<{
   );
 };
 
-const dockStyles = StyleSheet.create({
+const shoppingDockStyles = StyleSheet.create({
   pill: {
-    height: DOCK_H,
+    height: SHOPPING_DOCK_H,
     borderRadius: koolaRadii.pill,
     overflow: 'hidden',
     justifyContent: 'center',
@@ -166,13 +132,11 @@ const dockStyles = StyleSheet.create({
     paddingLeft: 14,
     paddingRight: 8,
   },
-  searchIcon: {
-    marginRight: 6,
-  },
+  searchIcon: { marginRight: 6 },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    height: DOCK_H,
+    height: SHOPPING_DOCK_H,
     paddingVertical: 0,
     textAlignVertical: 'center',
   },
@@ -474,143 +438,9 @@ const ShoppingHomeScreen: React.FC = () => {
     () => makeStyles(semantic, resolvedScheme),
     [semantic, resolvedScheme],
   );
-  const notchPad = insets.top + NOTCH_WING_INSET + NOTCH_HEADER_CONTENT_H + 4;
-  // Fixed chrome (dock + filter row) floats over the list at notchPad; the
-  // list reserves notchPad + CHROME_RESERVE so the first row clears both with
-  // no clipping at scroll 0, and content slides behind the pill on scroll.
-  const overlayTop = notchPad;
-  const listTopPad = notchPad + CHROME_RESERVE;
-
-  // ── Scroll-driven chrome (plain Animated, no Reanimated) ────────────────
-  // Mirrors ConversationListScreen's hysteresis pattern but via Animated.Value
-  // so no new dependency. appliedOffset is the hysteresis-filtered offset that
-  // interpolations read; raw scroll drives it through a JS listener. All
-  // animated props are transform/opacity/height — native-driven.
-  const appliedOffset = useRef(new Animated.Value(0)).current;
-  const flatListRef = useRef<FlatList<ProductCard>>(null);
-  const rawOffsetRef = useRef(0);
-  const appliedValueRef = useRef(0);
-  const travelRef = useRef(0);
-  const directionRef = useRef<1 | -1 | 0>(0);
-  const isDraggingRef = useRef(false);
-  const dockFocusedRef = useRef(false);
-  const [dockHidden, setDockHidden] = useState(false);
-  useEffect(() => {
-    const id = appliedOffset.addListener(({ value }: { value: number }) => {
-      appliedValueRef.current = value;
-      const hidden = value >= DOCK_HIDE_THRESHOLD - 1;
-      setDockHidden((prev) => (prev === hidden ? prev : hidden));
-    });
-    return () => appliedOffset.removeListener(id);
-  }, [appliedOffset]);
-
-  const HYSTERESIS = 10;
-
-  const dockTranslateY = appliedOffset.interpolate({
-    inputRange: [0, DOCK_HIDE_THRESHOLD],
-    outputRange: [0, -DOCK_SLIDE],
-    extrapolate: 'clamp',
-  });
-  const dockOpacity = appliedOffset.interpolate({
-    inputRange: [0, DOCK_HIDE_MID, DOCK_HIDE_THRESHOLD],
-    outputRange: [1, 0.5, 0],
-    extrapolate: 'clamp',
-  });
-  const filterTranslateY = appliedOffset.interpolate({
-    inputRange: [0, DOCK_HIDE_THRESHOLD],
-    outputRange: [0, -DOCK_SLIDE],
-    extrapolate: 'clamp',
-  });
-  // Filter row compresses 44→40 while sliding; native-driven height via Animated.
-  const filterRowHeight = appliedOffset.interpolate({
-    inputRange: [0, DOCK_HIDE_THRESHOLD],
-    outputRange: [FILTER_ROW_H, FILTER_ROW_H_COLLAPSED],
-    extrapolate: 'clamp',
-  });
-  // Gap below the filter row: 12 at rest → 8 when chrome is fully hidden.
-  // Layout prop (height) so driven with useNativeDriver:false via
-  // Animated.timing on appliedOffset; stays inside overlayChrome so
-  // CHROME_RESERVE / FlatList paddingTop can remain static.
-  const filterRowGapHeight = appliedOffset.interpolate({
-    inputRange: [0, DOCK_HIDE_THRESHOLD],
-    outputRange: [FILTER_ROW_GAP_BOTTOM, FILTER_ROW_GAP_COLLAPSED],
-    extrapolate: 'clamp',
-  });
-
-  const snapToNearestDetent = useCallback(() => {
-    if (dockFocusedRef.current) {
-      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-      rawOffsetRef.current = 0;
-      travelRef.current = 0;
-      directionRef.current = -1;
-      return;
-    }
-    // Don't fight the sheet's own settle animation while it is open.
-    // Hysteresis already holds the chrome steady; snapping underneath
-    // would nudge scroll offset under the sheet.
-    // Guard lives inside the callback that already closes over filterSheetOpen
-    // — add dep below.
-    const v = appliedValueRef.current;
-    if (v > 20 && v < 100) {
-      const target = v < DOCK_HIDE_MID ? 0 : DOCK_HIDE_THRESHOLD;
-      Animated.timing(appliedOffset, { toValue: target, duration: 180, useNativeDriver: false }).start();
-      flatListRef.current?.scrollToOffset({ offset: target, animated: true });
-      rawOffsetRef.current = target;
-      travelRef.current = 0;
-      directionRef.current = target === 0 ? -1 : 1;
-    }
-  }, [appliedOffset]);
-
-  const handleFocusChange = useCallback((focused: boolean) => {
-    dockFocusedRef.current = focused;
-    if (focused) {
-      travelRef.current = 0;
-      directionRef.current = -1;
-      Animated.timing(appliedOffset, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      if (rawOffsetRef.current > 0) {
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-        rawOffsetRef.current = 0;
-      }
-    }
-  }, [appliedOffset]);
-
-  const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const y = Math.max(0, e.nativeEvent.contentOffset.y);
-    if (dockFocusedRef.current) {
-      if (appliedValueRef.current !== 0) appliedOffset.setValue(0);
-      rawOffsetRef.current = y;
-      return;
-    }
-    const delta = y - rawOffsetRef.current;
-    rawOffsetRef.current = y;
-    if (y <= 4) {
-      travelRef.current = 0;
-      directionRef.current = -1;
-      appliedOffset.setValue(0);
-      return;
-    }
-    if (delta > 0) {
-      travelRef.current = Math.max(0, travelRef.current) + delta;
-      directionRef.current = 1;
-      appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y));
-    } else if (delta < 0) {
-      travelRef.current = Math.min(0, travelRef.current) + delta;
-      if (travelRef.current < -HYSTERESIS) {
-        directionRef.current = -1;
-        appliedOffset.setValue(Math.min(DOCK_HIDE_THRESHOLD, y));
-      }
-    }
-  }, [appliedOffset]);
-
-  const handleScrollBeginDrag = useCallback(() => { isDraggingRef.current = true; }, []);
-  const handleScrollEndDrag = useCallback(() => {
-    isDraggingRef.current = false;
-    snapToNearestDetent();
-  }, [snapToNearestDetent]);
-  const handleMomentumScrollEnd = useCallback(() => {
-    if (!isDraggingRef.current) snapToNearestDetent();
-  }, [snapToNearestDetent]);
+  const isDark = resolvedScheme === 'dark';
+  const blockH = getChromeBoxHeight(insets.top);
+  const listTopPad = blockH + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
 
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<CommerceCategory | null>(null);
@@ -783,16 +613,15 @@ const ShoppingHomeScreen: React.FC = () => {
     [handleOpenProduct, handleAddToCart, handleChatSeller, contactingSellerId, semantic, styles],
   );
 
-  return (
-    <View style={styles.screen}>
-      {!contentReady ? (
-        <View style={[styles.screen, { paddingTop: overlayTop }]}>
-          {/* Chrome placeholders use contentInset (12) and row placeholders use
-              listContent (6), matching the two different real insets so nothing
-              shifts horizontally when content swaps in. */}
+  const handleSearchPress = useCallback(() => {}, []);
+
+  if (!contentReady) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.screen, { paddingTop: blockH }]}>
           <View style={styles.contentInset}>
-            <KoolaSkeleton width="100%" height={DOCK_H} radius={koolaRadii.pill} />
-            <View style={{ marginTop: DOCK_GAP_BOTTOM, height: FILTER_ROW_H }}>
+            <KoolaSkeleton width="100%" height={SHOPPING_DOCK_H} radius={koolaRadii.pill} />
+            <View style={{ marginTop: 8, height: FILTER_ROW_H }}>
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <KoolaSkeleton width="50%" height={32} radius={koolaRadii.pill} />
@@ -818,67 +647,52 @@ const ShoppingHomeScreen: React.FC = () => {
             ))}
           </View>
         </View>
-      ) : (
-        <Animated.FlatList
-          ref={flatListRef}
-          removeClippedSubviews={false}
-          data={list.items}
-          keyExtractor={(item: ProductCard | undefined, index: number) => item?.id ?? String(index)}
-          renderItem={renderItem}
-          initialNumToRender={8}
-          maxToRenderPerBatch={8}
-          windowSize={7}
-          updateCellsBatchingPeriod={50}
-          ListEmptyComponent={renderEmpty}
-          ListFooterComponent={renderFooter}
-          // Infinite scroll: the hook ignores calls while a page is in flight
-          // or when there is no next page, so repeated onEndReached is safe.
-          onEndReached={list.loadMore}
-          onEndReachedThreshold={0.6}
-          contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
-          showsVerticalScrollIndicator={false}
-          style={styles.screenTransparent}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onScrollEndDrag={handleScrollEndDrag}
-          onMomentumScrollEnd={handleMomentumScrollEnd}
-        />
-      )}
-      {contentReady ? (
-        <View style={[styles.overlayChrome, { top: overlayTop }]} pointerEvents="box-none">
-          <View style={styles.contentInset} pointerEvents="box-none">
-            {/* Dock: fades + slides up over 120dp; when fully hidden pointerEvents none so taps reach rows. */}
-            <Animated.View
-              pointerEvents={dockHidden ? 'none' : 'auto'}
-              style={{ transform: [{ translateY: dockTranslateY }], opacity: dockOpacity }}>
-              <ShoppingSearchDock
-                semantic={semantic}
-                value={query}
-                onChangeText={setQuery}
-                onFocusChange={handleFocusChange}
-              />
-            </Animated.View>
-            {/* Filter row: slides up into vacated dock space, compresses 44->40. Same appliedOffset as dock => no seam. */}
-            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowHeight, marginTop: DOCK_GAP_BOTTOM, overflow: 'hidden' }}>
-              <View style={{ height: FILTER_ROW_H }}>
-                <FilterRow
-                  semantic={semantic}
-                  styles={styles}
-                  activeSort={activeSort}
-                  activeAttr={activeAttr}
-                  activeFilterCount={activeFilterCount}
-                  onToggleSort={toggleSort}
-                  onToggleAttr={toggleAttr}
-                  onOpenFilters={openFilterSheet}
-                />
-              </View>
-            </Animated.View>
-            {/* Breathing gap between filter row and first card: 12 at rest → 8 when hidden. Spacer lives inside overlayChrome (not FlatList padding) so CHROME_RESERVE / listTopPad stay static and avoid layout reflow on every scroll frame. */}
-            <Animated.View style={{ transform: [{ translateY: filterTranslateY }], height: filterRowGapHeight }} />
-          </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <ChromeGlassSheet blockH={blockH} barH={FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM} />
+      <ChromeHeaderBox
+        insetsTop={insets.top}
+        isDark={isDark}
+        contentReady={contentReady}
+        withGlass={false}
+        onSearchPress={handleSearchPress}
+        dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} />}
+      />
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: blockH, left: 0, right: 0, zIndex: 11 }}>
+        <View style={[styles.filterBarWrap]}>
+          <FilterRow
+            semantic={semantic}
+            styles={styles}
+            activeSort={activeSort}
+            activeAttr={activeAttr}
+            activeFilterCount={activeFilterCount}
+            onToggleSort={toggleSort}
+            onToggleAttr={toggleAttr}
+            onOpenFilters={openFilterSheet}
+          />
         </View>
-      ) : null}
+      </View>
+      <FlatList
+        removeClippedSubviews={false}
+        data={list.items}
+        keyExtractor={(item: ProductCard | undefined, index: number) => item?.id ?? String(index)}
+        renderItem={renderItem}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        onEndReached={list.loadMore}
+        onEndReachedThreshold={0.6}
+        contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
+        showsVerticalScrollIndicator={false}
+        style={styles.screenTransparent}
+      />
       {filterSheetOpen ? (
         <FilterSheet
           styles={styles}
@@ -923,14 +737,10 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     contentInset: {
       paddingHorizontal: 12,
     },
-    // Fixed chrome layer above the list; box-none so taps in the gaps still
-    // reach the rows scrolling underneath.
-    overlayChrome: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      paddingTop: DOCK_GAP_TOP,
-      zIndex: koolaZIndex.sticky,
+    // Filter bar below the chrome block: static, scrolls with content.
+    filterBarWrap: {
+      paddingHorizontal: 12,
+      height: FILTER_ROW_H,
     },
     // ── Filter row: 2 hàng + nút Lọc cao 2 hàng ──
     filterRow: {
