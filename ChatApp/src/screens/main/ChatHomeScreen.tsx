@@ -34,22 +34,6 @@ import GroupCreateModal from '../../components/GroupCreateModal';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
-const ConnectionsPlaceholder: React.FC = () => {
-  const { tokens } = useTheme();
-  const headerInset = React.useContext(ChatHomeHeaderInsetContext);
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.semantic.bg.canvas, padding: 24, paddingTop: headerInset + 24 }}>
-      <MaterialIcons name="handshake" size={48} color={tokens.semantic.text.muted} />
-      <KoolaText variant="title" weight="600" align="center" style={{ marginTop: 12, color: tokens.semantic.text.primary }}>
-        Kết nối
-      </KoolaText>
-      <KoolaText variant="body" align="center" style={{ marginTop: 8, color: tokens.semantic.text.muted }}>
-        Khám phá và kết nối với cộng đồng Koola.
-      </KoolaText>
-    </View>
-  );
-};
-
 const TopTab = createMaterialTopTabNavigator<ChatSubTabParamList>();
 
 // ─── Sub-tab metadata ─────────────────────────────────────────────────────────
@@ -66,7 +50,6 @@ const SUB_TAB_META: Record<keyof ChatSubTabParamList, TabMeta> = {
   Contacts: { iconIdle: 'people-outline', iconActive: 'people', label: 'Danh bạ' },
   Moments: { iconIdle: 'star-outline', iconActive: 'star', label: 'Khoảnh khắc' },
   Shorts: { iconIdle: 'play-circle-outline', iconActive: 'play-circle-filled', label: 'Xem trước' },
-  Connections: { iconIdle: 'handshake', iconActive: 'handshake', label: 'Kết nối' },
 };
 
 // Hook for unread counts. Returns 0 for now — wire to store/api when available.
@@ -95,7 +78,6 @@ const ACTIVE_GLYPH_CHAR: Record<string, string> = {
   people: String.fromCharCode(0xe7fb),
   star: String.fromCharCode(0xe838),
   'play-circle-filled': String.fromCharCode(0xe038),
-  handshake: String.fromCharCode(0xebcb),
 };
 
 const TabItem: React.FC<TabItemProps> = ({
@@ -327,14 +309,12 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
   const contactsUnread = useUnreadCount('Contacts');
   const momentsUnread = useUnreadCount('Moments');
   const shortsUnread = useUnreadCount('Shorts');
-  const connectionsUnread = useUnreadCount('Connections');
 
   const unreadByRoute: Record<string, number> = {
     Messages: messagesUnread,
     Contacts: contactsUnread,
     Moments: momentsUnread,
     Shorts: shortsUnread,
-    Connections: connectionsUnread,
   };
 
   const isDark = resolvedScheme === 'dark';
@@ -517,7 +497,6 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
           <TopTab.Screen name="Contacts" component={ContactsScreen} />
           <TopTab.Screen name="Moments" component={MomentsScreen} />
           <TopTab.Screen name="Shorts" component={ShortsScreen} />
-          <TopTab.Screen name="Connections" component={ConnectionsPlaceholder} />
         </TopTab.Navigator>
       </ChatSubTabVisibilityContext.Provider>
       <QrScannerModal
@@ -637,7 +616,7 @@ const ChatHomeScreen: React.FC = () => {
 // CHAT_SUB_TAB_BAR_HEIGHT) + skeleton conversation rows (matching
 // ConversationListItem: 48px avatar, minHeight 72, hairline separators).
 const SHELL_ROW_KEYS = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'];
-const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3', 't4'];
+const SHELL_TAB_KEYS = ['t0', 't1', 't2', 't3'];
 
 const ChatHomeShell: React.FC<{ styles: ReturnType<typeof makeScreenStyles> }> = ({ styles }) => (
   <View style={styles.shellBody}>

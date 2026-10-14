@@ -916,6 +916,7 @@ const MainNavigator: React.FC = () => {
           name="ShoppingTab"
           component={ShoppingTabStack}
           options={{
+            freezeOnBlur: false,
             tabBarAccessibilityLabel: 'Mua sắm',
           }}
         />
