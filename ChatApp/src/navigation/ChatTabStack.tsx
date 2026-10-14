@@ -53,6 +53,7 @@ const ChatTabStack: React.FC = () => {
   const showStackHeader =
     focusedRouteName !== 'ChatHome' &&
     focusedRouteName !== 'Chat' &&
+    focusedRouteName !== 'Profile' &&
     focusedRouteName !== 'UniversalSearch';
   return (
     <ChatHeaderContext.Provider value={headerCtx}>

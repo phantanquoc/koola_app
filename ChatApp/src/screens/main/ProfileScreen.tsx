@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  Image,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect as SvgRect, Stop } from 'react-native-svg';
 import { getOrDownload } from '../../services/media/mediaCacheService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { formatDistanceToNow } from 'date-fns';
@@ -15,6 +23,8 @@ import { conversationsApi, usersApi } from '../../services/api/apiService';
 import UserAvatar from '../../components/UserAvatar';
 import ConversationCallHistorySheet from '../../components/ConversationCallHistorySheet';
 import type { User } from '../../types';
+import { getNotchHeaderHeight } from '../../components/NotchHeader';
+import { LightFieldBackground } from './components/personal/LightFieldBackground';
 import {
   KoolaBadge,
   KoolaButton,
@@ -25,10 +35,12 @@ import {
   KoolaSkeleton,
   koolaRadii,
   koolaShadows,
+  koolaDarkShadows,
   koolaSpacing,
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
+import type { SemanticTokens } from '../../ui/tokens/semantic';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
@@ -36,8 +48,24 @@ const ProfileScreen: React.FC = () => {
   const { userId } = route.params;
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarBottomInset();
-  const { palette } = useTheme();
-  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { tokens, resolvedScheme } = useTheme();
+  const semantic = tokens.semantic;
+  const isDark = resolvedScheme === 'dark';
+  const palette = (tokens as unknown as { palette: Palette }).palette ?? (tokens as any);
+  const styles = useMemo(() => makeStyles(semantic, resolvedScheme), [semantic, resolvedScheme]);
+  const headerH = getNotchHeaderHeight(insets.top, 'nav');
+
+  // Scroll chrome — dual-layer fade 0-96 identical to ShoppingStorefront
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const chromeOpacity = useMemo(
+    () =>
+      (scrollY as any).interpolate({
+        inputRange: [0, 48, 96],
+        outputRange: [0, 0.5, 1],
+        extrapolate: 'clamp' as const,
+      }),
+    [scrollY],
+  );
 
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,7 +74,6 @@ const ProfileScreen: React.FC = () => {
   const [callHistoryConversationId, setCallHistoryConversationId] = useState<string | null>(null);
   const [callHistoryVisible, setCallHistoryVisible] = useState(false);
 
-  // Resolve cover photo media key to a local URI for display
   useEffect(() => {
     if (profileUser?.coverPhoto) {
       getOrDownload(profileUser.coverPhoto)
@@ -120,39 +147,141 @@ const ProfileScreen: React.FC = () => {
     }
   }, [userId]);
 
-  const renderHeader = () => (
-    <View style={[styles.header, { paddingTop: insets.top }]}>
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={navigation.goBack}
-          hitSlop={12}
-          android_ripple={{ color: palette.line, borderless: true, radius: 22 }}
-          style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại">
-          <MaterialIcons name="arrow-back" size={24} color={palette.ink} />
-        </Pressable>
-        <KoolaText variant="heading" weight="700" style={styles.headerTitle} numberOfLines={1}>
-          Hồ sơ
-        </KoolaText>
-        <View style={styles.headerSpacer} />
+  const lastSeenText = profileUser?.isOnline
+    ? 'Đang hoạt động'
+    : profileUser?.lastSeen
+      ? `Hoạt động ${formatDistanceToNow(new Date(profileUser.lastSeen), {
+          addSuffix: true,
+          locale: vi,
+        })}`
+      : 'Đang ngoại tuyến';
+
+  const headerTitle = profileUser?.displayName ?? 'Hồ sơ';
+
+  // ── Inline header — identical structure to ShoppingStorefront ────────────
+  const inlineHeader = (
+    <View style={[styles.inlineHeader, { height: headerH, paddingTop: insets.top }]}>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { overflow: 'hidden' }]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? 'rgba(15,20,25,0.72)' : 'rgba(255,255,255,0.84)', opacity: chromeOpacity }]}
+        />
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { opacity: (chromeOpacity as any).interpolate({ inputRange: [0, 1], outputRange: [0, 0.72], extrapolate: 'clamp' } as any) }]}>
+          <LightFieldBackground windowSized />
+        </Animated.View>
       </View>
+      <Animated.View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: 0, right: 0, bottom: -18, height: 18, opacity: chromeOpacity }}>
+        <Svg width="100%" height={18}>
+          <Defs>
+            <SvgLinearGradient id="profileHeaderShadow" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#000000" stopOpacity={isDark ? '0.48' : '0.18'} />
+              <Stop offset="1" stopColor="#000000" stopOpacity="0" />
+            </SvgLinearGradient>
+          </Defs>
+          <SvgRect width="100%" height={18} fill="url(#profileHeaderShadow)" />
+        </Svg>
+      </Animated.View>
+      {/* Transparent layer — fades out */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+          paddingTop: insets.top,
+          opacity: (chromeOpacity as any).interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' } as any),
+        }}>
+        <View style={[styles.inlineBackBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
+          <MaterialIcons name="arrow-back" size={22} color="#FFFFFF" />
+        </View>
+        <KoolaText weight="800" numberOfLines={1} style={[styles.inlineHeaderTitle, { color: '#FFFFFF', textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }]}>
+          {headerTitle}
+        </KoolaText>
+        <View style={styles.inlineHeaderActions}>
+          <View style={[styles.inlineIconBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
+            <MaterialIcons name="search" size={20} color="#FFFFFF" />
+          </View>
+          <View style={[styles.inlineIconBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
+            <MaterialIcons name="share" size={18} color="#FFFFFF" />
+          </View>
+          <View style={[styles.inlineIconBtn, { backgroundColor: 'rgba(0,0,0,0.38)' }]}>
+            <MaterialIcons name="more-vert" size={18} color="#FFFFFF" />
+          </View>
+        </View>
+      </Animated.View>
+      {/* Solid layer — fades in */}
+      <Animated.View
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+          paddingTop: insets.top,
+          opacity: chromeOpacity,
+        }}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          style={[styles.inlineBackBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
+          <MaterialIcons name="arrow-back" size={22} color={semantic.text.primary} />
+        </Pressable>
+        <KoolaText weight="800" numberOfLines={1} style={[styles.inlineHeaderTitle, { color: semantic.text.primary, textShadowColor: 'transparent' }]}>
+          {headerTitle}
+        </KoolaText>
+        <View style={styles.inlineHeaderActions}>
+          <Pressable hitSlop={8} style={[styles.inlineIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
+            <MaterialIcons name="search" size={20} color={semantic.text.primary} />
+          </Pressable>
+          <Pressable hitSlop={8} style={[styles.inlineIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
+            <MaterialIcons name="share" size={18} color={semantic.text.primary} />
+          </Pressable>
+          <Pressable hitSlop={8} style={[styles.inlineIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,20,25,0.06)' }]}>
+            <MaterialIcons name="more-vert" size={18} color={semantic.text.primary} />
+          </Pressable>
+        </View>
+      </Animated.View>
     </View>
   );
 
   if (loading) {
     return (
       <View style={styles.container}>
-        {renderHeader()}
-        <View style={styles.loadingWrap}>
-          <KoolaSurface variant="raised" style={styles.loadingCard}>
-            <KoolaSkeleton width={92} height={92} radius={46} style={styles.loadingItem} />
+        {inlineHeader}
+        <Animated.ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, { paddingTop: headerH + 12, paddingBottom: tabBarInset + 18 }]}
+          showsVerticalScrollIndicator={false}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+          scrollEventThrottle={16}>
+          <View
+            style={[
+              styles.coverWrap,
+              styles.coverPlaceholder,
+              { marginTop: -headerH - 12, height: 72 + headerH, paddingTop: headerH },
+            ]}
+          />
+          <KoolaSurface variant="raised" style={[styles.hero, styles.heroFullBleed, styles.heroOverCover]}>
+            <View style={styles.heroHeader}>
+              <View style={styles.avatarOverlapWrap}>
+                <KoolaSkeleton width={65} height={65} radius={32.5} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <KoolaSkeleton width="60%" height={16} radius={6} />
+              </View>
+            </View>
+          </KoolaSurface>
+          <KoolaSurface variant="raised" style={[styles.loadingCard, { marginTop: 12 }]}>
             <KoolaSkeleton width="52%" height={22} style={styles.loadingItem} />
             <KoolaSkeleton width="68%" height={14} style={styles.loadingItem} />
             <KoolaSkeleton width="44%" height={32} radius={16} style={styles.loadingItem} />
             <KoolaSkeleton width="100%" height={84} radius={14} />
           </KoolaSurface>
-        </View>
+        </Animated.ScrollView>
       </View>
     );
   }
@@ -160,8 +289,8 @@ const ProfileScreen: React.FC = () => {
   if (!profileUser) {
     return (
       <View style={styles.container}>
-        {renderHeader()}
-        <View style={styles.stateWrap}>
+        {inlineHeader}
+        <View style={[styles.stateWrap, { paddingTop: headerH + 24 }]}>
           <KoolaState
             icon="person-off"
             title="Không tìm thấy người dùng"
@@ -172,79 +301,176 @@ const ProfileScreen: React.FC = () => {
     );
   }
 
-  const lastSeenText = profileUser.isOnline
-    ? 'Đang hoạt động'
-    : profileUser.lastSeen
-      ? `Hoạt động ${formatDistanceToNow(new Date(profileUser.lastSeen), {
-          addSuffix: true,
-          locale: vi,
-        })}`
-      : 'Đang ngoại tuyến';
-
   return (
     <View style={styles.container}>
-      {renderHeader()}
-      <ScrollView
+      {inlineHeader}
+      <Animated.ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: tabBarInset + 18 },
+          { paddingBottom: tabBarInset + 18, paddingTop: 0 },
         ]}
-        showsVerticalScrollIndicator={false}>
-        <KoolaSurface variant="raised" style={styles.profileCard}>
-          <View style={styles.coverFrame}>
-            {coverUri ? (
-              <Image
-                source={{ uri: coverUri }}
-                style={styles.coverImage}
-                resizeMode="cover"
-              />
-            ) : (
+        showsVerticalScrollIndicator={false}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+        scrollEventThrottle={16}>
+        {/* Cover — full-bleed behind transparent header + status bar */}
+        <View
+          style={[
+            styles.coverWrap,
+            coverUri ? null : styles.coverPlaceholder,
+            { marginTop: -headerH - 40, height: 230 + headerH, paddingTop: headerH },
+          ]}>
+          {coverUri ? (
+            <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+          ) : (
+            <View style={StyleSheet.absoluteFillObject}>
               <FakeGradientBand palette={palette} />
-            )}
-            <View style={styles.coverScrim} />
-          </View>
+            </View>
+          )}
+          <View style={styles.coverScrim} />
+        </View>
 
-          <View style={styles.avatarFrame}>
-            <UserAvatar
-              displayName={profileUser.displayName}
-              avatar={profileUser.avatar || undefined}
-              size={112}
-            />
-          </View>
-
-          <View style={styles.identityBlock}>
-            <KoolaText variant="title" align="center" numberOfLines={2}>
-              {profileUser.displayName}
-            </KoolaText>
-            {profileUser.username ? (
-              <KoolaText variant="label" tone="primary" align="center" numberOfLines={1}>
-                @{profileUser.username}
+        {/* Hero — avatar gối 1/3 lên banner, cùng format Shop */}
+        <KoolaSurface variant="raised" style={[styles.hero, styles.heroFullBleed, styles.heroOverCover]}>
+          <View style={styles.heroHeader}>
+            <View style={styles.avatarOverlapWrap}>
+              <UserAvatar
+                displayName={profileUser.displayName}
+                avatar={profileUser.avatar || undefined}
+                size={65}
+              />
+            </View>
+            <View style={styles.heroNameWrap}>
+              <KoolaText numberOfLines={2} style={styles.companyName}>
+                {profileUser.displayName}
               </KoolaText>
+              {profileUser.isOnline ? (
+                <MaterialIcons
+                  name="verified"
+                  size={14}
+                  color={semantic.status.success}
+                  style={{ marginLeft: 5, marginTop: 1 }}
+                />
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.badgeRow}>
+            {profileUser.username ? (
+              <View style={styles.badgeItem}>
+                <KoolaBadge label={`@${profileUser.username}`} tone="primary" />
+              </View>
+            ) : null}
+            <View style={styles.badgeItem}>
+              <KoolaBadge
+                label={profileUser.isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
+                tone={profileUser.isOnline ? 'success' : 'muted'}
+              />
+            </View>
+            {profileUser.bio ? (
+              <View style={styles.badgeItem}>
+                <KoolaBadge label="Có tiểu sử" tone="muted" />
+              </View>
             ) : null}
           </View>
 
-          <View style={styles.statusRow}>
-            <View
-              style={[
-                styles.statusDot,
-                profileUser.isOnline ? styles.online : styles.offline,
-              ]}
-            />
-            <KoolaBadge
-              label={profileUser.isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
-              tone={profileUser.isOnline ? 'success' : 'muted'}
-            />
+          <View style={styles.metaRow}>
+            {profileUser.email ? (
+              <View style={styles.metaItem}>
+                <MaterialIcons name="alternate-email" size={14} color={semantic.text.faint} />
+                <KoolaText variant="caption" tone="muted" weight="700" style={{ marginLeft: 4 }} numberOfLines={1}>
+                  {profileUser.email}
+                </KoolaText>
+              </View>
+            ) : null}
+            <View style={styles.metaItem}>
+              <MaterialIcons
+                name={profileUser.isOnline ? 'radio-button-checked' : 'schedule'}
+                size={14}
+                color={profileUser.isOnline ? semantic.status.success : semantic.text.faint}
+              />
+              <KoolaText variant="caption" weight="700" tone={profileUser.isOnline ? 'success' : 'muted'} style={{ marginLeft: 4 }}>
+                {lastSeenText}
+              </KoolaText>
+            </View>
           </View>
 
           {profileUser.bio ? (
-            <View style={styles.bioBox}>
-              <KoolaText variant="body" tone="muted" align="center" numberOfLines={3}>
+            <View style={styles.typeRow}>
+              <MaterialIcons name="format-quote" size={17} color={semantic.text.faint} />
+              <KoolaText
+                variant="label"
+                tone="muted"
+                weight="500"
+                style={[styles.typeRowLabel, { fontStyle: 'italic', flex: 1 }]}
+                numberOfLines={3}>
                 {profileUser.bio}
               </KoolaText>
             </View>
           ) : null}
         </KoolaSurface>
+
+        {/* Stats — 3 cols cùng format Shop */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <KoolaText variant="title" weight="800" style={{ textAlign: 'center' }}>
+              {profileUser.isOnline ? '●' : '○'}
+            </KoolaText>
+            <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
+              Trạng thái
+            </KoolaText>
+          </View>
+          <View style={styles.statsDivider} />
+          <View style={styles.statItem}>
+            <KoolaText variant="heading" weight="700" style={{ textAlign: 'center' }}>
+              {profileUser.isOnline ? 'Online' : 'Offline'}
+            </KoolaText>
+            <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
+              Hoạt động
+            </KoolaText>
+          </View>
+          <View style={styles.statsDivider} />
+          <View style={styles.statItem}>
+            <KoolaText variant="heading" weight="700" style={{ textAlign: 'center' }}>
+              {profileUser.email ? '1' : '—'}
+            </KoolaText>
+            <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
+              Liên hệ
+            </KoolaText>
+          </View>
+        </View>
+
+        {/* Header actions — cùng format Shop: Theo dõi / Nhắn tin */}
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={handleOpenCallHistory}
+            accessibilityRole="button"
+            style={[
+              styles.followBtn,
+              {
+                borderColor: semantic.border.strong,
+                backgroundColor: 'transparent',
+              },
+            ]}
+            android_ripple={{ color: semantic.border.subtle }}>
+            <MaterialIcons name="phone" size={16} color={semantic.text.primary} />
+            <KoolaText variant="label" weight="700" style={{ marginLeft: 6, color: semantic.text.primary }}>
+              Gọi
+            </KoolaText>
+          </Pressable>
+          <Pressable
+            onPress={handleStartChat}
+            disabled={chatLoading}
+            accessibilityRole="button"
+            accessibilityLabel={`Nhắn tin với ${profileUser.displayName}`}
+            style={[styles.msgBtnSmall, { backgroundColor: semantic.action.primary, opacity: chatLoading ? 0.6 : 1 }]}
+            android_ripple={{ color: 'rgba(255,255,255,0.2)' }}>
+            <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.text.onAction} />
+            <KoolaText variant="label" weight="700" style={{ marginLeft: 6, color: semantic.text.onAction }}>
+              Nhắn tin
+            </KoolaText>
+          </Pressable>
+        </View>
 
         <KoolaSurface variant="outline" style={styles.infoCard}>
           <View style={styles.sectionIntro}>
@@ -292,19 +518,7 @@ const ProfileScreen: React.FC = () => {
             <MaterialIcons name="chevron-right" size={22} color={palette.faint} />
           </Pressable>
         </KoolaSurface>
-
-        <View style={styles.actionPanel}>
-          <KoolaButton
-            title="Bắt đầu trò chuyện"
-            icon="chat-bubble-outline"
-            size="lg"
-            loading={chatLoading}
-            disabled={chatLoading}
-            onPress={handleStartChat}
-            style={styles.chatButton}
-          />
-        </View>
-      </ScrollView>
+      </Animated.ScrollView>
       <ConversationCallHistorySheet
         conversationId={callHistoryConversationId}
         isVisible={callHistoryVisible}
@@ -315,9 +529,6 @@ const ProfileScreen: React.FC = () => {
 };
 
 // ─── FakeGradientBand ───
-// Stacked translucent bands faking a primarySoft→surface fade.
-// In dark mode, bands blend toward the dark surface instead of white.
-// No gradient lib available — 1px overlap prevents seams (ui-dna.md:70).
 interface FakeGradientBandProps {
   palette: Palette;
 }
@@ -337,7 +548,6 @@ const FakeGradientBand: React.FC<FakeGradientBandProps> = ({ palette }) => {
 };
 
 const makeGradBandStyles = (p: Palette) => {
-  // Use surface color for the fade target — works in both light and dark
   const fadeTarget = p.surface;
   return StyleSheet.create({
     band1: { ...StyleSheet.absoluteFillObject, backgroundColor: p.primarySoft },
@@ -395,52 +605,154 @@ const infoRowStyles = StyleSheet.create({
   },
 });
 
-const makeStyles = (p: Palette) =>
-  StyleSheet.create({
+const makeStyles = (semantic: SemanticTokens, scheme: string) => {
+  const shadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm;
+  return StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: p.canvas,
+      backgroundColor: semantic.bg.canvas,
     },
     scroll: {
       flex: 1,
     },
-    header: {
-      backgroundColor: p.surface,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: p.line,
-    },
-    headerRow: {
-      minHeight: 52,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: koolaSpacing.sm,
-    },
-    headerBack: {
-      width: 44,
-      height: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    headerBackPressed: {
-      opacity: 0.78,
-      transform: [{ scale: 0.98 }],
-    },
-    headerTitle: {
-      flex: 1,
-      textAlign: 'center',
-    },
-    headerSpacer: {
-      width: 44,
-    },
     content: {
       paddingHorizontal: koolaSpacing.lg,
-      paddingTop: koolaSpacing.lg,
+      // paddingTop handled via cover negative margin + headerH
     },
-    loadingWrap: {
-      flex: 1,
-      padding: 16,
+    // ── Inline header (shop format) ──
+    inlineHeader: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 5,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+    },
+    inlineBackBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.38)',
     },
+    inlineHeaderTitle: {
+      flex: 1,
+      marginLeft: 30,
+      color: '#FFFFFF',
+      fontSize: 14,
+      textShadowColor: 'rgba(0,0,0,0.35)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    inlineHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginLeft: 8 },
+    inlineIconBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.38)',
+    },
+    // ── Cover — same as shop ──
+    coverWrap: {
+      height: 188,
+      marginHorizontal: -16,
+      marginBottom: 12,
+      overflow: 'hidden',
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+    },
+    coverPlaceholder: {
+      backgroundColor: semantic.border.subtle,
+    },
+    coverImage: { width: '100%', height: '100%' },
+    coverScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
+    // ── Hero — same as shop ──
+    hero: {
+      paddingHorizontal: 12,
+      paddingTop: 0,
+      paddingBottom: 12,
+      marginBottom: 12,
+      ...shadow,
+    },
+    heroHeader: { flexDirection: 'row', alignItems: 'center' },
+    avatarOverlapWrap: {
+      width: 69,
+      height: 69,
+      marginTop: -20,
+      borderRadius: 34.5,
+      borderWidth: 3,
+      borderColor: semantic.surface.level1,
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: semantic.surface.level1,
+      ...shadow,
+    },
+    heroNameWrap: { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center' },
+    heroFullBleed: {
+      marginHorizontal: -16,
+      borderRadius: 0,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      borderLeftWidth: 0,
+      borderRightWidth: 0,
+    },
+    heroOverCover: { marginTop: -40 },
+    companyName: { flex: 1, fontSize: 12.5, fontWeight: '800', lineHeight: 16, color: semantic.text.primary },
+    badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10 },
+    badgeItem: { marginRight: 8, marginBottom: 4 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' },
+    metaItem: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
+    typeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      marginBottom: 0,
+      marginTop: 10,
+      backgroundColor: semantic.surface.level1,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
+    },
+    typeRowLabel: { marginLeft: 8 },
+    statsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: semantic.surface.level1,
+      borderRadius: koolaRadii.lg,
+      borderWidth: 1,
+      borderColor: semantic.border.subtle,
+      paddingVertical: 14,
+      marginBottom: 12,
+    },
+    statItem: { flex: 1, alignItems: 'center' },
+    statsDivider: { width: StyleSheet.hairlineWidth, backgroundColor: semantic.border.subtle, alignSelf: 'stretch', marginHorizontal: 8 },
+    headerActions: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+    followBtn: {
+      flex: 1,
+      height: 44,
+      borderRadius: koolaRadii.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+    },
+    msgBtnSmall: {
+      flex: 1,
+      height: 44,
+      borderRadius: koolaRadii.pill,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+    },
+    // ── legacy ──
     loadingCard: {
       alignItems: 'center',
       paddingVertical: 28,
@@ -453,74 +765,8 @@ const makeStyles = (p: Palette) =>
       flex: 1,
       justifyContent: 'center',
     },
-    coverFrame: {
-      width: '100%',
-      height: 164,
-      overflow: 'hidden',
-      borderTopLeftRadius: koolaRadii.lg,
-      borderTopRightRadius: koolaRadii.lg,
-      backgroundColor: p.primarySoft,
-    },
-    coverImage: {
-      ...StyleSheet.absoluteFillObject,
-    },
-    coverScrim: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(16,24,40,0.08)',
-    },
-    profileCard: {
-      alignItems: 'center',
-      overflow: 'hidden',
-      borderRadius: koolaRadii.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
-      ...koolaShadows.md,
-    },
-    avatarFrame: {
-      marginTop: -58,
-      padding: 5,
-      borderRadius: koolaRadii.pill,
-      backgroundColor: p.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
-      ...koolaShadows.sm,
-    },
-    identityBlock: {
-      width: '100%',
-      alignItems: 'center',
-      marginTop: koolaSpacing.md,
-      paddingHorizontal: koolaSpacing.lg,
-    },
-    statusRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: koolaSpacing.md,
-    },
-    statusDot: {
-      width: 9,
-      height: 9,
-      borderRadius: 5,
-      marginRight: koolaSpacing.sm,
-    },
-    online: {
-      backgroundColor: p.success,
-    },
-    offline: {
-      backgroundColor: p.faint,
-    },
-    bioBox: {
-      marginTop: koolaSpacing.lg,
-      marginHorizontal: koolaSpacing.xl,
-      marginBottom: koolaSpacing.xl,
-      paddingHorizontal: koolaSpacing.lg,
-      paddingVertical: koolaSpacing.md,
-      borderRadius: koolaRadii.md,
-      backgroundColor: p.canvas,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.line,
-    },
     infoCard: {
-      marginTop: koolaSpacing.lg,
+      marginTop: 0,
       overflow: 'hidden',
       borderRadius: koolaRadii.lg,
     },
@@ -529,12 +775,7 @@ const makeStyles = (p: Palette) =>
       paddingTop: koolaSpacing.lg,
       paddingBottom: koolaSpacing.md,
     },
-    actionPanel: {
-      marginTop: koolaSpacing.lg,
-    },
-    chatButton: {
-      borderRadius: koolaRadii.md,
-    },
   });
+};
 
 export default ProfileScreen;
