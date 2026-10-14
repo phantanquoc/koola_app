@@ -234,6 +234,7 @@ const ShoppingProductDetailScreen: React.FC = () => {
               data={images}
               horizontal
               pagingEnabled
+              removeClippedSubviews={false}
               showsHorizontalScrollIndicator={false}
               keyExtractor={(img) => img.key}
               onScroll={onGalleryScroll}
@@ -383,7 +384,7 @@ const ShoppingProductDetailScreen: React.FC = () => {
 function makeStyles(semantic: SemanticTokens, scheme: string) {
   const shadow = scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm;
   return StyleSheet.create({
-    host: { flex: 1, backgroundColor: 'transparent' },
+    host: { flex: 1, backgroundColor: semantic.bg.canvas },
     notFound: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
     backPill: {
       marginTop: 16,
@@ -480,7 +481,7 @@ function makeStyles(semantic: SemanticTokens, scheme: string) {
       paddingHorizontal: 16,
       paddingTop: 10,
       gap: 10,
-      backgroundColor: 'transparent',
+      backgroundColor: semantic.surface.level1,
     },
     shopBtn: {
       flexDirection: 'row',

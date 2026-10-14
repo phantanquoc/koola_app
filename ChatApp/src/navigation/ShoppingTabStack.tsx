@@ -54,17 +54,80 @@ const ShoppingTabStack: React.FC = () => {
   const { resolvedScheme, tokens } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const [headerConfig, setHeaderConfig] = useState<ShoppingHeaderConfig | null>(null);
+  const [displayedHeaderConfig, setDisplayedHeaderConfig] = useState<ShoppingHeaderConfig | null>(null);
   const [focusedRouteName, setFocusedRouteName] =
     useState<keyof ShoppingTabStackParamList>('ShoppingHome');
   const { notify, toast } = useComingSoonToast();
 
+  // Deferred header commit: Detail's useFocusEffect cleanup sets headerConfig
+  // to null on blur (transitionStart). Committing that null mid-transition
+  // would unmount ShoppingNotchHeader's subtree inside the same MountItem
+  // batch where native-stack removes the Detail screen → Fabric ViewGroup
+  // childCount desync ("Cannot remove child at index 0", MountItemDispatcher).
+  // So queue header changes while transitioning and commit them on a timer
+  // AFTER transitionEnd, when the native screen removal has landed. The timer
+  // keeps the header mounted ~1 frame longer, separating the two removals
+  // into different batches. It also guards push transitions (Home→Detail)
+  // where the product header must not flash before the screen arrives.
+  // Covers button back, gesture swipe back (fires transitionStart but may
+  // skip transitionEnd mid-gesture), and interrupted transitions: the focus
+  // listener below re-syncs focusedRouteName, and the queued header flushes
+  // on the next transitionEnd or the focus-triggered effect.
+  const transitioningRef = React.useRef(false);
+  const pendingHeaderRef = React.useRef<ShoppingHeaderConfig | null>(null);
+  const hasPendingRef = React.useRef(false);
+  const headerConfigRef = React.useRef<ShoppingHeaderConfig | null>(null);
+  headerConfigRef.current = headerConfig;
+  // Defer focusedRouteName together with the header commit so the
+  // `displayConfig` gate (ShoppingHome/Storefront → null) does not flip
+  // in the same commit that removes the Detail screen. Both switch one
+  // task later, in a separate MountItem batch from the native screen removal.
+  const pendingRouteRef = React.useRef<keyof ShoppingTabStackParamList | null>(null);
+  const commitTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (transitioningRef.current) {
+      pendingHeaderRef.current = headerConfig;
+      hasPendingRef.current = true;
+    } else {
+      setDisplayedHeaderConfig(headerConfig);
+    }
+  }, [headerConfig]);
+
+  React.useEffect(
+    () => () => {
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    },
+    [],
+  );
+
+  const commitPendingHeader = React.useCallback(() => {
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    // Use a short delay (not 0) so the header unmount lands in a *different*
+    // Fabric batch than the native screen removal that fires at transitionEnd.
+    // 0 still coalesces into the same MountItem batch on Android.
+    commitTimerRef.current = setTimeout(() => {
+      transitioningRef.current = false;
+      if (pendingRouteRef.current !== null) {
+        setFocusedRouteName(pendingRouteRef.current);
+        pendingRouteRef.current = null;
+      }
+      if (hasPendingRef.current) {
+        setDisplayedHeaderConfig(pendingHeaderRef.current);
+        hasPendingRef.current = false;
+      } else {
+        setDisplayedHeaderConfig(headerConfigRef.current);
+      }
+    }, 50);
+  }, []);
+
   // Gate: KOOLA wordmark only on ShoppingHome. ProductDetail uses headerConfig
   // (variant 'product'). Storefront has inline glass header, so hide the
   // parent header entirely — same pattern as BusinessProfileScreen in ConnectTab.
-  const displayConfig =
-    focusedRouteName === 'ShoppingHome' || focusedRouteName === 'ShoppingStorefront'
-      ? null
-      : headerConfig;
+  // The header is always mounted (visible=false → opacity 0) so its unmount
+  // never lands in the same MountItem batch as the Detail screen removal.
+  const isHeaderVisible =
+    focusedRouteName !== 'ShoppingHome' && focusedRouteName !== 'ShoppingStorefront';
   const headerCtx = React.useMemo(
     () => ({ config: headerConfig, setConfig: setHeaderConfig }),
     [headerConfig],
@@ -74,39 +137,72 @@ const ShoppingTabStack: React.FC = () => {
     <ShoppingHeaderContext.Provider value={headerCtx}>
       <View style={[styles.host, { backgroundColor: tokens.semantic.bg.canvas }]}>
         <LightFieldBackground />
-        <ShoppingNotchHeader config={displayConfig} notify={notify} />
+        <ShoppingNotchHeader config={displayedHeaderConfig} visible={isHeaderVisible} notify={notify} />
         <Stack.Navigator
           screenListeners={({ route }) => ({
-            focus: () => setFocusedRouteName(route.name as keyof ShoppingTabStackParamList),
+            transitionStart: () => {
+              if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+              transitioningRef.current = true;
+            },
+            transitionEnd: () => {
+              pendingRouteRef.current = route.name as keyof ShoppingTabStackParamList;
+              commitPendingHeader();
+            },
+            // Transition events are not reliable fallbacks on Android (gesture
+            // may not fire transitionEnd every time), so track focus directly
+            // and schedule the queued header commit from here as well. When
+            // already transitioning, queue the route and flush on timer so the
+            // header `displayConfig` gate does not flip inside the same commit
+            // that removes the Detail screen.
+            focus: () => {
+              const next = route.name as keyof ShoppingTabStackParamList;
+              if (transitioningRef.current) {
+                pendingRouteRef.current = next;
+                commitPendingHeader();
+              } else {
+                setFocusedRouteName(next);
+              }
+            },
           })}
           screenOptions={{
             headerShown: false,
+            // Use a single animation for the whole stack so pop/push use the
+            // same native ScreenStack tween. The previous 'none' at navigator
+            // + 'ios_from_right' per-screen left the pop without a matching
+            // enter animation and is a known cause of ViewGroup childCount
+            // desync (removeViewAt in ReactClippingViewManager batch).
             animation: 'slide_from_right',
             gestureEnabled: true,
             statusBarTranslucent: true,
             navigationBarTranslucent: true,
             statusBarStyle: isDark ? 'light' : 'dark',
-            contentStyle: { backgroundColor: 'transparent' } as never,
-            // @ts-expect-error cardStyle is valid for native-stack but types lag
-            cardStyle: { backgroundColor: 'transparent' },
+            contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
             // Fabric fix: native-stack detaches the previous screen off-tree to save
             // memory; popping Storefront while ProductDetail is detached desyncs
             // Fabric's ViewGroup child count → "Cannot remove child at index 1"
             // crash (MountItemDispatcher). Keep previous screen mounted.
             // Navigator-level flag alone is not sufficient on some
             // react-native-screens versions — per-screen override required.
-            detachPreviousScreen: false,
+            ...( { detachPreviousScreen: false } as object),
           }}>
-          <Stack.Screen name="ShoppingHome" component={ShoppingHomeScreen} />
+          <Stack.Screen
+            name="ShoppingHome"
+            component={ShoppingHomeScreen}
+            options={{
+              freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
+            }}
+          />
           <Stack.Screen
             name="ShoppingProductDetail"
             component={ShoppingProductDetailScreen}
             options={{
               animation: 'slide_from_right',
               gestureEnabled: true,
-              // @ts-expect-error detachPreviousScreen valid at runtime (react-native-screens) but NativeStack types lag for per-screen options
-              detachPreviousScreen: false,
               freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -115,15 +211,47 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               animation: 'slide_from_right',
               gestureEnabled: true,
-              // @ts-expect-error detachPreviousScreen valid at runtime (react-native-screens) but NativeStack types lag for per-screen options
-              detachPreviousScreen: false,
               freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
             }}
           />
-          <Stack.Screen name="ShoppingCart" component={ShoppingCartScreen} />
-          <Stack.Screen name="ShoppingCheckout" component={ShoppingCheckoutScreen} />
-          <Stack.Screen name="ShoppingOrders" component={ShoppingOrdersScreen} />
-          <Stack.Screen name="ShoppingOrderDetail" component={ShoppingOrderDetailScreen} />
+          <Stack.Screen
+            name="ShoppingCart"
+            component={ShoppingCartScreen}
+            options={{
+              freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
+            }}
+          />
+          <Stack.Screen
+            name="ShoppingCheckout"
+            component={ShoppingCheckoutScreen}
+            options={{
+              freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
+            }}
+          />
+          <Stack.Screen
+            name="ShoppingOrders"
+            component={ShoppingOrdersScreen}
+            options={{
+              freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
+            }}
+          />
+          <Stack.Screen
+            name="ShoppingOrderDetail"
+            component={ShoppingOrderDetailScreen}
+            options={{
+              freezeOnBlur: false,
+              contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
+              ...( { detachPreviousScreen: false } as object),
+            }}
+          />
         </Stack.Navigator>
         {toast}
       </View>
@@ -132,10 +260,20 @@ const ShoppingTabStack: React.FC = () => {
 };
 
 // ── Shared notch header — wordmark (default) / nav / product ────────────────
-const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notify: (text?: string) => void }> = ({ config, notify }) => {
+const ShoppingNotchHeader: React.FC<{
+  config: ShoppingHeaderConfig | null;
+  visible: boolean;
+  notify: (text?: string) => void;
+}> = ({ config, visible, notify }) => {
   const insets = useSafeAreaInsets();
   const { tokens, resolvedScheme } = useTheme();
-  const flatH = getNotchHeaderHeight(insets.top, config ? 'nav' : 'wordmark');
+  // Keep height stable while hidden (Storefront → wordmark → nav use different
+  // inset-dependent heights). Changing height during the pop also produces a
+  // removeViewAt in ReactClippingViewManager when combined with the screen
+  // removal. Fix the hidden placeholder to the wordmark height (+ no height
+  // switch on pop) and compute the visible flatH separately.
+  const hiddenH = getNotchHeaderHeight(insets.top, 'wordmark');
+  const flatH = visible ? getNotchHeaderHeight(insets.top, config ? 'nav' : 'wordmark') : hiddenH;
   const isDark = resolvedScheme === 'dark';
   const [messagePressed, setMessagePressed] = useState(false);
   const [notificationPressed, setNotificationPressed] = useState(false);
@@ -150,10 +288,23 @@ const ShoppingNotchHeader: React.FC<{ config: ShoppingHeaderConfig | null; notif
     );
   }, [tabNavigation]);
 
-  // Hide header entirely when config is null (e.g., ShoppingStorefront has inline glass header)
-  if (config === null) {
-    return null;
+  // Always mounted: hidden states (Storefront / no focused route) are
+  // opacity 0, not unmounted, so no removeViewAt in the pop batch.
+  // Also freeze the tree when hidden — no children at all when hidden so
+  // Fabric has nothing to removeViewAt that could overlap the detail screen
+  // unmount.
+  if (!visible) {
+    return (
+      <View
+        collapsable={false}
+        pointerEvents="none"
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: flatH, overflow: 'hidden', opacity: 0 }}
+      />
+    );
   }
+  // No config yet (e.g. Home before focus cleanup) → fall through to wordmark.
 
   // Product detail variant: ←  |  Shop name (truncated)  |  share  cart  search
   if (config?.variant === 'product') {
