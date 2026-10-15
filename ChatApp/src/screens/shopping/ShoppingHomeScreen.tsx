@@ -52,7 +52,7 @@ import {
 } from './shoppingCatalog';
 import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
-import { HeaderDockGhostAction } from '../../components/HeaderSearchDock';
+import { HeaderDockAction, HeaderDockGhostAction } from '../../components/HeaderSearchDock';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 
@@ -60,9 +60,11 @@ import { prefersReducedMotion } from '../../ui/tokens/motion';
  * Shopping home — single-column product list (Figma frame 64:2).
  *
  * Chrome: shared ChromeGlassSheet + ChromeHeaderBox (single source with
- * Chat/Connect). FilterRow collapses on scroll-up (hiddenProgress shared
- * value) and reappears only at the top (offsetY <= 4) or at the list bottom
- * (onEndReached), matching the Connect scroll-hide contract.
+ * Chat/Connect). The dock reuses the HeaderSearchDock frame (36dp pill +
+ * standard HeaderDockAction filter) but keeps a live TextInput for direct
+ * type-to-filter. The 5 suggestion chips are list content
+ * (ListHeaderComponent), not a subtask bar — scrolling fades them out in
+ * place instead of pushing them up.
  */
 
 /** Compact chip row height: 2 rows x 24 + 4 gap = 52. */
@@ -80,9 +82,11 @@ type Styles = ReturnType<typeof makeStyles>;
 // Filtering, sorting and pagination are done by the server
 // (GET /commerce/products) — never in the client.
 
-// ── Inline search field + filter action rendered inside ChromeHeaderBox dock slot ──
-// 36dp pill to match CHROME_BOX_DOCK_H; fill is `border.subtle`. The filter
-// button sits beside the search pill (not inside FilterRow) with a red badge.
+// ── Inline search field rendered inside the shared HeaderSearchDock frame ───
+// Same 36dp pill + 48dp dock actions as Connect/Chat: the pill keeps a live
+// TextInput (direct type-to-filter, 300 ms debounce) instead of a press-to-open
+// search button, and the filter trigger is a standard HeaderDockAction with the
+// shared badge geometry (top -4 / right -8, danger bg, 99+ cap).
 const SHOPPING_DOCK_H = 36;
 
 const ShoppingHeaderSearch: React.FC<{
@@ -93,16 +97,17 @@ const ShoppingHeaderSearch: React.FC<{
   onOpenFilters: () => void;
 }> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters }) => {
   const [focused, setFocused] = useState(false);
-  const badgeBg = semantic.status.danger;
-  const badgeFg = semantic.text.onAction;
   return (
-    <View style={shoppingDockStyles.dockRow}>
-      <View style={[shoppingDockStyles.pill, { backgroundColor: semantic.border.subtle, flex: 1 }]}>
-        {focused ? (
-          <View pointerEvents="none" style={[shoppingDockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
-        ) : null}
-        <View style={shoppingDockStyles.contentRow}>
-          <MaterialIcons name="search" size={20} color={semantic.text.faint} style={shoppingDockStyles.searchIcon} />
+    <View style={shoppingDockStyles.host}>
+      <View pointerEvents="none" style={shoppingDockStyles.fillClip}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: semantic.border.subtle }]} />
+      </View>
+      <View style={shoppingDockStyles.innerRow}>
+        <View style={shoppingDockStyles.searchArea}>
+          {focused ? (
+            <View pointerEvents="none" style={[shoppingDockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
+          ) : null}
+          <MaterialIcons name="search" size={20} color={semantic.action.primary} style={shoppingDockStyles.searchIcon} />
           <TextInput
             value={value}
             onChangeText={onChangeText}
@@ -126,77 +131,58 @@ const ShoppingHeaderSearch: React.FC<{
             </Pressable>
           ) : null}
         </View>
+        <HeaderDockAction
+          icon="filter-alt"
+          onPress={onOpenFilters}
+          accessibilityLabel="Bộ lọc"
+          accessibilityHint="Mở bộ lọc tìm kiếm"
+          badgeCount={activeFilterCount}
+          badgeAccessibilityText={`${activeFilterCount} bộ lọc đang áp dụng`}
+        />
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={activeFilterCount > 0 ? `Lọc, ${activeFilterCount} bộ lọc đang áp dụng` : 'Lọc'}
-        accessibilityHint="Mở bộ lọc tìm kiếm"
-        onPress={onOpenFilters}
-        hitSlop={8}
-        style={[shoppingDockStyles.dockFilterBtn, { backgroundColor: semantic.surface.level2, borderColor: semantic.border.strong }]}>
-        <MaterialIcons name="filter-alt" size={20} color={semantic.action.primary} />
-        {activeFilterCount > 0 ? (
-          <View pointerEvents="none" style={[shoppingDockStyles.dockFilterBadge, { backgroundColor: badgeBg }]}>
-            <KoolaText variant="caption" weight="700" style={[shoppingDockStyles.dockFilterBadgeText, { color: badgeFg }]} numberOfLines={1}>
-              {activeFilterCount > 99 ? '99+' : String(activeFilterCount)}
-            </KoolaText>
-          </View>
-        ) : null}
-      </Pressable>
     </View>
   );
 };
 
 const shoppingDockStyles = StyleSheet.create({
-  dockRow: {
+  host: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     height: SHOPPING_DOCK_H,
-  },
-  pill: {
-    height: SHOPPING_DOCK_H,
-    borderRadius: koolaRadii.pill,
-    overflow: 'hidden',
-    justifyContent: 'center',
-  },
-  dockFilterBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: koolaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
-  },
-  dockFilterBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 16,
-    height: 16,
     paddingHorizontal: 4,
     borderRadius: koolaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
-  dockFilterBadgeText: {
-    fontSize: 10,
-    lineHeight: 12,
+  // Only the fill is clipped; the host must not clip or the dock action badge
+  // (top -4 / right -8) gets cut — same comment as HeaderSearchDock.
+  fillClip: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
+  },
+  innerRow: {
+    flex: 1,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 0,
+  },
+  searchArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
   },
   focusRing: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: koolaRadii.pill,
     borderWidth: 1.5,
   },
-  contentRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 8,
-  },
-  searchIcon: { marginRight: 6 },
+  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     fontSize: 15,
@@ -480,7 +466,6 @@ const ShoppingHomeScreen: React.FC = () => {
   );
   const isDark = resolvedScheme === 'dark';
   const blockH = getChromeBoxHeight(insets.top);
-  const listTopPad = blockH + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
 
   const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast();
   // Wordmark-row icons share the ghost geometry with HeaderSearchDock
@@ -492,14 +477,12 @@ const ShoppingHomeScreen: React.FC = () => {
     </>
   );
 
-  // Scroll-hide state: 0 = filter row shown, 1 = hidden. Same contract as
-  // Connect's sub-menu bar — accumulated travel > 8 hides; reappear only at
-  // the top (offsetY <= 4) or at the list bottom (onEndReached). Snap via
-  // withTiming so there is no half-hidden rest state.
-  const hiddenProgress = useSharedValue(0);
+  // Suggestion chips live in the list content (ListHeaderComponent), not in a
+  // subtask bar under the header. Scrolling up fades them out in place —
+  // they vanish rather than being pushed up. scrolledProgress only drives the
+  // chrome lift shadow.
   const scrolledProgress = useSharedValue(0);
-  const prevOffsetY = useSharedValue(0);
-  const travel = useSharedValue(0);
+  const chipsFade = useSharedValue(0);
   // UI-thread copy of the reduce-motion flag (calling prefersReducedMotion()
   // inside a worklet would hop threads).
   const reduceMotionSV = useSharedValue(prefersReducedMotion());
@@ -522,46 +505,25 @@ const ShoppingHomeScreen: React.FC = () => {
       } else if (offsetY <= 4 && scrolledProgress.value !== 0) {
         scrolledProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
       }
-      // Reduce-motion: keep the filter row pinned visible and skip scroll
-      // animation (the lift shadow above still applies — depth, not motion).
+      // Reduce-motion: chips stay pinned, only the lift shadow applies.
       if (reduceMotionSV.value) {
-        if (hiddenProgress.value !== 0) hiddenProgress.value = 0;
-        travel.value = 0;
-        prevOffsetY.value = offsetY;
+        if (chipsFade.value !== 0) chipsFade.value = 0;
         return;
       }
-      if (offsetY <= 4) {
-        if (hiddenProgress.value !== 0) {
-          hiddenProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
-        }
-        travel.value = 0;
-        prevOffsetY.value = offsetY;
-        return;
-      }
-      const delta = offsetY - prevOffsetY.value;
-      if (delta === 0) return;
-      // Accumulate travel in dominant direction; reset on direction flip.
-      if ((delta > 0 && travel.value < 0) || (delta < 0 && travel.value > 0)) {
-        travel.value = delta;
-      } else {
-        travel.value += delta;
-      }
-      prevOffsetY.value = offsetY;
-      // Hide on scroll-up travel; mid-list scroll-down stays hidden — only the
-      // top edge (above) or the list bottom (onEndReached) restores it.
-      if (travel.value > 8 && hiddenProgress.value !== 1) {
-        hiddenProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+      // Fade the in-content chips out over the first ~64px of scroll; at rest
+      // (offsetY <= 4) they are fully visible again.
+      const target = offsetY <= 4 ? 0 : Math.min(1, (offsetY - 4) / 64);
+      if (Math.abs(chipsFade.value - target) > 0.02) {
+        chipsFade.value = withTiming(target, { duration: 160, easing: Easing.out(Easing.cubic) });
       }
     },
   });
 
-  const filterVisibilityStyle = useAnimatedStyle(() => {
-    const t = Math.min(1, Math.max(0, hiddenProgress.value));
-    const h = t * t * (3 - 2 * t);
+  const chipsVisibilityStyle = useAnimatedStyle(() => {
+    const t = Math.min(1, Math.max(0, chipsFade.value));
     return {
-      height: (FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM) * (1 - h),
-      opacity: 1 - h,
-      transform: [{ translateY: -(FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM) * h }],
+      height: (FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM) * (1 - t),
+      opacity: 1 - t,
     };
   }, []);
 
@@ -738,15 +700,29 @@ const ShoppingHomeScreen: React.FC = () => {
 
   const handleSearchPress = useCallback(() => {}, []);
 
-  // Reaching the list bottom restores the filter row (the only non-top path).
   const handleEndReached = useCallback(() => {
-    if (hiddenProgress.value !== 0) {
-      hiddenProgress.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
-    }
-    travel.value = 0;
     list.loadMore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.loadMore]);
+
+  // Suggestion chips as list content header — part of the scroll content, not
+  // a subtask bar. Fades/collapses in place via chipsVisibilityStyle.
+  const renderListHeader = useCallback(
+    () => (
+      <Animated.View style={[{ overflow: 'hidden' }, chipsVisibilityStyle]}>
+        <View style={[styles.filterBarWrap, { marginBottom: FILTER_ROW_GAP_BOTTOM }]}>
+          <FilterRow
+            styles={styles}
+            activeSort={activeSort}
+            activeAttr={activeAttr}
+            onToggleSort={toggleSort}
+            onToggleAttr={toggleAttr}
+          />
+        </View>
+      </Animated.View>
+    ),
+    [activeSort, activeAttr, toggleSort, toggleAttr, styles, chipsVisibilityStyle],
+  );
 
   if (!contentReady) {
     return (
@@ -786,7 +762,7 @@ const ShoppingHomeScreen: React.FC = () => {
 
   return (
     <View style={styles.screen}>
-      <ChromeGlassSheet blockH={blockH} barH={FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM} hiddenProgress={hiddenProgress} scrolledProgress={scrolledProgress} />
+      <ChromeGlassSheet blockH={blockH} barH={0} scrolledProgress={scrolledProgress} />
       <ChromeHeaderBox
         insetsTop={insets.top}
         isDark={isDark}
@@ -796,17 +772,6 @@ const ShoppingHomeScreen: React.FC = () => {
         headerActions={headerActions}
         dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} />}
       />
-      <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: blockH, left: 0, right: 0, overflow: 'hidden', zIndex: 11 }, filterVisibilityStyle]}>
-        <View style={[styles.filterBarWrap]}>
-          <FilterRow
-            styles={styles}
-            activeSort={activeSort}
-            activeAttr={activeAttr}
-            onToggleSort={toggleSort}
-            onToggleAttr={toggleAttr}
-          />
-        </View>
-      </Animated.View>
       <Animated.FlatList
         removeClippedSubviews={false}
         data={list.items}
@@ -816,11 +781,12 @@ const ShoppingHomeScreen: React.FC = () => {
         maxToRenderPerBatch={8}
         windowSize={7}
         updateCellsBatchingPeriod={50}
+        ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.6}
-        contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
+        contentContainerStyle={[styles.listContent, { paddingTop: blockH + 8, paddingBottom: tabBarInset }]}
         showsVerticalScrollIndicator={false}
         style={styles.screenTransparent}
         onScroll={handleScroll}
