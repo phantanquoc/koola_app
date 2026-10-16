@@ -95,4 +95,25 @@ describe('AppLayout sidebar + identity', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }));
     expect(authState.logout).toHaveBeenCalledTimes(1);
   });
+
+  it('renders the logout button full-width at 44px without confirm', () => {
+    renderShell();
+    const btn = screen.getByRole('button', { name: 'Đăng xuất' }) as HTMLButtonElement;
+    expect(btn.className).toContain('admin-logout');
+    expect(btn.type).toBe('button');
+  });
+
+  it('renders lucide svg icons for every nav link, none decorative chars', () => {
+    const { container } = renderShell('/users');
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBe(15);
+    for (const link of links) {
+      expect(link.querySelector('svg')).toBeTruthy();
+      expect(link.textContent).not.toMatch(/[◎◈◫✉⬢♫⚑▣◧⬣◌♥☄≡]/);
+    }
+    expect(container.querySelector('.admin-brand-mark svg')).toBeTruthy();
+    // active state lands on the visited route, not the home route
+    expect(screen.getByRole('link', { name: /người dùng/i }).className).toContain('active');
+    expect(screen.getByRole('link', { name: /dashboard/i }).className).not.toContain('active');
+  });
 });

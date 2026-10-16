@@ -134,6 +134,12 @@ không dark canvas, không màu bão hòa). Nền canvas xám rất nhạt, ch�
 - **Sidebar** desktop width 264px, full height, nền surface; item cao 44px,
   radius md; item active = nền primary-soft + chữ primary-dark (không dùng ink pill
   cho nav — ink pill chỉ dành cho CTA). Section label 11px uppercase tracking.
+- **Sidebar scroll:** `.admin-shell` cao đúng 100vh, không scroll chung;
+  nav cuộn riêng (`.admin-nav` overflow-y auto), footer/logout dính đáy
+  (flex-shrink 0 + hairline trên); content cuộn riêng (`.admin-content-scroll`).
+- **Icon nav:** `lucide-react` (size 18, strokeWidth 1.75, `aria-hidden`);
+  brand-mark = tile primary + `MessagesSquare`. Không dùng ký tự trang trí
+  (◎◈◫…) làm icon. Icon kế thừa màu link qua `currentColor`.
 - **Topbar** cao 72px, sticky: breadcrumb trái (muted 13px), actions phải.
   Identity chip (`/me`: avatar 36px + displayName + badge admin) nằm cuối topbar phải.
 - **Mobile ≤860px:** sidebar thành drawer trượt trái + backdrop blur; content full width.

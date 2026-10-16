@@ -155,8 +155,9 @@ code,
 
 .admin-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
   flex-direction: column;
+  overflow: hidden;
   color: var(--koola-ink);
 }
 
@@ -164,6 +165,7 @@ code,
   display: flex;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .admin-sidebar {
@@ -171,9 +173,11 @@ code,
   top: 0;
   display: flex;
   width: 264px;
-  height: 100vh;
+  height: auto;
+  max-height: 100%;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
   border-right: 1px solid var(--koola-line);
   background: var(--koola-surface);
   padding: var(--space-5) var(--space-4);
@@ -193,7 +197,7 @@ code,
   height: 42px;
   place-items: center;
   border-radius: var(--radius-md);
-  background: var(--koola-ink);
+  background: var(--koola-primary);
   color: var(--koola-surface);
   font-weight: 800;
 }
@@ -208,6 +212,13 @@ code,
   color: var(--koola-muted);
   font-size: 12px;
   font-weight: 600;
+}
+
+.admin-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-2);
 }
 
 .admin-nav-section {
@@ -258,23 +269,16 @@ code,
 }
 
 .admin-sidebar-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--koola-line);
   margin-top: auto;
   padding-top: var(--space-4);
 }
 
-.admin-profile-card {
-  border: 1px solid var(--koola-line);
-  border-radius: var(--radius-lg);
-  background: var(--koola-surface);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-subtle);
-}
-
-.admin-profile-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+.admin-logout {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
 }
 
 .admin-avatar {
@@ -292,8 +296,10 @@ code,
 .admin-main {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .admin-topbar {
@@ -342,10 +348,25 @@ code,
 /* Removed: .admin-command was the old interactive-looking command field.
    Now replaced by .admin-command-info (non-interactive). */
 
+.admin-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .admin-content {
   width: min(100%, 1440px);
   margin: 0 auto;
   padding: var(--space-6);
+}
+
+.admin-topbar-search {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.admin-topbar-search .input {
+  width: 220px;
 }
 
 /* Page primitives */

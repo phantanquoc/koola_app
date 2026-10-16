@@ -1,5 +1,27 @@
 import { useState, useCallback } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Activity,
+  Briefcase,
+  Building2,
+  Camera,
+  ChartLine,
+  Flag,
+  LayoutDashboard,
+  LogOut,
+  Mail,
+  Megaphone,
+  Menu,
+  MessageSquareText,
+  MessagesSquare,
+  Music,
+  Package,
+  ScrollText,
+  ShoppingCart,
+  Users,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuth } from './useAuth';
 import { config } from './config';
 import { initials } from './components/formatters';
@@ -7,7 +29,7 @@ import { initials } from './components/formatters';
 interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   end?: boolean;
 }
 
@@ -15,36 +37,36 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Tổng quan',
     items: [
-      { to: '/', label: 'Dashboard', icon: '◎', end: true },
-      { to: '/analytics', label: 'Analytics', icon: '◈' },
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/analytics', label: 'Analytics', icon: ChartLine },
     ],
   },
   {
     label: 'Kiểm duyệt',
     items: [
-      { to: '/conversations', label: 'Conversations', icon: '◫' },
-      { to: '/messages', label: 'Messages', icon: '✉' },
-      { to: '/moments', label: 'Moments', icon: '⬢' },
-      { to: '/music', label: 'Music', icon: '♫' },
-      { to: '/reports', label: 'Reports', icon: '⚑' },
+      { to: '/conversations', label: 'Conversations', icon: MessageSquareText },
+      { to: '/messages', label: 'Messages', icon: Mail },
+      { to: '/moments', label: 'Moments', icon: Camera },
+      { to: '/music', label: 'Music', icon: Music },
+      { to: '/reports', label: 'Reports', icon: Flag },
     ],
   },
   {
     label: 'Catalog',
     items: [
-      { to: '/products', label: 'Products', icon: '▣' },
-      { to: '/orders', label: 'Orders', icon: '◧' },
-      { to: '/services', label: 'Services', icon: '⬣' },
+      { to: '/products', label: 'Products', icon: Package },
+      { to: '/orders', label: 'Orders', icon: ShoppingCart },
+      { to: '/services', label: 'Services', icon: Briefcase },
     ],
   },
   {
     label: 'Vận hành',
     items: [
-      { to: '/businesses', label: 'Doanh nghiệp', icon: '▣' },
-      { to: '/users', label: 'Người dùng', icon: '◌' },
-      { to: '/health', label: 'Health', icon: '♥' },
-      { to: '/broadcast', label: 'Broadcast', icon: '☄' },
-      { to: '/audit-logs', label: 'Audit log', icon: '≡' },
+      { to: '/businesses', label: 'Doanh nghiệp', icon: Building2 },
+      { to: '/users', label: 'Người dùng', icon: Users },
+      { to: '/health', label: 'Health', icon: Activity },
+      { to: '/broadcast', label: 'Broadcast', icon: Megaphone },
+      { to: '/audit-logs', label: 'Audit log', icon: ScrollText },
     ],
   },
 ];
@@ -118,7 +140,7 @@ export default function AppLayout() {
       >
         <div className="admin-brand">
           <div className="admin-brand-mark" aria-hidden="true">
-            K
+            <MessagesSquare size={22} strokeWidth={1.75} />
           </div>
           <div>
             <div className="admin-brand-title">Koola Admin</div>
@@ -126,20 +148,20 @@ export default function AppLayout() {
           </div>
         </div>
 
-        <nav>
+        <nav className="admin-nav">
           {navGroups.map((group) => (
             <section className="admin-nav-section" key={group.label}>
               <p className="admin-nav-label">{group.label}</p>
               {group.items.map((item) => (
                 <NavLink
-                  className="admin-nav-link"
+                  className={({ isActive }) => `admin-nav-link${isActive ? ' active' : ''}`}
                   end={item.end}
                   key={item.to}
                   to={item.to}
                   onClick={closeMobileNav}
                 >
                   <span className="admin-nav-icon" aria-hidden="true">
-                    {item.icon}
+                    <item.icon size={18} strokeWidth={1.75} aria-hidden />
                   </span>
                   <span>{item.label}</span>
                 </NavLink>
@@ -149,7 +171,8 @@ export default function AppLayout() {
         </nav>
 
         <div className="admin-sidebar-footer">
-          <button className="btn btn-secondary" onClick={logout} type="button">
+          <button className="btn btn-danger-ghost admin-logout" onClick={logout} type="button">
+            <LogOut size={18} strokeWidth={1.75} aria-hidden />
             Đăng xuất
           </button>
         </div>
@@ -165,7 +188,7 @@ export default function AppLayout() {
               aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
               aria-expanded={mobileNavOpen}
             >
-              <span aria-hidden="true">{mobileNavOpen ? '✕' : '☰'}</span>
+              <span aria-hidden="true">{mobileNavOpen ? <X size={18} /> : <Menu size={18} />}</span>
             </button>
             <div>
               <div className="admin-breadcrumb">Koola / Admin</div>
@@ -173,14 +196,13 @@ export default function AppLayout() {
             </div>
           </div>
           <div className="admin-topbar-actions">
-            <form onSubmit={handleTopSearch} style={{ display: 'flex', gap: 'var(--space-2)' }} role="search" aria-label="Tìm kiếm admin">
+            <form onSubmit={handleTopSearch} className="admin-topbar-search" role="search" aria-label="Tìm kiếm admin">
               <input
                 className="input"
                 placeholder="Tìm users/messages..."
                 value={topSearch}
                 onChange={(e) => setTopSearch(e.target.value)}
                 aria-label="Tìm kiếm"
-                style={{ width: 220 }}
               />
               <button className="btn btn-secondary btn-sm" type="submit" aria-label="Tìm kiếm">Tìm</button>
             </form>
@@ -197,9 +219,11 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <main className="admin-content">
-          <Outlet />
-        </main>
+        <div className="admin-content-scroll">
+          <main className="admin-content">
+            <Outlet />
+          </main>
+        </div>
       </div>
       </div>
     </div>
