@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { config } from './config';
 import { initials } from './components/formatters';
 
 interface NavItem {
@@ -78,6 +79,7 @@ export default function AppLayout() {
 
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
+  const isProd = config.appEnv === 'production';
 
   function handleTopSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -94,6 +96,9 @@ export default function AppLayout() {
 
   return (
     <div className="admin-shell">
+      <div className={`env-banner ${isProd ? 'env-banner--prod' : 'env-banner--dev'}`} role="status">
+        {isProd ? 'PROD · Koola Admin' : 'DEV · Koola Admin'}
+      </div>
       {mobileNavOpen && (
         <div
           className="mobile-nav-backdrop"
@@ -104,6 +109,8 @@ export default function AppLayout() {
           role="presentation"
         />
       )}
+
+      <div className="admin-shell-body">
 
       <aside
         className={`admin-sidebar ${mobileNavOpen ? 'admin-sidebar--open' : ''}`}
@@ -142,20 +149,9 @@ export default function AppLayout() {
         </nav>
 
         <div className="admin-sidebar-footer">
-          <div className="admin-profile-card">
-            <div className="admin-profile-row">
-              <div className="admin-avatar" aria-hidden="true">
-                {adminInitial}
-              </div>
-              <div>
-                <div className="cell-title">{adminName}</div>
-                <div className="cell-meta">{identity?.email ?? 'platform admin'}</div>
-              </div>
-            </div>
-            <button className="btn btn-secondary" onClick={logout} type="button">
-              Đăng xuất
-            </button>
-          </div>
+          <button className="btn btn-secondary" onClick={logout} type="button">
+            Đăng xuất
+          </button>
         </div>
       </aside>
 
@@ -188,12 +184,23 @@ export default function AppLayout() {
               />
               <button className="btn btn-secondary btn-sm" type="submit" aria-label="Tìm kiếm">Tìm</button>
             </form>
+            <div className="admin-identity-chip">
+              <div className="admin-avatar" aria-hidden="true">
+                {adminInitial}
+              </div>
+              <div className="admin-identity-text">
+                <div className="cell-title">{adminName}</div>
+                <div className="cell-meta">{identity?.email ?? 'platform admin'}</div>
+              </div>
+              <span className="badge badge-primary">admin</span>
+            </div>
           </div>
         </header>
 
         <main className="admin-content">
           <Outlet />
         </main>
+      </div>
       </div>
     </div>
   );

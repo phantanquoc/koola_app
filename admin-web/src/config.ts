@@ -21,6 +21,25 @@ function resolveApiUrl(): string {
   return raw.trim().replace(/\/+$/, '');
 }
 
+export type AppEnv = 'development' | 'production';
+
+/**
+ * Environment shown in the app-shell banner (DESIGN.md §7).
+ * Explicit VITE_ENV wins; otherwise derive from Vite MODE
+ * (dev/test → development, production build → production).
+ */
+function resolveAppEnv(): AppEnv {
+  const raw: unknown = import.meta.env.VITE_ENV;
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    return raw.trim().toLowerCase() === 'production' ? 'production' : 'development';
+  }
+  const mode: unknown = import.meta.env.MODE;
+  return typeof mode === 'string' && mode.toLowerCase() === 'production'
+    ? 'production'
+    : 'development';
+}
+
 export const config = {
   apiUrl: resolveApiUrl(),
+  appEnv: resolveAppEnv(),
 };
