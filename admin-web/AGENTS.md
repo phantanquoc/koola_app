@@ -7,6 +7,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 > Backend admin API: `chat-backend/src/admin/` + `chat-backend/src/commerce/admin-commerce.controller.ts`
 > Auth: `@UseGuards(JwtAuthGuard, AdminGuard)` ở cấp controller — đọc `isPlatformAdmin`
 > fresh từ DB mỗi request (demote có hiệu lực ngay, không chờ token hết hạn).
+> Visual: mọi việc liên quan UI đọc `admin-web/DESIGN.md` trước khi code.
 
 ---
 
@@ -45,6 +46,9 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 11. Sửa bug `config.ts`: đừng viết `import.meta.env.X as string ?? fallback`
     (`as` ưu tiên hơn `??` nên fallback chết) — đọc env trước, ép kiểu sau, fallback
     qua hằng số tường minh.
+12. Mọi việc UI đọc `admin-web/DESIGN.md` trước khi code: token qua `var(--...)`
+    (cấm hex/px cứng), dùng kit `src/components/` (cấm chế component mới khi kit có),
+    trạng thái qua `StatusBadge` đúng mapping màu, xong check checklist UI §7 DESIGN.md.
 
 ## 3. Kiến trúc trang (Information Architecture)
 
@@ -67,10 +71,13 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 
 ## 4. Phase triển khai
 
-- **P1 Foundation fix** — sửa `config.ts` + fail-fast env; TanStack Query + interceptor
-  401-refresh-retry; root Error Boundary + màn hình 403 demoted + scaffold i18n Vi/En;
+- **P1 Foundation fix** — sửa `config.ts` + fail-fast env; viết lại apiClient:
+  interceptor 401-refresh-retry (dùng `POST /api/auth/refresh`), 403 hiện màn demote
+  (KHÔNG redirect /login vòng lặp như code hiện tại); root Error Boundary + scaffold i18n Vi/En;
   giữ router v7 + CSS kit; gate eslint+tsc.
-- **P2 Moderation core** — lấp stub rủi ro cao nhất: conversations (+detail),
+- **P2 Moderation core** — lấp stub rủi ro cao nhất: conversations (+detail — cần thêm
+  route `conversations/:id`, `users/:id`, `stores` vào App.tsx; detail conversation cần
+  backend bổ sung `GET /admin/conversations/:id` vì hiện chưa có),
   messages (search + soft-delete), reports (resolve/dismiss), audit-logs.
 - **P3 Identity & business** — migrate Businesses/Users sang Query + kit (giữ BulkBar);
   modal preview license (URL mới mỗi lần mở); moments takedown + music CRUD đúng
@@ -87,7 +94,19 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 `admin-moderation.controller.ts`: `GET /conversations /conversations/:id /messages/search /stories /reports /music-tracks /audience-lists`, `POST /messages/:id/soft-delete /stories/:id/takedown /reports/:id/resolve|dismiss`, full CRUD `/music-tracks`.
 `admin-ops.controller.ts`: `GET /analytics /health`, `POST /broadcast`.
 `commerce/admin-commerce.controller.ts`: `GET /commerce/orders /orders/:id /products /sellers /stores /services`, full CRUD products/stores/services.
-Throttle: 60 req/600s cấp controller; mutation siết 30 req/200s.
+Throttle: 30 req/phút (`short`) + 200 req/phút (`long`), theo code thật
+(@Throttle ở admin-moderation/admin-ops controller). UI 429: disable nút 10s + pause polling.
+
+DTO backend nằm ở `chat-backend/src/admin/dto/` (+ commerce DTO cùng module):
+`BulkBusinessDto {ids[]}`, `BanUserDto {reason, durationDays}`, `RejectBusinessDto {rejectionReason}`,
+`BroadcastDto {title, body}` (inline trong admin-ops.controller.ts), query DTO
+(`page/limit/search/type/range`). Type frontend mirror đúng tên field — drift là 400 âm thầm
+(ValidationPipe `forbidNonWhitelisted`).
+
+Env contract: admin-web `VITE_API_URL` PHẢI gồm prefix `/api`
+(VD `http://localhost:3000/api`); backend `FRONTEND_URL` (comma-separated) phải chứa
+origin admin-web mọi môi trường (dev `http://localhost:5173`, prod domain thật) —
+thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → đổi env phải restart dev server.
 
 ## 6. Quality checklist (check trước khi báo done)
 
@@ -108,8 +127,8 @@ Throttle: 60 req/600s cấp controller; mutation siết 30 req/200s.
 - [ ] **Untrusted content:** nội dung của user (message search, report reason, displayName,
   tên business) render as text — cấm `dangerouslySetInnerHTML`; avatar/URL validate scheme
   http(s) trước khi render.
-- [ ] **429 rate-limit:** backend throttle 60 req/600s (mutation 30 req/200s) — UI hiện
-  "thao tác quá nhanh, thử lại sau", disable nút tạm thời, không retry dồn dập.
+- [ ] **429 rate-limit:** backend throttle 30 req/phút (`short`) + 200 req/phút (`long`)
+  — UI hiện "thao tác quá nhanh, thử lại sau", disable nút 10s + pause polling, không retry dồn dập.
 - [ ] **i18n discipline:** không hardcode string hiển thị; mọi label qua react-i18next (vi/en);
   ngày/giờ/số format theo locale, thống nhất timezone hiển thị.
 - [ ] **Form UX:** validate inline từng field bằng zod, lỗi hiện cạnh field; disable submit
@@ -149,7 +168,9 @@ Throttle: 60 req/600s cấp controller; mutation siết 30 req/200s.
 
 ## 7. Rủi ro đã biết
 
-- Chưa xác minh backend có `/auth/refresh` cho admin — nếu không, thiết kế silent-refresh (quy tắc 3) thất bại, token hết hạn là logout.
+- Backend CÓ `POST /api/auth/refresh` (auth.controller.ts:115-123) — silent refresh khả thi.
+  Việc còn lại là code: apiClient hiện redirect thẳng về /login khi 401/403 (P1 phải viết
+  lại interceptor 401-refresh-retry + màn 403-demote, không redirect vòng lặp).
 - `POST /admin/broadcast` emit toàn server, không undo — form cần confirm 2 bước.
 - Chưa có endpoint REST cho live stats (online users, calls đang diễn ra) — Redis hiện chỉ là pub/sub adapter; dashboard live counter cần endpoint mới phía backend.
 - Production: quên thêm origin admin-web vào `FRONTEND_URL` là gãy toàn bộ (chỉ lộ ở prod, dev không thấy).

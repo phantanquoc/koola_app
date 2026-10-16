@@ -40,7 +40,7 @@ Repo-level security rules. Imperative. Applies to `chat-backend`, `ChatApp` (mob
 
 ## 6. Rate limiting
 
-- `ThrottlerModule` with Redis-backed storage (`RedisThrottlerStorage`) — quota is global across instances: 60 req/min (`short`), 1000 req/min (`long`). Do not switch back to in-memory storage (it multiplies quota by instance count).
+- `ThrottlerModule` with Redis-backed storage (`RedisThrottlerStorage`) — quota is global across instances: 30 req/min (`short`), 200 req/min (`long`). Do not switch back to in-memory storage (it multiplies quota by instance count).
 - Auth/OTP endpoints are brute-force targets: keep them under the `short` throttler and do not add `@SkipThrottle()` without documenting why. OTP codes must have short TTL and limited attempts server-side.
 
 ## 7. PII in admin
