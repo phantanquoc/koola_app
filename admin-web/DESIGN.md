@@ -67,7 +67,7 @@ không dark canvas, không màu bão hòa). Nền canvas xám rất nhạt, ch�
 | `StatusBadge` | `components/StatusBadge.tsx` | tone success/danger/warning/muted/primary — mọi trạng thái qua đây, không tự tô màu text |
 | `MetricCard` | `components/MetricCard.tsx` | số liệu dashboard (variant warning/success/danger đổi vòng trang trí) |
 | `Dialog` / `ConfirmDialog` | `components/Dialog.tsx`, `ConfirmDialog.tsx` | confirm hành động phá hủy (ban/takedown/delete/broadcast) — focus-trap có sẵn |
-| `Toast` | `components/Toast.tsx` | feedback sau mutation (success/error/info) |
+| `Toast` | `components/Toast.tsx` | feedback sau mutation (success/warning/error/info) |
 | `BulkBar` | `components/BulkBar.tsx` | bulk-approve/reject — hiện số lượng đã chọn + confirm |
 | `SearchInput` | `components/SearchInput.tsx` | ô tìm kiếm trong toolbar |
 | `LicensePreview` | `components/LicensePreview.tsx` | preview ảnh giấy phép (thumb 86x58, lightbox 720px) |
@@ -91,6 +91,7 @@ không dark canvas, không màu bão hòa). Nền canvas xám rất nhạt, ch�
 - **Form**: zod validate, lỗi cạnh field, giữ input khi lỗi, disable submit khi invalid/loading.
 
 ## 5. Motion & responsive
+
 - Transition chuẩn 160ms ease (hover/focus). Toast vào 200ms, sidebar mobile 200ms.
 - Shimmer skeleton (`.skeleton-line/.skeleton-card`, 1.2s) cho loading bảng — không spinner trơ.
 - Breakpoint: 1180px (grid co), 860px (sidebar thành drawer + backdrop, toolbar/footer
@@ -110,7 +111,7 @@ không dark canvas, không màu bão hòa). Nền canvas xám rất nhạt, ch�
 ## 7. Visual cho các mục checklist AGENTS.md (trước đây chưa có chuẩn)
 
 - **Environment banner:** thanh mỏng 32px trên cùng, chữ 12px/800 uppercase.
-  DEV = nền primary-soft `#ede9fe`, chữ primary-dark. PROD = nền danger-soft,
+  DEV = nền primary-soft, chữ primary-dark. PROD = nền danger-soft,
   chữ danger-dark + thêm dấu "PROD". Không dùng màu chói, nhưng PROD phải nhận ra ngay.
 - **Queue aging:** cột "Tuổi" mono font; <24h muted; 24-72h warning badge;
   >72h danger badge + hàng có viền trái 3px danger. Sort mặc định cũ nhất trước.
@@ -194,5 +195,5 @@ Không mở tab mới ở bất kỳ bước nào.
 - [ ] Trang dùng `PageHeader` + panel/table-shell; không tự chế khung mới
 - [ ] Trạng thái qua `StatusBadge` đúng mapping màu §3; loading/empty có skeleton/state
 - [ ] Hành động phá hủy qua `ConfirmDialog`; feedback qua `Toast`
-- [ ] Focus visible rõ (outline primary 28%), Dialog focus-trap, table điều hướng bàn phím được
+- [ ] Focus visible rõ (outline primary 2px offset 2px), Dialog focus-trap, table điều hướng bàn phím được
 - [ ] Test ở 1440px + 860px + 390px, không tràn ngang (table có `.table-scroll`)

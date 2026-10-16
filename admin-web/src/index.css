@@ -1189,6 +1189,12 @@ code,
   color: var(--koola-primary-dark);
 }
 
+.toast-warning {
+  border: 1px solid var(--koola-warning-soft);
+  background: var(--koola-warning-soft);
+  color: var(--koola-ink);
+}
+
 .toast-text {
   flex: 1;
   font-size: 14px;

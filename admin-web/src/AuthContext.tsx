@@ -1,79 +1,106 @@
-import React, { createContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import axios from 'axios';
+import apiClient from './apiClient';
 import { tokenStorage } from './tokenStorage';
 
 export interface AdminIdentity {
+  /** Display name shown in the header chip. */
   name: string;
   email?: string;
-  role?: string;
-  sub?: string;
+  id?: string;
 }
 
+/**
+ * Auth state. Identity comes from GET /api/admin/me (fresh DB read) —
+ * never from decoding the JWT client-side (AGENTS.md rule 3).
+ */
 interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   identity: AdminIdentity | null;
-  login: (token: string) => void;
+  identityLoading: boolean;
+  login: (accessToken: string, refreshToken: string) => void;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthState | null>(null);
 
-/**
- * Decode a JWT payload without external dependencies.
- * Returns null on any failure (malformed token, etc.).
- */
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const payload = parts[1];
-    // Base64url -> Base64
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const json = atob(base64);
-    return JSON.parse(json) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+interface MeResponse {
+  displayName?: string;
+  name?: string;
+  email?: string;
+  _id?: string;
+  id?: string;
 }
 
-function extractIdentity(token: string | null): AdminIdentity | null {
-  if (!token) return null;
-  const payload = decodeJwtPayload(token);
-  if (!payload) return null;
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => tokenStorage.getAccess());
+  const [identity, setIdentity] = useState<AdminIdentity | null>(null);
+  const [identityLoading, setIdentityLoading] = useState(false);
 
-  // Try common JWT claim names for name/email/role
-  const name =
-    (payload.displayName as string) ||
-    (payload.name as string) ||
-    (payload.email as string) ||
-    'Admin';
-  const email = (payload.email as string) || undefined;
-  const role = (payload.role as string) || (payload.accountType as string) || 'admin';
-  const sub = (payload.sub as string) || (payload.userId as string) || undefined;
+  // Fetch /me whenever a token exists (login or page reload with session).
+  useEffect(() => {
+    if (!token) {
+      setIdentity(null);
+      return;
+    }
+    let cancelled = false;
+    setIdentityLoading(true);
+    apiClient
+      .get<MeResponse>('/admin/me')
+      .then((res) => {
+        if (cancelled) return;
+        const me = res.data;
+        setIdentity({
+          name: me.displayName ?? me.name ?? me.email ?? 'Admin',
+          email: me.email,
+          id: me._id ?? me.id,
+        });
+      })
+      .catch(() => {
+        // 401/403 are handled by the apiClient interceptor (logout/forbidden).
+        // Other failures (network) just leave identity null; pages still work.
+        if (!cancelled) setIdentity(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIdentityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
-  return { name, email, role, sub };
-}
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => tokenStorage.get());
-
-  const login = useCallback((newToken: string) => {
-    tokenStorage.set(newToken);
-    setToken(newToken);
+  const login = useCallback((accessToken: string, refreshToken: string) => {
+    tokenStorage.setAccess(accessToken);
+    tokenStorage.setRefresh(refreshToken);
+    setToken(accessToken);
   }, []);
 
   const logout = useCallback(() => {
+    const refreshToken = tokenStorage.getRefresh();
     tokenStorage.clear();
     setToken(null);
+    setIdentity(null);
+    // Best-effort server-side revocation; ignore failure (token already cleared locally).
+    if (refreshToken) {
+      axios
+        .post(`${apiClient.defaults.baseURL}/auth/logout`, { refreshToken })
+        .catch(() => undefined);
+    }
   }, []);
 
-  const identity = useMemo(() => extractIdentity(token), [token]);
-
-  return (
-    <AuthContext.Provider
-      value={{ token, isAuthenticated: token !== null, identity, login, logout }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthState>(
+    () => ({
+      token,
+      isAuthenticated: token !== null,
+      identity,
+      identityLoading,
+      login,
+      logout,
+    }),
+    [token, identity, identityLoading, login, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

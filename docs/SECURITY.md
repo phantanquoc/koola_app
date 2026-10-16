@@ -23,7 +23,12 @@ Repo-level security rules. Imperative. Applies to `chat-backend`, `ChatApp` (mob
 ## 3. Token storage (clients)
 
 - Mobile (`ChatApp`): access token lives in module memory only (`apiService.ts` — `setAccessTokenInMemory`). Only the refresh token persists via `asyncStorage`. Never persist the access token to AsyncStorage.
-- `admin-web`: token sits in `localStorage` (`tokenStorage.ts`) — acceptable for an internal tool, but never store refresh tokens or other users' tokens there. Clear on logout.
+- `admin-web`: access token + refresh token nằm trong `localStorage` (`tokenStorage.ts`) —
+  NGOẠI LỆ có ký xác nhận cho tool nội bộ desktop: silent refresh (AGENTS.md rule 3) phải sống
+  qua reload, memory-only sẽ ép login lại mỗi lần F5. Bù trừ bắt buộc: cấm
+  `dangerouslySetInnerHTML` với nội dung user, CSP production không `unsafe-inline`,
+  revoke best-effort khi logout, clear toàn bộ khi logout. Không áp dụng cho mobile
+  (access memory-only) hay bất kỳ client-facing app nào.
 - Send access token as `Authorization: Bearer` header (REST) or handshake `query.token` (socket). Never put tokens in URLs, query params of GET endpoints, or logs.
 
 ## 4. Input validation at boundaries

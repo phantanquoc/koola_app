@@ -78,7 +78,6 @@ export default function AppLayout() {
 
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
-  const adminRole = identity?.role ?? 'admin';
 
   function handleTopSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -150,7 +149,7 @@ export default function AppLayout() {
               </div>
               <div>
                 <div className="cell-title">{adminName}</div>
-                <div className="cell-meta">{adminRole}</div>
+                <div className="cell-meta">{identity?.email ?? 'platform admin'}</div>
               </div>
             </div>
             <button className="btn btn-secondary" onClick={logout} type="button">

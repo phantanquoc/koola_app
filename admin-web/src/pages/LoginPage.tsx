@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import apiClient from '../apiClient';
 import { useAuth } from '../useAuth';
-import { tokenStorage } from '../tokenStorage';
+
+interface LoginResponse {
+  accessToken: string;
+  refreshToken: string;
+}
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -22,46 +28,44 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Step 1: authenticate
-      const loginRes = await apiClient.post<{ accessToken: string }>(
+      // Step 1: authenticate — backend returns the rotated token pair.
+      const loginRes = await apiClient.post<LoginResponse>(
         '/auth/login',
         { email, password },
       );
-      const accessToken = loginRes.data.accessToken;
+      const { accessToken, refreshToken } = loginRes.data;
 
-      // Temporarily store token so the /admin/me call can attach it
-      tokenStorage.set(accessToken);
-
-      // Step 2: confirm admin identity
+      // Step 2: confirm admin identity BEFORE committing to auth state.
+      // Pass the token explicitly — do not touch tokenStorage until /me passes,
+      // so a non-admin never leaves a stray token behind.
       try {
-        await apiClient.get('/admin/me');
+        await axios.get(`${apiClient.defaults.baseURL}/admin/me`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
       } catch (meErr) {
-        // 403 = valid credentials but not an admin
         if (axios.isAxiosError(meErr) && meErr.response?.status === 403) {
-          tokenStorage.clear();
-          setError('Bạn không có quyền quản trị (không có quyền admin).');
+          setError(t('login.notAdmin'));
           setLoading(false);
           return;
         }
         throw meErr;
       }
 
-      // Both checks passed — commit to auth state and go to dashboard
-      login(accessToken);
+      // Both checks passed — commit session and go to dashboard.
+      login(accessToken, refreshToken);
       navigate('/');
     } catch (err) {
-      tokenStorage.clear();
       if (axios.isAxiosError(err)) {
         const status = err.response?.status;
         if (status === 401) {
-          setError('Email hoặc mật khẩu không đúng.');
+          setError(t('login.invalidCredentials'));
         } else if (status === 403) {
-          setError('Tài khoản đã bị khóa hoặc không có quyền truy cập.');
+          setError(t('login.locked'));
         } else {
-          setError('Đã xảy ra lỗi. Vui lòng thử lại.');
+          setError(t('login.genericError'));
         }
       } else {
-        setError('Không thể kết nối đến máy chủ.');
+        setError(t('login.networkError'));
       }
     } finally {
       setLoading(false);
@@ -70,7 +74,7 @@ export default function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-card" aria-label="Đăng nhập Koola Admin">
+      <section className="login-card" aria-label={t('login.title')}>
         <div className="login-hero">
           <div className="admin-brand" style={{ marginBottom: 'var(--space-7)' }}>
             <div className="admin-brand-mark" aria-hidden="true">
@@ -83,23 +87,19 @@ export default function LoginPage() {
               </div>
             </div>
           </div>
-          <h1>Điều hành Koola gọn, rõ và an toàn.</h1>
-          <p>
-            Duyệt doanh nghiệp, kiểm soát tài khoản và theo dõi trạng thái vận hành từ một bề mặt quản trị tập trung.
-          </p>
+          <h1>{t('login.heroTitle')}</h1>
+          <p>{t('login.heroCopy')}</p>
         </div>
 
         <div className="login-form-panel">
-          <div className="page-eyebrow">Admin access</div>
-          <h2 className="panel-title">Đăng nhập quản trị</h2>
-          <p className="panel-subtitle">
-            Dùng tài khoản có quyền admin để tiếp tục.
-          </p>
+          <div className="page-eyebrow">{t('login.eyebrow')}</div>
+          <h2 className="panel-title">{t('login.title')}</h2>
+          <p className="panel-subtitle">{t('login.subtitle')}</p>
 
-          <form className="login-form" onSubmit={handleSubmit} aria-label="Đăng nhập quản trị">
+          <form className="login-form" onSubmit={handleSubmit} aria-label={t('login.title')}>
             <div className="form-field">
               <label className="form-label" htmlFor="email">
-                Email
+                {t('login.email')}
               </label>
               <input
                 className="input"
@@ -109,13 +109,13 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="username"
-                placeholder="admin@koola.app"
+                placeholder={t('login.emailPlaceholder')}
               />
             </div>
 
             <div className="form-field">
               <label className="form-label" htmlFor="password">
-                Mật khẩu
+                {t('login.password')}
               </label>
               <div className="password-row">
                 <input
@@ -126,15 +126,15 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  placeholder="Nhập mật khẩu"
+                  placeholder={t('login.passwordPlaceholder')}
                 />
                 <button
                   className="btn btn-ghost btn-sm password-toggle"
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  aria-label={showPassword ? t('login.hidePasswordLabel') : t('login.showPasswordLabel')}
                 >
-                  {showPassword ? 'Ẩn' : 'Hiện'}
+                  {showPassword ? t('login.hidePassword') : t('login.showPassword')}
                 </button>
               </div>
             </div>
@@ -146,7 +146,7 @@ export default function LoginPage() {
             )}
 
             <button className="btn btn-primary" type="submit" disabled={loading}>
-              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+              {loading ? t('login.submitting') : t('login.submit')}
             </button>
           </form>
         </div>

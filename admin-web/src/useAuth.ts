@@ -5,7 +5,8 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   identity: AdminIdentity | null;
-  login: (token: string) => void;
+  identityLoading: boolean;
+  login: (accessToken: string, refreshToken: string) => void;
   logout: () => void;
 }
 
