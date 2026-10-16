@@ -194,6 +194,32 @@ Available skills (invoke with `/<name>`):
 
 ---
 
+## Instruction Index (ai code gì — đọc file nào)
+
+| Khu vực | File |
+|---|---|
+| Backend (`chat-backend/`) | `chat-backend/AGENTS.md` |
+| Mobile (`ChatApp/`) | `ChatApp/AGENTS.md` |
+| Admin web (`admin-web/`) | `admin-web/AGENTS.md` |
+| Security, áp dụng mọi khu vực | `docs/SECURITY.md` |
+| Testing, áp dụng mọi khu vực | `docs/TESTING.md` |
+| Hiểu hệ thống (mental model) | `CLAUDE.md` |
+
+---
+
+## Team Collaboration (2 devs — trunk-based + PR)
+
+- `master` luôn chạy được. Không push trực tiếp lên `master` — mọi việc qua nhánh riêng + PR.
+- Đầu session: `git checkout master && git pull --rebase`, rồi tách nhánh `feat/...`, `fix/...`, `chore/...`.
+- Mỗi nhánh một việc duy nhất. Commit nhỏ, format `feat:`, `fix:`, `chore:`, `refactor:` như lịch sử repo.
+- Xong việc: mở PR vào `master`, mô tả rõ test plan. Người còn lại review rồi mới merge (squash merge).
+- Không tự merge PR của mình khi người kia còn online — chờ review. Không merge khi còn comment chưa resolve.
+- Trước khi merge: rebase lên `master` mới nhất (`git pull origin master --rebase`), resolve conflict ở nhánh feature.
+- Conflict lớn (cùng sửa gateway, AuthContext, schema): dừng lại, báo user để hai người thống nhất hướng trước khi resolve.
+- Không commit khi chưa được user yêu cầu (giữ nguyên tắc ở Self-Check).
+
+---
+
 ## Self-Check Before Finishing
 
 Before declaring a task done:
