@@ -4,13 +4,16 @@ import { asyncStorage } from '../services/storage/asyncStorage';
 import { isLocalFirstEnabled } from '../config/featureFlags';
 import * as messageRepository from '../services/db/messageRepository';
 import * as syncStateRepository from '../services/db/syncStateRepository';
+import { isSyncRateLimited, isSyncRunning } from '../services/sync/syncOrchestrator';
 import type { Message } from '../types';
 
 export function useMessageSync() {
   const isSyncing = useRef(false);
 
   const sync = useCallback(async (): Promise<Message[]> => {
-    if (isSyncing.current) return [];
+    // Never run parallel with the orchestrator and never stack requests
+    // onto a 429 window — yield instead.
+    if (isSyncing.current || isSyncRunning() || isSyncRateLimited()) return [];
     isSyncing.current = true;
 
     try {

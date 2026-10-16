@@ -66,7 +66,7 @@ jest.mock('../../storage/asyncStorage', () => ({
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-import { wireSyncTriggers, syncOnForeground } from '../syncOrchestrator';
+import { wireSyncTriggers, syncOnForeground, isSyncRateLimited } from '../syncOrchestrator';
 import { messagesApi } from '../../api/apiService';
 
 // Track the unwire function so each test can clean up after itself.
@@ -166,5 +166,25 @@ describe('wireSyncTriggers', () => {
     // Calling the no-op should not throw and should not remove the real listener
     expect(() => noopUnwire()).not.toThrow();
     expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('429 with retry-after header sets rate-limit gate and backs off', async () => {
+    (messagesApi.sync as jest.Mock).mockRejectedValueOnce({
+      response: { status: 429, headers: { 'retry-after': '2' } },
+    });
+
+    await syncOnForeground();
+
+    expect(isSyncRateLimited()).toBe(true);
+    const callsAfter429 = (messagesApi.sync as jest.Mock).mock.calls.length;
+
+    // Second immediate trigger must yield without another network hit
+    await syncOnForeground();
+
+    expect(messagesApi.sync as jest.Mock).toHaveBeenCalledTimes(callsAfter429);
+
+    // Wire then let afterEach unwire: cancels the pending 429 retry timer
+    // so it cannot fire after teardown.
+    _unwire = wireSyncTriggers();
   });
 });

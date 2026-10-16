@@ -20,6 +20,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 class ForwardMessageDto {
   @IsArray()
@@ -39,6 +40,7 @@ export class MessagesSyncController {
   ) {}
 
   @Get('sync')
+  @Throttle({ short: { limit: 120, ttl: 60000 }, long: { limit: 1000, ttl: 60000 } })
   @ApiOperation({
     summary: 'Sync messages received while offline',
     description: `Returns all messages across all conversations for the authenticated user
