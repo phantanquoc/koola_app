@@ -192,7 +192,7 @@ export default function AppLayout() {
             </button>
             <div>
               <div className="admin-breadcrumb">Koola / Admin</div>
-              <strong>{currentTitle}</strong>
+              <div className="admin-topbar-title">{currentTitle}</div>
             </div>
           </div>
           <div className="admin-topbar-actions">

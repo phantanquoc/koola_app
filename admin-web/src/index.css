@@ -288,8 +288,8 @@ code,
   flex-shrink: 0;
   place-items: center;
   border-radius: var(--radius-pill);
-  background: var(--koola-info-soft);
-  color: var(--koola-primary);
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
   font-weight: 800;
 }
 
@@ -312,7 +312,7 @@ code,
   justify-content: space-between;
   gap: var(--space-4);
   border-bottom: 1px solid var(--koola-line);
-  background: var(--koola-surface);
+  background: color-mix(in srgb, var(--koola-canvas) 86%, transparent);
   padding: 0 var(--space-6);
   backdrop-filter: blur(14px);
 }
@@ -321,6 +321,13 @@ code,
   color: var(--koola-muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+.admin-topbar-title {
+  color: var(--koola-ink);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .admin-topbar-actions {
@@ -333,6 +340,11 @@ code,
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-height: 44px;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
 }
 
 .admin-identity-chip .admin-avatar {
@@ -343,6 +355,12 @@ code,
 .admin-identity-text {
   min-width: 0;
   line-height: 1.25;
+}
+
+.admin-identity-text .cell-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Removed: .admin-command was the old interactive-looking command field.
@@ -366,7 +384,7 @@ code,
 }
 
 .admin-topbar-search .input {
-  width: 220px;
+  width: min(220px, 32vw);
 }
 
 /* Page primitives */
@@ -1153,6 +1171,21 @@ code,
 
   .admin-topbar {
     padding: 0 var(--space-4);
+  }
+
+  .admin-topbar-actions {
+    gap: var(--space-2);
+  }
+
+  .admin-identity-text,
+  .admin-identity-chip .badge {
+    display: none;
+  }
+
+  .admin-identity-chip {
+    border: 0;
+    background: transparent;
+    padding: 0;
   }
 
   .admin-command-info {
