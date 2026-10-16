@@ -1,65 +1,74 @@
 /**
- * Regression guard for the Moments Phase-1 feed presentation.
+ * Regression guard for the Moments real-post feed.
  *
- * Bối cảnh hồi quy (2026-08-11, phát hiện trên thiết bị thật): bản sửa HIGH-1
- * trước đó gate CẢ MÀN HÌNH sau story thật — `showMockPreview` chỉ bật khi
- * resolver trả 'content', mà resolver lại tính từ `state.feedRing`. Máy user
- * chưa có story nào từ bạn bè → feedRing rỗng → cả `ListHeaderComponent` lẫn
- * `data` bị ẩn, nên user chỉ thấy empty state trắng, mất toàn bộ Pha 1 (ô gợi ý
- * đăng, ba thao tác nhanh, dải vòng story, các PostCard mẫu).
+ * Behavior locked in:
+ *   1. Header (`MomentsFeedHeader`) ALWAYS renders as ListHeaderComponent,
+ *      not gated behind stories or posts.
+ *   2. The vertical list reads real post state (`data={posts}` where posts
+ *      comes from the service), never mock modules.
+ *   3. Post loading/error/empty are inline states — the story region stays a
+ *      non-blocking banner inside the header flow, and post errors use an
+ *      inline retryable `KoolaErrorState` (never a full-screen replacement).
+ *   4. The empty feed shows a real empty state with a composer entry point
+ *      (`handleComposerPress` → PostComposer), not mock data.
+ *   5. No mock post/story modules remain referenced.
+ *   6. All PostCard actions call real flows — no "chưa có backend" toasts.
  *
- * Hành vi ĐÚNG mà test này khóa lại:
- *   1. Header (`MomentsFeedHeader`) LUÔN là ListHeaderComponent, không gate sau
- *      story thật.
- *   2. Feed mẫu LUÔN render trong Pha 1: `data={posts}`, không có công tắc bật/
- *      tắt cả danh sách.
- *   3. Trạng thái story rail (loading/error/friend-empty) là banner không chặn
- *      trong luồng header, không thay thế toàn bộ màn hình.
- *   4. Vẫn còn đường tạo khoảnh khắc ở trạng thái bạn bè chưa đăng
- *      (`actionLabel` + `onActionPress={handleAddPress}` mở MomentComposer).
- *
- * Theo pattern kiểm tra cấp màn hình trong repo (AccountListScreen.spec.tsx):
- * phân tích tĩnh mã nguồn để tránh mock nặng (navigation, reanimated, auth,
- * momentsService) mà vẫn xác nhận đúng hợp đồng regression. Các assertion dưới
- * đây mô tả cấu trúc hành vi, không khớp chuỗi copy mong manh.
+ * Static source analysis avoids heavy mocks (navigation, reanimated, auth,
+ * momentsService) while asserting the behavioral contract.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
-describe('MomentsScreen - Phase 1 feed always renders', () => {
+describe('MomentsScreen - real post feed', () => {
   const sourcePath = path.resolve(__dirname, '../MomentsScreen.tsx');
   const source = fs.readFileSync(sourcePath, 'utf8');
 
-  it('renders the feed header ALWAYS (not gated behind real stories)', () => {
-    // ListHeaderComponent must reference the always-built listHeader, never a
-    // conditional preview flag.
+  it('renders the feed header ALWAYS (not gated behind stories or posts)', () => {
     expect(source).toMatch(/ListHeaderComponent=\{listHeader\}/);
     expect(source).not.toMatch(/showMockPreview/);
   });
 
-  it('feeds the vertical list from posts unconditionally in Phase 1', () => {
-    // data must be the posts array directly, not `showMockPreview ? posts : []`.
+  it('feeds the vertical list from real post state', () => {
     expect(source).toMatch(/data=\{posts\}/);
-    expect(source).not.toMatch(/data=\{showMockPreview \? posts : \[\]\}/);
+    expect(source).toMatch(/momentsService\.getFeedPosts\(\)/);
   });
 
-  it('does NOT gate the whole screen with a ListEmptyComponent', () => {
-    // The regression replaced the entire screen with an empty state. The story
-    // region is now a non-blocking banner inside the header flow instead.
-    expect(source).not.toMatch(/ListEmptyComponent=/);
+  it('does NOT gate the whole screen with a blocking empty state', () => {
+    // The empty feed is a ListEmptyComponent (list-level), not a screen
+    // replacement — the header chrome always renders.
+    expect(source).not.toMatch(/if \(postsEmpty\) return/);
   });
 
-  it('composes the story-region banner inside the header flow', () => {
-    expect(source).toMatch(/const listHeader = useMemo\(/);
-    expect(source).toMatch(/\{storyRegionBanner\}/);
-    expect(source).toMatch(/storyRegionBanner/);
+  it('shows a real empty state with a composer entry point', () => {
+    expect(source).toMatch(/Chưa có bài viết nào/);
+    expect(source).toMatch(/handleComposerPress/);
+    expect(source).toMatch(/navigation\.push\('PostComposer'\)/);
   });
 
-  it('derives the story region from friend rings, not any ring', () => {
-    // The own ring is always synthesised, so `hasFriendRings` must be the
-    // signal — otherwise a user with only their own ring reads as "content".
-    expect(source).toMatch(/resolveMomentsStoryRegion\(/);
-    expect(source).toMatch(/hasFriendRings:\s*otherRings\.length > 0/);
+  it('shows post errors as an inline retryable banner', () => {
+    expect(source).toMatch(/state\.postsError/);
+    expect(source).toMatch(/Không thể tải bài viết/);
+    expect(source).toMatch(/onRetry=\{requestFeed\}/);
+  });
+
+  it('has no references to deleted mock modules', () => {
+    expect(source).not.toMatch(/MOCK_MOMENTS_POSTS/);
+    expect(source).not.toMatch(/momentsMockPosts/);
+    expect(source).not.toMatch(/momentsMockStories/);
+    expect(source).not.toMatch(/dữ liệu mẫu/);
+  });
+
+  it('has no "chưa có backend" toasts for post actions', () => {
+    expect(source).not.toMatch(/chưa có backend/);
+  });
+
+  it('wires all PostCard actions to real flows', () => {
+    expect(source).toMatch(/onPressComment=\{\(postId\) => void openComments\(postId\)\}/);
+    expect(source).toMatch(/onPressShare=\{\(postId\) => void handleShare\(postId\)\}/);
+    expect(source).toMatch(/onPressAuthor=\{handleAuthor\}/);
+    expect(source).toMatch(/onPressMenu=\{handleMenu\}/);
+    expect(source).toMatch(/onPressMedia=\{handleMedia\}/);
   });
 
   it('keeps the story-region error state retryable via requestFeed', () => {
@@ -67,34 +76,14 @@ describe('MomentsScreen - Phase 1 feed always renders', () => {
       const marker = "storyRegion === 'error'";
       const start = source.indexOf(marker);
       if (start === -1) return '';
-      const end = source.indexOf("if (storyRegion === 'friend-empty')", start);
-      return end === -1 ? source.slice(start) : source.slice(start, end);
+      return source.slice(start, start + 2000);
     })();
     expect(errorBranch).not.toBe('');
     expect(errorBranch).toMatch(/<KoolaErrorState/);
     expect(errorBranch).toMatch(/onRetry=\{requestFeed\}/);
   });
 
-  it('handleAddPress opens the MomentComposer route', () => {
-    expect(source).toMatch(
-      /handleAddPress\s*=\s*useCallback\(\(\)\s*=>\s*navigation\.push\('MomentComposer'\)/,
-    );
-  });
-
-  it('keeps handleAddPress in the listHeader dependency array', () => {
-    const depsMatch = source.match(
-      /const listHeader = useMemo\([\s\S]*?\), \[([\s\S]*?)\]\);/,
-    );
-    expect(depsMatch).not.toBeNull();
-    expect(depsMatch?.[1]).toMatch(/handleAddPress/);
-    expect(depsMatch?.[1]).toMatch(/storyRegionBanner/);
-  });
-
   it('does not render a layout-shifting loading banner (cold load uses in-place rail skeletons)', () => {
-    // 2026-08-13 jump fix: the cold-load banner (ActivityIndicator row) was
-    // inserted under the rail and removed on settle, shifting the whole feed.
-    // Loading is now signalled by skeleton rings inside MomentsFeedHeader via
-    // the `railLoading` prop — the rail height never changes.
     expect(source).not.toMatch(/ActivityIndicator/);
     expect(source).toMatch(/railLoading/);
   });

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
 import type { StoryDocument } from './schemas/story.schema';
 import { AudienceScope } from './schemas/story.schema';
+import type { PostDocument } from './schemas/post.schema';
 import type { AudienceListDocument } from './schemas/audience-list.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -130,13 +131,126 @@ export class MomentsGateway {
     });
   }
 
+  // ─── post.new / post.deleted / post.reaction / post.comment ────────────
+
+  /**
+   * Post fanout mirrors the story fanout: same user-room targeting via
+   * resolvePermittedViewers-for-scope. Payloads stay ID-only (<10KB) —
+   * clients fetch the full post via GET /moments/posts/:id.
+   */
+
+  async emitPostNew(post: PostDocument): Promise<void> {
+    if (!this.io) return;
+
+    const postId = (post as any)._id.toString();
+    const authorId = post.authorId;
+    const payload = {
+      postId,
+      authorId,
+      createdAt: (post as any).createdAt,
+    };
+
+    const recipientIds = await this.resolvePostPermittedViewers(post);
+
+    for (const viewerId of recipientIds) {
+      if (viewerId === authorId) continue; // exclude author
+      this.io.to(`user:${viewerId}`).emit('post.new', payload);
+    }
+
+    this.logger.debug(
+      `[MomentsGateway] post.new emitted to ${recipientIds.length} viewer rooms`,
+    );
+  }
+
+  async emitPostDeleted(post: PostDocument): Promise<void> {
+    if (!this.io) return;
+
+    const postId = (post as any)._id.toString();
+    const authorId = post.authorId;
+    const payload = { postId, authorId };
+
+    const recipientIds = await this.resolvePostPermittedViewers(post);
+    for (const viewerId of recipientIds) {
+      if (viewerId === authorId) continue; // author handled below
+      this.io.to(`user:${viewerId}`).emit('post.deleted', payload);
+    }
+    this.io.to(`user:${authorId}`).emit('post.deleted', payload);
+
+    this.logger.debug(
+      `[MomentsGateway] post.deleted emitted to ${recipientIds.length} viewer rooms`,
+    );
+  }
+
+  /**
+   * Emit post.reaction to ALL permitted viewers (mirrors emitPostComment
+   * scoping), excluding the actor. Payload is actor-scoped ({ actorId, liked })
+   * so each client can decide whether its own likedByMe changes — a
+   * viewer-scoped likedByMe boolean would corrupt other viewers' state.
+   * Payload stays ID-only (<10KB).
+   */
+  async emitPostReaction(
+    post: PostDocument,
+    actorId: string,
+    likeCount: number,
+    liked: boolean,
+  ): Promise<void> {
+    if (!this.io) return;
+
+    const postId = (post as any)._id.toString();
+    const payload = { postId, likeCount, actorId, liked };
+
+    const recipientIds = await this.resolvePostPermittedViewers(post);
+    for (const viewerId of recipientIds) {
+      if (viewerId === actorId) continue; // exclude actor
+      this.io.to(`user:${viewerId}`).emit('post.reaction', payload);
+    }
+    // The actor also holds the post in their own feed state (e.g. another
+    // device) — they reconcile likedByMe via the actorId match.
+    if (!recipientIds.includes(actorId)) {
+      this.io.to(`user:${actorId}`).emit('post.reaction', payload);
+    }
+
+    this.logger.debug(
+      `[MomentsGateway] post.reaction emitted to ${recipientIds.length} viewer rooms`,
+    );
+  }
+
+  async emitPostComment(
+    post: PostDocument,
+    commentId: string,
+    commentCount: number,
+  ): Promise<void> {
+    if (!this.io) return;
+
+    const postId = (post as any)._id.toString();
+    const authorId = post.authorId;
+    const payload = { postId, authorId, commentId, commentCount };
+
+    const recipientIds = await this.resolvePostPermittedViewers(post);
+    for (const viewerId of recipientIds) {
+      if (viewerId === authorId) continue;
+      this.io.to(`user:${viewerId}`).emit('post.comment', payload);
+    }
+    this.io.to(`user:${authorId}`).emit('post.comment', payload);
+  }
+
+  private async resolvePostPermittedViewers(
+    post: PostDocument,
+  ): Promise<string[]> {
+    return this.resolveViewersForScope(
+      post.audienceScope,
+      post.authorId,
+      post.audienceListId ?? null,
+    );
+  }
+
   // ─── Private: resolve permitted viewer IDs ────────────────────────────────
 
-  private async resolvePermittedViewers(
-    story: StoryDocument,
+  private async resolveViewersForScope(
+    scope: AudienceScope,
+    authorId: string,
+    audienceListId: string | null,
   ): Promise<string[]> {
-    const scope = story.audienceScope;
-
     if (scope === AudienceScope.PUBLIC) {
       // PUBLIC stories are world-readable via REST, but the socket event is a
       // feed-ring hint — only useful to someone whose feed already surfaces the
@@ -144,22 +258,32 @@ export class MomentsGateway {
       // instead of O(every connected socket), which is what the project rule
       // against global io.emit() exists to prevent. Anyone else still discovers
       // the story through GET /moments/feed.
-      return this.conversationsService.getConnectedUserIds(story.authorId);
+      return this.conversationsService.getConnectedUserIds(authorId);
     }
 
     if (scope === AudienceScope.CONNECTIONS) {
       // Return the author's real connection set (users who share a DIRECT conversation
       // with the author). The emitStoryNew loop already excludes the author.
-      return this.conversationsService.getConnectedUserIds(story.authorId);
+      return this.conversationsService.getConnectedUserIds(authorId);
     }
 
-    if (scope === AudienceScope.CUSTOM && story.audienceListId) {
+    if (scope === AudienceScope.CUSTOM && audienceListId) {
       const list = await this.audienceListModel
-        .findById(story.audienceListId, { memberIds: 1 })
+        .findById(audienceListId, { memberIds: 1 })
         .lean();
       return (list as any)?.memberIds ?? [];
     }
 
     return [];
+  }
+
+  private async resolvePermittedViewers(
+    story: StoryDocument,
+  ): Promise<string[]> {
+    return this.resolveViewersForScope(
+      story.audienceScope,
+      story.authorId,
+      story.audienceListId ?? null,
+    );
   }
 }

@@ -27,6 +27,9 @@ import { StoryView } from './schemas/story-view.schema';
 import { Highlight } from './schemas/highlight.schema';
 import { AudienceList } from './schemas/audience-list.schema';
 import { MusicTrack } from './schemas/music-track.schema';
+import { Post } from './schemas/post.schema';
+import { PostComment } from './schemas/post-comment.schema';
+import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -102,6 +105,12 @@ describe('12.2 TTL behavior', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
           useValue: {
@@ -116,6 +125,7 @@ describe('12.2 TTL behavior', () => {
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {
@@ -239,6 +249,12 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
           useValue: {
@@ -253,6 +269,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {
@@ -359,6 +376,12 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
           useValue: {
@@ -373,6 +396,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {
@@ -487,6 +511,12 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
           useValue: {
@@ -501,6 +531,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {
@@ -613,12 +644,19 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
           useValue: audienceListModel,
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         { provide: RedisService, useValue: redisService },
         {
           provide: NotificationsService,
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {
@@ -737,6 +775,12 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
           useValue: {
@@ -751,6 +795,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
           useValue: {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
+            sendPostMentionPush: jest.fn(),
           },
         },
         {

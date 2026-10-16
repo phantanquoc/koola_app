@@ -47,6 +47,24 @@ jest.mock('../momentsApi', () => ({
   },
 }));
 
+// Mock postsApi
+jest.mock('../postsApi', () => ({
+  postsApi: {
+    createPost: jest.fn(),
+    getFeed: jest.fn().mockResolvedValue({ items: [], nextCursor: null, total: 0 }),
+    getPostById: jest.fn(),
+    updatePost: jest.fn(),
+    deletePost: jest.fn().mockResolvedValue(undefined),
+    toggleLike: jest.fn(),
+    unlike: jest.fn(),
+    sharePost: jest.fn(),
+    reportPost: jest.fn(),
+    commentOnPost: jest.fn(),
+    listComments: jest.fn(),
+    deleteComment: jest.fn(),
+  },
+}));
+
 // Mock @react-native-community/netinfo
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
@@ -283,7 +301,7 @@ describe('momentsService', () => {
       expect(hadLoading).toBe(false);
     });
 
-    it('clears error on warm refresh without setting isLoading', async () => {
+    it('sets error on failure (no mock fallback) and clears on warm refresh', async () => {
       // Seed feed
       const feedItems = [
         {
@@ -298,14 +316,10 @@ describe('momentsService', () => {
       storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
       await momentsService.refreshFeed();
 
-      // Phase 1: API error now falls back to mock data instead of setting error.
-      // This test still verifies warm-refresh behavior (no isLoading flash), but
-      // the error check is removed because Phase 1 always populates mock rings.
+      // API error sets the error state (mock fallback removed)
       storiesApi.getFeed.mockRejectedValueOnce(new Error('Network down'));
       await momentsService.refreshFeed();
-      // Phase 1: error is cleared, mock data is loaded
-      expect(momentsService.getState().error).toBe(null);
-      expect(momentsService.getState().feedRing.length).toBeGreaterThan(0);
+      expect(momentsService.getState().error).toBe('Network down');
 
       // Now a successful warm refresh should clear error without isLoading
       storiesApi.getFeed.mockResolvedValueOnce({ items: feedItems, nextCursor: null, total: 1 });
@@ -319,6 +333,180 @@ describe('momentsService', () => {
       );
       expect(hadLoading).toBe(false);
       expect(momentsService.getState().error).toBeNull();
+    });
+  });
+
+  describe('posts', () => {
+    const { postsApi } = jest.requireMock('../postsApi') as {
+      postsApi: Record<string, jest.Mock>;
+    };
+
+    function postView(overrides: Record<string, unknown> = {}) {
+      return {
+        _id: 'post-1',
+        authorId: 'author-1',
+        caption: 'hello',
+        media: [],
+        mentions: [],
+        audienceScope: 'public',
+        audienceListId: null,
+        likeCount: 0,
+        commentCount: 0,
+        shareCount: 0,
+        clientPostId: null,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        reactionCount: 0,
+        likedByMe: false,
+        authorDisplayName: 'Author',
+        authorAvatar: null,
+        comments: [],
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      momentsService.reset();
+      jest.clearAllMocks();
+    });
+
+    it('refreshPosts loads feed into state', async () => {
+      postsApi.getFeed.mockResolvedValueOnce({
+        items: [postView({ _id: 'post-1' }), postView({ _id: 'post-2' })],
+        nextCursor: 'cursor-1',
+        total: 2,
+      });
+
+      await momentsService.refreshPosts();
+
+      const state = momentsService.getState();
+      expect(state.feedIds).toEqual(['post-1', 'post-2']);
+      expect(state.postsCursor).toBe('cursor-1');
+      expect(state.isLoadingPosts).toBe(false);
+      expect(momentsService.getFeedPosts()).toHaveLength(2);
+    });
+
+    it('refreshPosts sets postsError on failure (no mock fallback)', async () => {
+      postsApi.getFeed.mockRejectedValueOnce(new Error('Network down'));
+
+      await momentsService.refreshPosts();
+
+      expect(momentsService.getState().postsError).toBe('Network down');
+      expect(momentsService.getState().feedIds).toEqual([]);
+    });
+
+    it('toggleLike optimistically flips then reconciles', async () => {
+      postsApi.getFeed.mockResolvedValueOnce({
+        items: [postView({ _id: 'post-1' })],
+        nextCursor: null,
+        total: 1,
+      });
+      await momentsService.refreshPosts();
+
+      postsApi.toggleLike.mockResolvedValueOnce({ likedByMe: true, likeCount: 1 });
+      await momentsService.toggleLike('post-1');
+
+      const post = momentsService.getState().postsById.get('post-1');
+      expect(post?.likedByMe).toBe(true);
+      expect(post?.likeCount).toBe(1);
+    });
+
+    it('post.new prepends via fetch-by-id; replay is a no-op', async () => {
+      postsApi.getPostById.mockResolvedValue(postView({ _id: 'post-9' }));
+
+      await momentsService.handlePostEvent({
+        type: 'post.new',
+        postId: 'post-9',
+        authorId: 'author-9',
+        createdAt: new Date().toISOString(),
+      });
+
+      expect(momentsService.getState().feedIds[0]).toBe('post-9');
+
+      // Replay with the same ID must not duplicate
+      await momentsService.handlePostEvent({
+        type: 'post.new',
+        postId: 'post-9',
+        authorId: 'author-9',
+        createdAt: new Date().toISOString(),
+      });
+      expect(
+        momentsService.getState().feedIds.filter((id) => id === 'post-9'),
+      ).toHaveLength(1);
+      expect(postsApi.getPostById).toHaveBeenCalledTimes(1);
+    });
+
+    it('post.deleted removes from feed without refetch', async () => {
+      postsApi.getFeed.mockResolvedValueOnce({
+        items: [postView({ _id: 'post-1' })],
+        nextCursor: null,
+        total: 1,
+      });
+      await momentsService.refreshPosts();
+
+      await momentsService.handlePostEvent({
+        type: 'post.deleted',
+        postId: 'post-1',
+        authorId: 'author-1',
+      });
+
+      expect(momentsService.getState().feedIds).toEqual([]);
+      expect(postsApi.getFeed).toHaveBeenCalledTimes(1);
+    });
+
+    it('post.reaction patches count but preserves likedByMe for other viewers', async () => {
+      postsApi.getFeed.mockResolvedValueOnce({
+        items: [postView({ _id: 'post-1', likedByMe: false, likeCount: 0 })],
+        nextCursor: null,
+        total: 1,
+      });
+      await momentsService.refreshPosts();
+      momentsService.setCurrentUserId('me-1');
+
+      await momentsService.handlePostEvent({
+        type: 'post.reaction',
+        postId: 'post-1',
+        actorId: 'viewer-2',
+        liked: true,
+        likeCount: 5,
+      });
+      await momentsService.handlePostEvent({
+        type: 'post.comment',
+        postId: 'post-1',
+        authorId: 'author-1',
+        commentId: 'c-1',
+        commentCount: 3,
+      });
+
+      const post = momentsService.getState().postsById.get('post-1');
+      expect(post?.likeCount).toBe(5);
+      expect(post?.reactionCount).toBe(5);
+      // Another viewer's like must NOT flip our own likedByMe
+      expect(post?.likedByMe).toBe(false);
+      expect(post?.commentCount).toBe(3);
+    });
+
+    it('post.reaction from self on another device sets likedByMe', async () => {
+      postsApi.getFeed.mockResolvedValueOnce({
+        items: [postView({ _id: 'post-1', likedByMe: false, likeCount: 0 })],
+        nextCursor: null,
+        total: 1,
+      });
+      await momentsService.refreshPosts();
+      momentsService.setCurrentUserId('me-1');
+
+      await momentsService.handlePostEvent({
+        type: 'post.reaction',
+        postId: 'post-1',
+        actorId: 'me-1',
+        liked: true,
+        likeCount: 1,
+      });
+
+      const post = momentsService.getState().postsById.get('post-1');
+      expect(post?.likeCount).toBe(1);
+      expect(post?.likedByMe).toBe(true);
     });
   });
 });

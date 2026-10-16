@@ -22,6 +22,18 @@ import {
   AudienceListDocument,
 } from './schemas/audience-list.schema';
 import { MusicTrack, MusicTrackDocument } from './schemas/music-track.schema';
+import { Post, PostDocument } from './schemas/post.schema';
+import {
+  PostComment,
+  PostCommentDocument,
+} from './schemas/post-comment.schema';
+import {
+  CreatePostDto,
+  UpdatePostDto,
+  CommentPostDto,
+  ReportPostDto,
+} from './dto/post.dto';
+import { Report, ReportDocument } from '../admin/schemas/report.schema';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { ReactStoryDto, CommentStoryDto } from './dto/story-interaction.dto';
 import {
@@ -91,6 +103,12 @@ export class MomentsService {
     private audienceListModel: Model<AudienceListDocument>,
     @InjectModel(MusicTrack.name)
     private musicTrackModel: Model<MusicTrackDocument>,
+    @InjectModel(Post.name)
+    private postModel: Model<PostDocument>,
+    @InjectModel(PostComment.name)
+    private postCommentModel: Model<PostCommentDocument>,
+    @InjectModel(Report.name)
+    private reportModel: Model<ReportDocument>,
     private readonly redisService: RedisService,
     private readonly notificationsService: NotificationsService,
     private readonly conversationsService: ConversationsService,
@@ -1489,8 +1507,852 @@ export class MomentsService {
     }
   }
 
-  // ─── Orphan Detector (Task 6.7, 11.3) ───────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // SECTION 7: Posts
+  // ───────────────────────────────────────────────────────────────────────────
 
+  async createPost(authorId: string, dto: CreatePostDto): Promise<any> {
+    // 0) Idempotency: return the existing post on clientPostId replay
+    if (dto.clientPostId) {
+      const existing = await this.postModel
+        .findOne({ authorId, clientPostId: dto.clientPostId })
+        .exec();
+      if (existing) return this.resolvePostView(existing, authorId);
+    }
+
+    const caption = dto.caption ?? '';
+    const media = dto.media ?? [];
+    if (!caption.trim() && media.length === 0) {
+      throw new BadRequestException('Post must contain text or at least one attachment');
+    }
+
+    // 1) Video duration validation (each video ≤ 60s)
+    for (const item of media) {
+      if (
+        item.mediaType === MediaType.VIDEO &&
+        item.duration !== undefined &&
+        item.duration > 60
+      ) {
+        throw new BadRequestException('Video attachment exceeds 60 second limit');
+      }
+    }
+
+    // 2) Custom scope requires an owned audience list
+    if (dto.audienceScope === AudienceScope.CUSTOM) {
+      if (!dto.audienceListId) {
+        throw new BadRequestException(
+          'audienceListId is required for custom scope',
+        );
+      }
+      const list = await this.audienceListModel
+        .findById(dto.audienceListId)
+        .lean();
+      if (!list) {
+        throw new ForbiddenException('Audience list not found');
+      }
+      if ((list as any).ownerId !== authorId) {
+        throw new ForbiddenException('You do not own this audience list');
+      }
+    }
+
+    // 3) Validate mentions
+    const mentions = dto.mentions ?? [];
+    if (mentions.length > 0) {
+      const userIds = mentions.map((m) => m.userId);
+      const users = await this.usersService.findByIds(userIds);
+      const validIds = new Set(users.map((u) => u._id.toString()));
+      for (const m of mentions) {
+        if (!validIds.has(m.userId)) {
+          throw new BadRequestException(
+            `Invalid mention: user ${m.userId} not found`,
+          );
+        }
+      }
+    }
+
+    // 4) Create
+    let post: PostDocument;
+    try {
+      post = await this.postModel.create({
+        authorId,
+        caption,
+        media: media.map((m) => ({
+          mediaKey: m.mediaKey,
+          mediaType: m.mediaType,
+          thumbnailKey: m.thumbnailKey ?? null,
+          duration: m.duration ?? null,
+        })),
+        mentions,
+        audienceScope: dto.audienceScope,
+        audienceListId: dto.audienceListId ?? null,
+        likes: [],
+        likeCount: 0,
+        commentCount: 0,
+        shareCount: 0,
+        clientPostId: dto.clientPostId ?? null,
+        isActive: true,
+      });
+    } catch (err: any) {
+      // Concurrent replay with the same clientPostId lost the unique-index
+      // race — return the winner instead of surfacing a 500.
+      if (err?.code === 11000 && dto.clientPostId) {
+        const winner = await this.postModel
+          .findOne({ authorId, clientPostId: dto.clientPostId })
+          .exec();
+        if (winner) return this.resolvePostView(winner, authorId);
+      }
+      throw err;
+    }
+
+    // 5) Emit post.new + mention pushes (fire-and-forget)
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitPostNew(post)
+        .catch((err) =>
+          this.logger.error('[MomentsService] emitPostNew failed', err),
+        );
+    }
+    this.processPostMentionNotifications(authorId, post, mentions).catch(
+      (err) =>
+        this.logger.error(
+          '[MomentsService] post mention notifications failed',
+          err,
+        ),
+    );
+
+    return this.resolvePostView(post, authorId);
+  }
+
+  async getPostsFeed(
+    viewerId: string,
+    cursor?: string,
+    limit = 20,
+  ): Promise<{ items: any[]; nextCursor: string | null; total: number }> {
+    const safeLimit = Math.min(Math.max(limit || 20, 1), 20);
+
+    // Load viewer's audience list membership (cached)
+    const viewerListMembership = await this.getViewerListMembership(viewerId);
+
+    // Fetch viewer's connections (DIRECT-conversation graph)
+    const connectionIds =
+      await this.conversationsService.getConnectedUserIds(viewerId);
+
+    // Build $or privacy filter — same shape as the story feed
+    const orFilter = [
+      { audienceScope: AudienceScope.PUBLIC },
+      {
+        audienceScope: AudienceScope.CONNECTIONS,
+        authorId: { $in: connectionIds },
+      },
+      // Author always sees their own posts regardless of scope
+      { authorId: viewerId },
+      ...(viewerListMembership.length > 0
+        ? [
+            {
+              audienceScope: AudienceScope.CUSTOM,
+              audienceListId: { $in: viewerListMembership },
+            },
+          ]
+        : []),
+    ];
+
+    const baseFilter: Record<string, unknown> = {
+      isActive: true,
+      $or: orFilter,
+    };
+
+    if (cursor) {
+      if (!Types.ObjectId.isValid(cursor)) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      const cursorDoc = await this.postModel
+        .findById(cursor, { createdAt: 1 })
+        .lean();
+      if (!cursorDoc) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      baseFilter.createdAt = { $lt: (cursorDoc as any).createdAt };
+    }
+
+    const posts = await this.postModel
+      .find(baseFilter)
+      .sort({ createdAt: -1 })
+      .limit(safeLimit + 1)
+      .lean();
+
+    const hasMore = posts.length > safeLimit;
+    const pagePosts = hasMore ? posts.slice(0, safeLimit) : posts;
+    const nextCursor =
+      hasMore && pagePosts.length > 0
+        ? (pagePosts[pagePosts.length - 1] as any)._id.toString()
+        : null;
+
+    const items = await Promise.all(
+      pagePosts.map((p) => this.resolvePostView(p, viewerId)),
+    );
+
+    return { items, nextCursor, total: items.length };
+  }
+
+  async getPostById(postId: string, viewerId: string): Promise<any> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId).lean();
+    if (!post || !(post as any).isActive) {
+      throw new NotFoundException('Post not found');
+    }
+
+    await this.assertPostViewAccess(post, viewerId);
+    return this.resolvePostView(post, viewerId);
+  }
+
+  async togglePostLike(
+    postId: string,
+    viewerId: string,
+  ): Promise<{ likedByMe: boolean; likeCount: number }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post || !post.isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+
+    const alreadyLiked = (post.likes ?? []).some(
+      (l) => l.userId === viewerId,
+    );
+
+    let updated: any;
+    if (alreadyLiked) {
+      updated = await this.postModel.findOneAndUpdate(
+        { _id: postId },
+        {
+          $pull: { likes: { userId: viewerId } },
+          $inc: { likeCount: -1 },
+        } as any,
+        { new: true },
+      );
+    } else {
+      updated = await this.postModel.findOneAndUpdate(
+        { _id: postId, 'likes.userId': { $ne: viewerId } },
+        {
+          $push: {
+            likes: { userId: viewerId, createdAt: new Date() },
+          },
+          $inc: { likeCount: 1 },
+        } as any,
+        { new: true },
+      );
+      if (!updated) {
+        // Concurrent like won the race — read the winner
+        updated = await this.postModel.findById(postId);
+      }
+    }
+    if (!updated) throw new NotFoundException('Post not found');
+
+    const count = Math.max(0, (updated as any).likeCount ?? 0);
+    if ((updated as any).likeCount !== count) {
+      await this.postModel.updateOne(
+        { _id: postId },
+        { $set: { likeCount: count } },
+      );
+      (updated as any).likeCount = count;
+    }
+    const likedByMe = ((updated as any).likes ?? []).some(
+      (l: any) => l.userId === viewerId,
+    );
+
+    // Emit post.reaction to all permitted viewers (fire-and-forget)
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitPostReaction(updated as any, viewerId, count, likedByMe)
+        .catch((err) =>
+          this.logger.error('[MomentsService] emitPostReaction failed', err),
+        );
+    }
+
+    return { likedByMe, likeCount: count };
+  }
+
+  async removePostLike(
+    postId: string,
+    viewerId: string,
+  ): Promise<{ likedByMe: boolean; likeCount: number }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post || !post.isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+
+    const alreadyLiked = (post.likes ?? []).some(
+      (l) => l.userId === viewerId,
+    );
+
+    // Idempotent unlike: never adds a like. No state change → no write, no event.
+    if (!alreadyLiked) {
+      const count = Math.max(0, (post as any).likeCount ?? 0);
+      return { likedByMe: false, likeCount: count };
+    }
+
+    const updated: any = await this.postModel.findOneAndUpdate(
+      { _id: postId },
+      {
+        $pull: { likes: { userId: viewerId } },
+        $inc: { likeCount: -1 },
+      } as any,
+      { new: true },
+    );
+    if (!updated) throw new NotFoundException('Post not found');
+
+    const count = Math.max(0, (updated as any).likeCount ?? 0);
+    if ((updated as any).likeCount !== count) {
+      await this.postModel.updateOne(
+        { _id: postId },
+        { $set: { likeCount: count } },
+      );
+      (updated as any).likeCount = count;
+    }
+    const likedByMe = ((updated as any).likes ?? []).some(
+      (l: any) => l.userId === viewerId,
+    );
+
+    // Emit post.reaction to all permitted viewers (fire-and-forget)
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitPostReaction(updated as any, viewerId, count, likedByMe)
+        .catch((err) =>
+          this.logger.error('[MomentsService] emitPostReaction failed', err),
+        );
+    }
+
+    return { likedByMe, likeCount: count };
+  }
+
+  async sharePost(
+    postId: string,
+    viewerId: string,
+  ): Promise<{ shareCount: number; deepLink: string }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post || !post.isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+
+    const updated = await this.postModel.findOneAndUpdate(
+      { _id: postId },
+      { $inc: { shareCount: 1 } },
+      { new: true, projection: { shareCount: 1 } },
+    );
+    return {
+      shareCount: (updated as any)?.shareCount ?? (post.shareCount ?? 0) + 1,
+      deepLink: `koola://moments/post/${postId}`,
+    };
+  }
+
+  async updatePost(
+    postId: string,
+    authorId: string,
+    dto: UpdatePostDto,
+  ): Promise<any> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post || !post.isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.authorId !== authorId) {
+      throw new ForbiddenException('Not your post');
+    }
+
+    if (dto.caption !== undefined) post.caption = dto.caption;
+    if (dto.audienceScope !== undefined) {
+      if (dto.audienceScope === AudienceScope.CUSTOM) {
+        const listId = dto.audienceListId ?? post.audienceListId;
+        if (!listId) {
+          throw new BadRequestException(
+            'audienceListId is required for custom scope',
+          );
+        }
+        const list = await this.audienceListModel.findById(listId).lean();
+        if (!list) {
+          throw new ForbiddenException('Audience list not found');
+        }
+        if ((list as any).ownerId !== authorId) {
+          throw new ForbiddenException('You do not own this audience list');
+        }
+        post.audienceListId = listId;
+      } else {
+        post.audienceListId = null;
+      }
+      post.audienceScope = dto.audienceScope;
+    } else if (dto.audienceListId !== undefined) {
+      // audienceListId may only accompany a custom scope
+      if (post.audienceScope !== AudienceScope.CUSTOM) {
+        throw new BadRequestException(
+          'audienceListId requires custom audience scope',
+        );
+      }
+      const list = await this.audienceListModel
+        .findById(dto.audienceListId)
+        .lean();
+      if (!list) {
+        throw new ForbiddenException('Audience list not found');
+      }
+      if ((list as any).ownerId !== authorId) {
+        throw new ForbiddenException('You do not own this audience list');
+      }
+      post.audienceListId = dto.audienceListId;
+    }
+
+    await post.save();
+    return this.resolvePostView(post.toObject(), authorId);
+  }
+
+  async deletePost(postId: string, authorId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.authorId !== authorId) {
+      throw new ForbiddenException('Not your post');
+    }
+
+    post.isActive = false;
+    await post.save();
+
+    // Emit post.deleted
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitPostDeleted(post)
+        .catch((err) =>
+          this.logger.error('[MomentsService] emitPostDeleted failed', err),
+        );
+    }
+  }
+
+  async reportPost(
+    postId: string,
+    reporterId: string,
+    dto: ReportPostDto,
+  ): Promise<{ success: boolean }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId).lean();
+    if (!post || !(post as any).isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, reporterId);
+
+    // 'post' extends the admin-moderation target vocabulary; the admin
+    // /reports list filters by targetType so it surfaces automatically.
+    await this.reportModel.create({
+      reporterId,
+      targetType: 'post',
+      targetId: postId,
+      reason: dto.reason,
+      status: 'pending',
+    });
+
+    return { success: true };
+  }
+
+  async commentOnPost(
+    postId: string,
+    authorId: string,
+    dto: CommentPostDto,
+  ): Promise<any> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId);
+    if (!post || !post.isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, authorId);
+
+    let parent: any = null;
+    if (dto.parentId) {
+      parent = await this.postCommentModel.findById(dto.parentId).lean();
+      if (!parent || !(parent as any).isActive) {
+        throw new NotFoundException('Parent comment not found');
+      }
+      if ((parent as any).postId !== postId) {
+        throw new BadRequestException('Parent comment belongs to another post');
+      }
+      if ((parent as any).parentId) {
+        // Single-level replies only — a reply's parent must be top-level
+        throw new BadRequestException('Cannot reply to a reply');
+      }
+    }
+
+    const comment = await this.postCommentModel.create({
+      postId,
+      parentId: dto.parentId ?? null,
+      authorId,
+      content: dto.content,
+      isActive: true,
+    });
+
+    await this.postModel.updateOne(
+      { _id: postId },
+      { $inc: { commentCount: 1 } },
+    );
+    const freshPost =
+      (await this.postModel.findById(postId)) ?? post;
+    const commentCount = Math.max(0, freshPost.commentCount ?? 0);
+
+    // Emit post.comment to permitted viewers (fire-and-forget)
+    if (this.gatewayRef) {
+      this.gatewayRef
+        .emitPostComment(
+          freshPost,
+          (comment as any)._id.toString(),
+          commentCount,
+        )
+        .catch((err) =>
+          this.logger.error('[MomentsService] emitPostComment failed', err),
+        );
+    }
+
+    return this.resolvePostCommentView(comment.toObject(), authorId);
+  }
+
+  async listPostComments(
+    postId: string,
+    viewerId: string,
+    cursor?: string,
+    limit = 20,
+  ): Promise<{ comments: any[]; nextCursor: string | null }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId).lean();
+    if (!post || !(post as any).isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+
+    const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
+    const filter: Record<string, unknown> = {
+      postId,
+      parentId: null,
+      isActive: true,
+    };
+    if (cursor) {
+      filter.createdAt = { $gt: new Date(cursor) };
+    }
+
+    const docs = await this.postCommentModel
+      .find(filter)
+      .sort({ createdAt: 1 })
+      .limit(safeLimit + 1)
+      .lean();
+
+    const hasMore = docs.length > safeLimit;
+    const pageDocs = hasMore ? docs.slice(0, safeLimit) : docs;
+    const nextCursor =
+      hasMore && pageDocs.length > 0
+        ? new Date(
+            (pageDocs[pageDocs.length - 1] as any).createdAt,
+          ).toISOString()
+        : null;
+
+    const comments = await Promise.all(
+      pageDocs.map((c) => this.resolvePostCommentView(c, viewerId, true)),
+    );
+    return { comments, nextCursor };
+  }
+
+  async deletePostComment(
+    commentId: string,
+    requesterId: string,
+  ): Promise<{ success: boolean }> {
+    if (!Types.ObjectId.isValid(commentId)) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    const comment = await this.postCommentModel.findById(commentId);
+    if (!comment || !comment.isActive) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    const post = await this.postModel.findById(comment.postId);
+    if (!post) throw new NotFoundException('Post not found');
+
+    const isCommentAuthor = comment.authorId === requesterId;
+    const isPostAuthor = post.authorId === requesterId;
+    if (!isCommentAuthor && !isPostAuthor) {
+      throw new ForbiddenException('Not your comment');
+    }
+
+    comment.isActive = false;
+    await comment.save();
+
+    const updated = await this.postModel.findOneAndUpdate(
+      { _id: comment.postId },
+      { $inc: { commentCount: -1 } },
+      { new: true, projection: { commentCount: 1, authorId: 1 } },
+    );
+    const commentCount = Math.max(0, (updated as any)?.commentCount ?? 0);
+    if ((updated as any)?.commentCount !== commentCount) {
+      await this.postModel.updateOne(
+        { _id: comment.postId },
+        { $set: { commentCount } },
+      );
+    }
+
+    // Emit post.comment update (fire-and-forget)
+    if (this.gatewayRef && post) {
+      const emitTarget =
+        (updated as any)?.authorId !== undefined
+          ? ({ ...(post.toObject?.() ?? post) } as any)
+          : (post as any);
+      this.gatewayRef
+        .emitPostComment(emitTarget, commentId, commentCount)
+        .catch((err) =>
+          this.logger.error(
+            '[MomentsService] emitPostComment (delete) failed',
+            err,
+          ),
+        );
+    }
+
+    return { success: true };
+  }
+
+  // ─── Post view-model helpers ─────────────────────────────────────────────
+
+  private async resolvePostView(post: any, viewerId: string): Promise<any> {
+    const p = typeof post.toObject === 'function' ? post.toObject() : post;
+    const postId = (p._id ?? post._id).toString();
+
+    // Batch-generate presigned media URLs (1h)
+    const media = await Promise.all(
+      ((p.media ?? []) as any[]).map(async (m) => {
+        let mediaUrl: string | null = null;
+        let thumbnailUrl: string | null = null;
+        try {
+          mediaUrl = await getMinioPublicClient().presignedGetObject(
+            BUCKET,
+            m.mediaKey,
+            3600,
+          );
+        } catch {
+          mediaUrl = null;
+        }
+        if (m.thumbnailKey) {
+          try {
+            thumbnailUrl = await getMinioPublicClient().presignedGetObject(
+              BUCKET,
+              m.thumbnailKey,
+              3600,
+            );
+          } catch {
+            thumbnailUrl = null;
+          }
+        }
+        return { ...m, mediaUrl, thumbnailUrl };
+      }),
+    );
+
+    const likes = (p.likes ?? []) as any[];
+    const likedByMe = likes.some((l) => l.userId === viewerId);
+
+    // Batch author lookup
+    let authorDisplayName = '';
+    let authorAvatar: string | null = null;
+    try {
+      const users = await this.usersService.findByIds([p.authorId]);
+      const author = users?.[0] as any;
+      authorDisplayName = author?.displayName ?? '';
+      authorAvatar = author?.avatar ?? null;
+    } catch {
+      // Non-fatal — leave author fields blank
+    }
+
+    // Top-2 comment preview (latest top-level)
+    let commentsPreview: any[] = [];
+    try {
+      const preview = await this.postCommentModel
+        .find({ postId, parentId: null, isActive: true })
+        .sort({ createdAt: -1 })
+        .limit(2)
+        .lean();
+      commentsPreview = await Promise.all(
+        preview
+          .reverse()
+          .map((c) => this.resolvePostCommentView(c, viewerId, false)),
+      );
+    } catch {
+      commentsPreview = [];
+    }
+
+    return {
+      ...p,
+      _id: p._id,
+      media,
+      reactionCount: p.likeCount ?? 0,
+      likedByMe,
+      authorDisplayName,
+      authorAvatar,
+      comments: commentsPreview,
+    };
+  }
+
+  private async resolvePostCommentView(
+    comment: any,
+    _viewerId: string,
+    withReplies = false,
+  ): Promise<any> {
+    const c = comment;
+    const commentId = (c._id ?? comment._id).toString();
+
+    let authorDisplayName = '';
+    let authorAvatar: string | null = null;
+    try {
+      const users = await this.usersService.findByIds([c.authorId]);
+      const author = users?.[0] as any;
+      authorDisplayName = author?.displayName ?? '';
+      authorAvatar = author?.avatar ?? null;
+    } catch {
+      // Non-fatal
+    }
+
+    const base = {
+      ...c,
+      _id: c._id,
+      authorDisplayName,
+      authorAvatar,
+    };
+
+    if (!withReplies) return base;
+
+    // Up to 3 reply preview (oldest-first) + replyCount
+    let replies: any[] = [];
+    let replyCount = 0;
+    try {
+      replyCount = await this.postCommentModel.countDocuments({
+        parentId: commentId,
+        isActive: true,
+      });
+      const replyDocs = await this.postCommentModel
+        .find({ parentId: commentId, isActive: true })
+        .sort({ createdAt: 1 })
+        .limit(3)
+        .lean();
+      replies = await Promise.all(
+        replyDocs.map((r) => this.resolvePostCommentView(r, _viewerId, false)),
+      );
+    } catch {
+      replies = [];
+    }
+    return { ...base, replies, replyCount };
+  }
+
+  private async assertPostViewAccess(post: any, viewerId: string): Promise<void> {
+    // Author always has access to their own post
+    if (post.authorId === viewerId) return;
+
+    if (post.audienceScope === AudienceScope.PUBLIC) return;
+
+    if (post.audienceScope === AudienceScope.CONNECTIONS) {
+      const connectionIds =
+        await this.conversationsService.getConnectedUserIds(viewerId);
+      if (!connectionIds.includes(post.authorId)) {
+        throw new ForbiddenException('Post is not accessible');
+      }
+      return;
+    }
+
+    if (post.audienceScope === AudienceScope.CUSTOM) {
+      if (!post.audienceListId) {
+        throw new ForbiddenException('Post is not accessible');
+      }
+      const list = await this.audienceListModel
+        .findById(post.audienceListId)
+        .lean();
+      if (!list) throw new ForbiddenException('Post is not accessible');
+      if (!(list as any).memberIds?.includes(viewerId)) {
+        throw new ForbiddenException('Post is not accessible');
+      }
+    }
+  }
+
+  private async processPostMentionNotifications(
+    authorId: string,
+    post: PostDocument,
+    mentions: Array<{ userId: string; username: string }>,
+  ): Promise<void> {
+    if (!mentions.length) return;
+
+    // Read author profile to check isPrivate
+    const author = await this.usersService.findById(authorId);
+    if (!author) return;
+
+    const isPrivate = (author as any).isPrivate ?? false;
+    const authorName = (author as any).displayName ?? '';
+    const captionSnippet = (post as any).caption?.slice(0, 100) ?? '';
+    const postId = (post as any)._id.toString();
+
+    // For private authors, resolve the connection set once (shared DIRECT
+    // conversations) rather than per-mention. Consistent with assertPostViewAccess.
+    const connectionIds = isPrivate
+      ? new Set(await this.conversationsService.getConnectedUserIds(authorId))
+      : null;
+
+    for (const mention of mentions) {
+      if (mention.userId === authorId) continue; // skip self-mentions
+
+      let shouldNotify = true;
+      if (isPrivate && connectionIds) {
+        if (!connectionIds.has(mention.userId)) {
+          shouldNotify = false;
+          this.logger.debug(
+            `[MomentsService] Suppressed post mention notification for ${mention.userId} (private account, not connected)`,
+          );
+        }
+      }
+
+      if (shouldNotify) {
+        // FCM push notification with post deep-link (offline / background)
+        this.notificationsService
+          .sendPostMentionPush({
+            mentionedUserId: mention.userId,
+            authorName,
+            postId,
+            captionSnippet,
+          })
+          .catch((err) =>
+            this.logger.error(
+              '[MomentsService] FCM post mention push failed',
+              err,
+            ),
+          );
+      }
+    }
+  }
+
+  // ─── Orphan Detector (Task 6.7, 11.3) ───────────────────────────────────────
   @Cron('0 2 * * *') // daily at 2 AM
   async detectOrphanMedia(): Promise<void> {
     // Multi-instance guard (task 7.2): only one pod runs this daily sweep.

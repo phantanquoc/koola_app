@@ -186,6 +186,11 @@ export function wireSocketEvents(): () => void {
     { event: 'story.deleted', handler: makeMomentsHandler('story.deleted') },
     { event: 'story.mention', handler: makeMomentsHandler('story.mention') },
     { event: 'story.reaction', handler: makeMomentsHandler('story.reaction') },
+    // Moments post events — routed to momentsService
+    { event: 'post.new', handler: makeMomentsHandler('post.new') },
+    { event: 'post.deleted', handler: makeMomentsHandler('post.deleted') },
+    { event: 'post.reaction', handler: makeMomentsHandler('post.reaction') },
+    { event: 'post.comment', handler: makeMomentsHandler('post.comment') },
     { event: 'call_log_created', handler: makeCallLogHandler() },
     { event: 'call_log_updated', handler: makeCallLogHandler() },
   ];

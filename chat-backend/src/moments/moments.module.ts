@@ -11,6 +11,12 @@ import {
   AudienceListSchema,
 } from './schemas/audience-list.schema';
 import { MusicTrack, MusicTrackSchema } from './schemas/music-track.schema';
+import { Post, PostSchema } from './schemas/post.schema';
+import {
+  PostComment,
+  PostCommentSchema,
+} from './schemas/post-comment.schema';
+import { Report, ReportSchema } from '../admin/schemas/report.schema';
 import { RedisModule } from '../common/redis/redis.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ConversationsModule } from '../conversations/conversations.module';
@@ -27,6 +33,9 @@ import { ChatGateway } from '../gateway/chat.gateway';
       { name: Highlight.name, schema: HighlightSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
+      { name: Post.name, schema: PostSchema },
+      { name: PostComment.name, schema: PostCommentSchema },
+      { name: Report.name, schema: ReportSchema },
     ]),
     RedisModule,
     forwardRef(() => NotificationsModule),

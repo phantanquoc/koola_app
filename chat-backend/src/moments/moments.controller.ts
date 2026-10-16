@@ -26,6 +26,12 @@ import {
   CreateMusicTrackDto,
   UpdateMusicTrackDto,
 } from './dto/music-track.dto';
+import {
+  CreatePostDto,
+  UpdatePostDto,
+  CommentPostDto,
+  ReportPostDto,
+} from './dto/post.dto';
 
 @Controller('moments')
 export class MomentsController {
@@ -175,6 +181,127 @@ export class MomentsController {
     @Param('id') highlightId: string,
   ) {
     return this.momentsService.getHighlightDetail(highlightId, userId);
+  }
+
+  // ─── Posts ─────────────────────────────────────────────────────────────────
+
+  @Post('posts')
+  async createPost(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreatePostDto,
+  ) {
+    return this.momentsService.createPost(userId, dto);
+  }
+
+  @Get('posts/feed')
+  async getPostsFeed(
+    @CurrentUser('id') userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.momentsService.getPostsFeed(
+      userId,
+      cursor,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Get('posts/:id')
+  async getPostById(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+  ) {
+    return this.momentsService.getPostById(postId, userId);
+  }
+
+  @Patch('posts/:id')
+  async updatePost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Body() dto: UpdatePostDto,
+  ) {
+    return this.momentsService.updatePost(postId, userId, dto);
+  }
+
+  @Delete('posts/:id')
+  @HttpCode(HttpStatus.OK)
+  async deletePost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+  ) {
+    await this.momentsService.deletePost(postId, userId);
+    return { success: true };
+  }
+
+  @Post('posts/:id/like')
+  @HttpCode(HttpStatus.OK)
+  async likePost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+  ) {
+    return this.momentsService.togglePostLike(postId, userId);
+  }
+
+  @Delete('posts/:id/like')
+  @HttpCode(HttpStatus.OK)
+  async unlikePost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+  ) {
+    return this.momentsService.removePostLike(postId, userId);
+  }
+
+  @Post('posts/:id/share')
+  @HttpCode(HttpStatus.OK)
+  async sharePost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+  ) {
+    return this.momentsService.sharePost(postId, userId);
+  }
+
+  @Post('posts/:id/report')
+  @HttpCode(HttpStatus.OK)
+  async reportPost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Body() dto: ReportPostDto,
+  ) {
+    return this.momentsService.reportPost(postId, userId, dto);
+  }
+
+  @Post('posts/:id/comments')
+  @HttpCode(HttpStatus.OK)
+  async commentOnPost(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Body() dto: CommentPostDto,
+  ) {
+    return this.momentsService.commentOnPost(postId, userId, dto);
+  }
+
+  @Get('posts/:id/comments')
+  async listPostComments(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.momentsService.listPostComments(
+      postId,
+      userId,
+      cursor,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Delete('posts/comments/:commentId')
+  @HttpCode(HttpStatus.OK)
+  async deletePostComment(
+    @CurrentUser('id') userId: string,
+    @Param('commentId') commentId: string,
+  ) {
+    return this.momentsService.deletePostComment(commentId, userId);
   }
 
   // ─── Audience Lists ───────────────────────────────────────────────────────

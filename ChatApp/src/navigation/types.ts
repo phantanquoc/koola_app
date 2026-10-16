@@ -32,6 +32,8 @@ export type ChatTabStackParamList = {
   LogoLab: undefined;
   // Moments screens
   MomentComposer: undefined;
+  PostComposer: undefined;
+  PostMediaViewer: { items: import('../components/moments/PostMediaGrid').PostMediaItem[]; initialIndex?: number };
   MomentViewer: { authorId: string; startStoryId: string };
   Highlights: { userId: string; isOwn: boolean };
   AudienceListEditor: { listId?: string };
