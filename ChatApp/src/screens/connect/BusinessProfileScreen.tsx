@@ -362,7 +362,7 @@ const BusinessProfileScreen: React.FC = () => {
       </View>
       <Animated.ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 80 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}>
@@ -602,18 +602,16 @@ const BusinessProfileScreen: React.FC = () => {
         </KoolaText>
       </Animated.ScrollView>
 
-      {/* Nút Nhắn tin nổi — luôn thấy dù scroll */}
-      <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: 16 + insets.bottom }]}>
-        <Pressable
-          onPress={handleMessage}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <KoolaButton
+          title="Nhắn tin"
+          icon="chat-bubble-outline"
+          variant="primary"
+          loading={messaging}
           disabled={messaging}
-          style={({ pressed }) => [styles.fabBtn, { backgroundColor: '#FFFFFF', opacity: pressed || messaging ? 0.9 : 1, borderWidth: 1, borderColor: '#0A7AFF', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'center' }]}>
-          <View style={[styles.fabIconWrap, { backgroundColor: 'rgba(10,122,255,0.12)' }]}>
-            <MaterialIcons name="chat-bubble" size={18} color="#0A7AFF" />
-          </View>
-          <KoolaText variant="label" weight="800" style={{ color: '#0A7AFF', marginLeft: 8, marginRight: 6, fontSize: 14, flexShrink: 0 }}>{messaging ? 'Đang mở...' : 'Nhắn tin ngay'}</KoolaText>
-          <MaterialIcons name="arrow-forward" size={16} color="#0A7AFF" style={{ flexShrink: 0 }} />
-        </Pressable>
+          onPress={handleMessage}
+          style={styles.chatBtn}
+        />
       </View>
 
       {/* Product detail popup */}
@@ -831,9 +829,19 @@ const makeStyles = (p: Palette) =>
     contactText: { flex: 1, marginLeft: 9 },
     actions: { flexDirection: 'row', gap: 12, marginTop: 6 },
     footnote: { textAlign: 'center', marginTop: 14, opacity: 0.7 },
-    fabWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', zIndex: 6, paddingHorizontal: 16 },
-    fabBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 13, paddingHorizontal: 24, borderRadius: 999 },
-    fabIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    bottomBar: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      gap: 10,
+      backgroundColor: 'transparent',
+    },
+    chatBtn: { flex: 1 },
     productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
     productCell: { width: '48.5%' },
     productCard: {
