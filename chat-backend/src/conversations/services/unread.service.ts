@@ -27,6 +27,17 @@ export class UnreadService {
     const conv = await this.conversationModel.findById(conversationId);
     if (!conv) return;
 
+    // A new persisted message un-hides the conversation for every member who
+    // cleared it ("clear for me") — including the sender. clearedAt is kept as
+    // the permanent history cutoff; only the list-visibility flag is reset.
+    await this.userConversationModel.updateMany(
+      {
+        conversationId: new Types.ObjectId(conversationId),
+        hiddenAt: { $gt: new Date(0) },
+      },
+      { $set: { hiddenAt: null } },
+    );
+
     const memberIds = conv.members
       .filter((m) => !excludeUserIds.includes(m.userId.toString()))
       .map((m) => m.userId);

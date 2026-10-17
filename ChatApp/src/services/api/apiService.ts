@@ -427,6 +427,18 @@ export const conversationsApi = {
     const { data } = await apiClient.delete(`/conversations/${conversationId}/pin/${messageId}`);
     return data;
   },
+  // ─── conversation-quick-actions: private per-user prefs ────────────────
+  async updatePrefs(
+    conversationId: string,
+    body: { pinned?: boolean; muteDuration?: '1h' | '8h' | '24h' | 'forever' | 'off' },
+  ): Promise<{ conversationId: string; pinned: boolean; mutedUntil: string | null; clearedAt: string | null }> {
+    const { data } = await apiClient.patch(`/conversations/${conversationId}/prefs`, body);
+    return data;
+  },
+  async clear(conversationId: string): Promise<{ conversationId: string; pinned: boolean; mutedUntil: string | null; clearedAt: string | null }> {
+    const { data } = await apiClient.post(`/conversations/${conversationId}/clear`);
+    return data;
+  },
 };
 
 // ─── Messages API ─────────────────────────────────────────────────────────────

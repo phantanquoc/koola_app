@@ -21,7 +21,7 @@ import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
-import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset, useTabDockSuppression } from '../../navigation/MainNavigator';
 import {
   KoolaEmptyState,
   KoolaErrorState,
@@ -30,6 +30,10 @@ import {
   useTheme,
 } from '../../ui';
 import { useLocalFirstFlag } from '../../config/featureFlags';
+import {
+  conversationFingerprint,
+  sortConversations,
+} from './conversationListPrefs';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
@@ -43,6 +47,13 @@ import {
   type PaginationState,
 } from './conversationPagination';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import ConversationActionSheet, {
+  type MuteDurationChoice,
+} from '../../components/ConversationActionSheet';
+import {
+  useConversationQuickActions,
+  type QuickAction,
+} from './useConversationQuickActions';
 import Animated, {
   type SharedValue,
   useAnimatedScrollHandler,
@@ -57,24 +68,9 @@ const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
 );
 
-/**
- * Fingerprint of exactly the fields that drive a conversation row's render.
- * The row-reference cache compares this across SQLite reads so unchanged rows
- * keep the SAME object reference and React.memo(ConversationListItem) hits.
- */
-function conversationFingerprint(c: Conversation): string {
-  const members = (c.members || [])
-    .map(
-      (m) =>
-        `${m.userId}|${m.user?.displayName ?? ''}|${m.user?.avatar ?? ''}|${
-          m.user?.isOnline ? 1 : 0
-        }`,
-    )
-    .join(';');
-  return `${c.type}|${c.name ?? ''}|${c.avatar ?? ''}|${c.lastMessagePreview ?? ''}|${
-    c.lastMessageAt ?? ''
-  }|${c.unreadCount ?? 0}||${members}`;
-}
+// sortConversations is re-exported from ./conversationListPrefs so existing
+// import sites keep working; the canonical implementation lives there.
+export { sortConversations };
 
 /** Spring nhẹ có chút nảy khi sub-tab bar hiện lại / ẩn hẳn sau khi thả tay. */
 const SUB_TAB_SNAP_SPRING = { damping: 18, stiffness: 220, mass: 0.6 };
@@ -227,6 +223,9 @@ const ConversationListScreen: React.FC = () => {
         lastMessagePreview: r.lastMessagePreview ?? '',
         lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt as number).toISOString() : null,
         unreadCount: r.unreadCount ?? 0,
+        pinned: r.pinned ?? false,
+        mutedUntil: r.mutedUntil ? new Date(r.mutedUntil as number).toISOString() : null,
+        clearedAt: r.clearedAt ? new Date(r.clearedAt as number).toISOString() : null,
         createdAt: new Date().toISOString(),
         updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
       })) as unknown as Conversation[];
@@ -319,8 +318,10 @@ const ConversationListScreen: React.FC = () => {
               lastMessagePreview: c.lastMessagePreview ?? null,
               lastMessageAt: c.lastMessageAt ?? 0,
               unreadCount: c.unreadCount ?? 0,
-              pinned: false,
+              pinned: c.pinned ?? false,
               archived: false,
+              mutedUntil: c.mutedUntil ?? null,
+              clearedAt: c.clearedAt ?? null,
               updatedAt: c.updatedAt,
             }));
             conversationRepository.upsertMany(inputs);
@@ -446,7 +447,8 @@ const ConversationListScreen: React.FC = () => {
           conv.unreadCount = (conv.unreadCount || 0) + 1;
         }
         updated.splice(idx, 1);
-        return [conv, ...updated];
+        // Pinned rows stay on top even after an unpinned bump (flag-off path).
+        return sortConversations([conv, ...updated]);
       });
     };
 
@@ -473,12 +475,44 @@ const ConversationListScreen: React.FC = () => {
       });
     };
 
+    // Cross-device prefs sync for the flag-off (in-memory) path: the
+    // local-first router covers flag-on via SQLite; here the event patches
+    // memory directly so the second device converges without a REST refetch.
+    const handlePrefsUpdated = (data: {
+      conversationId: string;
+      pinned?: boolean;
+      mutedUntil?: string | null;
+      clearedAt?: string | null;
+    }) => {
+      if (localFirstEnabled) return; // SQLite subscription handles this path
+      if (!data?.conversationId) return;
+      if (data.clearedAt) {
+        setConversations((prev) => prev.filter((c) => c._id !== data.conversationId));
+        return;
+      }
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c._id === data.conversationId
+              ? {
+                  ...c,
+                  pinned: data.pinned ?? c.pinned,
+                  mutedUntil: data.mutedUntil !== undefined ? data.mutedUntil : c.mutedUntil,
+                }
+              : c,
+          ),
+        ),
+      );
+    };
+
     socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
     socketService.on('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
+    socketService.on('conversation_prefs_updated', handlePrefsUpdated as (...args: unknown[]) => void);
 
     return () => {
       socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
       socketService.off('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
+      socketService.off('conversation_prefs_updated', handlePrefsUpdated as (...args: unknown[]) => void);
     };
   }, [localFirstEnabled]);
 
@@ -507,11 +541,89 @@ const ConversationListScreen: React.FC = () => {
   // ONE stable handler for every row (no per-item closure): the row component
   // calls onPress(conversation) itself. With the row-reference cache above,
   // this is what lets React.memo on ConversationListItem hit for stable rows.
+  // The same pattern holds for onLongPress / onQuickAction below — every
+  // function pulled out of the hook is itself a stable useCallback, so the
+  // row handlers below never change identity across renders. (Never depend on
+  // the hook's returned object itself: it is a fresh object every render.)
+  const {
+    sheetTarget,
+    sheetView,
+    openSheet,
+    closeSheet,
+    togglePin,
+    unmute,
+    muteFor,
+    clearConversation,
+    quickAction,
+  } = useConversationQuickActions({
+    localFirstEnabled,
+    setConversations,
+  });
+
+  const handleConversationLongPress = React.useCallback(
+    (conv: Conversation) => {
+      openSheet(conv, 'main');
+    },
+    [openSheet],
+  );
+
+  // The tab dock lives outside the screen tree, so the in-tree action sheet
+  // can never overlay it. Suppress the dock while the sheet is open; every
+  // close path (X, backdrop, Back, action completion) funnels through
+  // closeSheet → sheetTarget null → cleanup releases → dock returns.
+  const suppressTabDock = useTabDockSuppression();
+  const sheetOpen = sheetTarget !== null;
+  useEffect(() => {
+    if (!sheetOpen) return undefined;
+    const release = suppressTabDock();
+    return release;
+  }, [sheetOpen, suppressTabDock]);
+
+  const handleQuickAction = React.useCallback(
+    (conv: Conversation, action: QuickAction) => {
+      quickAction(conv, action);
+    },
+    [quickAction],
+  );
+
+  const handleSheetTogglePin = React.useCallback(() => {
+    if (!sheetTarget) return;
+    togglePin(sheetTarget);
+    closeSheet();
+  }, [sheetTarget, togglePin, closeSheet]);
+
+  const handleSheetUnmute = React.useCallback(() => {
+    if (!sheetTarget) return;
+    unmute(sheetTarget);
+    closeSheet();
+  }, [sheetTarget, unmute, closeSheet]);
+
+  const handleSheetMuteDuration = React.useCallback(
+    (duration: MuteDurationChoice) => {
+      if (!sheetTarget) return;
+      muteFor(sheetTarget, duration);
+      closeSheet();
+    },
+    [sheetTarget, muteFor, closeSheet],
+  );
+
+  const handleSheetClear = React.useCallback(() => {
+    if (!sheetTarget) return;
+    // Clear asks for confirm first; the sheet closes only after a confirmed
+    // successful clear (see the hook) so a cancelled dialog keeps context.
+    clearConversation(sheetTarget);
+  }, [sheetTarget, clearConversation]);
+
   const renderConversation = useCallback(
     ({ item }: { item: Conversation }) => (
-      <ConversationListItem conversation={item} onPress={handleConversationPress} />
+      <ConversationListItem
+        conversation={item}
+        onPress={handleConversationPress}
+        onLongPress={handleConversationLongPress}
+        onQuickAction={handleQuickAction}
+      />
     ),
-    [handleConversationPress],
+    [handleConversationPress, handleConversationLongPress, handleQuickAction],
   );
 
   const handleGroupCreated = (conv: Conversation) => {
@@ -530,8 +642,10 @@ const ConversationListScreen: React.FC = () => {
           lastMessagePreview: conv.lastMessagePreview ?? null,
           lastMessageAt: conv.lastMessageAt ?? 0,
           unreadCount: conv.unreadCount ?? 0,
-          pinned: false,
+          pinned: conv.pinned ?? false,
           archived: false,
+          mutedUntil: conv.mutedUntil ?? null,
+          clearedAt: conv.clearedAt ?? null,
           updatedAt: conv.updatedAt,
         };
         conversationRepository.upsertMany([input]);
@@ -646,6 +760,19 @@ const ConversationListScreen: React.FC = () => {
         visible={showGroupModal}
         onClose={() => setShowGroupModal(false)}
         onCreated={handleGroupCreated}
+      />
+
+      {/* Long-press quick actions (pin / mute / clear-for-me). In-tree
+          absolute overlay — additive only, the list chrome is untouched. */}
+      <ConversationActionSheet
+        visible={sheetTarget !== null}
+        conversation={sheetTarget}
+        initialView={sheetView}
+        onClose={closeSheet}
+        onTogglePin={handleSheetTogglePin}
+        onUnmute={handleSheetUnmute}
+        onPickMuteDuration={handleSheetMuteDuration}
+        onClear={handleSheetClear}
       />
     </SafeAreaView>
   );

@@ -150,6 +150,14 @@ CREATE INDEX IF NOT EXISTS idx_call_logs_conv_started
 CREATE UNIQUE INDEX IF NOT EXISTS idx_call_logs_session
   ON call_logs (session_id);
   `,
+
+  // Migration 004 — per-user conversation prefs (conversation-quick-actions).
+  // 0 = null (never muted / never cleared). Additive ALTERs only; existing
+  // rows read back as 0 and behave as before.
+  `
+ALTER TABLE conversations ADD COLUMN muted_until INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN cleared_at INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 const CURRENT_VERSION = MIGRATIONS.length;

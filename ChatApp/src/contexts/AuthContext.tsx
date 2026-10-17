@@ -78,8 +78,10 @@ function seedConversationsIntoSQLite(): void {
         lastMessagePreview: c.lastMessagePreview ?? null,
         lastMessageAt: c.lastMessageAt ?? 0,
         unreadCount: c.unreadCount ?? 0,
-        pinned: false,
+        pinned: c.pinned ?? false,
         archived: false,
+        mutedUntil: c.mutedUntil ?? null,
+        clearedAt: c.clearedAt ?? null,
         updatedAt: c.updatedAt,
       }));
       conversationRepository.upsertMany(inputs);

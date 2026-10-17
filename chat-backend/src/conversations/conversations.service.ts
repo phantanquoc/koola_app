@@ -22,6 +22,38 @@ import {
   MessageType,
 } from '../messages/message.schema';
 import { UsersService } from '../users/users.service';
+import {
+  MuteDuration,
+  UpdateConversationPrefsDto,
+} from './dto/update-conversation-prefs.dto';
+
+/** Max pinned conversations per user (UX limit, see design D2). */
+export const PIN_LIMIT = 5;
+/** "Mute until turned back on" sentinel (design D3). */
+export const MUTE_FOREVER = new Date('9999-12-31T23:59:59.999Z');
+
+const MUTE_MS: Record<Exclude<MuteDuration, 'forever' | 'off'>, number> = {
+  '1h': 60 * 60 * 1000,
+  '8h': 8 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+};
+
+export function resolveMutedUntil(
+  duration: MuteDuration,
+  now: Date,
+): Date | null {
+  if (duration === 'off') return null;
+  if (duration === 'forever') return new Date(MUTE_FOREVER.getTime());
+  return new Date(now.getTime() + MUTE_MS[duration]);
+}
+
+/** Response + socket payload for prefs changes (`conversation_prefs_updated`). */
+export interface ConversationPrefsPayload {
+  conversationId: string;
+  pinned: boolean;
+  mutedUntil: string | null;
+  clearedAt: string | null;
+}
 
 @Injectable()
 export class ConversationsService {
@@ -341,24 +373,57 @@ export class ConversationsService {
     const skip = (page - 1) * limit;
     const userIdObj = new Types.ObjectId(userId);
 
-    // Membership window is paginated on the { userId, joinedAt } index and the
-    // total is counted in parallel — both reads are bounded by `limit`/index.
-    // (The unique (userId, conversationId) index guarantees one row per
-    // conversation, so countDocuments({userId}) == conversation count.)
-    const [userConvs, total] = await Promise.all([
-      this.userConversationModel
-        .find({ userId: userIdObj })
-        .sort({ joinedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select('conversationId unreadCount')
-        .lean(),
-      this.userConversationModel.countDocuments({ userId: userIdObj }),
-    ]);
+    const prefsSelect =
+      'conversationId unreadCount pinnedAt mutedUntil clearedAt';
+    const unpinnedFilter = {
+      userId: userIdObj,
+      pinnedAt: null,
+      hiddenAt: null,
+    };
 
-    const convIds = userConvs.map((uc) => uc.conversationId);
-    const unreadMap = new Map(
-      userConvs.map((uc) => [uc.conversationId.toString(), uc.unreadCount ?? 0]),
+    // Pinned group (≤5, newest pin first) is served on page 1 only; the
+    // unpinned window is paginated by joinedAt on every page. The three reads
+    // are independent and bounded by `limit`/index.
+    const [pinnedUcs, unpinnedUcs, pinnedCount, unpinnedCount] =
+      await Promise.all([
+        page === 1
+          ? this.userConversationModel
+              .find({ userId: userIdObj, pinnedAt: { $gt: new Date(0) } })
+              .sort({ pinnedAt: -1 })
+              .limit(PIN_LIMIT)
+              .select(prefsSelect)
+              .lean()
+          : Promise.resolve([]),
+        this.userConversationModel
+          .find(unpinnedFilter)
+          .sort({ joinedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select(prefsSelect)
+          .lean(),
+        this.userConversationModel.countDocuments({
+          userId: userIdObj,
+          pinnedAt: { $gt: new Date(0) },
+        }),
+        this.userConversationModel.countDocuments(unpinnedFilter),
+      ]);
+
+    const orderedUcs = [...pinnedUcs, ...unpinnedUcs];
+    const convIds = orderedUcs.map((uc) => uc.conversationId);
+    const prefsMap = new Map(
+      orderedUcs.map((uc) => [
+        uc.conversationId.toString(),
+        {
+          unreadCount: uc.unreadCount ?? 0,
+          pinned: uc.pinnedAt != null,
+          mutedUntil: uc.mutedUntil
+            ? new Date(uc.mutedUntil).toISOString()
+            : null,
+          clearedAt: uc.clearedAt
+            ? new Date(uc.clearedAt).toISOString()
+            : null,
+        },
+      ]),
     );
 
     const conversations = await this.conversationModel
@@ -370,12 +435,40 @@ export class ConversationsService {
       )
       .lean();
 
-    const result = conversations.map((conv) => ({
-      ...conv,
-      unreadCount: unreadMap.get(conv._id.toString()) ?? 0,
-    }));
+    const convById = new Map(
+      conversations.map((conv) => [conv._id.toString(), conv]),
+    );
+    // Response order = pinned (pinnedAt desc) then the unpinned window's
+    // lastMessageAt ordering — never re-sorted across the two groups.
+    const pinnedConvs = pinnedUcs
+      .map((uc) => convById.get(uc.conversationId.toString()))
+      .filter(Boolean);
+    const pinnedIds = new Set(
+      pinnedUcs.map((uc) => uc.conversationId.toString()),
+    );
+    const unpinnedConvs = conversations.filter(
+      (conv) => !pinnedIds.has(conv._id.toString()),
+    );
+    const result = [...pinnedConvs, ...unpinnedConvs].map((conv) => {
+      const prefs = prefsMap.get((conv as any)._id.toString()) ?? {
+        unreadCount: 0,
+        pinned: false,
+        mutedUntil: null,
+        clearedAt: null,
+      };
+      return {
+        ...conv,
+        unreadCount: prefs.unreadCount,
+        pinned: prefs.pinned,
+        mutedUntil: prefs.mutedUntil,
+        clearedAt: prefs.clearedAt,
+      };
+    });
 
-    return { conversations: result, hasMore: skip + limit < total, total };
+    const total = pinnedCount + unpinnedCount;
+    // Pinned rows live on page 1 only, so hasMore is driven by the unpinned
+    // window alone — pinned rows must never repeat on later pages.
+    return { conversations: result, hasMore: skip + limit < unpinnedCount, total };
   }
 
   async getConversationDetails(
@@ -402,10 +495,19 @@ export class ConversationsService {
       userId: new Types.ObjectId(userId),
     });
 
+    // A caller who cleared the conversation only sees messages created after
+    // their clear point (clearedAt); other members see the full history.
+    const clearedAt = uc?.clearedAt ?? null;
+    const messageFilter: Record<string, unknown> = {
+      conversationId,
+      deleted: false,
+    };
+    if (clearedAt) messageFilter.createdAt = { $gt: clearedAt };
+
     // senderId is a plain String (no ref) — no populate; clients resolve
     // display names from their own user cache / users endpoint.
     const messages = await this.messageModel
-      .find({ conversationId, deleted: false })
+      .find(messageFilter)
       .sort({ createdAt: -1 })
       .limit(20);
 
@@ -545,6 +647,202 @@ export class ConversationsService {
       }
     }
     return Array.from(others);
+  }
+
+  // ─── Per-user conversation prefs (pin / mute / clear-for-me) ──────────────
+
+  /**
+   * Invoked after a prefs change or clear succeeds. The gateway emits
+   * `conversation_prefs_updated` to the caller's `user:<id>` room only, so the
+   * same user's other devices converge — prefs are private and never fan out
+   * to other members.
+   */
+  private prefsEmitCallback?: (
+    userId: string,
+    payload: ConversationPrefsPayload,
+  ) => void;
+
+  setPrefsEmitCallback(
+    cb: (userId: string, payload: ConversationPrefsPayload) => void,
+  ): void {
+    this.prefsEmitCallback = cb;
+  }
+
+  private toPrefsPayload(
+    conversationId: string,
+    uc: {
+      pinnedAt?: Date | null;
+      mutedUntil?: Date | null;
+      clearedAt?: Date | null;
+    },
+  ): ConversationPrefsPayload {
+    return {
+      conversationId,
+      pinned: uc.pinnedAt != null,
+      mutedUntil: uc.mutedUntil ? new Date(uc.mutedUntil).toISOString() : null,
+      clearedAt: uc.clearedAt ? new Date(uc.clearedAt).toISOString() : null,
+    };
+  }
+
+  /** Membership is the caller's UserConversation row; missing → 404 (masks existence). */
+  private async findMembershipOrFail(
+    conversationId: string,
+    userId: string,
+  ): Promise<UserConversationDocument> {
+    if (
+      !Types.ObjectId.isValid(conversationId) ||
+      !Types.ObjectId.isValid(userId)
+    ) {
+      throw new NotFoundException('Conversation not found');
+    }
+    const uc = await this.userConversationModel.findOne({
+      conversationId: new Types.ObjectId(conversationId),
+      userId: new Types.ObjectId(userId),
+    });
+    if (!uc) throw new NotFoundException('Conversation not found');
+    return uc;
+  }
+
+  async updatePrefs(
+    conversationId: string,
+    userId: string,
+    dto: UpdateConversationPrefsDto,
+  ): Promise<ConversationPrefsPayload> {
+    if (dto.pinned === undefined && dto.muteDuration === undefined) {
+      throw new BadRequestException('pinned or muteDuration is required');
+    }
+
+    const uc = await this.findMembershipOrFail(conversationId, userId);
+    const $set: Record<string, Date | null> = {};
+    const now = new Date();
+
+    if (dto.pinned === true) {
+      // Re-pinning an already pinned conversation is a no-op that keeps its
+      // original pinnedAt (stable order) and never trips the limit.
+      if (uc.pinnedAt == null) {
+        const pinnedCount = await this.userConversationModel.countDocuments({
+          userId: new Types.ObjectId(userId),
+          pinnedAt: { $gt: new Date(0) },
+        });
+        if (pinnedCount >= PIN_LIMIT) {
+          throw new BadRequestException({
+            code: 'PIN_LIMIT_REACHED',
+            message: `Chỉ ghim tối đa ${PIN_LIMIT} hội thoại`,
+          });
+        }
+        $set.pinnedAt = now;
+      }
+    } else if (dto.pinned === false) {
+      $set.pinnedAt = null;
+    }
+
+    if (dto.muteDuration !== undefined) {
+      $set.mutedUntil = resolveMutedUntil(dto.muteDuration, now);
+    }
+
+    const updated =
+      Object.keys($set).length > 0
+        ? await this.userConversationModel
+            .findOneAndUpdate({ _id: uc._id }, { $set }, { new: true })
+            .lean()
+        : uc.toObject();
+    if (!updated) throw new NotFoundException('Conversation not found');
+
+    const payload = this.toPrefsPayload(conversationId, updated);
+    this.prefsEmitCallback?.(userId, payload);
+    return payload;
+  }
+
+  /**
+   * "Clear for me": history cutoff + hide from list until the next message.
+   * Never mutates messages, membership, or other members' UserConversation.
+   */
+  async clearForMe(
+    conversationId: string,
+    userId: string,
+  ): Promise<ConversationPrefsPayload> {
+    const uc = await this.findMembershipOrFail(conversationId, userId);
+    const now = new Date();
+    const updated = await this.userConversationModel
+      .findOneAndUpdate(
+        { _id: uc._id },
+        {
+          $set: {
+            clearedAt: now,
+            hiddenAt: now,
+            unreadCount: 0,
+            pinnedAt: null,
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Conversation not found');
+
+    const payload = this.toPrefsPayload(conversationId, updated);
+    this.prefsEmitCallback?.(userId, payload);
+    return payload;
+  }
+
+  /** The caller's history cutoff for one conversation (null = never cleared). */
+  async getClearedAt(
+    conversationId: string,
+    userId: string,
+  ): Promise<Date | null> {
+    if (
+      !Types.ObjectId.isValid(conversationId) ||
+      !Types.ObjectId.isValid(userId)
+    ) {
+      return null;
+    }
+    const uc = await this.userConversationModel
+      .findOne(
+        {
+          conversationId: new Types.ObjectId(conversationId),
+          userId: new Types.ObjectId(userId),
+        },
+        { clearedAt: 1 },
+      )
+      .lean();
+    return uc?.clearedAt ?? null;
+  }
+
+  /** All of the caller's history cutoffs, keyed by conversationId (one query). */
+  async getClearedMap(userId: string): Promise<Map<string, Date>> {
+    if (!Types.ObjectId.isValid(userId)) return new Map();
+    const rows = await this.userConversationModel
+      .find(
+        { userId: new Types.ObjectId(userId), clearedAt: { $gt: new Date(0) } },
+        { conversationId: 1, clearedAt: 1 },
+      )
+      .lean();
+    const map = new Map<string, Date>();
+    for (const r of rows) {
+      if (r.clearedAt) map.set(r.conversationId.toString(), r.clearedAt);
+    }
+    return map;
+  }
+
+  /** Subset of userIds with an active mute on the conversation (one query). */
+  async getMutedUserIds(
+    conversationId: string,
+    userIds: string[],
+  ): Promise<Set<string>> {
+    const valid = userIds.filter((id) => Types.ObjectId.isValid(id));
+    if (valid.length === 0 || !Types.ObjectId.isValid(conversationId)) {
+      return new Set();
+    }
+    const rows = await this.userConversationModel
+      .find(
+        {
+          conversationId: new Types.ObjectId(conversationId),
+          userId: { $in: valid.map((id) => new Types.ObjectId(id)) },
+          mutedUntil: { $gt: new Date() },
+        },
+        { userId: 1 },
+      )
+      .lean();
+    return new Set(rows.map((r) => r.userId.toString()));
   }
 
   // ─── Membership room revocation ───────────────────────────────────────────

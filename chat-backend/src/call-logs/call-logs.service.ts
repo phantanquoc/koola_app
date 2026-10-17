@@ -14,6 +14,11 @@ import {
 } from './call-log.schema';
 import { CallMetric, CallMetricDocument } from './call-metric.schema';
 import { CallMetricSampleDto } from './dto/submit-metrics.dto';
+import { Types } from 'mongoose';
+import {
+  UserConversation,
+  UserConversationDocument,
+} from '../conversations/user-conversation.schema';
 
 export interface CreateCallLogData {
   sessionId: string;
@@ -41,6 +46,8 @@ export class CallLogsService {
     private readonly callLogModel: Model<CallLogDocument>,
     @InjectModel(CallMetric.name)
     private readonly callMetricModel: Model<CallMetricDocument>,
+    @InjectModel(UserConversation.name)
+    private readonly userConversationModel: Model<UserConversationDocument>,
   ) {}
 
   async createLog(data: CreateCallLogData): Promise<CallLogDocument> {
@@ -86,9 +93,19 @@ export class CallLogsService {
     const orFilter = {
       $or: [{ initiatorId: userId }, { targetUserId: userId }],
     };
-    const filter: Record<string, unknown> = conversationId
+    let filter: Record<string, unknown> = conversationId
       ? { $and: [orFilter, { conversationId }] }
       : orFilter;
+
+    // In-chat call cards respect the caller's clear point: calls started at
+    // or before clearedAt are hidden. The unscoped Calls-tab history is
+    // unchanged.
+    if (conversationId) {
+      const clearedAt = await this.getClearedAt(conversationId, userId);
+      if (clearedAt) {
+        filter = { $and: [filter, { startedAt: { $gt: clearedAt } }] };
+      }
+    }
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -102,6 +119,29 @@ export class CallLogsService {
     ]);
 
     return { items: items as CallLogDocument[], total, page, limit };
+  }
+
+  /** The caller's history cutoff for one conversation (null = never cleared). */
+  private async getClearedAt(
+    conversationId: string,
+    userId: string,
+  ): Promise<Date | null> {
+    if (
+      !Types.ObjectId.isValid(conversationId) ||
+      !Types.ObjectId.isValid(userId)
+    ) {
+      return null;
+    }
+    const uc = await this.userConversationModel
+      .findOne(
+        {
+          conversationId: new Types.ObjectId(conversationId),
+          userId: new Types.ObjectId(userId),
+        },
+        { clearedAt: 1 },
+      )
+      .lean();
+    return uc?.clearedAt ?? null;
   }
 
   async submitMetrics(

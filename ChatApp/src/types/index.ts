@@ -58,6 +58,13 @@ export interface Conversation {
   pinnedMessages?: PinnedMessage[];
   createdAt: string;
   updatedAt: string;
+  // ─── conversation-quick-actions: private per-user prefs (server-authoritative)
+  /** True when the caller pinned this conversation (pinnedAt != null). */
+  pinned?: boolean;
+  /** Push-mute expiry ISO string; muted iff > now; null when unmuted. */
+  mutedUntil?: string | null;
+  /** "Clear for me" history cutoff ISO string; null when never cleared. */
+  clearedAt?: string | null;
 }
 
 export interface ConversationListResponse {

@@ -122,6 +122,13 @@ export class ChatGateway
       },
     );
 
+    // Wire private conversation prefs (pin/mute/clear-for-me) → caller's own
+    // user room only, so the same user's other devices converge. Never sent to
+    // the conversation room — prefs are private to the user.
+    this.conversationsService.setPrefsEmitCallback((userId, payload) => {
+      this.io.to(`user:${userId}`).emit('conversation_prefs_updated', payload);
+    });
+
     // Wire membership revocation → force-evict sockets from the conversation room.
     // socketsLeave is adapter-aware, so this reaches sockets held by other instances.
     this.conversationsService.setMembershipRevokedCallback(

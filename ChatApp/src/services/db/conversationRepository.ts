@@ -23,6 +23,8 @@ export interface DbConversation {
   unread_count: number;
   pinned: number; // 0 or 1
   archived: number; // 0 or 1
+  muted_until: number; // epoch ms; 0 = not muted
+  cleared_at: number; // epoch ms; 0 = never cleared
   updated_at: number;
 }
 
@@ -38,6 +40,8 @@ export interface ConversationInput {
   unreadCount?: number;
   pinned?: boolean;
   archived?: boolean;
+  mutedUntil?: number | string | null;
+  clearedAt?: number | string | null;
   updatedAt?: number | string | Date;
 }
 
@@ -62,6 +66,8 @@ function rowToInput(row: DbConversation): ConversationInput {
     unreadCount: row.unread_count,
     pinned: row.pinned === 1,
     archived: row.archived === 1,
+    mutedUntil: row.muted_until ?? 0,
+    clearedAt: row.cleared_at ?? 0,
     updatedAt: row.updated_at,
   };
 }
@@ -110,8 +116,8 @@ export function upsertMany(conversations: ConversationInput[]): void {
         `INSERT INTO conversations (
           id, type, name, avatar_key, members,
           last_message_id, last_message_preview, last_message_at,
-          unread_count, pinned, archived, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+          unread_count, pinned, archived, muted_until, cleared_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
           type = excluded.type,
           name = COALESCE(excluded.name, name),
@@ -123,6 +129,8 @@ export function upsertMany(conversations: ConversationInput[]): void {
           unread_count = excluded.unread_count,
           pinned = excluded.pinned,
           archived = excluded.archived,
+          muted_until = excluded.muted_until,
+          cleared_at = excluded.cleared_at,
           updated_at = excluded.updated_at`,
         [
           conv.id,
@@ -136,6 +144,8 @@ export function upsertMany(conversations: ConversationInput[]): void {
           conv.unreadCount ?? 0,
           conv.pinned ? 1 : 0,
           conv.archived ? 1 : 0,
+          toMs(conv.mutedUntil),
+          toMs(conv.clearedAt),
           toMs(conv.updatedAt) || Date.now(),
         ],
       );
@@ -160,6 +170,64 @@ export function subscribe(callback: () => void): () => void {
 export function wipeAll(): void {
   const db = getDb();
   db.execute('DELETE FROM conversations');
+}
+
+/**
+ * Update private prefs (pin / mute) on one conversation row.
+ * Fields left undefined are untouched. Fires the list invalidation.
+ */
+export function updatePrefs(
+  id: string,
+  prefs: { pinned?: boolean; mutedUntil?: number | string | null },
+): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (prefs.pinned !== undefined) {
+    sets.push('pinned = ?');
+    params.push(prefs.pinned ? 1 : 0);
+  }
+  if (prefs.mutedUntil !== undefined) {
+    sets.push('muted_until = ?');
+    params.push(toMs(prefs.mutedUntil));
+  }
+  if (sets.length === 0) return;
+  db.execute(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`, [
+    ...params,
+    id,
+  ]);
+  notify('__conversations__');
+}
+
+/**
+ * "Clear for me": hard-delete local messages at or before the cutoff plus
+ * call logs started at or before it, then delete the conversation row.
+ * Pending outbox rows are untouched (they reference conversation_id, not
+ * message rows). Notifies the list and that conversation's message key so
+ * both the list and an open chat screen re-render.
+ */
+export function clearForMe(id: string, clearedAtMs: number): void {
+  const db = getDb();
+  db.transaction(() => {
+    db.execute(
+      'DELETE FROM messages WHERE conversation_id = ? AND created_at <= ?',
+      [id, clearedAtMs],
+    );
+    db.execute(
+      'DELETE FROM call_logs WHERE conversation_id = ? AND started_at <= ?',
+      [id, clearedAtMs],
+    );
+    db.execute('DELETE FROM conversations WHERE id = ?', [id]);
+  });
+  notify('__conversations__');
+  // That conversation's message subscribers (an open chat screen) must also
+  // re-read — every row they hold is gone.
+  notify(id, {
+    conversationId: id,
+    kind: 'delete',
+    messageIds: [],
+    orderChanged: true,
+  });
 }
 
 // ─── Real-time bump ───────────────────────────────────────────────────────────

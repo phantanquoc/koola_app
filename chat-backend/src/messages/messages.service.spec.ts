@@ -49,6 +49,9 @@ describe('MessagesService — reply validation', () => {
     findByIdOrFail: jest.fn(),
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {
@@ -353,6 +356,9 @@ describe('MessagesService — setReaction', () => {
     findByIdOrFail: jest.fn(),
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {
@@ -532,6 +538,9 @@ describe('MessagesService — searchMessages enrichment', () => {
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
     getConversationsByIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {

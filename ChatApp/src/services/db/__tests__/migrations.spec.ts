@@ -3,8 +3,8 @@
  *
  * Unit tests for the migration runner.
  * Covers:
- *   (a) v0→v3 fresh install — all tables + indexes created
- *   (b) v1→v3 upgrade — existing messages/conversations rows preserved
+ *   (a) v0→v4 fresh install — all tables + indexes created
+ *   (b) v1→v4 upgrade — existing messages/conversations rows preserved
  *   (c) Running migrations twice is idempotent
  */
 
@@ -54,7 +54,7 @@ function getSchemaVersion(): number {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('migrations — v0→v3 fresh install', () => {
+describe('migrations — v0→v4 fresh install', () => {
   it('creates all core tables', () => {
     runMigrations();
     expect(tableExists('schema_version')).toBe(true);
@@ -84,9 +84,22 @@ describe('migrations — v0→v3 fresh install', () => {
     expect(indexExists('idx_call_logs_session')).toBe(true);
   });
 
-  it('sets schema_version to 3', () => {
+  it('sets schema_version to 4', () => {
     runMigrations();
-    expect(getSchemaVersion()).toBe(3);
+    expect(getSchemaVersion()).toBe(4);
+  });
+
+  it('adds the conversation prefs columns (migration 004)', () => {
+    runMigrations();
+    // Writing the 004 columns must not throw on a fresh install.
+    const now = Date.now();
+    expect(() => {
+      (db as any).execute(
+        `INSERT INTO conversations (id, type, members, last_message_at, unread_count, pinned, archived, muted_until, cleared_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ['conv004', 'direct', '[]', now, 0, 0, 0, 0, 0, now],
+      );
+    }).not.toThrow();
   });
 
   it('outbox table accepts valid state values', () => {
@@ -127,7 +140,7 @@ describe('migrations — v0→v3 fresh install', () => {
   });
 });
 
-describe('migrations — v2→v3 upgrade preserves existing rows', () => {
+describe('migrations — v2→v4 upgrade preserves existing rows', () => {
   it('preserves messages and conversations rows after upgrade', () => {
     // Simulate v1 state: run only migration 1 by manually setting version to 1
     // We do this by running all migrations (which gives v2), but we test the
@@ -147,7 +160,7 @@ describe('migrations — v2→v3 upgrade preserves existing rows', () => {
       ['conv1', 'direct', '[]', now, 0, 0, 0, now],
     );
 
-    // Re-run migrations (should be no-op since already at v3)
+    // Re-run migrations (should be no-op since already at v4)
     runMigrations();
 
     // Rows must still exist
@@ -163,14 +176,14 @@ describe('migrations — idempotency', () => {
   it('running migrations twice does not throw or duplicate tables', () => {
     runMigrations();
     expect(() => runMigrations()).not.toThrow();
-    expect(getSchemaVersion()).toBe(3);
+    expect(getSchemaVersion()).toBe(4);
   });
 
   it('running migrations three times is still idempotent', () => {
     runMigrations();
     runMigrations();
     runMigrations();
-    expect(getSchemaVersion()).toBe(3);
+    expect(getSchemaVersion()).toBe(4);
     expect(tableExists('outbox')).toBe(true);
   });
 });

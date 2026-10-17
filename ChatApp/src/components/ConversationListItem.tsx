@@ -15,6 +15,10 @@ import type { RootStackParamList } from '../navigation/types';
 interface Props {
   conversation: Conversation;
   onPress: (conversation: Conversation) => void;
+  /** Long-press opens the conversation action sheet (stable parent handler). */
+  onLongPress?: (conversation: Conversation) => void;
+  /** Screen-reader quick actions + sheet rows without long-press. */
+  onQuickAction?: (conversation: Conversation, action: 'pin' | 'mute' | 'clear') => void;
 }
 
 export function resolveConversationHeader(
@@ -85,7 +89,7 @@ function getPreviewIcon(preview: string): string | null {
   return null;
 }
 
-const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
+const ConversationListItem: React.FC<Props> = ({ conversation, onPress, onLongPress, onQuickAction }) => {
   const { user } = useAuth();
   const { tokens } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -100,6 +104,11 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
     : '';
   const unreadCount = conversation.unreadCount || 0;
   const previewIcon = getPreviewIcon(lastMessagePreview);
+  // Private prefs indicators (additive only): 14px icons rendered immediately
+  // before the timestamp ONLY when active — no space is reserved otherwise.
+  const isPinned = conversation.pinned === true;
+  const isMuted = !!conversation.mutedUntil &&
+    new Date(conversation.mutedUntil).getTime() > Date.now();
   const [isPressed, setIsPressed] = React.useState(false);
 
   // The parent passes ONE stable handler for every row (no per-item closure),
@@ -109,6 +118,20 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
   const handlePress = useCallback(() => {
     onPress(conversation);
   }, [onPress, conversation]);
+
+  const handleLongPress = useCallback(() => {
+    onLongPress?.(conversation);
+  }, [onLongPress, conversation]);
+
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      const name = event.nativeEvent.actionName;
+      if (name === 'pin' || name === 'mute' || name === 'clear') {
+        onQuickAction?.(conversation, name);
+      }
+    },
+    [onQuickAction, conversation],
+  );
 
   const itemStyles = useMemo(() => makeItemStyles(tokens.semantic), [tokens.semantic]);
 
@@ -197,8 +220,19 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
         onPressOut={() => setIsPressed(false)}
         android_ripple={{ color: tokens.semantic.surface.level0 }}
         onPress={handlePress}
+        onLongPress={onLongPress ? handleLongPress : undefined}
         accessibilityRole="button"
-        accessibilityLabel={`Trò chuyện với ${displayName}`}>
+        accessibilityLabel={`Trò chuyện với ${displayName}`}
+        accessibilityActions={
+          onQuickAction
+            ? [
+                { name: 'pin', label: isPinned ? 'Bỏ ghim' : 'Ghim' },
+                { name: 'mute', label: isMuted ? 'Bật thông báo' : 'Tắt thông báo' },
+                { name: 'clear', label: 'Xoá hội thoại' },
+              ]
+            : undefined
+        }
+        onAccessibilityAction={onQuickAction ? handleAccessibilityAction : undefined}>
         <UserAvatar
           displayName={displayName}
           avatar={avatar}
@@ -215,9 +249,23 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress }) => {
               style={itemStyles.name}>
               {displayName}
             </KoolaText>
-            <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
-              {timestamp}
-            </KoolaText>
+            {isPinned || isMuted ? (
+              <View style={itemStyles.indicators}>
+                {isPinned ? (
+                  <Icon name="push-pin" size={14} color={tokens.semantic.text.muted} style={itemStyles.indicatorIcon} />
+                ) : null}
+                {isMuted ? (
+                  <Icon name="notifications-off" size={14} color={tokens.semantic.text.muted} style={itemStyles.indicatorIcon} />
+                ) : null}
+                <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
+                  {timestamp}
+                </KoolaText>
+              </View>
+            ) : (
+              <KoolaText variant="caption" tone="faint" numberOfLines={1} style={itemStyles.timestamp}>
+                {timestamp}
+              </KoolaText>
+            )}
           </View>
           <View style={itemStyles.bottomRow}>
             {previewIcon ? (
@@ -295,6 +343,17 @@ function makeItemStyles(semantic: SemanticTokens) {
     },
     timestamp: {
       fontSize: 11,
+      flexShrink: 0,
+    },
+    // Prefs indicators: icons sit immediately before the timestamp, only when
+    // active. No space is reserved when neither shows.
+    indicators: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexShrink: 0,
+    },
+    indicatorIcon: {
+      marginRight: 3,
       flexShrink: 0,
     },
     bottomRow: {
