@@ -5,11 +5,11 @@ TBD - created by archiving change admin-web-full-upgrade. Update Purpose after a
 ## Requirements
 ### Requirement: Admin can list and inspect conversations
 
-The system SHALL expose admin-only `GET /admin/conversations` (paginated, optional `search` on name/topic, optional `type` filter) and `GET /admin/conversations/:id` (detail with members, createdAt, lastMessageAt, recent messages preview) using safe projections.
+The system SHALL expose admin-only `GET /admin/conversations` (paginated, optional `search` on name, optional `type` filter, optional `hasPendingReport` filter, optional `minMembers`/`maxMembers` filters, ordered by `lastMessageAt` desc) and `GET /admin/conversations/:id` (detail with members, createdAt, lastMessageAt, recent messages preview) using safe projections.
 
 #### Scenario: Paginated conversation list
 - **WHEN** an admin calls `GET /admin/conversations?page=1&limit=20`
-- **THEN** the system SHALL return paginated conversations ordered by `updatedAt` desc
+- **THEN** the system SHALL return paginated conversations ordered by `lastMessageAt` desc with nulls last
 
 #### Scenario: Search filters conversations
 - **WHEN** an admin calls `GET /admin/conversations?search=Koola`
