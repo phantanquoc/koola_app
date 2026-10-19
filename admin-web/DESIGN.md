@@ -134,13 +134,24 @@ không dark canvas, không màu bão hòa). Nền canvas xám rất nhạt, ch�
 - **Sidebar** desktop width 264px, full height, nền surface; item cao 44px,
   radius md; item active = nền primary-soft + chữ primary-dark (không dùng ink pill
   cho nav — ink pill chỉ dành cho CTA). Section label 11px uppercase tracking.
+  Transition thu gọn/mở rộng 200ms ease (width + padding).
+- **Brand:** logo Koola thật, căn giữa (`/koola-logo.png` rộng 104,
+  `/koola-mark.png` rộng 40 cho rail thu gọn) — chỉ logo, không kèm text.
+  Không dùng tile icon + text "Koola Admin / Operations console"
+  (logo đã có chữ KOOLA + slogan).
+- **Thu gọn sidebar:** nút ghost 36px trên header (ChevronsLeft/Right, ẩn ở
+  mobile), rail 76px icon-only; section label ẨN hẳn khi collapse, các nhóm
+  ngăn nhau bằng hairline divider; nav link + logout hiện tooltip qua `title`;
+  trạng thái lưu `localStorage` (`koola-admin:sidebar-collapsed`) và khôi phục
+  khi load. Drawer mobile (≤860px) luôn full 264px.
 - **Sidebar scroll:** `.admin-shell` cao đúng 100vh, không scroll chung;
   nav cuộn riêng (`.admin-nav` overflow-y auto), footer/logout dính đáy
   (flex-shrink 0 + hairline trên); content cuộn riêng (`.admin-content-scroll`).
 - **Icon nav:** `lucide-react` (size 18, strokeWidth 1.75, `aria-hidden`);
-  brand-mark = tile primary + `MessagesSquare`. Không dùng ký tự trang trí
+  brand dùng logo ảnh, không tile icon. Không dùng ký tự trang trí
   (◎◈◫…) làm icon. Icon kế thừa màu link qua `currentColor`.
-- **Topbar** cao 72px, sticky: breadcrumb trái (muted 13px), actions phải.
+- **Topbar** cao 72px, sticky: nền surface trắng đồng bộ sidebar, breadcrumb trái (muted 13px),
+  actions phải. Nút search là icon kính lúp (lucide `Search`, vuông 40px).
   Identity chip (`/me`: avatar 36px + displayName + badge admin) nằm cuối topbar phải.
 - **Mobile ≤860px:** sidebar thành drawer trượt trái + backdrop blur; content full width.
 - Focus visible: outline 2px primary offset 2px. Icon-button trong table tối thiểu 44px.

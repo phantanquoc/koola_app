@@ -182,36 +182,62 @@ code,
   background: var(--koola-surface);
   padding: var(--space-5) var(--space-4);
   backdrop-filter: blur(14px);
+  transition: width 200ms ease, padding 200ms ease;
 }
 
 .admin-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
   margin-bottom: var(--space-6);
 }
 
-.admin-brand-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
+.admin-brand-logo {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.sidebar-collapse-toggle {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
   place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--koola-primary);
-  color: var(--koola-surface);
-  font-weight: 800;
 }
 
-.admin-brand-title {
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1.2;
+/* Collapsed rail: 76px icon-only, tooltip via title attr */
+.admin-sidebar--collapsed {
+  width: 76px;
+  padding: var(--space-5) var(--space-2);
 }
 
-.admin-brand-subtitle {
-  color: var(--koola-muted);
-  font-size: 12px;
-  font-weight: 600;
+.admin-sidebar--collapsed .admin-brand {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-sidebar--collapsed .admin-nav-section {
+  border-top: 1px solid var(--koola-line);
+  margin-bottom: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.admin-sidebar--collapsed .admin-nav-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.admin-sidebar--collapsed .admin-nav-link {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+.admin-sidebar--collapsed .admin-logout {
+  justify-content: center;
+  padding: 0;
 }
 
 .admin-nav {
@@ -244,7 +270,9 @@ code,
   font-weight: 700;
   padding: 0 var(--space-3);
   text-decoration: none;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease, padding 200ms ease;
 }
 
 .admin-nav-link:hover {
@@ -312,9 +340,8 @@ code,
   justify-content: space-between;
   gap: var(--space-4);
   border-bottom: 1px solid var(--koola-line);
-  background: color-mix(in srgb, var(--koola-canvas) 86%, transparent);
+  background: var(--koola-surface);
   padding: 0 var(--space-6);
-  backdrop-filter: blur(14px);
 }
 
 .admin-breadcrumb {
@@ -341,10 +368,12 @@ code,
   align-items: center;
   gap: var(--space-2);
   min-height: 44px;
-  border: 1px solid var(--koola-line);
   border-radius: var(--radius-pill);
-  background: var(--koola-surface);
-  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-1);
+}
+
+.admin-identity-chip:hover {
+  background: var(--koola-surface-soft);
 }
 
 .admin-identity-chip .admin-avatar {
@@ -366,6 +395,12 @@ code,
 /* Removed: .admin-command was the old interactive-looking command field.
    Now replaced by .admin-command-info (non-interactive). */
 
+.admin-topbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--koola-line);
+}
+
 .admin-content-scroll {
   flex: 1;
   min-height: 0;
@@ -379,12 +414,43 @@ code,
 }
 
 .admin-topbar-search {
+  position: relative;
   display: flex;
-  gap: var(--space-2);
+  align-items: center;
 }
 
-.admin-topbar-search .input {
-  width: min(220px, 32vw);
+.admin-search-icon {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--koola-muted);
+  pointer-events: none;
+}
+
+.admin-search-input.input {
+  width: min(280px, 32vw);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface-soft);
+  border-color: transparent;
+  padding-left: 38px;
+  padding-right: 38px;
+}
+
+.admin-search-input.input:focus {
+  background: var(--koola-surface);
+  border-color: var(--koola-primary);
+}
+
+.admin-search-kbd {
+  position: absolute;
+  right: var(--space-3);
+  border: 1px solid var(--koola-line);
+  border-radius: 6px;
+  background: var(--koola-surface);
+  color: var(--koola-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  pointer-events: none;
 }
 
 /* Page primitives */
@@ -1157,6 +1223,11 @@ code,
     transform: translateX(0);
   }
 
+  .admin-collapse-toggle,
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+
   .mobile-nav-backdrop {
     position: fixed;
     inset: 0;
@@ -1178,7 +1249,9 @@ code,
   }
 
   .admin-identity-text,
-  .admin-identity-chip .badge {
+  .admin-identity-chip .badge,
+  .admin-search-kbd,
+  .admin-topbar-divider {
     display: none;
   }
 

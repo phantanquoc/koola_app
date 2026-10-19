@@ -77,15 +77,12 @@ export default function LoginPage() {
       <section className="login-card" aria-label={t('login.title')}>
         <div className="login-hero">
           <div className="admin-brand" style={{ marginBottom: 'var(--space-7)' }}>
-            <div className="admin-brand-mark" aria-hidden="true">
-              K
-            </div>
-            <div>
-              <div className="admin-brand-title">Koola Admin</div>
-              <div className="admin-brand-subtitle" style={{ color: 'rgba(255,255,255,0.72)' }}>
-                Operations console
-              </div>
-            </div>
+            <img
+              className="admin-brand-logo"
+              src="/koola-logo.png"
+              alt="Koola"
+              width={140}
+            />
           </div>
           <h1>{t('login.heroTitle')}</h1>
           <p>{t('login.heroCopy')}</p>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -6,6 +6,8 @@ import {
   Building2,
   Camera,
   ChartLine,
+  ChevronsLeft,
+  ChevronsRight,
   Flag,
   LayoutDashboard,
   LogOut,
@@ -13,10 +15,10 @@ import {
   Megaphone,
   Menu,
   MessageSquareText,
-  MessagesSquare,
   Music,
   Package,
   ScrollText,
+  Search,
   ShoppingCart,
   Users,
   X,
@@ -95,13 +97,39 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const currentTitle = routeTitles[location.pathname] ?? 'Koola Admin';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem('koola-admin:sidebar-collapsed') === '1',
+  );
   const [topSearch, setTopSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      window.localStorage.setItem('koola-admin:sidebar-collapsed', prev ? '0' : '1');
+      return !prev;
+    });
+  }, []);
+
+  // Press "/" anywhere (outside inputs) to focus global search.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
   const isProd = config.appEnv === 'production';
+  // Drawer mobile luôn render full — collapsed rail chỉ áp dụng desktop.
+  const effectiveCollapsed = sidebarCollapsed && !mobileNavOpen;
 
   function handleTopSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -135,23 +163,22 @@ export default function AppLayout() {
       <div className="admin-shell-body">
 
       <aside
-        className={`admin-sidebar ${mobileNavOpen ? 'admin-sidebar--open' : ''}`}
+        className={`admin-sidebar${mobileNavOpen ? ' admin-sidebar--open' : ''}${effectiveCollapsed ? ' admin-sidebar--collapsed' : ''}`}
         aria-label="Admin navigation"
       >
         <div className="admin-brand">
-          <div className="admin-brand-mark" aria-hidden="true">
-            <MessagesSquare size={22} strokeWidth={1.75} />
-          </div>
-          <div>
-            <div className="admin-brand-title">Koola Admin</div>
-            <div className="admin-brand-subtitle">Operations console</div>
-          </div>
+          <img
+            className="admin-brand-logo"
+            src={effectiveCollapsed ? '/koola-mark.png' : '/koola-logo.png'}
+            alt="Koola"
+            width={effectiveCollapsed ? 40 : 104}
+          />
         </div>
 
         <nav className="admin-nav">
           {navGroups.map((group) => (
             <section className="admin-nav-section" key={group.label}>
-              <p className="admin-nav-label">{group.label}</p>
+              {!effectiveCollapsed && <p className="admin-nav-label">{group.label}</p>}
               {group.items.map((item) => (
                 <NavLink
                   className={({ isActive }) => `admin-nav-link${isActive ? ' active' : ''}`}
@@ -159,11 +186,12 @@ export default function AppLayout() {
                   key={item.to}
                   to={item.to}
                   onClick={closeMobileNav}
+                  title={effectiveCollapsed ? item.label : undefined}
                 >
                   <span className="admin-nav-icon" aria-hidden="true">
                     <item.icon size={18} strokeWidth={1.75} aria-hidden />
                   </span>
-                  <span>{item.label}</span>
+                  {!effectiveCollapsed && <span>{item.label}</span>}
                 </NavLink>
               ))}
             </section>
@@ -171,9 +199,14 @@ export default function AppLayout() {
         </nav>
 
         <div className="admin-sidebar-footer">
-          <button className="btn btn-danger-ghost admin-logout" onClick={logout} type="button">
+          <button
+            className="btn btn-danger-ghost admin-logout"
+            onClick={logout}
+            type="button"
+            title={effectiveCollapsed ? 'Đăng xuất' : undefined}
+          >
             <LogOut size={18} strokeWidth={1.75} aria-hidden />
-            Đăng xuất
+            {!effectiveCollapsed && 'Đăng xuất'}
           </button>
         </div>
       </aside>
@@ -190,6 +223,18 @@ export default function AppLayout() {
             >
               <span aria-hidden="true">{mobileNavOpen ? <X size={18} /> : <Menu size={18} />}</span>
             </button>
+            <button
+              className="btn btn-ghost sidebar-collapse-toggle"
+              onClick={toggleSidebar}
+              type="button"
+              aria-label={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+              aria-expanded={!sidebarCollapsed}
+              title={sidebarCollapsed ? 'Mở rộng (giữ trạng thái)' : 'Thu gọn (giữ trạng thái)'}
+            >
+              <span aria-hidden="true">
+                {sidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+              </span>
+            </button>
             <div>
               <div className="admin-breadcrumb">Koola / Admin</div>
               <div className="admin-topbar-title">{currentTitle}</div>
@@ -197,15 +242,18 @@ export default function AppLayout() {
           </div>
           <div className="admin-topbar-actions">
             <form onSubmit={handleTopSearch} className="admin-topbar-search" role="search" aria-label="Tìm kiếm admin">
+              <Search size={18} strokeWidth={1.75} aria-hidden className="admin-search-icon" />
               <input
-                className="input"
-                placeholder="Tìm users/messages..."
+                ref={searchRef}
+                className="input admin-search-input"
+                placeholder="Tìm users, messages..."
                 value={topSearch}
                 onChange={(e) => setTopSearch(e.target.value)}
                 aria-label="Tìm kiếm"
               />
-              <button className="btn btn-secondary btn-sm" type="submit" aria-label="Tìm kiếm">Tìm</button>
+              <kbd className="admin-search-kbd" aria-hidden="true">/</kbd>
             </form>
+            <span className="admin-topbar-divider" aria-hidden="true" />
             <div className="admin-identity-chip">
               <div className="admin-avatar" aria-hidden="true">
                 {adminInitial}

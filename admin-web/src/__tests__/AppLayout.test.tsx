@@ -111,9 +111,54 @@ describe('AppLayout sidebar + identity', () => {
       expect(link.querySelector('svg')).toBeTruthy();
       expect(link.textContent).not.toMatch(/[◎◈◫✉⬢♫⚑▣◧⬣◌♥☄≡]/);
     }
-    expect(container.querySelector('.admin-brand-mark svg')).toBeTruthy();
+    expect(container.querySelector('.admin-brand-logo')).toBeTruthy();
+    expect(container.querySelector('.admin-brand-logo')?.getAttribute('src')).toBe('/koola-logo.png');
     // active state lands on the visited route, not the home route
     expect(screen.getByRole('link', { name: /người dùng/i }).className).toContain('active');
     expect(screen.getByRole('link', { name: /dashboard/i }).className).not.toContain('active');
+  });
+});
+
+describe('AppLayout topbar search', () => {
+  it('renders pill search with icon and slash hint, no submit button', () => {
+    renderShell();
+    const search = screen.getByRole('search');
+    expect(search.className).toContain('admin-topbar-search');
+    expect(search.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Tìm kiếm' })).toBeNull();
+  });
+
+  it('focuses search when pressing slash outside inputs', () => {
+    renderShell();
+    const input = screen.getByLabelText('Tìm kiếm') as HTMLInputElement;
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(window, { key: '/' });
+    expect(document.activeElement).toBe(input);
+  });
+});
+
+describe('AppLayout sidebar collapse', () => {
+  it('toggles collapsed rail and persists state in localStorage', () => {
+    window.localStorage.clear();
+    renderShell();
+    const toggle = screen.getByRole('button', { name: 'Thu gọn sidebar' });
+    expect(document.querySelector('.admin-sidebar--collapsed')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(document.querySelector('.admin-sidebar--collapsed')).toBeTruthy();
+    expect(window.localStorage.getItem('koola-admin:sidebar-collapsed')).toBe('1');
+    expect(screen.getByRole('button', { name: 'Mở rộng sidebar' })).toBeTruthy();
+    expect(screen.getByAltText('Koola').getAttribute('src')).toBe('/koola-mark.png');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mở rộng sidebar' }));
+    expect(document.querySelector('.admin-sidebar--collapsed')).toBeNull();
+    expect(window.localStorage.getItem('koola-admin:sidebar-collapsed')).toBe('0');
+  });
+
+  it('restores collapsed state from localStorage on mount', () => {
+    window.localStorage.setItem('koola-admin:sidebar-collapsed', '1');
+    renderShell();
+    expect(document.querySelector('.admin-sidebar--collapsed')).toBeTruthy();
+    window.localStorage.clear();
   });
 });
