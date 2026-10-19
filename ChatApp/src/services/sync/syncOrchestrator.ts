@@ -35,6 +35,8 @@ import { scheduleTick as outboxScheduleTick } from './outboxProcessor';
 const FRESHNESS_WINDOW_MS = 60_000; // 60 s — skip sync if cursor is this recent
 const BACKOFF_BASE_MS = 1_000;
 const BACKOFF_CAP_MS = 30_000;
+const TRIGGER_DEBOUNCE_MS = 2_000; // merge burst triggers (reload fans out foreground + reconnect + open)
+const RATE_LIMIT_FALLBACK_MS = 60_000; // 429 backoff when no Retry-After header
 
 // ─── Dogfooding metrics (task 5.9) ────────────────────────────────────────────
 
@@ -62,6 +64,10 @@ let _retryAttempt = 0;
 let _appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let _socketConnectUnsub: (() => void) | null = null;
 let _migrationDone = false;
+let _rateLimitedUntil = 0; // timestamp ms — set on HTTP 429, gates all sync paths
+let _lastTriggerAt = 0; // timestamp ms of last debounced trigger start
+let _callLogsRunning = false; // serializes the mount-time call-log burst
+const _callLogsQueued = new Set<string>(); // ids deferred while a call-log sync runs
 
 // ─── AsyncStorage cursor migration (task 4.8) ─────────────────────────────────
 
@@ -97,6 +103,37 @@ async function AsyncStorage_removeLastSyncAt(): Promise<void> {
 // ─── Core delta worker ────────────────────────────────────────────────────────
 
 /**
+ * True while the server rate limit window is still active (HTTP 429 seen).
+ * All sync entry points check this to avoid self-amplifying retries.
+ */
+export function isSyncRateLimited(): boolean {
+  return Date.now() < _rateLimitedUntil;
+}
+
+/**
+ * True while a delta sync is currently running.
+ * Lets parallel entry points (e.g. useMessageSync) yield instead of racing.
+ */
+export function isSyncRunning(): boolean {
+  return _isRunning;
+}
+
+/** Parse Retry-After / RateLimit-Reset response headers (seconds) to a delay in ms. */
+function retryAfterMs(err: unknown): number {
+  const headers = (err as { response?: { headers?: Record<string, unknown> } })?.response?.headers;
+  const raw = headers?.['retry-after'] ?? headers?.['ratelimit-reset'];
+  const seconds = typeof raw === 'string' ? Number(raw) : Number(raw ?? NaN);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(seconds * 1_000, 5 * 60_000); // cap at 5 min
+  }
+  return RATE_LIMIT_FALLBACK_MS;
+}
+
+function isRateLimitError(err: unknown): boolean {
+  return (err as { response?: { status?: number } })?.response?.status === 429;
+}
+
+/**
  * Run a full delta sync: paginate /messages/sync until hasMore = false,
  * upsert each page, then advance the cursor.
  *
@@ -104,6 +141,10 @@ async function AsyncStorage_removeLastSyncAt(): Promise<void> {
  */
 async function runDelta(opts: { force?: boolean } = {}): Promise<boolean> {
   await migrateAsyncStorageCursor();
+
+  // While rate limited the retry timer already holds the server-directed
+  // delay — skip the network hit instead of stacking more requests.
+  if (isSyncRateLimited()) return false;
 
   const cursor = syncStateRepository.getCursor('global');
   const since = cursor ?? new Date(0).toISOString();
@@ -171,6 +212,18 @@ async function runDelta(opts: { force?: boolean } = {}): Promise<boolean> {
     logSyncMetrics(true, Date.now() - t0);
     return true;
   } catch (err) {
+    // 429 must not use console.error: on RN that paints a red LogBox and the
+    // short exponential retry (1s/2s/4s) self-amplifies the rate limit.
+    // Instead warn once, gate all sync paths until the window passes, and
+    // hand the server's Retry-After delay to scheduleRetry.
+    if (isRateLimitError(err)) {
+      const delay = retryAfterMs(err);
+      _rateLimitedUntil = Date.now() + delay;
+      console.warn(`[syncOrchestrator] rate limited (429), backing off ${Math.round(delay / 1000)}s`);
+      logSyncMetrics(false, Date.now() - t0);
+      scheduleRetry(delay);
+      return false;
+    }
     console.error('[syncOrchestrator] sync error:', err);
     logSyncMetrics(false, Date.now() - t0);
     return false;
@@ -179,17 +232,18 @@ async function runDelta(opts: { force?: boolean } = {}): Promise<boolean> {
 
 // ─── Retry with exponential backoff ──────────────────────────────────────────
 
-function scheduleRetry(): void {
+function scheduleRetry(delayOverrideMs?: number): void {
   if (_retryTimer) {
     clearTimeout(_retryTimer);
     _retryTimer = null;
   }
 
-  const delay = Math.min(
+  // Server-directed backoff (429 Retry-After) supersedes exponential backoff.
+  const delay = delayOverrideMs ?? Math.min(
     BACKOFF_BASE_MS * Math.pow(2, _retryAttempt),
     BACKOFF_CAP_MS,
   );
-  _retryAttempt++;
+  if (delayOverrideMs === undefined) _retryAttempt++;
 
   _retryTimer = setTimeout(async () => {
     _retryTimer = null;
@@ -209,16 +263,36 @@ function cancelRetry(): void {
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /**
+ * Merge burst triggers (reload fans out foreground + reconnect + open within
+ * ~2s). Returns true when the caller claimed the slot and may run a sync;
+ * false when a trigger ran too recently and this one must yield.
+ */
+function claimTriggerSlot(): boolean {
+  const now = Date.now();
+  if (now - _lastTriggerAt < TRIGGER_DEBOUNCE_MS) return false;
+  _lastTriggerAt = now;
+  return true;
+}
+
+function cursorIsStale(): boolean {
+  const cursor = syncStateRepository.getCursor('global');
+  if (!cursor) return true;
+  return Date.now() - new Date(cursor).getTime() > FRESHNESS_WINDOW_MS;
+}
+
+/**
  * Trigger sync when the app returns to foreground.
  * Cancels any pending retry (foreground supersedes backoff).
  */
 export async function syncOnForeground(): Promise<void> {
+  if (isSyncRateLimited()) return;
+  if (!claimTriggerSlot()) return;
   cancelRetry();
   if (_isRunning) return;
   _isRunning = true;
   try {
     const ok = await runDelta();
-    if (!ok) scheduleRetry();
+    if (!ok && !isSyncRateLimited()) scheduleRetry();
   } finally {
     _isRunning = false;
   }
@@ -226,15 +300,21 @@ export async function syncOnForeground(): Promise<void> {
 
 /**
  * Trigger sync when the socket reconnects.
- * Uses force=true to bypass the freshness window (reconnect implies gap).
+ * Normally uses force=true to bypass the freshness window (reconnect implies
+ * gap) — except when a foreground sync just ran (debounce window): then it
+ * falls back to the non-force path so a stale cursor still syncs but a fresh
+ * one skips instead of firing a duplicate burst.
  */
 export async function syncOnReconnect(): Promise<void> {
+  if (isSyncRateLimited()) return;
+  const merged = !claimTriggerSlot();
+  if (merged && !cursorIsStale()) return;
   cancelRetry();
   if (_isRunning) return;
   _isRunning = true;
   try {
-    const ok = await runDelta({ force: true });
-    if (!ok) scheduleRetry();
+    const ok = await runDelta(merged ? {} : { force: true });
+    if (!ok && !isSyncRateLimited()) scheduleRetry();
   } finally {
     _isRunning = false;
   }
@@ -245,11 +325,12 @@ export async function syncOnReconnect(): Promise<void> {
  * Respects the freshness window — no-ops if cursor is recent.
  */
 export async function syncOnOpen(_conversationId: string): Promise<void> {
+  if (isSyncRateLimited()) return;
   if (_isRunning) return;
   _isRunning = true;
   try {
     const ok = await runDelta();
-    if (!ok) scheduleRetry();
+    if (!ok && !isSyncRateLimited()) scheduleRetry();
   } finally {
     _isRunning = false;
   }
@@ -304,6 +385,10 @@ export function wireSyncTriggers(): () => void {
     cancelRetry();
     _isRunning = false;
     _migrationDone = false;
+    _rateLimitedUntil = 0;
+    _lastTriggerAt = 0;
+    _callLogsRunning = false;
+    _callLogsQueued.clear();
   };
 }
 
@@ -311,6 +396,29 @@ export function wireSyncTriggers(): () => void {
 
 export async function syncCallLogsOnOpen(conversationId: string, opts: { force?: boolean } = {}): Promise<void> {
   if (!conversationId) return;
+  if (isSyncRateLimited()) return; // burst must not stack requests onto a 429 window
+  // Serialize: a dedicated flag so the mount-time burst of parallel
+  // syncCallLogsOnOpen calls runs sequentially instead of fanning out.
+  if (_callLogsRunning) {
+    _callLogsQueued.add(conversationId);
+    return;
+  }
+  _callLogsRunning = true;
+  try {
+    await syncCallLogsPage(conversationId, opts);
+    // Drain ids that arrived while we were busy, one at a time.
+    while (_callLogsQueued.size > 0) {
+      const next = _callLogsQueued.values().next().value as string;
+      _callLogsQueued.delete(next);
+      if (isSyncRateLimited()) break;
+      await syncCallLogsPage(next, {});
+    }
+  } finally {
+    _callLogsRunning = false;
+  }
+}
+
+async function syncCallLogsPage(conversationId: string, opts: { force?: boolean }): Promise<void> {
   const key = 'call_logs:' + conversationId;
   if (!opts.force) {
     const last = syncStateRepository.getValue(key);

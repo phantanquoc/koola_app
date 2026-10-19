@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="22.1.2">
+  <diagram name="Gửi tin nhắn text" id="koola-text-msg-flow">
+    <mxGraphModel dx="1420" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ===== TITLE HEADER ===== -->
+        <mxCell id="title-bg" value="APP_KOOLA — Flow Gửi tin nhắn text (REST → Mongo → Gateway → Redis → Socket)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#0F172A;fontColor=#FFFFFF;fontStyle=1;fontSize=13;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1200" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Mobile (React Native)  →  Backend (NestJS)  →  MongoDB + Redis  →  Clients khác (Socket.IO)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontColor=#64748B;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="0" y="48" width="1200" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== SWIMLANE BACKGROUNDS ===== -->
+        <!-- Lane 1: Mobile -->
+        <mxCell id="lane1-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#BFDBFE;" vertex="1" parent="1">
+          <mxGeometry x="0" y="66" width="300" height="1334" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane1-header" value="📱 Mobile&#xa;(React Native)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0" y="66" width="300" height="36" as="geometry"/>
+        </mxCell>
+        <!-- Lane 2: Backend -->
+        <mxCell id="lane2-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#BBF7D0;" vertex="1" parent="1">
+          <mxGeometry x="300" y="66" width="300" height="1334" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane2-header" value="⚙ Backend&#xa;(NestJS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#16A34A;strokeColor=#15803D;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="300" y="66" width="300" height="36" as="geometry"/>
+        </mxCell>
+        <!-- Lane 3: MongoDB + Redis -->
+        <mxCell id="lane3-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEFCE8;strokeColor=#FDE68A;" vertex="1" parent="1">
+          <mxGeometry x="600" y="66" width="300" height="1334" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane3-header" value="🗄 MongoDB + Redis" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CA8A04;strokeColor=#A16207;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="600" y="66" width="300" height="36" as="geometry"/>
+        </mxCell>
+        <!-- Lane 4: Clients khác -->
+        <mxCell id="lane4-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2F8;strokeColor=#FBCFE8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="66" width="300" height="1334" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane4-header" value="👥 Clients khác&#xa;(Socket)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DB2777;strokeColor=#BE185D;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="900" y="66" width="300" height="36" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 1 — User nhập ===== -->
+        <mxCell id="s1" value="① User nhập text&#xa;ChatScreen → handleSend&#xa;→ useMessagesFromDb.sendMessage(text)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.5;fontSize=10;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="118" width="260" height="56" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 2 — Optimistic ===== -->
+        <mxCell id="s2" value="② messageRepository&#xa;.insertOptimistic({ tempId,&#xa;status: pending })&#xa;→ bubble xám hiển thị ngay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="194" width="260" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 3 — Outbox enqueue ===== -->
+        <mxCell id="s3" value="③ outboxRepository.enqueue&#xa;('send_message', { clientMessageId,&#xa;content, type })&#xa;dedup_key = clientMessageId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="278" width="260" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 4 — Outbox processor ===== -->
+        <mxCell id="s4" value="④ outboxProcessor tick&#xa;→ messagesApi.send&#xa;POST /conversations/:id/messages&#xa;{ content, type, clientMessageId }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="362" width="260" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 5 — Backend intake ===== -->
+        <mxCell id="s5" value="⑤ MessagesController&#xa;→ MessagesService.sendMessage()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="320" y="362" width="260" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- Decision: membership -->
+        <mxCell id="d1" value="Thành viên&#xa;của conv?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="385" y="426" width="130" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="d1-no" value="403 Forbidden" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#EF4444;strokeWidth=1.2;fontSize=9;align=center;fontColor=#991B1B;" vertex="1" parent="1">
+          <mxGeometry x="530" y="438" width="60" height="34" as="geometry"/>
+        </mxCell>
+
+        <!-- Decision: dedup -->
+        <mxCell id="d2" value="clientMessageId&#xa;đã tồn tại?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="385" y="504" width="130" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="d2-yes" value="Dedup → trả lại&#xa;message cũ (idempotent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.2;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="530" y="510" width="60" height="46" as="geometry"/>
+        </mxCell>
+
+        <!-- DB cylinder — Message insert -->
+        <mxCell id="db1" value="MongoDB&#xa;insert Message&#xa;+ update Conversation&#xa;.lastMessage" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FFFFFF;strokeColor=#CA8A04;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="645" y="504" width="210" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 6 — Broadcast ===== -->
+        <mxCell id="s6" value="⑥ ChatGateway&#xa;.broadcastNewMessage()&#xa;io.to([ conversation:xxx,&#xa;user:memberId… ])&#xa;.emit('new_message')" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="320" y="592" width="260" height="72" as="geometry"/>
+        </mxCell>
+
+        <!-- Redis cloud -->
+        <mxCell id="redis" value="Redis Adapter&#xa;pub/sub fanout&#xa;multi-instance&#xa;dedup 1 copy / socket&#xa;except sender socket" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="645" y="592" width="210" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis-note" value="Đã có message_ack / REST 201&#10;nên sender bị except" style="text;html=1;strokeColor=none;fillColor=none;align=center;whiteSpace=wrap;fontColor=#854D0E;fontSize=8;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="645" y="666" width="210" height="22" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 7 — FCM ===== -->
+        <mxCell id="s7" value="⑦ fire-and-forget&#xa;triggerPushNotifications()&#xa;→ FCM cho offline users" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;strokeWidth=1.5;fontSize=10;align=center;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="320" y="704" width="260" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="fcm" value="☁ FCM" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;strokeWidth=1.5;fontSize=11;align=center;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="685" y="710" width="120" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 8 — Clients online ===== -->
+        <mxCell id="s8" value="⑧ socketService on 'new_message'&#xa;→ socketEventRouter&#xa;.wireSocketEvents&#xa;→ messageRepository&#xa;.applySocketEvent (idempotent&#xa;upsert SQLite) → re-render" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#DB2777;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="920" y="592" width="260" height="92" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 9 — Sender reconcile ===== -->
+        <mxCell id="s9" value="⑨ Sender nhận message_ack&#xa;(socket) hoặc REST 201&#xa;→ reconcile tempId → realId&#xa;status: sent ✓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.5;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="704" width="260" height="72" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STEP 10 — Recovery ===== -->
+        <mxCell id="s10" value="⑩ Recovery / bù sync&#xa;GET /messages/sync?since=&amp;cursor&#xa;idempotent bằng clientMessageId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6366F1;strokeWidth=1.5;fontSize=10;align=center;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="800" width="260" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s10b" value="Phục hồi khi fanout rớt&#xa;hoặc client offline →&#xa;sync bù khi reconnect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#6366F1;strokeWidth=1.2;fontSize=9;align=center;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="320" y="800" width="260" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s10c" value="MongoDB query&#xa;updatedAt &gt; cursor&#xa;(LOCAL_FIRST_SQLITE)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#EEF2FF;strokeColor=#6366F1;strokeWidth=1.2;fontSize=9;align=center;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="670" y="800" width="160" height="56" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== FAILURE MODES NOTE BOX ===== -->
+        <mxCell id="failbox" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#F59E0B;strokeWidth=1.5;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="890" width="560" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="failtitle" value="⚠ Failure modes &amp; ghi chú" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontStyle=1;fontSize=11;fontColor=#92400E;" vertex="1" parent="1">
+          <mxGeometry x="30" y="896" width="540" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="failtext" value="• DB write OK nhưng broadcast fail → /messages/sync bù lại (since cursor, idempotent).&#10;• Client offline tại lúc emit → FCM fallback + sync khi reconnect (NetInfo → outboxProcessor).&#10;• Duplicate clientMessageId → dedup trả lại message cũ, không insert mới.&#10;• Quên leave room (conv:xxx) → leak event, user nhận tin của conv cũ — phải leave on unmount.&#10;• Emit trước khi DB commit → race: instance khác chưa thấy message — luôn persist trước, emit sau.&#10;• Outbox dedup_key + SQLite upsert đảm bảo idempotent cả 2 đầu." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=9;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="30" y="918" width="540" height="132" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== SMALL NOTES ===== -->
+        <mxCell id="note-opt" value="Optimistic UI: bubble xám ngay,&#10;không chờ REST" style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontColor=#1E40AF;fontSize=8;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="285" y="210" width="110" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="note-dedup" value="Idempotent:&#10;clientMessageId" style="text;html=1;strokeColor=none;fillColor=none;align=center;whiteSpace=wrap;fontColor=#854D0E;fontSize=8;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="270" y="300" width="80" height="24" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== LEGEND ===== -->
+        <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="890" width="570" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-title" value="Chú giải (Legend)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontStyle=1;fontSize=11;fontColor=#0F172A;" vertex="1" parent="1">
+          <mxGeometry x="625" y="896" width="540" height="20" as="geometry"/>
+        </mxCell>
+        <!-- Legend rows: line samples + text -->
+        <mxCell id="leg-line1" value="" style="shape=line;strokeWidth=2;strokeColor=#0F172A;html=1;" vertex="1" parent="1">
+          <mxGeometry x="625" y="930" width="36" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-text1" value="Mũi tên liền = happy path (REST → Mongo → Gateway → Socket)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="670" y="926" width="490" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-line2" value="" style="shape=line;strokeWidth=1.5;strokeColor=#6366F1;dashed=1;dashPattern=6 4;html=1;" vertex="1" parent="1">
+          <mxGeometry x="625" y="952" width="36" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-text2" value="Nét đứt tím = recovery / sync bù (GET /messages/sync)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="670" y="948" width="490" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-line3" value="" style="shape=line;strokeWidth=2;strokeColor=#F97316;html=1;" vertex="1" parent="1">
+          <mxGeometry x="625" y="974" width="36" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-text3" value="Màu cam = FCM fallback (fire-and-forget cho offline users)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="670" y="970" width="490" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-shapes" value="⬭ Cylinder = MongoDB  &amp;nbsp;|&amp;nbsp;  ☁ Cloud = Redis / FCM  &amp;nbsp;|&amp;nbsp;  ◇ Diamond = rẽ nhánh (membership / dedup)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="625" y="992" width="545" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg-tip" value="Đọc ở 100% zoom — mỗi lane là 1 swimlane dọc. Mũi tên cắt ngang lane = gọi liên lane." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=8;fontColor=#94A3B8;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="625" y="1014" width="545" height="36" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== FOOTER ===== -->
+        <mxCell id="footer" value="© APP_KOOLA  ·  REST writes truth — Socket syncs truth — Mobile renders truth  ·  Mở bằng https://app.diagrams.net → File → Open" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontColor=#94A3B8;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="0" y="1376" width="1200" height="16" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== EDGES (arrows) ===== -->
+        <!-- s1 -> s2 -->
+        <mxCell id="e1" value="" style="endArrow=block;html=1;strokeWidth=1.6;strokeColor=#2563EB;endFill=1;jettySize=auto;orthogonalLoop=1;rounded=0;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s2 -> s3 -->
+        <mxCell id="e2" value="" style="endArrow=block;html=1;strokeWidth=1.6;strokeColor=#2563EB;endFill=1;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s3 -> s4 -->
+        <mxCell id="e3" value="" style="endArrow=block;html=1;strokeWidth=1.6;strokeColor=#2563EB;endFill=1;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s4 -> s5 (cross lane: Mobile -> Backend) -->
+        <mxCell id="e4" value="" style="endArrow=block;html=1;strokeWidth=1.6;strokeColor=#0F172A;endFill=1;dashed=0;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="310" y="390" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <!-- s5 -> d1 -->
+        <mxCell id="e5" value="" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="1" source="s5" target="d1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- d1 No to d1-no -->
+        <mxCell id="e5no" value="Không" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#EF4444;endFill=1;fontSize=8;fontColor=#991B1B;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="d1" target="d1-no">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- d1 Yes to d2 (label Co) -->
+        <mxCell id="e5yes" value="Có" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;fontSize=8;fontColor=#15803D;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="d1" target="d2">
+          <mxGeometry x="0.2" y="-6" relative="1" as="geometry">
+            <Array as="points"><mxPoint x="450" y="485"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- d2 Yes to d2-yes -->
+        <mxCell id="e6yes" value="Rồi" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#CA8A04;endFill=1;fontSize=8;fontColor=#854D0E;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="d2" target="d2-yes">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- d2 No to db1 -->
+        <mxCell id="e6no" value="Chưa" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;fontSize=8;fontColor=#15803D;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="d2" target="db1">
+          <mxGeometry x="0.4" y="-6" relative="1" as="geometry">
+            <Array as="points"><mxPoint x="560" y="560"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- db1 -> s6 -->
+        <mxCell id="e7" value="" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="1" source="db1" target="s6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="750" y="580"/><mxPoint x="480" y="580"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- s6 -> redis -->
+        <mxCell id="e8" value="" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#CA8A04;endFill=1;" edge="1" parent="1" source="s6" target="redis">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- redis -> s8 (fanout to other clients) -->
+        <mxCell id="e9" value="fanout" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#DB2777;endFill=1;fontSize=8;fontColor=#BE185D;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="redis" target="s8">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s6 -> s9 ack path (sender reconcile) — curved back to Mobile lane -->
+        <mxCell id="e10" value="message_ack / 201" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;dashed=0;fontSize=8;fontColor=#1E40AF;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="s6" target="s9">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="340" y="768"/><mxPoint x="150" y="768"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- s6 -> s7 (FCM trigger) -->
+        <mxCell id="e11" value="fire-and-forget" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#F97316;endFill=1;dashed=1;dashPattern=6 4;fontSize=8;fontColor=#9A3412;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s7 -> fcm -->
+        <mxCell id="e12" value="" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#F97316;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="s7" target="fcm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s9 -> s10 (recovery dotted) -->
+        <mxCell id="e13" value="" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#6366F1;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="s9" target="s10">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s10 -> s10b -->
+        <mxCell id="e14" value="bù sync" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#6366F1;endFill=1;dashed=1;dashPattern=6 4;fontSize=8;fontColor=#4338CA;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="s10" target="s10b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- s10b -> s10c -->
+        <mxCell id="e15" value="" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#6366F1;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="s10b" target="s10c">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Auth" id="koola-auth-flow">
+    <mxGraphModel dx="1420" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="a0"/>
+        <mxCell id="a1" parent="a0"/>
+        <mxCell id="a-title" value="APP_KOOLA — Flow Auth (OTP · Login · Refresh · Reset · Logout · Switch)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#0F172A;fontColor=#FFFFFF;fontStyle=1;fontSize=13;align=center;verticalAlign=middle;" vertex="1" parent="a1">
+          <mxGeometry x="0" y="0" width="1400" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sub" value="AccessToken: JWT ngắn hạn, chỉ nằm RAM  ·  RefreshToken: xoay vòng, lưu MongoDB + AsyncStorage  ·  Guards: Passport JWT (REST) + WsAuthGuard (Socket)" style="text;html=1;strokeColor=none;fillColor=none;align=center;whiteSpace=wrap;fontColor=#64748B;fontSize=9;" vertex="1" parent="a1">
+          <mxGeometry x="0" y="44" width="1400" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane1-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#BFDBFE;" vertex="1" parent="a1">
+          <mxGeometry x="0" y="62" width="350" height="1550" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane1-h" value="Mobile (React Native)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="0" y="62" width="350" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane2-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#BBF7D0;" vertex="1" parent="a1">
+          <mxGeometry x="350" y="62" width="360" height="1550" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane2-h" value="Backend (NestJS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#16A34A;strokeColor=#15803D;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="350" y="62" width="360" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane3-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEFCE8;strokeColor=#FDE68A;" vertex="1" parent="a1">
+          <mxGeometry x="710" y="62" width="350" height="1550" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane3-h" value="Redis + MongoDB" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CA8A04;strokeColor=#A16207;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="710" y="62" width="350" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane4-bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2F8;strokeColor=#FBCFE8;" vertex="1" parent="a1">
+          <mxGeometry x="1060" y="62" width="340" height="1550" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lane4-h" value="Socket / FCM" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DB2777;strokeColor=#BE185D;fontColor=#FFFFFF;fontStyle=1;fontSize=11;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1060" y="62" width="340" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-reg" value="1. DANG KY qua Email OTP" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="100" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r1" value="RegisterScreen&#xa;POST /auth/register/init&#xa;{ email, password, displayName }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="128" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r2" value="AuthService.registerInit&#xa;check trung email + hash OTP&#xa;hash password + rate limit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="128" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r3" value="Redis&#xa;reg:pending:&lt;email&gt; TTL 5p&#xa;otpHash + passwordHash&#xa;reg:rate / reg:attempts" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#FFFFFF;strokeColor=#CA8A04;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="128" width="270" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r4" value="Nodemailer&#xa;gui OTP qua email&#xa;429 neu qua han muc" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F59E0B;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="128" width="300" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r5" value="OtpVerifyScreen&#xa;POST /auth/register/verify&#xa;{ email, otp } + countdown" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="200" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r6" value="registerVerify&#xa;attempts &lt;= 5 ? so hash OTP&#xa;dung: tao User MongoDB&#xa;xoa 3 key Redis" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="430" y="194" width="200" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r7" value="Mongo User&#xa;generateTokenPair()&#xa;RefreshToken (jti) + JWT AT&#xa;tra { AT, RT }" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="200" width="270" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-r8" value="verifyOtp() auto login&#xa;AT vao RAM + RT vao Async&#xa;GET /users/me + wireLocalFirst&#xa;socket connect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="200" width="300" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-login" value="2. DANG NHAP" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#86EFAC;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="280" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-l1" value="LoginScreen&#xa;POST /auth/login&#xa;{ email, password }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="308" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-l2" value="AuthService.login&#xa;findOne email, bcrypt.compare&#xa;check isBanned, generateTokenPair" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="308" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-l3" value="Mongo&#xa;User + RefreshToken&#xa;(jti, revokedAt null)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="800" y="308" width="170" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-l4" value="login() AT RAM + RT Async&#xa;GET /users/me + /accounts/list&#xa;initDb + wireLocalFirst + seed&#xa;socket + webrtc + FCM register" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="308" width="300" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-restore" value="3. KHOI PHUC PHIEN (AuthContext.restoreSession — moi lan mo app)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEFCE8;strokeColor=#FDE68A;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="390" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs1" value="App launch: read RT&#xa;tu AsyncStorage&#xa;khong co thi o man login" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="418" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs2" value="POST /auth/refresh&#xa;verify JWT, check jti&#xa;reuse da revoke: revoke ALL" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;strokeWidth=1.3;fontSize=8;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="420" y="410" width="220" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs3" value="Revoke RT cu + tao cap moi&#xa;AT moi + RT moi (rotation)&#xa;luu RT moi vao AsyncStorage" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="418" width="270" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs4" value="GET /users/me (root)&#xa;+ GET /accounts/list&#xa;neu co activeAccountId (business)&#xa;POST /accounts/switch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="490" width="310" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs5" value="mintAccessToken({ sub, act,&#xa;accountType: business })&#xa;KHONG xoay RT goc&#xa;tra biz AT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="490" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs6" value="initDb(activeId) + wireLocalFirst&#xa;seedConversations + socket/webrtc&#xa;connect(activeToken) + FCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="490" width="300" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rs7" value="Fail: clearTokens + clearActiveId&#xa;ve man login (session chet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#EF4444;strokeWidth=1.3;fontSize=9;align=center;fontColor=#991B1B;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="490" width="270" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-refresh" value="4. REFRESH KHI AT HET HAN (interceptor 401)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDF2F8;strokeColor=#FBCFE8;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="580" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rf1" value="API 401 (AT het han)&#xa;interceptor goi&#xa;refreshAccessTokenForSocket()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="608" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rf2" value="POST /auth/refresh&#xa;200: luu RT moi + re-mint&#xa;biz token neu co activeAccountId&#xa;401/403 thi forceLogout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16A34A;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="608" width="320" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rf3" value="network error&#xa;(khong co response)&#xa;{ reason: network } retry&#xa;khong logout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#F59E0B;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="608" width="270" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-rf4" value="Socket: auth:refresh&#xa;hot swap JWT khi dang call&#xa;check same sub hoac same act&#xa;(cho phep switch business)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FDF2F8;strokeColor=#DB2777;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="608" width="300" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-reset" value="5. QUEN / DAT LAI MAT KHAU (2 buoc + resetTicket)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="700" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-fp1" value="POST /auth/forgot-password&#xa;{ email } luon 200 neutral&#xa;(khong lo email ton tai)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6366F1;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="728" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-fp2" value="Gui OTP reset qua email&#xa;Redis: reset:pending + rate&#xa;giong flow register" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6366F1;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="728" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-fp3" value="POST /auth/reset-password/verify&#xa;{ email, otp } tra { resetToken }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6366F1;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="728" width="270" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-fp4" value="POST /auth/reset-password&#xa;{ resetToken, newPassword }&#xa;hash moi + revoke ALL RT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="728" width="300" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sec-logout" value="6. DANG XUAT &amp; CHUYEN TAI KHOAN BUSINESS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#FECACA;fontStyle=1;fontSize=10;align=left;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="810" width="1380" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lo1" value="logout()&#xa;POST /auth/logout { refreshToken }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#EF4444;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="838" width="310" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lo2" value="AuthService.logout&#xa;verify JWT, revokedAt = now&#xa;clear FCM tokens" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#EF4444;strokeWidth=1.3;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="838" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-lo3" value="Mobile teardown&#xa;unregister FCM + disconnect socket/webrtc&#xa;clearAll Async + MMKV + wipe SQLite&#xa;setUser(null) ve login" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#EF4444;strokeWidth=1.4;fontSize=9;align=center;fontColor=#991B1B;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="838" width="270" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sw1" value="switchAccount(targetId)&#xa;guard: callState !== idle thi block&#xa;POST /accounts/switch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F97316;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="918" width="310" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sw2" value="mintAccessToken({ sub, act,&#xa;accountType: business })&#xa;KHONG xoay RT goc&#xa;tra biz AT moi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="370" y="918" width="320" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sw3" value="GET /users/me (biz) =&gt; setUser(biz)&#xa;initDb(bizId) + reconnect&#xa;socket/webrtc bang biz AT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=1.4;fontSize=9;align=center;" vertex="1" parent="a1">
+          <mxGeometry x="750" y="918" width="270" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-sw4" value="Force logout path&#xa;401 interceptor → forceLogoutHandler&#xa;wipe + disconnect + setUser(null)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#EF4444;strokeWidth=1.3;dashed=1;dashPattern=6 4;fontSize=9;align=center;fontColor=#991B1B;" vertex="1" parent="a1">
+          <mxGeometry x="1080" y="918" width="300" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-note1" value="AT khong bao gio luu AsyncStorage — chi nam RAM. RT moi la durable credential. ThrottlerGuard tren moi route auth." style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontColor=#64748B;fontSize=8;fontStyle=2;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="1010" width="900" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-note2" value="Socket WsAuthGuard + event auth:refresh cho phep hot swap token giua cuoc goi. AppState foreground =&gt; reconnect socket." style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontColor=#64748B;fontSize=8;fontStyle=2;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="1026" width="900" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-leg-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1;" vertex="1" parent="a1">
+          <mxGeometry x="10" y="1050" width="1380" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-leg-title" value="Chu giai" style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontStyle=1;fontSize=10;fontColor=#0F172A;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="1056" width="200" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-leg-text" value="Hinh chu nhat = buoc xu ly  ·  Hinh thoi = re nhanh / kiem tra  ·  Cylinder = MongoDB / Redis  ·  Cloud = gui email / FCM  ·  Mui ten lien = happy path  ·  Net dut = fallback / teardown" style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="1074" width="1360" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-leg-text2" value="RefreshToken rotation: token cu bi revoked ngay khi tao cap moi. Reuse token da revoked =&gt; revoke TAT CA token cua user (chong replay attack)." style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="1092" width="1360" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-leg-text3" value="Business switch: chi mint AT moi (sub + act), khong dong toi RT goc. act bi omit khi switch ve personal de token giong het token login ban dau." style="text;html=1;strokeColor=none;fillColor=none;align=left;whiteSpace=wrap;fontSize=9;fontColor=#334155;" vertex="1" parent="a1">
+          <mxGeometry x="20" y="1108" width="1360" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="a-footer" value="© APP_KOOLA  ·  File chung voi page Gui tin nhan text — mo cung file .drawio, chon tab Auth o duoi  ·  https://app.diagrams.net" style="text;html=1;strokeColor=none;fillColor=none;align=center;whiteSpace=wrap;fontColor=#94A3B8;fontSize=8;" vertex="1" parent="a1">
+          <mxGeometry x="0" y="1160" width="1400" height="14" as="geometry"/>
+        </mxCell>
+        <mxCell id="ae-r1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-r1" target="a-r2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-r2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-r2" target="a-r3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-r3" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#F59E0B;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="a1" source="a-r3" target="a-r4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-r5" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-r5" target="a-r6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-r6" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-r6" target="a-r7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-r7" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-r7" target="a-r8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-l1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-l1" target="a-l2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-l2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-l2" target="a-l3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-l3" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-l3" target="a-l4"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1030" y="334"/></Array></mxGeometry></mxCell>
+        <mxCell id="ae-rs1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#2563EB;endFill=1;" edge="1" parent="a1" source="a-rs1" target="a-rs2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-rs2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-rs2" target="a-rs3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-rs3" style="endArrow=block;html=1;strokeWidth=1.3;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-rs4" target="a-rs5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-rs4" style="endArrow=block;html=1;strokeWidth=1.3;strokeColor=#F97316;endFill=1;" edge="1" parent="a1" source="a-rs5" target="a-rs6"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1080" y="516"/></Array></mxGeometry></mxCell>
+        <mxCell id="ae-rs5" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#EF4444;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="a1" source="a-rs2" target="a-rs7"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="790" y="478"/></Array></mxGeometry></mxCell>
+        <mxCell id="ae-rf1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#16A34A;endFill=1;" edge="1" parent="a1" source="a-rf1" target="a-rf2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-rf2" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#F59E0B;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="a1" source="a-rf2" target="a-rf3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-rf3" style="endArrow=block;html=1;strokeWidth=1.2;strokeColor=#DB2777;endFill=1;dashed=1;dashPattern=6 4;" edge="1" parent="a1" source="a-rf2" target="a-rf4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-fp1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#6366F1;endFill=1;" edge="1" parent="a1" source="a-fp1" target="a-fp2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-fp2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#6366F1;endFill=1;" edge="1" parent="a1" source="a-fp2" target="a-fp3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-fp3" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#6366F1;endFill=1;" edge="1" parent="a1" source="a-fp3" target="a-fp4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-lo1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#EF4444;endFill=1;" edge="1" parent="a1" source="a-lo1" target="a-lo2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-lo2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#EF4444;endFill=1;" edge="1" parent="a1" source="a-lo2" target="a-lo3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-sw1" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#F97316;endFill=1;" edge="1" parent="a1" source="a-sw1" target="a-sw2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae-sw2" style="endArrow=block;html=1;strokeWidth=1.4;strokeColor=#F97316;endFill=1;" edge="1" parent="a1" source="a-sw2" target="a-sw3"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+</mxfile>

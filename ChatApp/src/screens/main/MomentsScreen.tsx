@@ -1,15 +1,20 @@
 /**
- * Màn hình Khoảnh khắc thật: header feed + danh sách Post mẫu.
- * Story vẫn lấy từ momentsService; Post sẽ được thay bằng service thật ở Pha 2.
+ * Màn hình Khoảnh khắc: header feed + danh sách Post thật từ posts API.
+ * Story lấy từ momentsService; Post đọc từ post state trong cùng service.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
+  FlatList,
+  Modal,
   Platform,
   RefreshControl,
+  Share,
   StyleSheet,
+  TextInput,
+  TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -23,11 +28,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import { momentsService, type FeedRingItem, type MomentsState } from '../../services/moments/momentsService';
+import type { PostCommentView } from '../../services/moments/postsApi';
+import type { PostMediaItem } from '../../components/moments/PostMediaGrid';
 import { useAuth } from '../../contexts/AuthContext';
 import MomentsFeedHeader, { type FeedHeaderRing } from '../../components/moments/MomentsFeedHeader';
 import PostCard, { type FeedPost } from '../../components/moments/PostCard';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import {
+  KoolaButton,
   KoolaErrorState,
   KoolaText,
   koolaSpacing,
@@ -38,7 +46,6 @@ import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 import { resolveMomentsStoryRegion } from './momentsView';
-import { MOCK_MOMENTS_POSTS } from './momentsMockPosts';
 
 type MomentsNavProp = NativeStackNavigationProp<ChatTabStackParamList>;
 
@@ -57,8 +64,12 @@ const MomentsScreen: React.FC = () => {
   const { notify, toast } = useComingSoonToast();
   const initialState = momentsService.getState();
   const [state, setState] = useState<MomentsState>(initialState);
-  const [posts, setPosts] = useState<FeedPost[]>(MOCK_MOMENTS_POSTS);
   const [refreshing, setRefreshing] = useState(false);
+  const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentReplyTo, setCommentReplyTo] = useState<PostCommentView | null>(null);
+  const [postComments, setPostComments] = useState<PostCommentView[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   // State khởi tạo của momentsService là { isLoading: false, feedRing: [] }, nên
   // ở frame đầu tiên (trước khi useFocusEffect kịp gọi refreshFeed) resolver sẽ
   // ra "empty" rồi nháy sang "skeleton". hasAttemptedLoad đánh dấu đã kích hoạt
@@ -115,6 +126,7 @@ const MomentsScreen: React.FC = () => {
 
   const requestFeed = useCallback(async () => {
     await momentsService.refreshFeed();
+    await momentsService.refreshPosts();
     // Mark completion after the service publishes its terminal state. This
     // preserves skeleton through the synchronous loading notification and
     // switches to empty/error only after the first request really settles.
@@ -218,13 +230,181 @@ const MomentsScreen: React.FC = () => {
     navigation.push('MomentComposer');
   }, [navigation, notify, user]);
 
+  const posts = useMemo<FeedPost[]>(
+    () => momentsService.getFeedPosts(),
+    // Recompute when post state changes (service publishes a new object)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.postsById, state.feedIds],
+  );
+
   const handleToggleLike = useCallback((postId: string) => {
-    setPosts((current) => current.map((post) => post.id === postId ? {
-      ...post,
-      likedByMe: !post.likedByMe,
-      reactionCount: post.reactionCount + (post.likedByMe ? -1 : 1),
-    } : post));
+    void momentsService.toggleLike(postId);
   }, []);
+
+  const openComments = useCallback(async (postId: string, replyTo?: PostCommentView) => {
+    setCommentPostId(postId);
+    setCommentText('');
+    setCommentReplyTo(replyTo ?? null);
+    setCommentsLoading(true);
+    try {
+      // The sheet posts via momentsService; the full comment list loads here
+      setPostComments([]);
+      const { postsApi } = await import('../../services/moments/postsApi');
+      const result = await postsApi.listComments(postId, { limit: 20 });
+      setPostComments(result.comments);
+    } catch {
+      // Preview stays empty — the sheet still allows posting
+      setPostComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
+
+  const handleSendComment = useCallback(async () => {
+    if (!commentPostId || !commentText.trim()) return;
+    const text = commentText.trim();
+    setCommentText('');
+    try {
+      const comment = await momentsService.addComment(
+        commentPostId,
+        text,
+        commentReplyTo?._id,
+      );
+      setPostComments((current) => [...current, comment]);
+      setCommentReplyTo(null);
+    } catch {
+      notify('Gửi bình luận thất bại — thử lại');
+      setCommentText(text);
+    }
+  }, [commentPostId, commentText, commentReplyTo, notify]);
+
+  const handleShare = useCallback(async (postId: string) => {
+    try {
+      const result = await momentsService.sharePost(postId);
+      const post = momentsService.getState().postsById.get(postId);
+      await Share.share({
+        message: `${post?.caption ?? ''}\n${result.deepLink}`,
+      });
+    } catch {
+      notify('Chia sẻ thất bại — thử lại');
+    }
+  }, [notify]);
+
+  const handleAuthor = useCallback((authorId: string) => {
+    navigation.push('Profile', { userId: authorId });
+  }, [navigation]);
+
+  const handleMenu = useCallback((postId: string) => {
+    const post = momentsService.getState().postsById.get(postId);
+    if (!post) return;
+    const isOwn = user?._id === post.authorId;
+    const options = isOwn
+      ? ['Sửa bài viết', 'Xóa bài viết', 'Hủy']
+      : ['Báo cáo bài viết', 'Hủy'];
+    const showAction = (index: number) => {
+      if (isOwn) {
+        if (index === 0) {
+          // Edit caption inline via prompt-style alert
+          Alert.prompt?.(
+            'Sửa bài viết',
+            undefined,
+            [
+              { text: 'Hủy', style: 'cancel' },
+              {
+                text: 'Lưu',
+                onPress: (text?: string) => {
+                  if (text == null) return;
+                  void momentsService.editPost(postId, { caption: text }).catch(() => {
+                    notify('Sửa bài viết thất bại — thử lại');
+                  });
+                },
+              },
+            ],
+            'plain-text',
+            post.caption,
+          );
+          // Android has no Alert.prompt — fall back to composer-style edit
+          if (Platform.OS === 'android') {
+            Alert.alert('Sửa bài viết', undefined, [
+              { text: 'Hủy', style: 'cancel' },
+              {
+                text: 'Xóa bài viết',
+                style: 'destructive',
+                onPress: () => {
+                  void momentsService.deletePost(postId).catch(() => {
+                    notify('Xóa bài viết thất bại — thử lại');
+                  });
+                },
+              },
+            ]);
+          }
+        } else if (index === 1) {
+          Alert.alert('Xóa bài viết?', 'Bài viết sẽ biến mất khỏi bảng tin.', [
+            { text: 'Hủy', style: 'cancel' },
+            {
+              text: 'Xóa',
+              style: 'destructive',
+              onPress: () => {
+                void momentsService.deletePost(postId).catch(() => {
+                  notify('Xóa bài viết thất bại — thử lại');
+                });
+              },
+            },
+          ]);
+        }
+      } else if (index === 0) {
+        Alert.alert('Báo cáo bài viết', 'Cho chúng tôi biết lý do:', [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Nội dung không phù hợp',
+            onPress: () => {
+              void momentsService
+                .reportPost(postId, 'Nội dung không phù hợp')
+                .then(() => notify('Đã gửi báo cáo'))
+                .catch(() => notify('Gửi báo cáo thất bại — thử lại'));
+            },
+          },
+          {
+            text: 'Spam',
+            onPress: () => {
+              void momentsService
+                .reportPost(postId, 'Spam')
+                .then(() => notify('Đã gửi báo cáo'))
+                .catch(() => notify('Gửi báo cáo thất bại — thử lại'));
+            },
+          },
+        ]);
+      }
+    };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: options.length - 1, destructiveButtonIndex: isOwn ? 1 : undefined },
+        showAction,
+      );
+    } else {
+      Alert.alert(
+        'Bài viết',
+        undefined,
+        options.map((text, index) => ({
+          text,
+          style: (isOwn && index === 1 ? 'destructive' : undefined) as 'destructive' | undefined,
+          onPress: index < options.length - 1 ? () => showAction(index) : undefined,
+        })),
+      );
+    }
+  }, [notify, user?._id]);
+
+  const handleMedia = useCallback((postId: string, mediaIndex: number) => {
+    const post = momentsService.getState().postsById.get(postId);
+    if (!post) return;
+    const items: PostMediaItem[] = post.media.map((m) => ({
+      mediaKey: m.mediaKey,
+      uri: m.mediaUrl ?? undefined,
+      mediaType: m.mediaType,
+      duration: m.duration ?? undefined,
+    }));
+    navigation.push('PostMediaViewer', { items, initialIndex: mediaIndex });
+  }, [navigation]);
 
   // Full-bleed feed: the list has no page gutter, so PostMediaGrid computes
   // media tile widths from the full screen width.
@@ -234,13 +414,13 @@ const MomentsScreen: React.FC = () => {
       post={item}
       contentWidth={contentWidth}
       onToggleLike={handleToggleLike}
-      onPressComment={() => notify('Bình luận — chưa có backend')}
-      onPressShare={() => notify('Chia sẻ — chưa có backend')}
-      onPressAuthor={() => notify(`Mở trang ${item.authorDisplayName}`)}
-      onPressMenu={() => notify('Menu bài viết — chưa có backend')}
-      onPressMedia={() => notify('Mở ảnh toàn màn hình — chưa có backend')}
+      onPressComment={(postId) => void openComments(postId)}
+      onPressShare={(postId) => void handleShare(postId)}
+      onPressAuthor={handleAuthor}
+      onPressMenu={handleMenu}
+      onPressMedia={handleMedia}
     />
-  ), [contentWidth, handleToggleLike, notify]);
+  ), [contentWidth, handleToggleLike, openComments, handleShare, handleAuthor, handleMenu, handleMedia]);
 
   // Cold-load signal for the story rail. The same flag is forwarded to the
   // header, which renders in-place skeleton rings in the rail — the rail height
@@ -275,14 +455,27 @@ const MomentsScreen: React.FC = () => {
         />
       );
     }
-    // Phase 1: friend-empty banner removed — feed always shows with mock posts.
-    // Phase 2 will gate feed on real Post API availability.
+    // Friend-empty no longer gates anything — the real feed renders below.
     return null;
   }, [handleAddPress, requestFeed, state.error, storyRegion, styles.regionState]);
+
+  // Real post feed states: skeleton on cold load, inline retryable banner on
+  // error (never a full-screen replacement), real empty state with composer.
+  const postsLoading = state.isLoadingPosts || !hasAttemptedLoad;
+  const postsEmpty = hasAttemptedLoad && !state.isLoadingPosts && posts.length === 0 && !state.postsError;
+
+  const handleLoadMore = useCallback(() => {
+    if (state.postsCursor && !state.isLoadingPosts) {
+      void momentsService.loadMorePosts();
+    }
+  }, [state.postsCursor, state.isLoadingPosts]);
+
+  const handleComposerPress = useCallback(() => navigation.push('PostComposer'), [navigation]);
 
   // Header ALWAYS renders when signed in: it is chrome (composer prompt, quick
   // actions) and it carries the own story ring, so it must not be gated behind
   // real friend stories. The story-region banner sits directly beneath it.
+  // The composer entry opens the real PostComposer.
   const listHeader = useMemo(() => (
     <View>
       <MomentsFeedHeader
@@ -290,27 +483,51 @@ const MomentsScreen: React.FC = () => {
         myAvatar={user?.avatar ?? undefined}
         rings={rings}
         railLoading={railLoading}
-        onPressComposer={handleAddPress}
+        onPressComposer={handleComposerPress}
         onPressQuickAction={handleQuickAction}
         onPressRing={handleRingPress}
         onLongPressOwnRing={handleOwnLongPress}
         onPressAddStory={handleAddPress}
       />
       {storyRegionBanner}
+      {state.postsError ? (
+        <KoolaErrorState
+          style={styles.regionState}
+          title="Không thể tải bài viết"
+          message={state.postsError}
+          onRetry={requestFeed}
+        />
+      ) : null}
     </View>
-  ), [handleAddPress, handleQuickAction, handleOwnLongPress, handleRingPress, railLoading, rings, storyRegionBanner, user?.avatar, user?.displayName]);
+  ), [handleAddPress, handleComposerPress, handleQuickAction, handleOwnLongPress, handleRingPress, railLoading, rings, storyRegionBanner, state.postsError, requestFeed, user?.avatar, user?.displayName]);
 
   return (
     <View style={styles.container} accessibilityLabel="Danh sách khoảnh khắc" accessibilityRole="list">
       <Animated.FlatList
-        // Phase 1: the mock feed always renders — it is the whole point of the
-        // phase (letting the user browse the feed shape on the real tab). Story
-        // loading/error/empty are surfaced by the header banner, never by
-        // blanking this list.
+        // Real post feed: loading/error/empty are inline states, never a
+        // full-screen replacement — the header chrome always renders.
         data={posts}
         keyExtractor={(item) => item.id}
         renderItem={renderPost}
         ListHeaderComponent={listHeader}
+        ListEmptyComponent={
+          postsEmpty ? (
+            <View style={styles.emptyState}>
+              <KoolaText variant="label" tone="muted" align="center">
+                Chưa có bài viết nào
+              </KoolaText>
+              <KoolaText variant="caption" tone="faint" align="center" style={styles.emptyHint}>
+                Hãy là người đầu tiên chia sẻ khoảnh khắc của bạn
+              </KoolaText>
+              <KoolaButton
+                title="Viết bài đầu tiên"
+                onPress={handleComposerPress}
+                style={styles.emptyAction}
+                accessibilityLabel="Viết bài đầu tiên"
+              />
+            </View>
+          ) : undefined
+        }
         // Starts at y=0 behind Chat Home's glass header + overlaid sub-tab bar;
         // reserve exactly the resting chrome so the feed header sits below it.
         contentContainerStyle={[styles.listContent, { paddingTop: headerInset, paddingBottom: tabBarInset }]}
@@ -323,16 +540,119 @@ const MomentsScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
         accessibilityLabel="Bảng tin khoảnh khắc"
         ListFooterComponent={
-          <View style={styles.footer}>
-            <KoolaText variant="caption" tone="faint" align="center">
-              Hết bài viết mới · dữ liệu mẫu
-            </KoolaText>
-          </View>
+          postsLoading && posts.length > 0 ? (
+            <View style={styles.footer}>
+              <KoolaText variant="caption" tone="faint" align="center">
+                Đang tải thêm...
+              </KoolaText>
+            </View>
+          ) : !postsLoading && posts.length > 0 && !state.postsCursor ? (
+            <View style={styles.footer}>
+              <KoolaText variant="caption" tone="faint" align="center">
+                Hết bài viết mới
+              </KoolaText>
+            </View>
+          ) : null
         }
       />
       {toast}
+      {/* Comment bottom-sheet */}
+      <Modal
+        visible={commentPostId !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCommentPostId(null)}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <TouchableOpacity
+              onPress={() => setCommentPostId(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Đóng bình luận">
+              <KoolaText tone="primary">Đóng</KoolaText>
+            </TouchableOpacity>
+            <KoolaText variant="label" weight="700">
+              Bình luận
+            </KoolaText>
+            <View style={{ width: 40 }} />
+          </View>
+          <FlatList
+            data={postComments}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <View style={styles.commentRow}>
+                <KoolaText variant="label" weight="700">
+                  {item.authorDisplayName || 'Người dùng'}
+                </KoolaText>
+                <KoolaText>{item.isActive ? item.content : '[đã xóa]'}</KoolaText>
+                <TouchableOpacity
+                  onPress={() => openComments(commentPostId!, item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Trả lời ${item.authorDisplayName}`}>
+                  <KoolaText variant="caption" tone="primary">
+                    Trả lời
+                  </KoolaText>
+                </TouchableOpacity>
+                {item.replies?.map((reply) => (
+                  <View key={reply._id} style={styles.replyRow}>
+                    <KoolaText variant="label" weight="700">
+                      {reply.authorDisplayName || 'Người dùng'}
+                    </KoolaText>
+                    <KoolaText>{reply.isActive ? reply.content : '[đã xóa]'}</KoolaText>
+                  </View>
+                ))}
+              </View>
+            )}
+            ListEmptyComponent={
+              commentsLoading ? (
+                <KoolaText tone="muted" align="center" style={styles.regionState}>
+                  Đang tải bình luận...
+                </KoolaText>
+              ) : (
+                <KoolaText tone="faint" align="center" style={styles.regionState}>
+                  Chưa có bình luận — hãy là người đầu tiên
+                </KoolaText>
+              )
+            }
+          />
+          {commentReplyTo ? (
+            <View style={styles.replyBanner}>
+              <KoolaText variant="caption" tone="muted">
+                Trả lời {commentReplyTo.authorDisplayName}
+              </KoolaText>
+              <TouchableOpacity
+                onPress={() => setCommentReplyTo(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Hủy trả lời">
+                <KoolaText variant="caption" tone="primary">
+                  Hủy
+                </KoolaText>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          <View style={styles.commentInputRow}>
+            <TextInput
+              value={commentText}
+              onChangeText={(text) => setCommentText(text.slice(0, 1000))}
+              placeholder="Viết bình luận..."
+              style={styles.commentInput}
+              accessibilityLabel="Nhập bình luận"
+              maxLength={1000}
+            />
+            <TouchableOpacity
+              onPress={handleSendComment}
+              accessibilityRole="button"
+              accessibilityLabel="Gửi bình luận">
+              <KoolaText tone="primary" weight="700">
+                Gửi
+              </KoolaText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -346,6 +666,46 @@ const makeStyles = (semantic: SemanticTokens) => StyleSheet.create({
   // the composer, quick actions, own ring, and feed stay put.
   regionState: { paddingVertical: koolaSpacing.lg },
   footer: { paddingTop: koolaSpacing.lg, paddingBottom: koolaSpacing.lg },
+  emptyState: { paddingVertical: koolaSpacing.xl * 2, paddingHorizontal: koolaSpacing.lg, alignItems: 'center' },
+  emptyHint: { marginTop: koolaSpacing.sm },
+  emptyAction: { marginTop: koolaSpacing.lg, minWidth: 180 },
+  sheet: { flex: 1, backgroundColor: semantic.surface.level0 },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: koolaSpacing.md,
+    paddingVertical: koolaSpacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: semantic.border.subtle,
+  },
+  commentRow: { paddingHorizontal: koolaSpacing.md, paddingVertical: koolaSpacing.sm },
+  replyRow: { marginLeft: koolaSpacing.lg, marginTop: koolaSpacing.xs, paddingLeft: koolaSpacing.sm, borderLeftWidth: 2, borderLeftColor: semantic.border.subtle },
+  replyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: koolaSpacing.md,
+    paddingVertical: koolaSpacing.xs,
+    backgroundColor: semantic.surface.level1,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: koolaSpacing.md,
+    paddingVertical: koolaSpacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: semantic.border.subtle,
+  },
+  commentInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: semantic.border.subtle,
+    borderRadius: 20,
+    paddingHorizontal: koolaSpacing.md,
+    paddingVertical: koolaSpacing.xs,
+    marginRight: koolaSpacing.sm,
+  },
 });
 
 export default MomentsScreen;

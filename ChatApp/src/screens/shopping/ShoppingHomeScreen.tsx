@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
-  FlatList,
   Image,
   InteractionManager,
   Pressable,
@@ -11,6 +11,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Animated, {
+  Easing,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   KoolaChip,
   KoolaEmptyState,
@@ -45,17 +52,23 @@ import {
 } from './shoppingCatalog';
 import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
+import { HeaderDockAction, HeaderDockGhostAction } from '../../components/HeaderSearchDock';
+import { useComingSoonToast } from '../../hooks/useComingSoonToast';
+import { prefersReducedMotion } from '../../ui/tokens/motion';
 
 /**
  * Shopping home — single-column product list (Figma frame 64:2).
  *
  * Chrome: shared ChromeGlassSheet + ChromeHeaderBox (single source with
- * Chat/Connect). Header is fixed — no scroll-hide animation (choice B).
- * FilterRow stays scroll-fixed directly below the header block (glass
- * extends through it: barH = FILTER_ROW_H).
+ * Chat/Connect). The dock reuses the HeaderSearchDock frame (36dp pill +
+ * standard HeaderDockAction filter) but keeps a live TextInput for direct
+ * type-to-filter. The 5 suggestion chips are list content
+ * (ListHeaderComponent), not a subtask bar — scrolling fades them out in
+ * place instead of pushing them up.
  */
 
-const FILTER_ROW_H = 72;
+/** Compact chip row height: 2 rows x 24 + 4 gap = 52. */
+const FILTER_ROW_H = 52;
 const FILTER_ROW_GAP_BOTTOM = 12;
 // Vertical gap between product cards. Shared with the skeleton's row spacing
 // so the two stay in sync and swapping in real content causes no shift.
@@ -69,70 +82,107 @@ type Styles = ReturnType<typeof makeStyles>;
 // Filtering, sorting and pagination are done by the server
 // (GET /commerce/products) — never in the client.
 
-// ── Inline search field rendered inside ChromeHeaderBox dock slot ────────────
-// 36dp pill to match CHROME_BOX_DOCK_H; fill is `border.subtle`.
+// ── Inline search field rendered inside the shared HeaderSearchDock frame ───
+// Same 36dp pill + 48dp dock actions as Connect/Chat: the pill keeps a live
+// TextInput (direct type-to-filter, 300 ms debounce) instead of a press-to-open
+// search button, and the filter trigger is a standard HeaderDockAction with the
+// shared badge geometry (top -4 / right -8, danger bg, 99+ cap).
 const SHOPPING_DOCK_H = 36;
 
 const ShoppingHeaderSearch: React.FC<{
   semantic: SemanticTokens;
   value: string;
   onChangeText: (t: string) => void;
-}> = ({ semantic, value, onChangeText }) => {
+  activeFilterCount: number;
+  onOpenFilters: () => void;
+}> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters }) => {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={[shoppingDockStyles.pill, { backgroundColor: semantic.border.subtle }]}>
-      {focused ? (
-        <View pointerEvents="none" style={[shoppingDockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
-      ) : null}
-      <View style={shoppingDockStyles.contentRow}>
-        <MaterialIcons name="search" size={20} color={semantic.text.faint} style={shoppingDockStyles.searchIcon} />
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          placeholder="Tìm kiếm sản phẩm..."
-          placeholderTextColor={semantic.text.faint}
-          style={[shoppingDockStyles.searchInput, { color: semantic.text.primary }]}
-          returnKeyType="search"
-          underlineColorAndroid="transparent"
-          accessibilityLabel="Tìm kiếm sản phẩm"
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+    <View style={shoppingDockStyles.host}>
+      <View pointerEvents="none" style={shoppingDockStyles.fillClip}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: semantic.border.subtle }]} />
+      </View>
+      <View style={shoppingDockStyles.innerRow}>
+        <View style={shoppingDockStyles.searchArea}>
+          {focused ? (
+            <View pointerEvents="none" style={[shoppingDockStyles.focusRing, { borderColor: semantic.focus.ring }]} />
+          ) : null}
+          <MaterialIcons name="search" size={20} color={semantic.action.primary} style={shoppingDockStyles.searchIcon} />
+          <TextInput
+            value={value}
+            onChangeText={onChangeText}
+            placeholder="Tìm kiếm sản phẩm..."
+            placeholderTextColor={semantic.text.faint}
+            style={[shoppingDockStyles.searchInput, { color: semantic.text.primary }]}
+            returnKeyType="search"
+            underlineColorAndroid="transparent"
+            accessibilityLabel="Tìm kiếm sản phẩm"
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+          />
+          {value.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Xóa tìm kiếm"
+              onPress={() => onChangeText('')}
+              hitSlop={6}
+              style={shoppingDockStyles.searchClear}>
+              <MaterialIcons name="close" size={20} color={semantic.text.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+        <HeaderDockAction
+          icon="filter-alt"
+          onPress={onOpenFilters}
+          accessibilityLabel="Bộ lọc"
+          accessibilityHint="Mở bộ lọc tìm kiếm"
+          badgeCount={activeFilterCount}
+          badgeAccessibilityText={`${activeFilterCount} bộ lọc đang áp dụng`}
         />
-        {value.length > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Xóa tìm kiếm"
-            onPress={() => onChangeText('')}
-            hitSlop={6}
-            style={shoppingDockStyles.searchClear}>
-            <MaterialIcons name="close" size={20} color={semantic.text.muted} />
-          </Pressable>
-        ) : null}
       </View>
     </View>
   );
 };
 
 const shoppingDockStyles = StyleSheet.create({
-  pill: {
+  host: {
+    flexDirection: 'row',
+    alignItems: 'center',
     height: SHOPPING_DOCK_H,
+    paddingHorizontal: 4,
+    borderRadius: koolaRadii.pill,
+    backgroundColor: 'transparent',
+  },
+  // Only the fill is clipped; the host must not clip or the dock action badge
+  // (top -4 / right -8) gets cut — same comment as HeaderSearchDock.
+  fillClip: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: koolaRadii.pill,
     overflow: 'hidden',
-    justifyContent: 'center',
+  },
+  innerRow: {
+    flex: 1,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 0,
+  },
+  searchArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: koolaRadii.pill,
+    overflow: 'hidden',
   },
   focusRing: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: koolaRadii.pill,
     borderWidth: 1.5,
   },
-  contentRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 8,
-  },
-  searchIcon: { marginRight: 6 },
+  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     fontSize: 15,
@@ -149,89 +199,65 @@ const shoppingDockStyles = StyleSheet.create({
   },
 });
 
-// ── Filter row: 2 hàng + nút Lọc cao 2 hàng bên phải ─────────────────────
- // Bố cục yêu cầu:
- //   [Được mua nhiều nhất] [Giá thấp nhất]     ┌──────┐
- //   [Organic] [Chứng nhận] [Đã xác minh]     │ Lọc  │  ← cao 68 = 30+8+30, canh phải
- //                                            └──────┘
- // Hàng 1 = 2 chip dài (sort), hàng 2 = 3 chip ngắn (attr).
- // Nút Lọc bên phải cao bằng 2 hàng chip, icon filter-list, badge đỏ khi có filter.
+// ── Filter row: 2 compact chip rows (sort + tags) ──────────────────────────
+// Row height 24 each + 4 gap = 52 total. The filter open trigger lives in the
+// search dock (beside the search pill), not here.
 const FilterRow: React.FC<{
-  semantic: SemanticTokens;
   styles: Styles;
   activeSort: CommerceSort | null;
   activeAttr: string | null;
-  activeFilterCount: number;
   onToggleSort: (sort: Exclude<CommerceSort, 'newest'>) => void;
   onToggleAttr: (label: string) => void;
-  onOpenFilters: () => void;
-}> = ({ semantic, styles, activeSort, activeAttr, activeFilterCount, onToggleSort, onToggleAttr, onOpenFilters }) => (
+}> = ({ styles, activeSort, activeAttr, onToggleSort, onToggleAttr }) => (
   <View style={styles.filterRow}>
-    <View style={styles.chipGrid}>
-      <View style={styles.chipRowTop}>
-        {SHOPPING_SORT_CHIPS.map(({ sort, label }) => {
-          const selected = activeSort === sort;
-          return (
-            <Pressable
-              key={sort}
-              accessibilityRole="button"
-              accessibilityLabel={label}
-              accessibilityState={{ selected }}
-              onPress={() => onToggleSort(sort)}
-              hitSlop={4}
-              style={[styles.rowChip, selected && styles.rowChipActive]}>
-              <KoolaText
-                variant="caption"
-                weight="700"
-                tone={selected ? 'surface' : 'muted'}
-                style={styles.rowChipText}
-                numberOfLines={1}>
-                {label}
-              </KoolaText>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.chipRowBottom}>
-        {SHOPPING_TAG_CHIPS.map((label) => {
-          const selected = activeAttr === label;
-          return (
-            <Pressable
-              key={label}
-              accessibilityRole="button"
-              accessibilityLabel={label}
-              accessibilityState={{ selected }}
-              onPress={() => onToggleAttr(label)}
-              hitSlop={4}
-              style={[styles.rowChip, selected && styles.rowChipActive]}>
-              <KoolaText
-                variant="caption"
-                weight="700"
-                tone={selected ? 'surface' : 'muted'}
-                style={styles.rowChipText}
-                numberOfLines={1}>
-                {label}
-              </KoolaText>
-            </Pressable>
-          );
-        })}
-      </View>
+    <View style={styles.chipRowTop}>
+      {SHOPPING_SORT_CHIPS.map(({ sort, label }) => {
+        const selected = activeSort === sort;
+        return (
+          <Pressable
+            key={sort}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected }}
+            onPress={() => onToggleSort(sort)}
+            hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+            style={[styles.rowChip, selected && styles.rowChipActive]}>
+            <KoolaText
+              variant="caption"
+              weight="700"
+              tone={selected ? 'surface' : 'muted'}
+              style={styles.rowChipText}
+              numberOfLines={1}>
+              {label}
+            </KoolaText>
+          </Pressable>
+        );
+      })}
     </View>
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={activeFilterCount > 0 ? `Lọc, ${activeFilterCount} bộ lọc đang áp dụng` : 'Lọc'}
-      onPress={onOpenFilters}
-      hitSlop={4}
-      style={styles.filterTallBtn}>
-      <MaterialIcons name="filter-alt" size={20} color={semantic.action.primary} />
-      {activeFilterCount > 0 ? (
-        <View style={styles.filterTallBadge}>
-          <KoolaText variant="caption" weight="800" tone="surface" style={styles.filterBadgeText}>
-            {activeFilterCount}
-          </KoolaText>
-        </View>
-      ) : null}
-    </Pressable>
+    <View style={styles.chipRowBottom}>
+      {SHOPPING_TAG_CHIPS.map((label) => {
+        const selected = activeAttr === label;
+        return (
+          <Pressable
+            key={label}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected }}
+            onPress={() => onToggleAttr(label)}
+            hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+            style={[styles.rowChip, selected && styles.rowChipActive]}>
+            <KoolaText
+              variant="caption"
+              weight="700"
+              tone={selected ? 'surface' : 'muted'}
+              style={styles.rowChipText}
+              numberOfLines={1}>
+              {label}
+            </KoolaText>
+          </Pressable>
+        );
+      })}
+    </View>
   </View>
 );
 
@@ -440,7 +466,66 @@ const ShoppingHomeScreen: React.FC = () => {
   );
   const isDark = resolvedScheme === 'dark';
   const blockH = getChromeBoxHeight(insets.top);
-  const listTopPad = blockH + FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM;
+
+  const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast();
+  // Wordmark-row icons share the ghost geometry with HeaderSearchDock
+  // (size 36, glyph 20, muted) so the chrome stays in sync with Connect.
+  const headerActions = (
+    <>
+      <HeaderDockGhostAction icon="chat-bubble-outline" onPress={() => notifyComingSoon()} accessibilityLabel="Tin nhắn" />
+      <HeaderDockGhostAction icon="notifications-none" onPress={() => notifyComingSoon()} accessibilityLabel="Thông báo" />
+    </>
+  );
+
+  // Suggestion chips live in the list content (ListHeaderComponent), not in a
+  // subtask bar under the header. Scrolling up fades them out in place —
+  // they vanish rather than being pushed up. scrolledProgress only drives the
+  // chrome lift shadow.
+  const scrolledProgress = useSharedValue(0);
+  const chipsFade = useSharedValue(0);
+  // UI-thread copy of the reduce-motion flag (calling prefersReducedMotion()
+  // inside a worklet would hop threads).
+  const reduceMotionSV = useSharedValue(prefersReducedMotion());
+  useEffect(() => {
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled: boolean) => {
+      reduceMotionSV.value = enabled;
+    });
+    return () => {
+      if (sub && typeof (sub as { remove?: () => void }).remove === 'function') {
+        (sub as { remove: () => void }).remove();
+      }
+    };
+  }, [reduceMotionSV]);
+
+  const handleScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      const offsetY = Math.max(0, event.contentOffset.y);
+      if (offsetY > 8 && scrolledProgress.value !== 1) {
+        scrolledProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+      } else if (offsetY <= 4 && scrolledProgress.value !== 0) {
+        scrolledProgress.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+      }
+      // Reduce-motion: chips stay pinned, only the lift shadow applies.
+      if (reduceMotionSV.value) {
+        if (chipsFade.value !== 0) chipsFade.value = 0;
+        return;
+      }
+      // Fade the in-content chips out over the first ~64px of scroll; at rest
+      // (offsetY <= 4) they are fully visible again.
+      const target = offsetY <= 4 ? 0 : Math.min(1, (offsetY - 4) / 64);
+      if (Math.abs(chipsFade.value - target) > 0.02) {
+        chipsFade.value = withTiming(target, { duration: 160, easing: Easing.out(Easing.cubic) });
+      }
+    },
+  });
+
+  const chipsVisibilityStyle = useAnimatedStyle(() => {
+    const t = Math.min(1, Math.max(0, chipsFade.value));
+    return {
+      height: (FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM) * (1 - t),
+      opacity: 1 - t,
+    };
+  }, []);
 
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<CommerceCategory | null>(null);
@@ -615,6 +700,30 @@ const ShoppingHomeScreen: React.FC = () => {
 
   const handleSearchPress = useCallback(() => {}, []);
 
+  const handleEndReached = useCallback(() => {
+    list.loadMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.loadMore]);
+
+  // Suggestion chips as list content header — part of the scroll content, not
+  // a subtask bar. Fades/collapses in place via chipsVisibilityStyle.
+  const renderListHeader = useCallback(
+    () => (
+      <Animated.View style={[{ overflow: 'hidden' }, chipsVisibilityStyle]}>
+        <View style={[styles.filterBarWrap, { marginBottom: FILTER_ROW_GAP_BOTTOM }]}>
+          <FilterRow
+            styles={styles}
+            activeSort={activeSort}
+            activeAttr={activeAttr}
+            onToggleSort={toggleSort}
+            onToggleAttr={toggleAttr}
+          />
+        </View>
+      </Animated.View>
+    ),
+    [activeSort, activeAttr, toggleSort, toggleAttr, styles, chipsVisibilityStyle],
+  );
+
   if (!contentReady) {
     return (
       <View style={styles.screen}>
@@ -622,15 +731,15 @@ const ShoppingHomeScreen: React.FC = () => {
           <View style={styles.contentInset}>
             <KoolaSkeleton width="100%" height={SHOPPING_DOCK_H} radius={koolaRadii.pill} />
             <View style={{ marginTop: 8, height: FILTER_ROW_H }}>
-              <View style={{ gap: 8 }}>
+              <View style={{ gap: 4 }}>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <KoolaSkeleton width="50%" height={32} radius={koolaRadii.pill} />
-                  <KoolaSkeleton width="50%" height={32} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="50%" height={24} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="50%" height={24} radius={koolaRadii.pill} />
                 </View>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
-                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
-                  <KoolaSkeleton width="33%" height={32} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="33%" height={24} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="33%" height={24} radius={koolaRadii.pill} />
+                  <KoolaSkeleton width="33%" height={24} radius={koolaRadii.pill} />
                 </View>
               </View>
             </View>
@@ -653,30 +762,17 @@ const ShoppingHomeScreen: React.FC = () => {
 
   return (
     <View style={styles.screen}>
-      <ChromeGlassSheet blockH={blockH} barH={FILTER_ROW_H + FILTER_ROW_GAP_BOTTOM} />
+      <ChromeGlassSheet blockH={blockH} barH={0} scrolledProgress={scrolledProgress} />
       <ChromeHeaderBox
         insetsTop={insets.top}
         isDark={isDark}
         contentReady={contentReady}
         withGlass={false}
         onSearchPress={handleSearchPress}
-        dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} />}
+        headerActions={headerActions}
+        dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} />}
       />
-      <View pointerEvents="box-none" style={{ position: 'absolute', top: blockH, left: 0, right: 0, zIndex: 11 }}>
-        <View style={[styles.filterBarWrap]}>
-          <FilterRow
-            semantic={semantic}
-            styles={styles}
-            activeSort={activeSort}
-            activeAttr={activeAttr}
-            activeFilterCount={activeFilterCount}
-            onToggleSort={toggleSort}
-            onToggleAttr={toggleAttr}
-            onOpenFilters={openFilterSheet}
-          />
-        </View>
-      </View>
-      <FlatList
+      <Animated.FlatList
         removeClippedSubviews={false}
         data={list.items}
         keyExtractor={(item: ProductCard | undefined, index: number) => item?.id ?? String(index)}
@@ -685,13 +781,16 @@ const ShoppingHomeScreen: React.FC = () => {
         maxToRenderPerBatch={8}
         windowSize={7}
         updateCellsBatchingPeriod={50}
+        ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
-        onEndReached={list.loadMore}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.6}
-        contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
+        contentContainerStyle={[styles.listContent, { paddingTop: blockH + 8, paddingBottom: tabBarInset }]}
         showsVerticalScrollIndicator={false}
         style={styles.screenTransparent}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       />
       {filterSheetOpen ? (
         <FilterSheet
@@ -704,6 +803,7 @@ const ShoppingHomeScreen: React.FC = () => {
           bottomInset={insets.bottom}
         />
       ) : null}
+      {comingSoonToast}
     </View>
   );
 };
@@ -742,15 +842,10 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       paddingHorizontal: 12,
       height: FILTER_ROW_H,
     },
-    // ── Filter row: 2 hàng + nút Lọc cao 2 hàng ──
+    // ── Filter row: 2 compact chip rows, 24 each + 4 gap = 52 ──
     filterRow: {
-      flexDirection: 'row',
-      alignItems: 'stretch',
       height: FILTER_ROW_H,
-    },
-    chipGrid: {
-      flex: 1,
-      gap: 8,
+      gap: 4,
       justifyContent: 'center',
     },
     chipRowTop: {
@@ -765,8 +860,8 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
       flexGrow: 1,
       flexShrink: 1,
       flexBasis: 'auto',
-      height: 32,
-      minHeight: 32,
+      height: 24,
+      minHeight: 24,
       borderRadius: koolaRadii.pill,
       paddingHorizontal: 12,
       flexDirection: 'row',
@@ -784,33 +879,6 @@ const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') => {
     rowChipActive: {
       backgroundColor: semantic.action.primary,
       borderColor: semantic.action.primary,
-    },
-    filterTallBtn: {
-      width: 44,
-      height: FILTER_ROW_H,
-      borderRadius: koolaRadii.md,
-      backgroundColor: semantic.surface.level2,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: semantic.border.strong,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: 6,
-    },
-    filterTallBadge: {
-      position: 'absolute',
-      top: 6,
-      right: 4,
-      minWidth: 16,
-      height: 16,
-      borderRadius: koolaRadii.pill,
-      paddingHorizontal: 3,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#EF4444',
-    },
-    filterBadgeText: {
-      fontSize: 10,
-      lineHeight: 12,
     },
     // ── Filter sheet ──
     sheetContent: {

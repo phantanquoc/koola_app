@@ -9,7 +9,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RedisService } from './common/redis/redis.service';
-import { getAllowedOrigins } from './common/cors';
+import { isOriginAllowed } from './common/cors';
 import { startDevEnvWatcher } from './dev-env-watcher';
 import { minioClient, BUCKET, ensureBucketExists } from './media/minio-client';
 
@@ -77,8 +77,19 @@ async function bootstrap() {
 
   // CORS — restrict to configured origins. NODE_ENV=production requires
   // FRONTEND_URL to be set (comma-separated list of allowed origins).
+  // Function form so dev Vite LAN origins (http://<lan-ip>:5173) are
+  // evaluated per request via shared isOriginAllowed (see common/cors).
   app.enableCors({
-    origin: getAllowedOrigins(),
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!requestOrigin || isOriginAllowed(requestOrigin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${requestOrigin} not allowed by CORS`));
+      }
+    },
     credentials: true,
   });
 

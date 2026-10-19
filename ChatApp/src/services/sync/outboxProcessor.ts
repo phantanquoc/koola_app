@@ -24,6 +24,9 @@ import * as messageRepository from '../db/messageRepository';
 import { messagesApi } from '../api/apiService';
 import { logOutbox } from './outboxLog';
 
+// Lazily loaded to avoid a require cycle with momentsService (which imports
+// outboxRepository, whose enqueue() deferred-requires this processor).
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Handler = (payload: Record<string, unknown>) => Promise<void>;
@@ -195,6 +198,23 @@ registerHandler('delete_for_me', 1, async (payload) => {
 registerHandler('mark_read', 1, async (payload) => {
   const p = payload as unknown as outboxRepository.MarkReadPayloadV1;
   await messagesApi.markRead(p.conversationId, new Date(p.upToTimestamp).toISOString());
+});
+
+// create_post handler — text-only durable posts.
+// Idempotent via clientPostId: server returns the existing post on replay,
+// so a retry after a lost response cannot create a duplicate.
+registerHandler('create_post', 1, async (payload) => {
+  const p = payload as unknown as outboxRepository.CreatePostPayloadV1;
+  // Deferred require breaks the momentsService <-> outboxProcessor cycle.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { postsApi } = require('../moments/postsApi');
+  await postsApi.createPost({
+    caption: p.caption,
+    audienceScope: p.audienceScope as Parameters<typeof postsApi.createPost>[0]['audienceScope'],
+    audienceListId: p.audienceListId,
+    mentions: p.mentions as Parameters<typeof postsApi.createPost>[0]['mentions'],
+    clientPostId: p.clientPostId,
+  });
 });
 
 // ─── Dispatch a single row ────────────────────────────────────────────────────

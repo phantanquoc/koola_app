@@ -12,6 +12,8 @@ import GroupInfoScreen from '../screens/main/GroupInfoScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import UniversalSearchScreen from '../screens/main/UniversalSearchScreen';
 import MomentComposerScreen from '../screens/moments/MomentComposerScreen';
+import PostComposerScreen from '../screens/moments/PostComposerScreen';
+import PostMediaViewerScreen from '../screens/moments/PostMediaViewerScreen';
 import MomentViewerScreen from '../screens/moments/MomentViewerScreen';
 import HighlightsScreen from '../screens/moments/HighlightsScreen';
 import AudienceListEditorScreen from '../screens/moments/AudienceListEditorScreen';
@@ -135,6 +137,16 @@ const ChatTabStack: React.FC = () => {
           name="MomentComposer"
           component={MomentComposerScreen}
           options={{ headerShown: false, presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="PostComposer"
+          component={PostComposerScreen}
+          options={{ headerShown: false, presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="PostMediaViewer"
+          component={PostMediaViewerScreen}
+          options={{ headerShown: false, presentation: 'fullScreenModal' }}
         />
         <Stack.Screen
           name="MomentViewer"

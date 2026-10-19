@@ -87,6 +87,7 @@ ChatApp/dev-config.json
 .gitnexus/parse-cache/
 
 # Local screenshots / dev artifacts
+.tmp/
 .screenshots/
 screenshots/
 koola_screen.png

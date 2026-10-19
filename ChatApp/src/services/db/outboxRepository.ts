@@ -25,7 +25,8 @@ export type OutboxOpType =
   | 'react'
   | 'delete'
   | 'delete_for_me'
-  | 'mark_read';
+  | 'mark_read'
+  | 'create_post';
 
 export type OutboxState = 'pending' | 'in_flight' | 'done' | 'dead_letter';
 
@@ -103,12 +104,21 @@ export interface MarkReadPayloadV1 {
   upToTimestamp: number;
 }
 
+export interface CreatePostPayloadV1 {
+  caption?: string;
+  audienceScope: string;
+  audienceListId?: string;
+  mentions?: Array<{ userId: string; displayName?: string }>;
+  clientPostId: string;
+}
+
 export type OutboxPayload =
   | SendMessagePayloadV1
   | ReactPayloadV1
   | DeletePayloadV1
   | DeleteForMePayloadV1
-  | MarkReadPayloadV1;
+  | MarkReadPayloadV1
+  | CreatePostPayloadV1;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -150,6 +160,8 @@ function serializeError(err: OutboxError): string {
   return s.length > 500 ? s.slice(0, 497) + '...' : s;
 }
 
+export const MOMENTS_POSTS_CONVERSATION_ID = 'moments:posts';
+
 function dedupKeyFor(
   opType: OutboxOpType,
   payload: OutboxPayload,
@@ -157,6 +169,11 @@ function dedupKeyFor(
   switch (opType) {
     case 'send_message':
       return null; // each send is independent
+    case 'create_post': {
+      // Idempotent replay dedupe: same clientPostId coalesces to one row
+      const p = payload as CreatePostPayloadV1;
+      return p.clientPostId;
+    }
     case 'react': {
       const p = payload as ReactPayloadV1;
       return `${p.messageId}:${p.userId}`;
@@ -232,13 +249,26 @@ export function enqueue(
     }
   }
 
+  // clientPostId required for create_post (idempotent replay dedupe)
+  if (opType === 'create_post') {
+    const p = payload as CreatePostPayloadV1;
+    if (!p.clientPostId) {
+      throw new Error('[outbox] enqueue: create_post requires clientPostId');
+    }
+  }
+
   const db = getDb();
   const now = Date.now();
   const id = generateClientId();
   const payloadVersion = options?.payloadVersion ?? 1;
   const dedupKey = dedupKeyFor(opType, payload);
   const messageId = messageIdFor(opType, payload);
-  const conversationId = (payload as { conversationId: string }).conversationId;
+  // create_post has no conversation: bucket under a sentinel conversation id so
+  // the NOT NULL column + per-conversation serial processing still apply.
+  const conversationId =
+    opType === 'create_post'
+      ? MOMENTS_POSTS_CONVERSATION_ID
+      : (payload as { conversationId: string }).conversationId;
 
   if (dedupKey === null) {
     // send_message: always INSERT

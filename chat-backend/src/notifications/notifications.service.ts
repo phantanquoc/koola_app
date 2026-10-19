@@ -192,6 +192,73 @@ export class NotificationsService {
     }
   }
 
+  // ─── Post Mention Push ────────────────────────────────────────────────────
+
+  /**
+   * Post variant of sendMentionPush: same eligibility gates (disabled /
+   * online / no-token / dedup) with a `notif:mention:<user>:<postId>` dedup
+   * key and a `koola://moments/post/:id` deep link.
+   */
+  async sendPostMentionPush(params: {
+    mentionedUserId: string;
+    authorName: string;
+    postId: string;
+    captionSnippet: string;
+  }): Promise<void> {
+    const { mentionedUserId, authorName, postId, captionSnippet } = params;
+
+    const user = await this.usersService.findById(mentionedUserId);
+    if (!user) return;
+
+    if (user.settings?.notificationsEnabled === false) return;
+    if (user.isOnline) return; // in-app handled by the post socket event
+    if (!user.fcmTokens || user.fcmTokens.length === 0) return;
+
+    // Dedup per (user, post) so re-processing a post doesn't double-push.
+    const dedupKey = `notif:mention:${mentionedUserId}:${postId}`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+
+    const body = captionSnippet
+      ? `${authorName} đã nhắc đến bạn: ${captionSnippet}`
+      : `${authorName} đã nhắc đến bạn trong một bài viết`;
+
+    const payload: FirebaseMessagingPayload = {
+      notification: { title: authorName, body },
+      data: {
+        type: 'post_mention',
+        postId,
+        deepLink: `koola://moments/post/${postId}`,
+        accountId: mentionedUserId,
+        accountType: (user.accountType as string) ?? 'personal',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    const tokens = user.fcmTokens.map((t) => t.token);
+    try {
+      await this.sendMulticast(mentionedUserId, tokens, payload);
+    } catch (err) {
+      this.logger.error(
+        `[Notifications] Failed to send post mention push to ${mentionedUserId}:`,
+        err,
+      );
+    }
+  }
+
   // ─── Order Update Push (commerce-orders D4) ─────────────────────────────────
 
   /** Dedup TTL for order pushes: one push per (user, order, status). */

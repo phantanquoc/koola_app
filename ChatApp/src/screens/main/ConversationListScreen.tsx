@@ -33,7 +33,6 @@ import { useLocalFirstFlag } from '../../config/featureFlags';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
-import * as syncStateRepository from '../../services/db/syncStateRepository';
 import {
   CONVERSATION_PAGE_SIZE,
   INITIAL_PAGINATION_STATE,
@@ -263,14 +262,12 @@ const ConversationListScreen: React.FC = () => {
     // Subscribe to invalidations
     const unsub = conversationRepository.subscribe(loadFromDb);
 
-    // Fire background sync if cursor is stale (> 60 s)
-    const cursor = syncStateRepository.getCursor('global');
-    const isStale = !cursor || Date.now() - new Date(cursor).getTime() > 60_000;
-    if (isStale) {
-      syncOnForeground().catch((err) =>
-        console.warn('[ConversationListScreen] background sync error:', err),
-      );
-    }
+    // Fire background sync if cursor is stale (> 60 s). The freshness check
+    // lives inside the orchestrator's debounced entry, which also merges
+    // burst triggers and skips while rate limited — so route through it.
+    syncOnForeground().catch((err) =>
+      console.warn('[ConversationListScreen] background sync error:', err),
+    );
 
     return unsub;
   }, [localFirstEnabled, activeAccount?._id]);

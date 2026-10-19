@@ -18,7 +18,31 @@ export function getAllowedOrigins(): string[] {
     );
   }
 
-  return ['http://localhost:8081', 'http://localhost:3000'];
+  return [
+    'http://localhost:8081',
+    'http://localhost:3000',
+    'http://localhost:5173',
+  ];
+}
+
+/**
+ * Vite dev-server origins (default port 5173) on any host. A static
+ * allow-list cannot enumerate every teammate's LAN IP, so in
+ * non-production we also accept `http://<any-host>:5173` — the admin-web
+ * `npm run dev` server. Production never reaches this branch because
+ * FRONTEND_URL is required there (see getAllowedOrigins).
+ */
+const DEV_VITE_ORIGIN_PATTERN =
+  /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]|(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+):5173$/;
+
+/**
+ * Single allow-check shared by HTTP (main.ts) and Socket.IO gateways
+ * (chat.gateway.ts, webrtc.gateway.ts).
+ */
+export function isOriginAllowed(requestOrigin: string): boolean {
+  if (getAllowedOrigins().includes(requestOrigin)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+  return DEV_VITE_ORIGIN_PATTERN.test(requestOrigin);
 }
 
 /**
@@ -49,8 +73,8 @@ export function socketCorsOrigin() {
       return;
     }
 
-    const allowed = getAllowedOrigins();
-    if (allowed.includes(requestOrigin)) {
+    const allowed = isOriginAllowed(requestOrigin);
+    if (allowed) {
       callback(null, true);
     } else {
       callback(new Error(`Origin ${requestOrigin} not allowed by CORS`));

@@ -1,0 +1,51 @@
+# Admin-web — Đối chiếu hiện trạng & checklist chuẩn (2026-10-15)
+
+Ký hiệu: ✓ đã có / ◐ có nhưng thiếu / ✗ chưa có.
+
+## A. Quản lý người dùng (core — app nào cũng phải có)
+
+1. ✓ Tìm kiếm + lọc + phân trang users, xem detail, ban/unban
+2. ◐ Ban có lý do + thời hạn + tự gỡ khi hết hạn — backend hỗ trợ (`reason`/`durationDays` trong `BanUserDto`) nhưng UI không gửi
+3. ✗ Lịch sử vi phạm của 1 user (reports + takedowns + bans gộp theo userId)
+4. ✗ Khóa/mở thiết bị hoặc thu hồi session (refresh token) khi tài khoản bị hack
+5. ✗ Phân vai trò admin (super-admin / moderator / support chỉ-đọc) + matrix quyền — hiện tại 1 role, 403 đá về login (xem `apiClient.ts` interceptor)
+6. ✗ 2FA cho tài khoản admin
+
+## B. Kiểm duyệt nội dung (đặc thù chat/moments)
+
+7. ✓ Tìm tin nhắn + xóa mềm, gỡ story, xử lý report
+8. ◐ Detail hội thoại (backend có `GET /admin/conversations/:id` nhưng UI chưa dùng); ◐ report chưa link tới target
+9. ✗ Hàng đợi kiểm duyệt tập trung (reports + nội dung auto-flag + Moments chờ duyệt gộp 1 queue theo độ ưu tiên)
+10. ✗ Xem được media (ảnh/video/story) trước khi gỡ — hiện gỡ "mù"
+11. ✗ Auto-mod assist: gắn cờ từ khóa/spam, rate-limit bất thường, user bị report nhiều lần tự nổi lên
+12. ✗ Kháng nghị (appeal): user khiếu nại quyết định takedown/ban, moderator xử lý vòng 2
+
+## C. Dữ liệu & vận hành
+
+13. ✓ Dashboard stats, analytics cơ bản, health check, audit log, broadcast
+14. ◐ Audit log chưa lọc/xem payload; ◐ health chưa lịch sử uptime/latency; ◐ broadcast chưa target/lịch/lịch sử đã gửi
+15. ✗ Quản trị push/FCM (xem template, gửi thử theo userId, tỉ lệ delivered)
+16. ✗ Quản trị OTP/SMS (tỉ lệ gửi thành công, chặn số spam, xem log gửi theo số điện thoại)
+17. ✗ Cấu hình động (feature flag, maintenance mode, version ép update, thông báo hệ thống) — không phải deploy để đổi
+18. ✗ Export dữ liệu (CSV users/orders/reports) phục vụ đối soát/kế toán/pháp lý
+
+## D. Thương mại (vì Koola có commerce)
+
+19. ✓ CRUD product, xem orders + detail, sellers picker
+20. ✗ Can thiệp đơn (đổi trạng thái, hoàn tiền, ghi chú nội bộ) — hiện read-only
+21. ✗ Duyệt seller + quản lý hoa hồng/phí
+22. ✗ Đối soát doanh thu (GMV, hoàn/hủy theo seller theo ngày)
+
+## E. An toàn nền tảng
+
+23. ✗ Rate-limit/quota monitor (ai đang spam API, top abusive IPs)
+24. ✗ Nhật ký đăng nhập admin (ai đã vào, từ IP nào) — khác với audit log thao tác
+25. ✗ Chế độ "view as user" hoặc giả lập tài khoản để debug khiếu nại
+
+## Thứ tự đề xuất (giá trị/rủi ro)
+
+1. Detail hội thoại + link report→target + xem media trước khi gỡ (rẻ, API đã có 1 phần; gỡ mù = rủi ro oan sai cao nhất)
+2. Ban có lý do + duration + lịch sử vi phạm theo user (backend đã hỗ trợ, chỉ thiếu UI)
+3. Bulk approve doanh nghiệp + search server-side Businesses (queue xác minh sẽ nghẽn khi seller tăng)
+4. Phân vai trò admin + sửa interceptor 403 (điều kiện tiên quyết trước khi thuê moderator/support)
+5. Can thiệp đơn hàng + đối soát GMV (khi commerce có giao dịch thật)
