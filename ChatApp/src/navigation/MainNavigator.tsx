@@ -67,7 +67,7 @@ const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail
 const FULLSCREEN_CONNECT_ROUTES: Record<string, true> = { BusinessProfile: true, BusinessSearch: true };
 export const TAB_BAR_FLOATING_INSET = 86;
 
-const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
+const TAB_DOCK_HEIGHT = 32; // minimal height matching icon box
 // Extra clearance ABOVE the floating dock so scrollable lists can't push their
 // last item into the area covered by the dock.
 const TAB_DOCK_BOTTOM_BUFFER = 12;
@@ -760,7 +760,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       pointerEvents={isHidden ? 'none' : 'box-none'}
       style={[
         styles.tabBarHost,
-        { paddingBottom: Math.max(insets.bottom, 4) + 6 },
+        { paddingBottom: Math.max(insets.bottom, 4) + 2 },
         hiddenStyle,
       ]}
       accessibilityElementsHidden={isHidden}
@@ -953,11 +953,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    // Headroom for the dock's drop shadow, which spreads ~12px above the dock
-    // (xl radius 24 minus its +12 downward offset). The host is anchored to
-    // bottom:0, so this only grows the top edge — the dock does not move, and
-    // `useTabBarBottomInset()` stays correct.
-    paddingTop: 10,
+    // Reduced shadow headroom for tighter dock spacing
+    paddingTop: 4,
     backgroundColor: 'transparent',
     zIndex: 20,
   },
@@ -983,7 +980,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: TAB_DOCK_PAD_X,
-    paddingVertical: 6,
+    paddingVertical: 3,
   },
   // BlurView glass fill — when wrapping dock content it must be a normal
   // (non-absolute) flex child so it contributes to tabDock's height.
@@ -1044,7 +1041,7 @@ const styles = StyleSheet.create({
   },
   travelBorder: {
     position: 'absolute',
-    top: 6,
+    top: 3,
     left: 0,
     width: TAB_ICON_BOX_W,
     height: TAB_ICON_BOX_H,
