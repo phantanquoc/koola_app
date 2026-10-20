@@ -7,8 +7,8 @@ Ký hiệu: ✓ đã có / ◐ có nhưng thiếu / ✗ chưa có.
 ## A. Quản lý người dùng (core — app nào cũng phải có)
 
 1. ✓ Tìm kiếm + lọc + phân trang users, xem detail, ban/unban
-2. ◐ Ban có lý do + thời hạn + tự gỡ khi hết hạn — backend hỗ trợ (`reason`/`durationDays` trong `BanUserDto`) nhưng UI không gửi
-3. ✗ Lịch sử vi phạm của 1 user (reports + takedowns + bans gộp theo userId)
+2. ◐ Ban có lý do + thời hạn + tự gỡ khi hết hạn — backend hỗ trợ (`reason`/`durationDays` trong `BanUserDto`, lưu `banReason`/`bannedUntil`, revoke refresh token) và UI đã gửi (dialog reason bắt buộc + select 1/3/7/30/vĩnh viễn — xong 2026-10-20); còn thiếu: job/cron tự gỡ khi hết hạn phía backend
+3. ✓ Lịch sử vi phạm của 1 user — tab trong drawer user detail, gộp reports + audit actions (ban/unban/takedown/soft-delete) — xong 2026-10-20; nâng cấp sau: backend filter audit theo target thay vì scan 100 bản ghi
 4. ✗ Khóa/mở thiết bị hoặc thu hồi session (refresh token) khi tài khoản bị hack
 5. ✗ Phân vai trò admin (super-admin / moderator / support chỉ-đọc) + matrix quyền — hiện tại 1 role; interceptor 403 đã sửa (hiện màn "bị hạ quyền", không đá về login — verify 2026-10-20)
 6. ✗ 2FA cho tài khoản admin

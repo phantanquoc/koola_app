@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
-import apiClient from '../apiClient';
+import { useState } from 'react';
+import { PageHeader } from '../components/PageHeader';
+import { TableShell } from '../components/TableShell';
+import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
+import { EmptyState } from '../components/EmptyState';
 import { VerificationBadge } from '../components/StatusBadge';
 import { initials } from '../components/formatters';
 import Dialog from '../components/Dialog';
 import { useToast } from '../components/Toast';
+import { useAdminList } from '../hooks/useAdminList';
+import { useUrlFilters } from '../hooks/useUrlFilters';
+import { BanDialog, useViolationHistory } from '../components/UserModeration';
+import apiClient from '../apiClient';
 
 interface User {
   _id: string;
@@ -14,139 +20,89 @@ interface User {
   phone?: string;
   accountType: string;
   isBanned: boolean;
+  banReason?: string | null;
+  bannedUntil?: string | null;
   verificationStatus?: string;
   rejectionReason?: string;
   ownerUserId?: string;
 }
 
-interface PaginatedUsers {
-  data: User[];
-  total: number;
-  page: number;
-  limit: number;
-}
+const LIMIT = 20;
 
 function accountTypeLabel(type: string) {
   return type === 'business' ? 'Doanh nghiệp' : 'Cá nhân';
 }
 
+function banStatus(u: User): string {
+  if (!u.isBanned) return 'Hoạt động';
+  if (u.bannedUntil) {
+    const until = new Date(u.bannedUntil);
+    if (until.getTime() > Date.now()) {
+      return `Cấm tới ${until.toLocaleDateString('vi-VN')}`;
+    }
+    return 'Hết hạn cấm (chờ gỡ)';
+  }
+  return 'Cấm vĩnh viễn';
+}
+
 export default function UsersPage() {
   const { addToast } = useToast();
-  const [users, setUsers] = useState<User[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const limit = 20;
+  const { values, set } = useUrlFilters({ search: '', accountType: '', page: '1' });
+  const page = Math.max(1, Number(values.page) || 1);
 
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [accountType, setAccountType] = useState<'personal' | 'business' | ''>('');
-
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [detailUser, setDetailUser] = useState<User | null>(null);
-  const [confirmBan, setConfirmBan] = useState<{
-    id: string;
-    action: 'ban' | 'unban';
-    name: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [banSubmitting, setBanSubmitting] = useState(false);
-  const [banError, setBanError] = useState<string | null>(null);
+  const [confirmBan, setConfirmBan] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
 
-  const [requestedPage, setRequestedPage] = useState(1);
+  const { rows, total, isLoading, isError, refetch } = useAdminList<User>(
+    ['users', values.search, values.accountType, page],
+    '/admin/users',
+    {
+      page,
+      limit: LIMIT,
+      search: values.search || undefined,
+      accountType: values.accountType || undefined,
+    },
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({
-      page: String(requestedPage),
-      limit: String(limit),
-    });
-    if (search) params.set('search', search);
-    if (accountType) params.set('accountType', accountType);
-    apiClient
-      .get<PaginatedUsers>(`/admin/users?${params.toString()}`)
-      .then((res) => {
-        if (cancelled) return;
-        setUsers(res.data.data);
-        setTotal(res.data.total);
-        setPage(res.data.page);
-      })
-      .catch(() => {
-        if (!cancelled) setError('Không thể tải danh sách người dùng.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [requestedPage, search, accountType]);
-
-  function handleSearchSubmit(e: FormEvent) {
-    e.preventDefault();
-    setRequestedPage(1);
-    setSearch(searchInput.trim());
-  }
-
-  function clearFilters() {
-    setSearch('');
-    setSearchInput('');
-    setAccountType('');
-    setRequestedPage(1);
-  }
+  const hasActiveFilters = Boolean(values.search || values.accountType);
 
   async function openDetail(id: string) {
+    setDetailId(id);
     try {
       const res = await apiClient.get<User>(`/admin/users/${id}`);
       setDetailUser(res.data);
     } catch {
       addToast('error', 'Không thể tải thông tin người dùng.');
+      setDetailId(null);
     }
   }
 
-  async function executeBanAction() {
-    if (!confirmBan || banSubmitting) return;
-    const { id, action } = confirmBan;
-    setBanSubmitting(true);
-    setBanError(null);
-    try {
-      await apiClient.post(`/admin/users/${id}/${action}`);
-      const isBanned = action === 'ban';
-      setUsers((prev) =>
-        prev.map((u) => (u._id === id ? { ...u, isBanned } : u)),
-      );
-      if (detailUser?._id === id) {
-        setDetailUser({ ...detailUser, isBanned });
-      }
-      addToast('success', action === 'ban' ? `Đã cấm "${confirmBan.name}".` : `Đã bỏ cấm "${confirmBan.name}".`);
-      setConfirmBan(null);
-      setBanError(null);
-    } catch {
-      setBanError('Thao tác thất bại. Vui lòng thử lại.');
-    } finally {
-      setBanSubmitting(false);
-    }
+  function afterBanAction(action: 'ban' | 'unban') {
+    addToast('success', action === 'ban' ? 'Đã cấm tài khoản.' : 'Đã bỏ cấm tài khoản.');
+    refetch();
+    if (detailId) openDetail(detailId);
   }
 
-  const totalPages = Math.ceil(total / limit);
-  const hasActiveFilters = Boolean(search || accountType);
+  const totalPages = Math.ceil(total / LIMIT);
 
   return (
     <div className="page-stack">
-      <header className="page-header">
-        <div>
-          <div className="page-eyebrow">Users</div>
-          <h1 className="page-title">Quản lý người dùng</h1>
-          <p className="page-description">
-            Tìm kiếm tài khoản, kiểm tra trạng thái và xử lý ban/unban mà không rời khỏi bảng.
-          </p>
-        </div>
-        <span className="badge badge-muted">{total.toLocaleString('vi-VN')} records</span>
-      </header>
-
-      <section className="table-shell" aria-label="Bang quan ly nguoi dung">
-        <form className="table-toolbar" onSubmit={handleSearchSubmit} aria-label="Tim kiem va loc nguoi dung">
+      <PageHeader title="Quản lý người dùng" description="Tìm kiếm tài khoản, kiểm tra trạng thái và xử lý ban/unban." />
+      <TableShell
+        title="Users"
+        actions={<span className="badge badge-muted">{total.toLocaleString('vi-VN')} records</span>}
+      >
+        <form
+          className="table-toolbar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const input = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value;
+            const type = (e.currentTarget.elements.namedItem('type') as HTMLSelectElement).value;
+            set({ search: input.trim(), accountType: type, page: '1' });
+          }}
+          aria-label="Tìm kiếm và lọc người dùng"
+        >
           <div className="table-toolbar-main">
             <div className="form-field search-field">
               <label className="form-label" htmlFor="user-search">
@@ -155,11 +111,11 @@ export default function UsersPage() {
               <input
                 className="input"
                 id="user-search"
+                name="q"
                 type="search"
                 placeholder="Tên, email, số điện thoại..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                aria-label="Tu khoa tim kiem"
+                defaultValue={values.search}
+                key={values.search}
               />
             </div>
             <div className="form-field">
@@ -169,12 +125,10 @@ export default function UsersPage() {
               <select
                 className="select"
                 id="account-type-filter"
-                value={accountType}
-                onChange={(e) => {
-                  setRequestedPage(1);
-                  setAccountType(e.target.value as 'personal' | 'business' | '');
-                }}
-                aria-label="Loc theo loai tai khoan"
+                name="type"
+                defaultValue={values.accountType}
+                key={values.accountType}
+                onChange={(e) => set({ accountType: e.target.value, page: '1' })}
               >
                 <option value="">Tất cả loại</option>
                 <option value="personal">Cá nhân</option>
@@ -185,47 +139,25 @@ export default function UsersPage() {
               Tìm
             </button>
             {hasActiveFilters && (
-              <button className="btn btn-ghost" onClick={clearFilters} type="button">
+              <button className="btn btn-ghost" onClick={() => set({ search: '', accountType: '', page: '1' })} type="button">
                 Xóa lọc
               </button>
             )}
           </div>
         </form>
 
-        {hasActiveFilters && (
-          <div className="filter-chip-row" aria-label="Bo loc dang bat">
-            {search && <span className="filter-chip">Từ khóa: {search}</span>}
-            {accountType && <span className="filter-chip">Loại: {accountTypeLabel(accountType)}</span>}
-          </div>
+        {isError && (
+          <p className="alert" role="alert" style={{ margin: 'var(--space-5)' }}>
+            Không thể tải danh sách người dùng.
+          </p>
         )}
-
-        {error && <p className="alert" role="alert" style={{ margin: 'var(--space-5)' }}>{error}</p>}
-
-        {loading && (
-          <StateBlock
-            variant="loading"
-            icon="⌁"
-            title="Đang tải danh sách"
-            copy="Koola đang lấy dữ liệu người dùng mới nhất."
-          />
+        {isLoading && (
+          <StateBlock variant="loading" icon="⌁" title="Đang tải danh sách" copy="Koola đang lấy dữ liệu người dùng mới nhất." />
         )}
-
-        {!loading && users.length === 0 && !error && (
-          <StateBlock
-            variant="empty"
-            icon="◎"
-            title="Không tìm thấy người dùng"
-            copy="Thử đổi từ khóa hoặc xóa bộ lọc để xem toàn bộ danh sách."
-          >
-            {hasActiveFilters && (
-              <button className="btn btn-secondary" onClick={clearFilters} type="button">
-                Xóa bộ lọc
-              </button>
-            )}
-          </StateBlock>
+        {!isLoading && !isError && rows.length === 0 && (
+          <EmptyState title="Không tìm thấy người dùng" copy="Thử đổi từ khóa hoặc xóa bộ lọc." />
         )}
-
-        {!loading && users.length > 0 && (
+        {!isLoading && !isError && rows.length > 0 && (
           <div className="table-scroll">
             <table className="data-table" aria-label="Danh sách người dùng">
               <thead>
@@ -235,22 +167,21 @@ export default function UsersPage() {
                   <th scope="col">Loại</th>
                   <th scope="col">Trạng thái</th>
                   <th scope="col">Xác minh</th>
-                  <th scope="col">Hành động</th>
+                  <th scope="col" className="col-actions">
+                    Hành động
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {rows.map((u) => (
                   <tr key={u._id}>
                     <td>
                       <div className="cell-primary">
-                        <div className="cell-avatar" aria-hidden="true">{initials(u.displayName, 'U')}</div>
+                        <div className="cell-avatar" aria-hidden="true">
+                          {initials(u.displayName, 'U')}
+                        </div>
                         <div>
-                          <button
-                            className="cell-link"
-                            onClick={() => openDetail(u._id)}
-                            type="button"
-                            aria-label={`Xem chi tiet ${u.displayName}`}
-                          >
+                          <button className="cell-link" onClick={() => openDetail(u._id)} type="button">
                             {u.displayName}
                           </button>
                           <div className="cell-meta k-mono">{u._id}</div>
@@ -270,11 +201,12 @@ export default function UsersPage() {
                       <span className={u.isBanned ? 'badge badge-danger' : 'badge badge-success'}>
                         {u.isBanned ? 'Đã cấm' : 'Hoạt động'}
                       </span>
+                      {u.isBanned && u.banReason && <div className="cell-meta">{u.banReason}</div>}
                     </td>
                     <td>
                       <VerificationBadge status={u.verificationStatus} />
                     </td>
-                    <td>
+                    <td className="col-actions">
                       <div className="table-actions">
                         <button className="btn btn-secondary btn-sm" onClick={() => openDetail(u._id)} type="button">
                           Chi tiết
@@ -282,18 +214,16 @@ export default function UsersPage() {
                         {u.isBanned ? (
                           <button
                             className="btn btn-secondary btn-sm"
-                            onClick={() => setConfirmBan({ id: u._id, action: 'unban', name: u.displayName })}
+                            onClick={() => setConfirmBan({ id: u._id, name: u.displayName, action: 'unban' })}
                             type="button"
-                            aria-label={`Bo cam ${u.displayName}`}
                           >
                             Bỏ cấm
                           </button>
                         ) : (
                           <button
                             className="btn btn-danger-ghost btn-sm"
-                            onClick={() => setConfirmBan({ id: u._id, action: 'ban', name: u.displayName })}
+                            onClick={() => setConfirmBan({ id: u._id, name: u.displayName, action: 'ban' })}
                             type="button"
-                            aria-label={`Cam ${u.displayName}`}
                           >
                             Cấm
                           </button>
@@ -306,172 +236,119 @@ export default function UsersPage() {
             </table>
           </div>
         )}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          onPageChange={(p) => set({ page: String(p) })}
+        />
+      </TableShell>
 
-        {totalPages > 1 && (
-          <div className="table-footer">
-            <span className="cell-meta">
-              Trang {page} / {totalPages} · {total.toLocaleString('vi-VN')} người dùng
-            </span>
-            <div className="pagination-controls">
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setRequestedPage(page - 1)}
-                disabled={page <= 1}
-                type="button"
-                aria-label="Trang truoc"
-              >
-                Trước
-              </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setRequestedPage(page + 1)}
-                disabled={page >= totalPages}
-                type="button"
-                aria-label="Trang sau"
-              >
-                Sau
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* User detail drawer */}
-      <Dialog
-        open={detailUser !== null}
-        onClose={() => setDetailUser(null)}
-        labelId="detail-dialog-title"
-        variant="drawer"
-      >
-        {detailUser && (
-          <aside className="drawer">
-            <div className="drawer-header">
-              <div>
-                <div className="page-eyebrow">User profile</div>
-                <h2 id="detail-dialog-title" className="panel-title">{detailUser.displayName}</h2>
-                <p className="panel-subtitle">Thông tin tài khoản và trạng thái moderation.</p>
-              </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setDetailUser(null)} type="button">
-                Đóng
-              </button>
-            </div>
-            <div className="drawer-body page-stack">
-              <div className="cell-primary">
-                <div className="cell-avatar" aria-hidden="true">{initials(detailUser.displayName, 'U')}</div>
-                <div>
-                  <div className="cell-title">{detailUser.displayName}</div>
-                  <div className="cell-meta k-mono">{detailUser._id}</div>
-                </div>
-              </div>
-
-              <dl className="description-list">
-                <dt>Email</dt>
-                <dd>{detailUser.email ?? '—'}</dd>
-                <dt>Điện thoại</dt>
-                <dd>{detailUser.phone ?? '—'}</dd>
-                <dt>Loại tài khoản</dt>
-                <dd>{accountTypeLabel(detailUser.accountType)}</dd>
-                <dt>Trạng thái</dt>
-                <dd>{detailUser.isBanned ? 'Đã bị cấm' : 'Hoạt động'}</dd>
-                {detailUser.accountType === 'business' && (
-                  <>
-                    <dt>Trạng thái xác minh</dt>
-                    <dd>{detailUser.verificationStatus ?? '—'}</dd>
-                    {detailUser.rejectionReason && (
-                      <>
-                        <dt>Lý do từ chối</dt>
-                        <dd>{detailUser.rejectionReason}</dd>
-                      </>
-                    )}
-                    {detailUser.ownerUserId && (
-                      <>
-                        <dt>Chủ sở hữu</dt>
-                        <dd className="k-mono">{detailUser.ownerUserId}</dd>
-                      </>
-                    )}
-                  </>
-                )}
-              </dl>
-
-              <div className="surface-card" style={{ padding: 'var(--space-4)' }}>
-                <div className="panel-title">Moderation</div>
-                <p className="panel-subtitle">Hành động này ảnh hưởng trực tiếp đến khả năng truy cập của user.</p>
-                <div style={{ marginTop: 'var(--space-4)' }}>
-                  {detailUser.isBanned ? (
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => setConfirmBan({ id: detailUser._id, action: 'unban', name: detailUser.displayName })}
-                      type="button"
-                    >
-                      Bỏ cấm
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => setConfirmBan({ id: detailUser._id, action: 'ban', name: detailUser.displayName })}
-                      type="button"
-                    >
-                      Cấm người dùng
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
-      </Dialog>
-
-      {/* Ban/Unban confirmation dialog */}
-      <Dialog
-        open={confirmBan !== null}
-        onClose={() => { if (!banSubmitting) { setConfirmBan(null); setBanError(null); } }}
-        labelId="confirm-dialog-title"
-        variant="dialog"
-      >
-        {confirmBan && (
-          <div className="dialog">
-            <div className="dialog-header">
-              <div>
-                <h2 id="confirm-dialog-title" className="panel-title">Xác nhận thao tác</h2>
-                <p className="panel-subtitle">
-                  {confirmBan.action === 'ban'
-                    ? `Bạn có chắc muốn cấm "${confirmBan.name}"?`
-                    : `Bạn có chắc muốn bỏ cấm "${confirmBan.name}"?`}
-                </p>
-              </div>
-            </div>
-            <div className="dialog-body">
-              {banError && (
-                <p className="alert" role="alert">
-                  {banError}
-                </p>
-              )}
-              <div className="table-actions">
-                <button
-                  className={confirmBan.action === 'ban' ? 'btn btn-danger' : 'btn btn-primary'}
-                  onClick={executeBanAction}
-                  type="button"
-                  disabled={banSubmitting}
-                >
-                  {banSubmitting
-                    ? 'Đang xử lý...'
-                    : confirmBan.action === 'ban'
-                    ? 'Xác nhận cấm'
-                    : 'Bỏ cấm'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => { setConfirmBan(null); setBanError(null); }}
-                  type="button"
-                  disabled={banSubmitting}
-                >
-                  Hủy
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Dialog>
+      <UserDetailDrawer
+        user={detailUser}
+        onClose={() => {
+          setDetailUser(null);
+          setDetailId(null);
+        }}
+        onBan={(u) => setConfirmBan({ id: u._id, name: u.displayName, action: u.isBanned ? 'unban' : 'ban' })}
+      />
+      <BanDialog target={confirmBan} onClose={() => setConfirmBan(null)} onDone={afterBanAction} />
     </div>
+  );
+}
+
+function UserDetailDrawer({
+  user,
+  onClose,
+  onBan,
+}: {
+  user: User | null;
+  onClose: () => void;
+  onBan: (u: User) => void;
+}) {
+  const [tab, setTab] = useState<'info' | 'history'>('info');
+  const { entries, loading } = useViolationHistory(user?._id ?? null);
+
+  return (
+    <Dialog open={user !== null} onClose={onClose} labelId="user-detail-title" variant="drawer">
+      {user && (
+        <aside className="drawer">
+          <div className="drawer-header">
+            <div>
+              <div className="page-eyebrow">User profile</div>
+              <h2 id="user-detail-title" className="panel-title">
+                {user.displayName}
+              </h2>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={onClose} type="button">
+              Đóng
+            </button>
+          </div>
+          <div className="drawer-body page-stack">
+            <div className="tabs" role="tablist" aria-label="Thông tin người dùng">
+              <button role="tab" aria-selected={tab === 'info'} onClick={() => setTab('info')} type="button">
+                Thông tin
+              </button>
+              <button role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')} type="button">
+                Lịch sử vi phạm
+              </button>
+            </div>
+
+            {tab === 'info' && (
+              <>
+                <dl className="description-list">
+                  <dt>Email</dt>
+                  <dd>{user.email ?? '—'}</dd>
+                  <dt>Điện thoại</dt>
+                  <dd>{user.phone ?? '—'}</dd>
+                  <dt>Loại tài khoản</dt>
+                  <dd>{accountTypeLabel(user.accountType)}</dd>
+                  <dt>Trạng thái</dt>
+                  <dd>{banStatus(user)}</dd>
+                  {user.banReason && (
+                    <>
+                      <dt>Lý do cấm</dt>
+                      <dd>{user.banReason}</dd>
+                    </>
+                  )}
+                </dl>
+                <button
+                  className={user.isBanned ? 'btn btn-secondary' : 'btn btn-danger'}
+                  onClick={() => onBan(user)}
+                  type="button"
+                >
+                  {user.isBanned ? 'Bỏ cấm' : 'Cấm người dùng'}
+                </button>
+              </>
+            )}
+
+            {tab === 'history' && (
+              <section className="panel">
+                <div className="panel-header">
+                  <div className="panel-title">Lịch sử vi phạm ({entries.length})</div>
+                </div>
+                <div className="panel-body">
+                  {loading && <div className="skeleton-card" aria-label="Đang tải lịch sử" />}
+                  {!loading && entries.length === 0 && (
+                    <p className="cell-meta">Chưa có vi phạm nào được ghi nhận.</p>
+                  )}
+                  {entries.map((e, i) => (
+                    <div className="queue-item" key={i}>
+                      <div>
+                        <strong>{e.title}</strong>
+                        <span>
+                          {e.status ? `${e.status} · ` : ''}
+                          {e.at ?? ''}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        </aside>
+      )}
+    </Dialog>
   );
 }
