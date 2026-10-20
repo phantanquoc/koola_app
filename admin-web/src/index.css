@@ -477,9 +477,9 @@ code,
 }
 
 .page-title {
-  font-size: clamp(28px, 4vw, 40px);
+  font-size: clamp(20px, 2.5vw, 24px);
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
 .page-description {
@@ -555,27 +555,18 @@ code,
   box-shadow: var(--shadow-subtle);
 }
 
-.metric-card::after {
-  position: absolute;
-  right: -34px;
-  top: -44px;
-  width: 120px;
-  height: 120px;
-  border-radius: var(--radius-pill);
-  background: var(--koola-primary-soft);
-  content: '';
+.metric-card.warning,
+.metric-card.success,
+.metric-card.danger {
+  border-left: 3px solid var(--koola-warning);
 }
 
-.metric-card.warning::after {
-  background: var(--koola-warning-soft);
+.metric-card.success {
+  border-left-color: var(--koola-success);
 }
 
-.metric-card.success::after {
-  background: var(--koola-success-soft);
-}
-
-.metric-card.danger::after {
-  background: var(--koola-danger-soft);
+.metric-card.danger {
+  border-left-color: var(--koola-danger);
 }
 
 .metric-topline {
@@ -652,7 +643,7 @@ code,
 }
 
 .btn-primary:hover {
-  background: var(--koola-primary-dark);
+  background: color-mix(in srgb, var(--koola-ink) 88%, black);
 }
 
 .btn-secondary {
@@ -834,6 +825,7 @@ code,
   min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
+  font-size: 13.5px;
 }
 
 .data-table th {
@@ -846,16 +838,52 @@ code,
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
-  padding: 13px 16px;
+  padding: 10px 16px;
   text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: var(--koola-ink);
+}
+
+/* Actions column pinned right on wide tables */
+.data-table th.col-actions,
+.data-table td.col-actions {
+  position: sticky;
+  right: 0;
+  background: var(--koola-surface);
+  box-shadow: -8px 0 12px -8px rgba(0, 0, 0, 0.12);
+}
+
+.data-table thead th.col-actions {
+  background: var(--koola-surface-soft);
+}
+
+/* Numeric / date / age columns: mono, right-aligned numbers */
+.data-table td.col-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table td.col-date {
+  font-family: var(--font-mono);
+  font-size: 13px;
   white-space: nowrap;
 }
 
 .data-table td {
   border-bottom: 1px solid var(--koola-line);
   color: var(--koola-ink);
-  padding: 15px 16px;
+  padding: 10px 16px;
   vertical-align: middle;
 }
 
@@ -1075,6 +1103,49 @@ code,
   border-radius: var(--radius-sm);
   object-fit: cover;
   box-shadow: var(--shadow-subtle);
+}
+
+/* Bulk bar: sticky row under the table toolbar */
+.bulk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  background: var(--koola-primary-soft);
+  padding: var(--space-3) var(--space-5);
+}
+
+/* Tabs / segmented control */
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface);
+  padding: 3px;
+  gap: 2px;
+}
+
+.tabs button {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--koola-muted);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+.tabs button:hover {
+  color: var(--koola-ink);
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--koola-ink);
+  color: var(--koola-surface);
 }
 
 .queue-list {

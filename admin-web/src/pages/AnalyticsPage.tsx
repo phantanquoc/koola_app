@@ -14,6 +14,11 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function AnalyticsPage() {
+  const ranges = [
+    { value: '7d', label: '7 ngày' },
+    { value: '30d', label: '30 ngày' },
+    { value: '90d', label: '90 ngày' },
+  ] as const;
   const [range, setRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [data, setData] = useState<any>(null);
   useEffect(() => { apiClient.get('/admin/analytics', { params: { range } }).then(r => setData(r.data)).catch(() => {}); }, [range]);
@@ -21,7 +26,7 @@ export default function AnalyticsPage() {
   const msgCounts = (data?.messagesDaily ?? []).map((d: any) => d.count) as number[];
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Tổng quan" title="Analytics" description="Tăng trưởng người dùng và hoạt động." actions={<select className="select" value={range} onChange={e => setRange(e.target.value as any)} aria-label="Chọn khoảng thời gian"><option value="7d">7 ngày</option><option value="30d">30 ngày</option><option value="90d">90 ngày</option></select>} />
+      <PageHeader eyebrow="Tổng quan" title="Analytics" description="Tăng trưởng người dùng và hoạt động." actions={<div className="tabs" role="tablist" aria-label="Chọn khoảng thời gian">{ranges.map((r) => (<button key={r.value} role="tab" aria-selected={range === r.value} onClick={() => setRange(r.value)} type="button">{r.label}</button>))}</div>} />
       <section className="grid grid-2">
         <article className="panel"><div className="panel-header"><div><div className="panel-title">Người dùng mới/ngày</div></div></div><div className="panel-body"><Sparkline data={usersCounts} /></div></article>
         <article className="panel"><div className="panel-header"><div><div className="panel-title">Tin nhắn/ngày</div></div></div><div className="panel-body"><Sparkline data={msgCounts} /></div></article>
