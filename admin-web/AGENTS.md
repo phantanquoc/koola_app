@@ -57,9 +57,9 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/login` | `POST /api/auth/login` → `GET /api/admin/me` (platform-admin only, no self-register) |
 | `/` Dashboard | `GET /api/admin/stats` + sparklines |
 | `/analytics` | `GET /api/admin/analytics?range=7d\|30d\|90d` (recharts) |
-| `/businesses` | `GET /api/admin/businesses/pending`, approve/reject đơn + bulk, preview license qua presigned GET |
-| `/users` | `GET /api/admin/users` (search/filter), detail, `POST .../ban {reason, durationDays}` / `unban` |
-| `/conversations` + detail | list (type filter + search), detail = members + 20 tin nhắn gần nhất |
+| `/businesses` | `GET /api/admin/businesses/pending` (chỉ page/limit — chưa có search server-side, UI đang lọc client), approve/reject đơn + bulk, preview license qua presigned GET |
+| `/users` | `GET /api/admin/users` (search theo displayName/email/phone + `accountType`), detail, `POST .../ban {reason?, durationDays? 1-365}` / `unban` |
+| `/conversations` + detail | list (search tên + member, filter type/hasPendingReport/minReports/hasMedia/activeAfter/minMembers/maxMembers, sort recent/reported/created), detail = conversation + members + recentMessages (limit 1-50, mặc định 20, `before` để load thêm, `hasMore`, `reportedMessageCounts`) |
 | `/messages` | `GET /api/admin/messages/search` (`q` bắt buộc, lọc `conversationId`) + soft-delete có confirm |
 | `/moments` | `GET /api/admin/stories` (lọc authorId) + takedown |
 | `/music` | CRUD `/api/admin/music-tracks` (xóa mềm giữ toàn vẹn story) |
@@ -67,7 +67,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/products`, `/orders`, `/services`, `/stores` | commerce admin (products gồm cả inactive; orders read-only + detail; seller picker = business verified + unbanned) |
 | `/health` | `GET /api/admin/health` (mongo/redis/coturn/minio), **poll 30s**, không socket |
 | `/broadcast` | `POST /api/admin/broadcast {title, body}` + ghi chú preview (emit toàn server, gõ sai không undo) |
-| `/audit-logs` | bảng phân trang (actor, action, target, ip), link từ mỗi mutation |
+| `/audit-logs` | bảng phân trang — `GET /audit-logs` chỉ có page/limit (chưa lọc actor/action/ngày), link từ mỗi mutation |
 
 ## 4. Phase triển khai
 
@@ -93,9 +93,9 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 `admin.controller.ts`: `GET /me /stats /audit-logs /businesses/pending`, `POST /businesses/bulk-approve|bulk-reject|:id/approve|:id/reject`, `GET /users /users/:id`, `POST /users/:id/ban|unban`.
 `admin-moderation.controller.ts`: `GET /conversations /conversations/:id /messages/search /stories /reports /music-tracks /audience-lists`, `POST /messages/:id/soft-delete /stories/:id/takedown /reports/:id/resolve|dismiss`, full CRUD `/music-tracks`.
 `admin-ops.controller.ts`: `GET /analytics /health`, `POST /broadcast`.
-`commerce/admin-commerce.controller.ts`: `GET /commerce/orders /orders/:id /products /sellers /stores /services`, full CRUD products/stores/services.
-Throttle: 30 req/phút (`short`) + 200 req/phút (`long`), theo code thật
-(@Throttle ở admin-moderation/admin-ops controller). UI 429: disable nút 10s + pause polling.
+`commerce/admin-commerce.controller.ts`: `GET /commerce/orders /orders/:id /products /sellers /stores /services`, `POST/PATCH/DELETE /products/:id /stores/:id /services/:id` (CRUD đầy đủ — UI orders hiện read-only là quyết định frontend, không phải thiếu backend).
+Throttle: global 60 req/phút (`short`) + 600 req/phút (`long`); mutation admin
+(ban/approve/broadcast/soft-delete/...) siết 30/200. UI 429: disable nút 10s + pause polling.
 
 DTO backend nằm ở `chat-backend/src/admin/dto/` (+ commerce DTO cùng module):
 `BulkBusinessDto {ids[]}`, `BanUserDto {reason, durationDays}`, `RejectBusinessDto {rejectionReason}`,
@@ -127,8 +127,8 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
 - [ ] **Untrusted content:** nội dung của user (message search, report reason, displayName,
   tên business) render as text — cấm `dangerouslySetInnerHTML`; avatar/URL validate scheme
   http(s) trước khi render.
-- [ ] **429 rate-limit:** backend throttle 30 req/phút (`short`) + 200 req/phút (`long`)
-  — UI hiện "thao tác quá nhanh, thử lại sau", disable nút 10s + pause polling, không retry dồn dập.
+- [ ] **429 rate-limit:** global 60 req/phút (`short`) + 600 req/phút (`long`),
+  mutation admin siết 30/200 — UI hiện "thao tác quá nhanh, thử lại sau", disable nút 10s + pause polling, không retry dồn dập.
 - [ ] **i18n discipline:** không hardcode string hiển thị; mọi label qua react-i18next (vi/en);
   ngày/giờ/số format theo locale, thống nhất timezone hiển thị.
 - [ ] **Form UX:** validate inline từng field bằng zod, lỗi hiện cạnh field; disable submit

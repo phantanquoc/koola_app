@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
+import { AppQueryProvider } from './queryClient';
 import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RequireAuth } from './RequireAuth';
@@ -25,6 +26,7 @@ import AuditLogPage from './pages/AuditLogPage';
 export default function App() {
   return (
     <ErrorBoundary>
+      <AppQueryProvider>
       <AuthProvider>
         <ToastProvider>
           <BrowserRouter>
@@ -60,6 +62,7 @@ export default function App() {
           </BrowserRouter>
         </ToastProvider>
       </AuthProvider>
+      </AppQueryProvider>
     </ErrorBoundary>
   );
 }
