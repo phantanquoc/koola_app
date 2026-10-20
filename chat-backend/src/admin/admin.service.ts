@@ -13,6 +13,7 @@ import {
 import { MediaService } from '../media/media.service';
 import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
 import { ListUsersDto } from './dto/list-users.dto';
+import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 
@@ -94,7 +95,7 @@ export class AdminService {
 
   // ─── GET /admin/businesses/pending ─────────────────────────────────────────
 
-  async listPendingBusinesses(dto: PaginationDto): Promise<{
+  async listPendingBusinesses(dto: ListPendingBusinessesDto): Promise<{
     data: (UserDocument & { licenseImageUrl: string | null })[];
     total: number;
     page: number;
@@ -108,6 +109,15 @@ export class AdminService {
       accountType: 'business',
       verificationStatus: 'pending',
     };
+
+    if (dto.search && dto.search.trim().length > 0) {
+      const escaped = escapeRegExp(dto.search.trim());
+      const regex = new RegExp(escaped, 'i');
+      (filter as Record<string, unknown>).$or = [
+        { displayName: regex },
+        { email: regex },
+      ];
+    }
 
     const [docs, total] = await Promise.all([
       this.userModel

@@ -27,6 +27,7 @@ import { ListUsersDto } from './dto/list-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { BulkBusinessDto } from './dto/bulk-business.dto';
+import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { AdminAuditService } from './admin-audit.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { Request } from 'express';
@@ -73,7 +74,7 @@ export class AdminController {
   // ─── Business verification ──────────────────────────────────────────────────
 
   @Get('businesses/pending')
-  async listPendingBusinesses(@Query() dto: PaginationDto) {
+  async listPendingBusinesses(@Query() dto: ListPendingBusinessesDto) {
     return this.adminService.listPendingBusinesses(dto);
   }
 
