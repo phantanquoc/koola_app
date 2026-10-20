@@ -41,7 +41,7 @@ npm run lint             # ESLint
 npm run preview          # Serve the production build locally
 ```
 
-Config: copy `admin-web/.env.example` → `admin-web/.env`, set `VITE_API_URL` to the backend base URL (e.g. `http://localhost:3000`).
+Config: copy `admin-web/.env.example` → `admin-web/.env`, set `VITE_API_URL` to the backend base URL **including the `/api` prefix** (e.g. `http://localhost:3000/api`).
 
 #### Bootstrap the first platform admin
 

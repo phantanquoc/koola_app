@@ -48,7 +48,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
     qua hằng số tường minh.
 12. Mọi việc UI đọc `admin-web/DESIGN.md` trước khi code: token qua `var(--...)`
     (cấm hex/px cứng), dùng kit `src/components/` (cấm chế component mới khi kit có),
-    trạng thái qua `StatusBadge` đúng mapping màu, xong check checklist UI §7 DESIGN.md.
+    trạng thái qua `StatusBadge` đúng mapping màu, xong check checklist UI trong DESIGN.md.
 
 ## 3. Kiến trúc trang (Information Architecture)
 
@@ -71,14 +71,14 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 
 ## 4. Phase triển khai
 
-- **P1 Foundation fix** — sửa `config.ts` + fail-fast env; viết lại apiClient:
-  interceptor 401-refresh-retry (dùng `POST /api/auth/refresh`), 403 hiện màn demote
-  (KHÔNG redirect /login vòng lặp như code hiện tại); root Error Boundary + scaffold i18n Vi/En;
-  giữ router v7 + CSS kit; gate eslint+tsc.
-- **P2 Moderation core** — lấp stub rủi ro cao nhất: conversations (+detail — cần thêm
-  route `conversations/:id`, `users/:id`, `stores` vào App.tsx; detail conversation cần
-  backend bổ sung `GET /admin/conversations/:id` vì hiện chưa có),
-  messages (search + soft-delete), reports (resolve/dismiss), audit-logs.
+- **P1 Foundation fix** — sửa `config.ts` + fail-fast env; apiClient đã có
+  interceptor 401-refresh-retry single-flight (`POST /api/auth/refresh`) + màn 403-demote
+  (KHÔNG redirect /login vòng lặp — xong, verify 2026-10-20); còn lại: root Error Boundary +
+  scaffold i18n Vi/En; giữ router v7 + CSS kit; gate eslint+tsc.
+- **P2 Moderation core** — lấp stub rủi ro cao nhất: conversations (+detail —
+  `GET /admin/conversations/:id` đã có cả backend lẫn UI workbench; cần thêm
+  route `users/:id`, `stores` vào App.tsx nếu chưa có),
+  messages (search + soft-delete), reports (resolve/dismiss + link tới target), audit-logs.
 - **P3 Identity & business** — migrate Businesses/Users sang Query + kit (giữ BulkBar);
   modal preview license (URL mới mỗi lần mở); moments takedown + music CRUD đúng
   `/admin/*`; chip identity `/me` ở header.
@@ -168,9 +168,8 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
 
 ## 7. Rủi ro đã biết
 
-- Backend CÓ `POST /api/auth/refresh` (auth.controller.ts:115-123) — silent refresh khả thi.
-  Việc còn lại là code: apiClient hiện redirect thẳng về /login khi 401/403 (P1 phải viết
-  lại interceptor 401-refresh-retry + màn 403-demote, không redirect vòng lặp).
+- `POST /api/auth/refresh` (auth.controller.ts:115-123) + apiClient single-flight
+  401-refresh-retry + màn 403-demote đã xong (verify 2026-10-20) — không redirect /login vòng lặp.
 - `POST /admin/broadcast` emit toàn server, không undo — form cần confirm 2 bước.
 - Chưa có endpoint REST cho live stats (online users, calls đang diễn ra) — Redis hiện chỉ là pub/sub adapter; dashboard live counter cần endpoint mới phía backend.
 - Production: quên thêm origin admin-web vào `FRONTEND_URL` là gãy toàn bộ (chỉ lộ ở prod, dev không thấy).

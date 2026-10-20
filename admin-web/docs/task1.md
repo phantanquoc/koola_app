@@ -2,19 +2,21 @@
 
 Ký hiệu: ✓ đã có / ◐ có nhưng thiếu / ✗ chưa có.
 
+> Đối chiếu code lần cuối: 2026-10-20 (nhánh `feat/admin-p1-and-fixes`).
+
 ## A. Quản lý người dùng (core — app nào cũng phải có)
 
 1. ✓ Tìm kiếm + lọc + phân trang users, xem detail, ban/unban
 2. ◐ Ban có lý do + thời hạn + tự gỡ khi hết hạn — backend hỗ trợ (`reason`/`durationDays` trong `BanUserDto`) nhưng UI không gửi
 3. ✗ Lịch sử vi phạm của 1 user (reports + takedowns + bans gộp theo userId)
 4. ✗ Khóa/mở thiết bị hoặc thu hồi session (refresh token) khi tài khoản bị hack
-5. ✗ Phân vai trò admin (super-admin / moderator / support chỉ-đọc) + matrix quyền — hiện tại 1 role, 403 đá về login (xem `apiClient.ts` interceptor)
+5. ✗ Phân vai trò admin (super-admin / moderator / support chỉ-đọc) + matrix quyền — hiện tại 1 role; interceptor 403 đã sửa (hiện màn "bị hạ quyền", không đá về login — verify 2026-10-20)
 6. ✗ 2FA cho tài khoản admin
 
 ## B. Kiểm duyệt nội dung (đặc thù chat/moments)
 
 7. ✓ Tìm tin nhắn + xóa mềm, gỡ story, xử lý report
-8. ◐ Detail hội thoại (backend có `GET /admin/conversations/:id` nhưng UI chưa dùng); ◐ report chưa link tới target
+8. ◐ Detail hội thoại đã có UI (`ConversationsPage` gọi `GET /admin/conversations/:id` — verify 2026-10-20); ◐ report chưa link tới target
 9. ✗ Hàng đợi kiểm duyệt tập trung (reports + nội dung auto-flag + Moments chờ duyệt gộp 1 queue theo độ ưu tiên)
 10. ✗ Xem được media (ảnh/video/story) trước khi gỡ — hiện gỡ "mù"
 11. ✗ Auto-mod assist: gắn cờ từ khóa/spam, rate-limit bất thường, user bị report nhiều lần tự nổi lên
