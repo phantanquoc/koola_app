@@ -16,9 +16,9 @@ Ký hiệu: ✓ đã có / ◐ có nhưng thiếu / ✗ chưa có.
 ## B. Kiểm duyệt nội dung (đặc thù chat/moments)
 
 7. ✓ Tìm tin nhắn + xóa mềm, gỡ story, xử lý report
-8. ◐ Detail hội thoại đã có UI (`ConversationsPage` gọi `GET /admin/conversations/:id` — verify 2026-10-20); ◐ report chưa link tới target
+8. ◐ Detail hội thoại đã có UI (`ConversationsPage` gọi `GET /admin/conversations/:id` — verify 2026-10-20); ✓ report link tới target (drawer moderation context + deep-link `/messages?focus=` `/conversations?focus=` `/users?search=` `/moments?focus=` — xong 2026-10-20)
 9. ✗ Hàng đợi kiểm duyệt tập trung (reports + nội dung auto-flag + Moments chờ duyệt gộp 1 queue theo độ ưu tiên)
-10. ✗ Xem được media (ảnh/video/story) trước khi gỡ — hiện gỡ "mù"
+10. ✗ Xem được media (ảnh/video/story) trước khi gỡ — hiện gỡ "mù" (ghi nợ backend: cần `GET /admin/media/preview?key=` — `GET /media/:mediaKey` hiện yêu cầu membership conversation nên admin bị 403; drawer đã hiện mediaKey thô)
 11. ✗ Auto-mod assist: gắn cờ từ khóa/spam, rate-limit bất thường, user bị report nhiều lần tự nổi lên
 12. ✗ Kháng nghị (appeal): user khiếu nại quyết định takedown/ban, moderator xử lý vòng 2
 
