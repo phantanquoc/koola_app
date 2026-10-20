@@ -27,7 +27,13 @@ function errorWithStatus(status: number, url = '/admin/health') {
 }
 
 describe('apiClient', () => {
-  let postSpy: ReturnType<typeof vi.spyOn> | undefined;
+  // Minimal spy surface used below; avoids axios overloaded-method generics.
+  let postSpy: {
+    mockResolvedValueOnce: (v: unknown) => void;
+    mockRejectedValueOnce: (e: unknown) => void;
+    mockRestore: () => void;
+    mock: { calls: unknown[][] };
+  };
 
   beforeEach(() => {
     localStorage.clear();
@@ -37,8 +43,7 @@ describe('apiClient', () => {
   });
 
   afterEach(() => {
-    postSpy?.mockRestore();
-    apiClient.defaults.adapter = undefined as never;
+    postSpy?.mockRestore();    apiClient.defaults.adapter = undefined as never;
   });
 
   it('401 → silent refresh rotates both tokens and retries the request once', async () => {
@@ -58,7 +63,7 @@ describe('apiClient', () => {
     const res = await apiClient.get('/admin/health');
     expect(res.data).toEqual({ ok: true });
     expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy.mock.calls[0][1]).toEqual({ refreshToken: 'valid-refresh' });
+    expect(postSpy.mock.calls[0]?.[1]).toEqual({ refreshToken: 'valid-refresh' });
     expect(tokenStorage.getAccess()).toBe('new-access');
     expect(tokenStorage.getRefresh()).toBe('new-refresh');
     expect(seenAuth[1]).toBe('Bearer new-access');

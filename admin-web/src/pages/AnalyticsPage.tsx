@@ -2,7 +2,18 @@ import { useEffect, useState } from 'react';
 import apiClient from '../apiClient';
 import { PageHeader } from '../components/PageHeader';
 
+interface AnalyticsDay {
+  count: number;
+}
+
+interface AnalyticsData {
+  usersDaily?: AnalyticsDay[];
+  messagesDaily?: AnalyticsDay[];
+  verificationFunnel?: { pending?: number; verified?: number };
+}
+
 function Sparkline({ data }: { data: number[] }) {
+  if (!data.length) return <div className="empty-state" style={{ minHeight: 80 }}>Không có dữ liệu</div>;
   if (!data.length) return <div className="empty-state" style={{ minHeight: 80 }}>Không có dữ liệu</div>;
   const max = Math.max(...data, 1);
   const points = data.map((v, i) => `${(i / Math.max(data.length - 1, 1)) * 100},${100 - (v / max) * 80 - 10}`).join(' ');
@@ -20,10 +31,10 @@ export default function AnalyticsPage() {
     { value: '90d', label: '90 ngày' },
   ] as const;
   const [range, setRange] = useState<'7d' | '30d' | '90d'>('7d');
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<AnalyticsData | null>(null);
   useEffect(() => { apiClient.get('/admin/analytics', { params: { range } }).then(r => setData(r.data)).catch(() => {}); }, [range]);
-  const usersCounts = (data?.usersDaily ?? []).map((d: any) => d.count) as number[];
-  const msgCounts = (data?.messagesDaily ?? []).map((d: any) => d.count) as number[];
+  const usersCounts = (data?.usersDaily ?? []).map((d) => d.count);
+  const msgCounts = (data?.messagesDaily ?? []).map((d) => d.count);
   return (
     <div className="page-stack">
       <PageHeader eyebrow="Tổng quan" title="Analytics" description="Tăng trưởng người dùng và hoạt động." actions={<div className="tabs" role="tablist" aria-label="Chọn khoảng thời gian">{ranges.map((r) => (<button key={r.value} role="tab" aria-selected={range === r.value} onClick={() => setRange(r.value)} type="button">{r.label}</button>))}</div>} />

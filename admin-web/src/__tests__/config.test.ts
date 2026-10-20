@@ -2,7 +2,7 @@
  * config tests: fail-fast on missing VITE_API_URL, no dead `as string ??`
  * fallback, trailing-slash trimming.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('config', () => {
   it('resolves apiUrl from VITE_API_URL (test env dummy)', async () => {
