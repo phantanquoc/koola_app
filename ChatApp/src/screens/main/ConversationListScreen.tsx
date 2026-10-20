@@ -658,8 +658,10 @@ const ConversationListScreen: React.FC = () => {
   };
 
   const handleStartChat = () => {
-    // Contacts are now a sub-tab within ChatHomeScreen (ChatSubTabParamList)
-    navigation.getParent()?.navigate('Contacts');
+    // ConversationListScreen IS the 'Messages' tab, so its `navigation` is
+    // already the TopTab navigator — navigate directly. getParent() reaches
+    // ChatTabStack which has no 'Contacts' route → NAVIGATE not handled.
+    navigation.navigate('Contacts');
   };
 
   const SeparatorComponent = useCallback(() => <Separator tokens={tokens.semantic} />, [tokens.semantic]);
