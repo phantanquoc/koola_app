@@ -191,6 +191,44 @@ function setSchemaVersion(version: number): void {
   }
 }
 
+/**
+ * Self-heal for stale on-device DBs whose schema_version already reads 4
+ * but whose conversations table predates migration 004 (missing
+ * muted_until / cleared_at). Every upsert then fails with
+ * "table conversations has no column named cleared_at" and the list stays
+ * empty. SQLite has no ADD COLUMN IF NOT EXISTS, so check PRAGMA
+ * table_info first. Idempotent: no-op when both columns exist, and ignores
+ * duplicate-column races instead of throwing.
+ */
+function ensureConversationPrefsColumns(): void {
+  const db = getDb();
+  try {
+    const info = db.execute('PRAGMA table_info(conversations)');
+    const rows = (info.rows?._array ?? []) as Array<{ name: string }>;
+    // No conversations table (should not happen post-migration) — nothing to heal.
+    if (rows.length === 0) return;
+    const names = new Set(rows.map((r) => r.name));
+    const missing: string[] = [];
+    if (!names.has('muted_until')) missing.push('muted_until');
+    if (!names.has('cleared_at')) missing.push('cleared_at');
+    for (const col of missing) {
+      try {
+        db.execute(
+          `ALTER TABLE conversations ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`,
+        );
+      } catch (err) {
+        // Another writer may have added it concurrently — only ignore that case.
+        if (!/duplicate column/i.test((err as Error).message)) throw err;
+      }
+    }
+  } catch (err) {
+    // PRAGMA itself failing means the DB is unusable; let the caller surface it,
+    // but never fail on the benign duplicate-column race handled above.
+    if (/duplicate column/i.test((err as Error).message)) return;
+    throw err;
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -202,7 +240,8 @@ export function runMigrations(): void {
   const currentVersion = getSchemaVersion();
 
   if (currentVersion >= CURRENT_VERSION) {
-    // Already up to date
+    // Already up to date — still self-heal stale v4 DBs missing 004 columns.
+    ensureConversationPrefsColumns();
     return;
   }
 
@@ -230,4 +269,8 @@ export function runMigrations(): void {
       );
     }
   }
+
+  // Heal DBs where migration 004 partially applied (e.g. first ALTER
+  // succeeded, second failed) or schema_version drifted ahead of columns.
+  ensureConversationPrefsColumns();
 }
