@@ -39,10 +39,15 @@ Quy tắc: cấm hex/px cứng ngoài `index.css`; auditor grep `#[0-9a-fA-F]` n
 - Environment banner 32px trên cùng: DEV = primary-soft/primary-dark;
   PROD = danger-soft/danger-dark + prefix "PROD".
 - Sidebar 264px / rail 76px icon-only, nav item 44px, active = primary-soft +
-  primary-dark; section label 11px uppercase; collapse lưu localStorage;
-  mobile ≤860px thành drawer + backdrop.
-- Topbar 72px: breadcrumb + title route trái; **global search** (`/` focus,
-  heuristic email/sĐT → users, còn lại → messages) + identity chip phải.
+  primary-dark; icon item thường nền trong suốt (primary chỉ cho active);
+  section label 11px uppercase; brand gọn (mark 32px + tên, collapsed chỉ mark);
+  nút thu gọn = tab floating (22×56px, radius-sm) ôm mép phải sidebar giữa chiều
+  cao; collapse lưu localStorage; logout ghost + confirm preview identity;
+  mobile ≤860px thành drawer + backdrop (giấu edge-toggle).
+- Topbar 72px: breadcrumb `Koola / {route}` trái (KHÔNG title — title thuộc page);
+  **command palette** (`/` hoặc Cmd/Ctrl+K mở, fuzzy không dấu, ↑↓+Enter+Esc)
+  tìm chức năng trước + fallback tìm users/messages + identity chip phải
+  (không badge thừa, ẩn text khi loading).
 - Content tối đa 1440px, padding 32px (16px ở mobile).
 
 ## 3. Archetype trang (mọi trang mới chọn 1 trong 4, không chế layout lạ)
@@ -110,7 +115,7 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `Tabs` / segmented | pill group, option active nền ink chữ trắng; dùng cho time-range và sub-view |
 | `SearchInput` | ô search trong toolbar, có kbd hint `/` khi là global |
 | `StatusBadge` | mapping cố định: active/verified/success → success; pending → warning; banned/rejected/error → danger; unknown → muted |
-| `Dialog` / `ConfirmDialog` | focus-trap; destructive qua ConfirmDialog + reason bắt buộc |
+| `Dialog` / `ConfirmDialog` | focus-trap; destructive qua ConfirmDialog + reason bắt buộc; thứ tự nút: **confirm trước, Hủy sau** (mở dialog là Enter chốt luôn); preview slot tóm tắt create/update/delete; `requireText` type-to-confirm cho diện rộng/không undo |
 | `Drawer` 480px | moderation context theo thứ tự: nội dung gốc → target info + link → lịch sử cũ (tối đa 5 + deep-link xem tất cả) → actions |
 | `Toast` | feedback sau mutation; 429 = warning "thao tác quá nhanh" + disable nút 10s |
 | `Pagination` | mọi list; state trong URL |

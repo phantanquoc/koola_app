@@ -177,26 +177,42 @@ code,
   max-height: 100%;
   flex-direction: column;
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: visible;
   border-right: 1px solid var(--koola-line);
   background: var(--koola-surface);
   padding: var(--space-5) var(--space-4);
-  backdrop-filter: blur(14px);
   transition: width 200ms ease, padding 200ms ease;
 }
 
 .admin-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: var(--space-6);
+  gap: var(--space-3);
+  min-height: 44px;
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .admin-brand-logo {
   display: block;
-  height: auto;
-  max-width: 100%;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   object-fit: contain;
+}
+
+.admin-brand-name {
+  color: var(--koola-ink);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.admin-sidebar--collapsed .admin-brand {
+  justify-content: center;
+  padding: 0;
 }
 
 .sidebar-collapse-toggle {
@@ -207,6 +223,49 @@ code,
   place-items: center;
 }
 
+/* Floating rail toggle: slim rounded tab straddling the sidebar's right
+   edge, vertically centered (radius-sm to match the admin kit — not a circle) */
+.admin-edge-toggle {
+  position: absolute;
+  top: 50%;
+  right: -11px;
+  z-index: 30;
+  display: flex;
+  width: 22px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface);
+  color: var(--koola-muted);
+  cursor: pointer;
+  padding: 0;
+  transform: translateY(-50%);
+  transition: color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-edge-toggle > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-edge-toggle svg {
+  display: block;
+}
+
+.admin-edge-toggle:hover {
+  border-color: var(--koola-primary);
+  color: var(--koola-primary-dark);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+.admin-edge-toggle:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+}
+
 /* Collapsed rail: 76px icon-only, tooltip via title attr */
 .admin-sidebar--collapsed {
   width: 76px;
@@ -214,8 +273,8 @@ code,
 }
 
 .admin-sidebar--collapsed .admin-brand {
-  flex-direction: column;
-  gap: var(--space-2);
+  justify-content: center;
+  padding: 0;
 }
 
 .admin-sidebar--collapsed .admin-nav-section {
@@ -292,15 +351,27 @@ code,
   flex-shrink: 0;
   place-items: center;
   border-radius: var(--radius-sm);
-  background: var(--koola-primary-soft);
+  background: transparent;
+  color: inherit;
   font-size: 14px;
 }
 
+.admin-nav-link.active .admin-nav-icon {
+  background: var(--koola-primary-soft);
+}
+
 .admin-sidebar-footer {
+  display: flex;
   flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-1);
   border-top: 1px solid var(--koola-line);
   margin-top: auto;
-  padding-top: var(--space-4);
+  padding-top: var(--space-3);
+}
+
+.admin-collapse-btn {
+  min-height: 40px;
 }
 
 .admin-logout {
@@ -345,11 +416,22 @@ code,
 }
 
 .admin-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--koola-muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
+.admin-breadcrumb [aria-current='page'] {
+  color: var(--koola-ink);
+  font-weight: 800;
+}
+
+/* Legacy: route title lived in the topbar (double-header). Pages now own
+   their title via PageHeader; keep the class harmless for stale markup. */
 .admin-topbar-title {
   color: var(--koola-ink);
   font-size: 17px;
@@ -451,6 +533,148 @@ code,
   font-size: 12px;
   padding: 2px 6px;
   pointer-events: none;
+}
+
+/* Command palette trigger — looks like the old search field, is a button */
+.admin-palette-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: min(280px, 32vw);
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface-soft);
+  color: var(--koola-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding-left: 38px;
+  padding-right: 38px;
+  text-align: left;
+}
+
+.admin-palette-trigger:hover {
+  border-color: var(--koola-line-strong);
+}
+
+.admin-palette-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--koola-ink) 42%, transparent);
+  backdrop-filter: blur(4px);
+  padding: 12vh var(--space-4) var(--space-4);
+}
+
+.palette-panel {
+  width: min(560px, 100%);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  color: var(--koola-muted);
+  padding: var(--space-3) var(--space-4);
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--koola-ink);
+  font-size: 15px;
+  outline: none;
+  padding: 0;
+}
+
+.palette-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+}
+
+.palette-group {
+  color: var(--koola-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--koola-ink);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-3);
+}
+
+.palette-item.active {
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+}
+
+.palette-item-icon {
+  display: flex;
+  align-items: center;
+  color: inherit;
+}
+
+.palette-empty {
+  color: var(--koola-muted);
+  font-size: 14px;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+/* ConfirmDialog shared blocks */
+.confirm-preview {
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface-soft);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.confirm-typing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.confirm-typing label {
+  color: var(--koola-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.confirm-actions {
+  justify-content: flex-end;
 }
 
 /* Page primitives */
@@ -1295,7 +1519,8 @@ th.sortable:hover {
   }
 
   .admin-collapse-toggle,
-  .sidebar-collapse-toggle {
+  .sidebar-collapse-toggle,
+  .admin-edge-toggle {
     display: none;
   }
 
@@ -1320,7 +1545,6 @@ th.sortable:hover {
   }
 
   .admin-identity-text,
-  .admin-identity-chip .badge,
   .admin-search-kbd,
   .admin-topbar-divider {
     display: none;

@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useCallback } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
   Briefcase,
@@ -11,14 +11,13 @@ import {
   Flag,
   LayoutDashboard,
   LogOut,
-  Mail,
   Megaphone,
   Menu,
+  MessageSquare,
   MessageSquareText,
   Music,
   Package,
   ScrollText,
-  Search,
   ShoppingCart,
   Users,
   X,
@@ -27,6 +26,8 @@ import {
 import { useAuth } from './useAuth';
 import { config } from './config';
 import { initials } from './components/formatters';
+import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
+import { ConfirmDialog } from './components/ConfirmDialog';
 
 interface NavItem {
   to: string;
@@ -46,11 +47,18 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Kiểm duyệt',
     items: [
+      { to: '/reports', label: 'Reports', icon: Flag },
       { to: '/conversations', label: 'Conversations', icon: MessageSquareText },
-      { to: '/messages', label: 'Messages', icon: Mail },
+      { to: '/messages', label: 'Messages', icon: MessageSquare },
       { to: '/moments', label: 'Moments', icon: Camera },
       { to: '/music', label: 'Music', icon: Music },
-      { to: '/reports', label: 'Reports', icon: Flag },
+    ],
+  },
+  {
+    label: 'Người dùng',
+    items: [
+      { to: '/businesses', label: 'Doanh nghiệp', icon: Building2 },
+      { to: '/users', label: 'Người dùng', icon: Users },
     ],
   },
   {
@@ -62,10 +70,8 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     ],
   },
   {
-    label: 'Vận hành',
+    label: 'Hệ thống',
     items: [
-      { to: '/businesses', label: 'Doanh nghiệp', icon: Building2 },
-      { to: '/users', label: 'Người dùng', icon: Users },
       { to: '/health', label: 'Health', icon: Activity },
       { to: '/broadcast', label: 'Broadcast', icon: Megaphone },
       { to: '/audit-logs', label: 'Audit log', icon: ScrollText },
@@ -92,16 +98,14 @@ const routeTitles: Record<string, string> = {
 };
 
 export default function AppLayout() {
-  const { logout, identity } = useAuth();
+  const { logout, identity, identityLoading } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const currentTitle = routeTitles[location.pathname] ?? 'Koola Admin';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => window.localStorage.getItem('koola-admin:sidebar-collapsed') === '1',
   );
-  const [topSearch, setTopSearch] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
@@ -112,37 +116,16 @@ export default function AppLayout() {
     });
   }, []);
 
-  // Press "/" anywhere (outside inputs) to focus global search.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const el = e.target as HTMLElement | null;
-      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      e.preventDefault();
-      searchRef.current?.focus();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // Palette nguồn duy nhất: mọi route trong navGroups (label + group + icon).
+  const paletteCommands: PaletteCommand[] = navGroups.flatMap((g) =>
+    g.items.map((item) => ({ to: item.to, label: item.label, group: g.label, icon: item.icon })),
+  );
 
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
   const isProd = config.appEnv === 'production';
   // Drawer mobile luôn render full — collapsed rail chỉ áp dụng desktop.
   const effectiveCollapsed = sidebarCollapsed && !mobileNavOpen;
-
-  function handleTopSearch(e: React.FormEvent) {
-    e.preventDefault();
-    const q = topSearch.trim();
-    if (!q) return;
-    // Heuristic: if q looks like email/phone, go to users; else messages search
-    if (q.includes('@') || /^[0-9+]+$/.test(q)) {
-      navigate(`/users?search=${encodeURIComponent(q)}`);
-    } else {
-      navigate(`/messages?q=${encodeURIComponent(q)}`);
-    }
-    setTopSearch('');
-  }
 
   return (
     <div className="admin-shell">
@@ -169,10 +152,12 @@ export default function AppLayout() {
         <div className="admin-brand">
           <img
             className="admin-brand-logo"
-            src={effectiveCollapsed ? '/koola-mark.png' : '/koola-logo.png'}
+            src="/koola-mark.png"
             alt="Koola"
-            width={effectiveCollapsed ? 40 : 104}
+            width={32}
+            height={32}
           />
+          {!effectiveCollapsed && <span className="admin-brand-name">Koola Admin</span>}
         </div>
 
         <nav className="admin-nav">
@@ -200,8 +185,8 @@ export default function AppLayout() {
 
         <div className="admin-sidebar-footer">
           <button
-            className="btn btn-danger-ghost admin-logout"
-            onClick={logout}
+            className="btn btn-ghost admin-logout"
+            onClick={() => setLogoutConfirm(true)}
             type="button"
             title={effectiveCollapsed ? 'Đăng xuất' : undefined}
           >
@@ -209,6 +194,18 @@ export default function AppLayout() {
             {!effectiveCollapsed && 'Đăng xuất'}
           </button>
         </div>
+        <button
+          className="admin-edge-toggle"
+          onClick={toggleSidebar}
+          type="button"
+          aria-label={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          aria-expanded={!sidebarCollapsed}
+          title={sidebarCollapsed ? 'Mở rộng' : 'Thu gọn'}
+        >
+          <span aria-hidden="true">
+            {sidebarCollapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+          </span>
+        </button>
       </aside>
 
       <div className="admin-main">
@@ -223,46 +220,25 @@ export default function AppLayout() {
             >
               <span aria-hidden="true">{mobileNavOpen ? <X size={18} /> : <Menu size={18} />}</span>
             </button>
-            <button
-              className="btn btn-ghost sidebar-collapse-toggle"
-              onClick={toggleSidebar}
-              type="button"
-              aria-label={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-              aria-expanded={!sidebarCollapsed}
-              title={sidebarCollapsed ? 'Mở rộng (giữ trạng thái)' : 'Thu gọn (giữ trạng thái)'}
-            >
-              <span aria-hidden="true">
-                {sidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-              </span>
-            </button>
-            <div>
-              <div className="admin-breadcrumb">Koola / Admin</div>
-              <div className="admin-topbar-title">{currentTitle}</div>
-            </div>
+            <nav className="admin-breadcrumb" aria-label="Vị trí hiện tại">
+              <span>Koola</span>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page">{currentTitle}</span>
+            </nav>
           </div>
           <div className="admin-topbar-actions">
-            <form onSubmit={handleTopSearch} className="admin-topbar-search" role="search" aria-label="Tìm kiếm admin">
-              <Search size={18} strokeWidth={1.75} aria-hidden className="admin-search-icon" />
-              <input
-                ref={searchRef}
-                className="input admin-search-input"
-                placeholder="Tìm users, messages..."
-                value={topSearch}
-                onChange={(e) => setTopSearch(e.target.value)}
-                aria-label="Tìm kiếm"
-              />
-              <kbd className="admin-search-kbd" aria-hidden="true">/</kbd>
-            </form>
+            <CommandPalette commands={paletteCommands} />
             <span className="admin-topbar-divider" aria-hidden="true" />
             <div className="admin-identity-chip">
               <div className="admin-avatar" aria-hidden="true">
                 {adminInitial}
               </div>
-              <div className="admin-identity-text">
-                <div className="cell-title">{adminName}</div>
-                <div className="cell-meta">{identity?.email ?? 'platform admin'}</div>
-              </div>
-              <span className="badge badge-primary">admin</span>
+              {!identityLoading && (
+                <div className="admin-identity-text">
+                  <div className="cell-title">{adminName}</div>
+                  <div className="cell-meta">{identity?.email ?? 'platform admin'}</div>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -274,6 +250,32 @@ export default function AppLayout() {
         </div>
       </div>
       </div>
+      <ConfirmDialog
+        open={logoutConfirm}
+        onClose={() => setLogoutConfirm(false)}
+        title="Đăng xuất khỏi Koola Admin?"
+        description="Phiên làm việc hiện tại sẽ kết thúc. Bản nháp và filter chưa lưu có thể mất."
+        preview={
+          <dl className="description-list">
+            <div>
+              <dt>Tài khoản</dt>
+              <dd>{adminName}</dd>
+            </div>
+            {identity?.email && (
+              <div>
+                <dt>Email</dt>
+                <dd className="k-mono">{identity.email}</dd>
+              </div>
+            )}
+          </dl>
+        }
+        confirmLabel="Đăng xuất"
+        variant="primary"
+        onConfirm={() => {
+          setLogoutConfirm(false);
+          logout();
+        }}
+      />
     </div>
   );
 }
