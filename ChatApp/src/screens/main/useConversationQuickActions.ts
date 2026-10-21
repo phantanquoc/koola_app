@@ -28,6 +28,11 @@ type ApiMuteDuration = '1h' | '8h' | '24h' | 'forever' | 'off';
 interface Options {
   localFirstEnabled: boolean;
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
+  /**
+   * Registers a tab-dock suppressor; returns an idempotent release.
+   * When omitted (e.g. tests), sheet open/close is state-only.
+   */
+  suppressTabDock?: () => () => void;
 }
 
 function toRepoMutedUntil(
@@ -41,18 +46,45 @@ function toRepoMutedUntil(
 export function useConversationQuickActions({
   localFirstEnabled,
   setConversations,
+  suppressTabDock,
 }: Options) {
   const [sheetTarget, setSheetTarget] = React.useState<Conversation | null>(null);
   const [sheetView, setSheetView] = React.useState<'main' | 'mute'>('main');
 
+  // Holds the active dock-suppression release while the sheet is open.
+  // Suppress synchronously in openSheet (not in an effect after render) so the
+  // dock hides the moment the popup appears, even under JS load.
+  const suppressReleaseRef = React.useRef<(() => void) | null>(null);
+
   const openSheet = React.useCallback(
     (c: Conversation, view: 'main' | 'mute' = 'main') => {
+      // Re-open while open (e.g. retarget) must not stack suppressors.
+      if (suppressReleaseRef.current === null && suppressTabDock) {
+        suppressReleaseRef.current = suppressTabDock();
+      }
       setSheetView(view);
       setSheetTarget(c);
     },
+    [suppressTabDock],
+  );
+  const closeSheet = React.useCallback(() => {
+    if (suppressReleaseRef.current !== null) {
+      suppressReleaseRef.current();
+      suppressReleaseRef.current = null;
+    }
+    setSheetTarget(null);
+  }, []);
+
+  // Safety net: release the suppressor if the hook unmounts with the sheet open.
+  React.useEffect(
+    () => () => {
+      if (suppressReleaseRef.current !== null) {
+        suppressReleaseRef.current();
+        suppressReleaseRef.current = null;
+      }
+    },
     [],
   );
-  const closeSheet = React.useCallback(() => setSheetTarget(null), []);
 
   // ─── Optimistic pin/mute core ──────────────────────────────────────────
 

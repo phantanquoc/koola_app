@@ -545,6 +545,13 @@ const ConversationListScreen: React.FC = () => {
   // function pulled out of the hook is itself a stable useCallback, so the
   // row handlers below never change identity across renders. (Never depend on
   // the hook's returned object itself: it is a fresh object every render.)
+  // The tab dock lives outside the screen tree, so the in-tree action sheet
+  // can never overlay it. Suppression runs synchronously inside the quick
+  // action hook's openSheet (not in an effect after render) so the dock hides
+  // the moment the popup appears, even under JS load. Every close path (X,
+  // backdrop, Back, action completion) funnels through closeSheet, which
+  // releases exactly once; unmount with the sheet open releases too.
+  const suppressTabDock = useTabDockSuppression();
   const {
     sheetTarget,
     sheetView,
@@ -558,6 +565,7 @@ const ConversationListScreen: React.FC = () => {
   } = useConversationQuickActions({
     localFirstEnabled,
     setConversations,
+    suppressTabDock,
   });
 
   const handleConversationLongPress = React.useCallback(
@@ -566,18 +574,6 @@ const ConversationListScreen: React.FC = () => {
     },
     [openSheet],
   );
-
-  // The tab dock lives outside the screen tree, so the in-tree action sheet
-  // can never overlay it. Suppress the dock while the sheet is open; every
-  // close path (X, backdrop, Back, action completion) funnels through
-  // closeSheet → sheetTarget null → cleanup releases → dock returns.
-  const suppressTabDock = useTabDockSuppression();
-  const sheetOpen = sheetTarget !== null;
-  useEffect(() => {
-    if (!sheetOpen) return undefined;
-    const release = suppressTabDock();
-    return release;
-  }, [sheetOpen, suppressTabDock]);
 
   const handleQuickAction = React.useCallback(
     (conv: Conversation, action: QuickAction) => {
