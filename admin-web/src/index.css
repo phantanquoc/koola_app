@@ -1734,3 +1734,407 @@ th.sortable:hover {
   padding: var(--space-5);
   text-align: center;
 }
+
+/* Confirm list + compact table */
+.confirm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.confirm-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--koola-line);
+}
+
+.confirm-list li:last-child {
+  border-bottom: 0;
+}
+
+.data-table--compact {
+  font-size: 13.5px;
+}
+
+.data-table--compact th {
+  padding: 10px 12px;
+}
+
+.data-table--compact td {
+  padding: 12px 16px;
+}
+
+.data-table--compact thead th {
+  position: sticky;
+  top: 0;
+}
+
+.table-col-actions {
+  position: sticky;
+  right: 0;
+  background: var(--koola-surface);
+}
+
+@media (max-width: 860px) {
+  .col-hide-mobile {
+    display: none;
+  }
+}
+
+/* Filter row: một hàng ngang — search + nút + selects + xóa lọc */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-row .filter-search {
+  width: 280px;
+  flex: 0 1 280px;
+}
+
+.filter-row .filter-select {
+  width: 150px;
+  flex: 0 0 auto;
+}
+
+/* List header gọn (mẫu chung): 1 hàng title + actions, 1 hàng filter */
+.list-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.list-title {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.list-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--koola-muted);
+}
+
+.list-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Tabs gọn nằm cùng hàng filter khi đủ chỗ */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-bar .tabs {
+  flex: 0 0 auto;
+}
+
+.toast-action {
+  border: 0;
+  background: transparent;
+  font-weight: 800;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  padding: 2px 4px;
+}
+
+.btn-icon {
+  padding: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--koola-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.row-highlight {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: -2px;
+}
+
+.license-thumb {
+  display: inline-block;
+  margin-top: 4px;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.license-thumb img {
+  object-fit: cover;
+  display: block;
+}
+
+.license-thumb:hover {
+  border-color: var(--koola-primary);
+}
+
+/* Pagination: một cỡ chữ 13px cho mọi control */
+.pagination-info {
+  font-size: 13px;
+  color: var(--koola-muted);
+  white-space: nowrap;
+}
+
+.pagination-page {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 48px;
+  text-align: center;
+}
+
+.input-sm {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.pagination-size {
+  width: auto;
+}
+
+.pagination-goto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pagination-goto .input {
+  width: 72px;
+}
+
+/* Inline edit trong drawer: giá trị + bút sửa, hover mới hiện bút */
+.inline-field dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-edit-btn {
+  display: none;
+}
+
+.inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.inline-edit .input,
+.inline-edit .textarea {
+  flex: 1;
+}
+
+/* Detail page: form giữa, max 760px */
+.detail-page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.detail-back {
+  align-self: flex-start;
+}
+
+.detail-card {
+  margin-top: 0;
+}
+
+.detail-actions {
+  padding-bottom: var(--space-5);
+}
+
+/* Modal form chi tiết 720px giữa màn hình, scroll trong */
+.dialog--wide {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-lg);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.dialog--wide .dialog-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Edit-all trong modal: input full-width ôm hết cột giá trị */
+.edit-all-list .inline-edit .input,
+.edit-all-list .inline-edit .textarea {
+  width: 100%;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.edit-all-list .inline-field {
+  align-items: start;
+}
+
+.edit-all-list .inline-field dt {
+  padding-top: 8px;
+}
+
+/* Bottom bar sticky của modal/section chi tiết: actions luôn thấy */
+.detail-bottombar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--koola-line);
+  background: var(--koola-surface);
+  padding: var(--space-3) var(--space-5);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.dialog--wide .detail-bottombar {
+  margin: 0 calc(-1 * var(--space-5));
+  padding-left: var(--space-5);
+  padding-right: var(--space-5);
+}
+
+.detail-bottombar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--koola-line);
+}
+
+.detail-bottombar-spacer {
+  flex: 1;
+}
+
+/* Section nhóm trong form chi tiết: tiêu đề nhỏ + hairline */
+.detail-section {
+  display: block;
+}
+
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--koola-muted);
+  border-bottom: 1px solid var(--koola-line);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.detail-section-body {
+  display: block;
+  margin: 0;
+}
+
+/* Xem: ẩn bút chì từng dòng, chỉ sửa qua bottom bar */
+dl:not(.edit-all-list) .inline-edit-btn {
+  display: none;
+}
+
+/* Detail sections: xếp dọc full-width, field giữ grid label/value */
+.detail-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.detail-section {
+  display: block;
+  min-width: 0;
+}
+
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--koola-muted);
+  border-bottom: 1px solid var(--koola-line);
+  padding-bottom: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.detail-section .description-list {
+  margin: 0;
+}
+
+/* Xem: ẩn bút chì từng dòng, chỉ sửa qua bottom bar */
+.detail-sections:not(.edit-all-list) .inline-edit-btn {
+  display: none;
+}
+
+/* Edit-all: input full-width ôm hết cột giá trị */
+.edit-all-list .inline-edit .input,
+.edit-all-list .inline-edit .textarea,
+.edit-all-list .inline-edit select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.edit-all-list .inline-field {
+  align-items: start;
+  min-width: 0;
+}
+
+.edit-all-list .inline-field dt {
+  padding-top: 8px;
+}
+
+.edit-all-list .inline-edit {
+  min-width: 0;
+}
+
+.edit-all-list .inline-field dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Nhóm Liên hệ: 1 cột dọc, input full-width (email/SĐT/địa chỉ dài) */
+.detail-section--stack .description-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.detail-section--stack .inline-field {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  align-items: start;
+}
+
+.detail-section--stack .inline-field dt {
+  padding-top: 8px;
+}

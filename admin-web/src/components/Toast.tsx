@@ -4,6 +4,7 @@ export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
   text: string;
+  action?: { label: string; onClick: () => void };
 }
 
 interface ToastContextValue {
@@ -25,12 +26,12 @@ let toastCounter = 0;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = useCallback((type: ToastMessage['type'], text: string) => {
+  const addToast = useCallback((type: ToastMessage['type'], text: string, action?: ToastMessage['action']) => {
     const id = `toast-${++toastCounter}`;
-    setToasts((prev) => [...prev, { id, type, text }]);
+    setToasts((prev) => [...prev, { id, type, text, action }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
+    }, action ? 10000 : 5000);
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -59,6 +60,15 @@ function ToastContainer({
       {toasts.map((t) => (
         <div key={t.id} className={`toast toast-${t.type}`}>
           <span className="toast-text">{t.text}</span>
+          {t.action && (
+            <button
+              className="toast-action"
+              onClick={() => { t.action!.onClick(); onDismiss(t.id); }}
+              type="button"
+            >
+              {t.action.label}
+            </button>
+          )}
           <button
             className="toast-dismiss"
             onClick={() => onDismiss(t.id)}

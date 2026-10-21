@@ -5,8 +5,8 @@ interface DialogProps {
   onClose: () => void;
   /** aria-labelledby id for the dialog heading */
   labelId: string;
-  /** 'dialog' centers on screen; 'drawer' slides from right */
-  variant?: 'dialog' | 'drawer';
+  /** 'dialog' centers (520px); 'wide' centers (720px form); 'drawer' slides from right */
+  variant?: 'dialog' | 'wide' | 'drawer';
   children: ReactNode;
 }
 
