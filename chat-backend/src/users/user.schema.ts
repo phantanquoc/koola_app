@@ -82,6 +82,12 @@ export class User {
   @Prop()
   contactPhone?: string;
 
+  @Prop()
+  taxCode?: string;
+
+  @Prop({ type: Date })
+  licenseExpiresAt?: Date;
+
   /** MinIO/S3 key for the business logo */
   @Prop()
   logoKey?: string;
@@ -101,6 +107,36 @@ export class User {
 
   @Prop()
   rejectionReason?: string;
+
+  @Prop({
+    type: [
+      {
+        status: { type: String },
+        at: { type: Date },
+        actorId: { type: String },
+        reason: { type: String },
+      },
+    ],
+    default: [],
+  })
+  verificationHistory?: {
+    status: string;
+    at: Date;
+    actorId?: string;
+    reason?: string;
+  }[];
+
+  @Prop({ default: false })
+  suspended?: boolean;
+
+  @Prop()
+  internalNote?: string;
+
+  @Prop()
+  assignee?: string;
+
+  @Prop({ type: Date, default: null })
+  deletedAt?: Date | null;
 
   @Prop({ default: false })
   isBanned: boolean;

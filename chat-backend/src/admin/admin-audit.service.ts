@@ -39,7 +39,12 @@ export class AdminAuditService {
     }
   }
 
-  async list(dto: { page?: number; limit?: number }): Promise<{
+  async list(dto: {
+    page?: number;
+    limit?: number;
+    targetType?: string;
+    targetId?: string;
+  }): Promise<{
     data: AdminAuditLogDocument[];
     total: number;
     page: number;
@@ -48,14 +53,17 @@ export class AdminAuditService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
+    const filter: Record<string, unknown> = {};
+    if (dto.targetType) filter.targetType = dto.targetType;
+    if (dto.targetId) filter.targetId = dto.targetId;
     const [data, total] = await Promise.all([
       this.auditModel
-        .find()
+        .find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      this.auditModel.countDocuments({}),
+      this.auditModel.countDocuments(filter),
     ]);
     return { data: data as AdminAuditLogDocument[], total, page, limit };
   }

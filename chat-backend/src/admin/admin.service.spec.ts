@@ -38,9 +38,12 @@ const mockUserModel = {
   findById: jest.fn(),
   findByIdAndUpdate: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  findOne: jest.fn(),
   find: jest.fn(),
   countDocuments: jest.fn(),
   updateMany: jest.fn(),
+  exists: jest.fn(),
+  create: jest.fn(),
 };
 
 const mockRefreshTokenModel = {
@@ -183,6 +186,85 @@ describe('AdminService', () => {
       const findFilter = mockUserModel.find.mock.calls[0][0];
       expect(findFilter).toMatchObject({ verificationStatus: 'pending' });
     });
+
+    it('filters by status when provided', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, status: 'verified' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter).toMatchObject({ verificationStatus: 'verified' });
+    });
+
+    it('applies sort from dto', async () => {
+      const q = makeLeanQuery([]);
+      mockUserModel.find.mockReturnValue(q);
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, sort: 'displayName:desc' });
+
+      expect(q.sort).toHaveBeenCalledWith({ displayName: -1 });
+    });
+
+    it('falls back to createdAt:1 for invalid sort field', async () => {
+      const q = makeLeanQuery([]);
+      mockUserModel.find.mockReturnValue(q);
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, sort: 'nope:desc' });
+
+      expect(q.sort).toHaveBeenCalledWith({ createdAt: 1 });
+    });
+
+    it('search matches contactPhone', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, search: '0901' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter.$or).toEqual(
+        expect.arrayContaining([{ contactPhone: expect.any(RegExp) }]),
+      );
+    });
+
+    it('search with ObjectId matches _id exactly', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+      const oid = '507f1f77bcf86cd799439011';
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, search: oid });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      const idBranch = findFilter.$or.find((b: object) => '_id' in b);
+      expect(idBranch._id.toString()).toBe(oid);
+    });
+  });
+
+  // ─── getBusiness ─────────────────────────────────────────────────────────
+
+  describe('getBusiness', () => {
+    it('returns full profile with licenseImageUrl', async () => {
+      mockUserModel.findOne.mockReturnValue(
+        makeLeanQuery({
+          _id: 'biz-1',
+          accountType: 'business',
+          displayName: 'Cong ty Alpha',
+          licenseImageKey: 'key/license.jpg',
+        }),
+      );
+      mockMediaService.generatePresignedGetUrl.mockResolvedValue('https://presigned.url/l.jpg');
+
+      const result = await service.getBusiness('biz-1');
+      expect(result.displayName).toBe('Cong ty Alpha');
+      expect(result.licenseImageUrl).toBe('https://presigned.url/l.jpg');
+    });
+
+    it('throws NotFound when not a business account', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery(null));
+      await expect(service.getBusiness('nope')).rejects.toThrow('Business account not found');
+    });
   });
 
   // ─── approveBusiness ─────────────────────────────────────────────────────
@@ -213,8 +295,19 @@ describe('AdminService', () => {
       mockUserModel.findOneAndUpdate.mockReturnValue(
         makeFindOneAndUpdateQuery(null),
       );
+      mockUserModel.exists.mockResolvedValue(null);
       await expect(service.approveBusiness('personal-id')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('throws 409 when business was already processed', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      mockUserModel.exists.mockResolvedValue({ _id: 'biz-1' });
+      await expect(service.approveBusiness('biz-1')).rejects.toThrow(
+        'already processed',
       );
     });
   });
@@ -253,9 +346,84 @@ describe('AdminService', () => {
       mockUserModel.findOneAndUpdate.mockReturnValue(
         makeFindOneAndUpdateQuery(null),
       );
+      mockUserModel.exists.mockResolvedValue(null);
       await expect(
         service.rejectBusiness('personal-id', 'reason'),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws 409 when business was already processed', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      mockUserModel.exists.mockResolvedValue({ _id: 'biz-1' });
+      await expect(service.rejectBusiness('biz-1', 'reason')).rejects.toThrow(
+        'already processed',
+      );
+    });
+  });
+
+  // ─── bulk + duplicates ────────────────────────────────────────────────────
+
+  describe('bulk operations and duplicates', () => {
+    it('bulkApproveBusiness returns per-item results with modified count', async () => {
+      mockUserModel.findOneAndUpdate
+        .mockReturnValueOnce(makeFindOneAndUpdateQuery({ _id: 'a' }))
+        .mockReturnValueOnce(makeFindOneAndUpdateQuery(null));
+      mockUserModel.exists.mockResolvedValue(null);
+
+      const res = await service.bulkApproveBusiness(['a', 'b']);
+
+      expect(res.modified).toBe(1);
+      expect(res.results).toEqual([
+        { id: 'a', ok: true },
+        { id: 'b', ok: false, error: expect.any(String) },
+      ]);
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['a', 'b']);
+    });
+
+    it('bulkRejectBusiness returns per-item results with modified count', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'a' }),
+      );
+
+      const res = await service.bulkRejectBusiness(['a', 'b'], 'spam');
+
+      expect(res.modified).toBe(2);
+      expect(res.results.every((r) => r.ok)).toBe(true);
+    });
+
+    it('findDuplicates matches on taxCode/contactPhone/licenseImageKey, excludes self', async () => {
+      const self = {
+        _id: 'biz-1',
+        taxCode: 'TAX1',
+        contactPhone: '0901',
+        licenseImageKey: 'key/l.jpg',
+      };
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery(self));
+      mockUserModel.find.mockReturnValue(makeLeanQuery([{ _id: 'biz-2' }]));
+
+      const res = await service.findDuplicates('biz-1');
+
+      expect(res).toHaveLength(1);
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter.$or).toEqual(
+        expect.arrayContaining([
+          { taxCode: 'TAX1' },
+          { contactPhone: '0901' },
+          { licenseImageKey: 'key/l.jpg' },
+        ]),
+      );
+      expect(findFilter._id).toEqual({ $ne: 'biz-1' });
+    });
+
+    it('findDuplicates returns [] when self has no keys', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery({ _id: 'biz-1' }));
+
+      const res = await service.findDuplicates('biz-1');
+
+      expect(res).toEqual([]);
+      expect(mockUserModel.find).not.toHaveBeenCalled();
     });
   });
 
@@ -396,6 +564,7 @@ describe('AdminService', () => {
       mockUserModel.findOneAndUpdate.mockReturnValue(
         makeFindOneAndUpdateQuery(null),
       );
+      mockUserModel.exists.mockResolvedValue(null);
       await expect(service.approveBusiness('x')).rejects.toThrow(
         NotFoundException,
       );
@@ -406,17 +575,17 @@ describe('AdminService', () => {
     });
 
     it('bulkApproveBusiness syncs every id', async () => {
-      mockUserModel.updateMany.mockResolvedValue({
-        modifiedCount: 2,
-      });
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'a' }),
+      );
       await service.bulkApproveBusiness(['a', 'b']);
       expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['a', 'b']);
     });
 
     it('bulkRejectBusiness syncs every id', async () => {
-      mockUserModel.updateMany.mockResolvedValue({
-        modifiedCount: 2,
-      });
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'a' }),
+      );
       await service.bulkRejectBusiness(['a', 'b'], 'spam');
       expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['a', 'b']);
     });
@@ -452,6 +621,187 @@ describe('AdminService', () => {
       await service.banUser('u1');
       await service.unbanUser('u1');
       expect(mockSellerVisibility.syncSellers).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── verificationHistory ─────────────────────────────────────────────────
+
+  describe('verificationHistory', () => {
+    it('approveBusiness pushes verified entry', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.approveBusiness('biz-1');
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$push.verificationHistory.status).toBe('verified');
+      expect(update.$push.verificationHistory.at).toBeInstanceOf(Date);
+    });
+
+    it('rejectBusiness pushes rejected entry with reason', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.rejectBusiness('biz-1', 'bad license');
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$push.verificationHistory).toMatchObject({
+        status: 'rejected',
+        reason: 'bad license',
+      });
+    });
+
+    it('listPendingBusinesses filters out soft-deleted', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+      await service.listPendingBusinesses({ page: 1, limit: 20 });
+      expect(mockUserModel.find.mock.calls[0][0]).toMatchObject({
+        deletedAt: null,
+      });
+    });
+  });
+
+  // ─── updateBusiness ──────────────────────────────────────────────────────
+
+  describe('updateBusiness', () => {
+    it('updates whitelisted fields only', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1', taxCode: '123' }),
+      );
+      await service.updateBusiness('biz-1', {
+        taxCode: '123',
+        internalNote: 'vip',
+        verificationStatus: 'verified',
+        isBanned: true,
+      });
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set).toEqual({ taxCode: '123', internalNote: 'vip' });
+    });
+
+    it('throws 400 when no whitelisted fields provided', async () => {
+      await expect(
+        service.updateBusiness('biz-1', { verificationStatus: 'verified' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockUserModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when business not found', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(
+        service.updateBusiness('ghost', { taxCode: '1' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── setSuspended ────────────────────────────────────────────────────────
+
+  describe('setSuspended', () => {
+    it('sets suspended=true and syncs sellers', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1', suspended: true }),
+      );
+      await service.setSuspended('biz-1', true);
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set).toMatchObject({ suspended: true });
+      expect(update.$push.verificationHistory.status).toBe('suspended');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('sets suspended=false with unsuspended history entry', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1', suspended: false }),
+      );
+      await service.setSuspended('biz-1', false);
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$push.verificationHistory.status).toBe('unsuspended');
+    });
+
+    it('throws 404 when business not found', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(service.setSuspended('ghost', true)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── softDeleteBusiness ──────────────────────────────────────────────────
+
+  describe('softDeleteBusiness', () => {
+    it('sets deletedAt + rejected and syncs sellers', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      const res = await service.softDeleteBusiness('biz-1');
+      expect(res.message).toContain('soft-deleted');
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set.verificationStatus).toBe('rejected');
+      expect(update.$set.deletedAt).toBeInstanceOf(Date);
+      expect(update.$push.verificationHistory.status).toBe('deleted');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('throws 404 when already deleted or missing', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(service.softDeleteBusiness('ghost')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── reopenBusiness ──────────────────────────────────────────────────────
+
+  describe('reopenBusiness', () => {
+    it('resets verified business to pending with history', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1', verificationStatus: 'pending' }),
+      );
+      const res = await service.reopenBusiness('biz-1');
+      expect(res.verificationStatus).toBe('pending');
+      const filter = mockUserModel.findOneAndUpdate.mock.calls[0][0];
+      expect(filter).toMatchObject({ _id: 'biz-1', accountType: 'business' });
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$push.verificationHistory.status).toBe('reopened');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('throws 404 when business not found', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(service.reopenBusiness('ghost')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── createBusiness ──────────────────────────────────────────────────────
+
+  describe('createBusiness', () => {
+    it('creates a pending business account', async () => {
+      mockUserModel.create.mockResolvedValue({ _id: 'new-biz' });
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: 'new-biz', verificationStatus: 'pending' }),
+      );
+      const res = await service.createBusiness({ displayName: 'Shop A' });
+      expect(mockUserModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountType: 'business',
+          displayName: 'Shop A',
+          verificationStatus: 'pending',
+        }),
+      );
+      expect(res.verificationStatus).toBe('pending');
+    });
+
+    it('throws 400 when displayName is blank', async () => {
+      await expect(service.createBusiness({ displayName: '  ' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockUserModel.create).not.toHaveBeenCalled();
     });
   });
 });

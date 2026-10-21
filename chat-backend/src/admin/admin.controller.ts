@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -67,8 +69,12 @@ export class AdminController {
 
   @Get('audit-logs')
   @ApiOperation({ summary: 'List admin audit logs (paginated)' })
-  async listAuditLogs(@Query() dto: PaginationDto) {
-    return this.auditService.list(dto);
+  async listAuditLogs(
+    @Query() dto: PaginationDto,
+    @Query('targetType') targetType?: string,
+    @Query('targetId') targetId?: string,
+  ) {
+    return this.auditService.list({ ...dto, targetType, targetId });
   }
 
   // ─── Business verification ──────────────────────────────────────────────────
@@ -76,6 +82,134 @@ export class AdminController {
   @Get('businesses/pending')
   async listPendingBusinesses(@Query() dto: ListPendingBusinessesDto) {
     return this.adminService.listPendingBusinesses(dto);
+  }
+
+  @Get('businesses/:id/duplicates')
+  async findDuplicates(@Param('id') id: string) {
+    return this.adminService.findDuplicates(id);
+  }
+
+  @Get('businesses/:id')
+  async getBusiness(@Param('id') id: string) {
+    return this.adminService.getBusiness(id);
+  }
+
+  @Post('businesses')
+  @ApiOperation({ summary: 'Create a business account (pending verification)' })
+  async createBusiness(
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.createBusiness(
+      body as {
+        displayName: string;
+        contactEmail?: string;
+        contactPhone?: string;
+        businessCategory?: string;
+        province?: string;
+      },
+    );
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'create_business',
+      targetType: 'business',
+      targetId: String((res as unknown as { _id: unknown })._id),
+      payload: body,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Patch('businesses/:id')
+  @ApiOperation({ summary: 'Update whitelisted business profile fields' })
+  async updateBusiness(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.updateBusiness(id, body);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'update_business',
+      targetType: 'business',
+      targetId: id,
+      payload: body,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('businesses/:id/disable')
+  @HttpCode(HttpStatus.OK)
+  async disableBusiness(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.setSuspended(id, true);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'suspend_business',
+      targetType: 'business',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('businesses/:id/enable')
+  @HttpCode(HttpStatus.OK)
+  async enableBusiness(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.setSuspended(id, false);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'unsuspend_business',
+      targetType: 'business',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Delete('businesses/:id')
+  async softDeleteBusiness(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.softDeleteBusiness(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'delete_business',
+      targetType: 'business',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('businesses/:id/reopen')
+  @HttpCode(HttpStatus.OK)
+  async reopenBusiness(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.reopenBusiness(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'reopen_business',
+      targetType: 'business',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
   }
 
   @Post('businesses/bulk-approve')

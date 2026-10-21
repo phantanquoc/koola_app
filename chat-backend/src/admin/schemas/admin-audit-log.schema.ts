@@ -10,6 +10,12 @@ export type AdminAuditAction =
   | 'bulk_reject_business'
   | 'ban_user'
   | 'unban_user'
+  | 'update_business'
+  | 'suspend_business'
+  | 'unsuspend_business'
+  | 'delete_business'
+  | 'create_business'
+  | 'reopen_business'
   | 'soft_delete_message'
   | 'takedown_story'
   | 'resolve_report'
@@ -67,3 +73,4 @@ export const AdminAuditLogSchema = SchemaFactory.createForClass(AdminAuditLog);
 AdminAuditLogSchema.index({ createdAt: -1 });
 AdminAuditLogSchema.index({ actorId: 1, createdAt: -1 });
 AdminAuditLogSchema.index({ action: 1, createdAt: -1 });
+AdminAuditLogSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
