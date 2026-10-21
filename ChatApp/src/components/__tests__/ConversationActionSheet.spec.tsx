@@ -70,6 +70,12 @@ function renderSheet(props: Record<string, unknown>) {
       ),
     );
   });
+  // The entrance runs through `Animated.timing` (requestAnimationFrame on the
+  // JS driver); flush the remaining frames inside `act` so the updates land
+  // without "not wrapped in act" noise.
+  act(() => {
+    jest.runAllTimers();
+  });
   // @ts-expect-error — assigned in act
   return tree;
 }
@@ -82,6 +88,13 @@ function pressByLabel(tree: { root: { findByProps: (...a: unknown[]) => { props:
 }
 
 describe('ConversationActionSheet', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('renders null when not visible', () => {
     const tree = renderSheet(baseProps({ visible: false }));
     expect(tree.toJSON()).toBeNull();
@@ -122,6 +135,11 @@ describe('ConversationActionSheet', () => {
     const tree = renderSheet(props);
     pressByLabel(tree, 'Tắt thông báo');
     expect(props.onUnmute).not.toHaveBeenCalled();
+    // The header retitles to the sub-view so the sheet says what it is.
+    const labels = tree.root
+      .findAll((n: { props: Record<string, unknown> }) => typeof n.props.children === 'string')
+      .map((n: { props: Record<string, unknown> }) => n.props.children);
+    expect(labels).toContain('Tắt thông báo');
     tree.root.findByProps({ accessibilityLabel: 'Tắt thông báo trong 8 giờ' });
     tree.root.findByProps({ accessibilityLabel: 'Tắt thông báo trong 1 giờ' });
     tree.root.findByProps({ accessibilityLabel: 'Tắt thông báo trong 24 giờ' });

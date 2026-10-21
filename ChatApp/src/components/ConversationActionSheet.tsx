@@ -10,10 +10,17 @@
  * 0x0 bug). Visual additions only; the row/list/header/sub-tab are untouched.
  * The bottom tab dock is suppressed by the caller while visible (it lives
  * outside the screen tree, so an in-tree overlay can never cover it).
+ *
+ * Entrance: backdrop fades in, dialog fades + lifts + scales in (decelerate,
+ * `koolaDurations.normal`). Exit is instant — every close path (X, backdrop,
+ * Back, row action) hands straight off to a navigation or a native dialog, so
+ * an exit animation would only add lag. Skipped under reduce-motion.
  */
 import React, { useEffect, useState } from 'react';
 import {
+  Animated,
   BackHandler,
+  Easing,
   Pressable,
   StyleSheet,
   View,
@@ -23,6 +30,11 @@ import type { Conversation } from '../types';
 import { KoolaText, useTheme } from '../ui';
 import { koolaRadii, koolaSpacing } from '../ui/theme';
 import type { SemanticTokens } from '../ui/tokens/semantic';
+import {
+  koolaDurations,
+  koolaEasing,
+  prefersReducedMotion,
+} from '../ui/tokens/motion';
 import { acquireBackIntercept } from '../services/nativeBack';
 import { isConversationMuted } from '../screens/main/conversationListPrefs';
 import { resolveConversationHeader } from './ConversationListItem';
@@ -89,6 +101,46 @@ const ConversationActionSheet: React.FC<Props> = ({
     [tokens.semantic],
   );
 
+  // ─── Entrance (JS driver: a few short one-shot timings, no UI-thread work) ─
+  const [backdropProgress] = React.useState(() => new Animated.Value(0));
+  const [sheetProgress] = React.useState(() => new Animated.Value(0));
+  const convId = conversation?._id;
+
+  useEffect(() => {
+    if (!visible) return;
+    if (prefersReducedMotion()) {
+      backdropProgress.setValue(1);
+      sheetProgress.setValue(1);
+      return;
+    }
+    backdropProgress.setValue(0);
+    sheetProgress.setValue(0);
+    const easing = Easing.bezier(...koolaEasing.decelerate);
+    const config = {
+      toValue: 1,
+      duration: koolaDurations.normal,
+      easing,
+      // `scale` must be animated through transform[] — a bare `scale` style
+      // key is rejected by the native animated module.
+      useNativeDriver: true,
+    };
+    Animated.parallel([
+      Animated.timing(backdropProgress, config),
+      Animated.timing(sheetProgress, config),
+    ]).start();
+  }, [visible, convId, backdropProgress, sheetProgress]);
+
+  const sheetTransform = React.useMemo(
+    () => ({
+      opacity: sheetProgress,
+      transform: [
+        { scale: sheetProgress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+        { translateY: sheetProgress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+      ],
+    }),
+    [sheetProgress],
+  );
+
   if (!visible || !conversation) return null;
 
   const pinned = conversation.pinned === true;
@@ -105,14 +157,16 @@ const ConversationActionSheet: React.FC<Props> = ({
 
   return (
     <View style={styles.absoluteFill}>
-      <Pressable
-        style={styles.backdrop}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Đóng bảng tuỳ chọn"
-      />
-      <View
-        style={styles.sheet}
+      <Animated.View style={[styles.backdropLayer, { opacity: backdropProgress }]}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Đóng bảng tuỳ chọn"
+        />
+      </Animated.View>
+      <Animated.View
+        style={[styles.sheet, sheetTransform]}
         accessibilityViewIsModal
         accessibilityLabel={`Tuỳ chọn cho ${title}`}>
         <View style={styles.titleRow}>
@@ -121,7 +175,7 @@ const ConversationActionSheet: React.FC<Props> = ({
             weight="700"
             numberOfLines={1}
             style={styles.title}>
-            {title}
+            {view === 'main' ? title : 'Tắt thông báo'}
           </KoolaText>
           <Pressable
             style={styles.closeButton}
@@ -138,6 +192,8 @@ const ConversationActionSheet: React.FC<Props> = ({
             <SheetRow
               styles={styles}
               icon="push-pin"
+              tint={tokens.semantic.action.primary}
+              tintSoft={tokens.semantic.action.primarySoft}
               label={pinned ? 'Bỏ ghim' : 'Ghim'}
               accessibilityLabel={pinned ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại'}
               onPress={onTogglePin}
@@ -145,6 +201,8 @@ const ConversationActionSheet: React.FC<Props> = ({
             <SheetRow
               styles={styles}
               icon={muted ? 'notifications' : 'notifications-off'}
+              tint={tokens.semantic.status.warning}
+              tintSoft={tokens.semantic.status.warningSoft}
               label={muted ? 'Bật thông báo' : 'Tắt thông báo'}
               accessibilityLabel={muted ? 'Bật thông báo trở lại' : 'Tắt thông báo'}
               onPress={handleMuteRow}
@@ -152,9 +210,12 @@ const ConversationActionSheet: React.FC<Props> = ({
             <SheetRow
               styles={styles}
               icon="delete-outline"
+              tint={tokens.semantic.status.danger}
+              tintSoft={tokens.semantic.status.dangerSoft}
               label="Xoá hội thoại"
               accessibilityLabel="Xoá hội thoại ở phía tôi"
               destructive
+              last
               onPress={onClear}
             />
           </>
@@ -163,6 +224,8 @@ const ConversationActionSheet: React.FC<Props> = ({
             <SheetRow
               styles={styles}
               icon="arrow-back"
+              tint={tokens.semantic.text.muted}
+              tintSoft={tokens.semantic.surface.level2}
               label="Quay lại"
               accessibilityLabel="Quay lại bảng tuỳ chọn"
               onPress={() => setView('main')}
@@ -172,15 +235,19 @@ const ConversationActionSheet: React.FC<Props> = ({
                 key={opt.value}
                 styles={styles}
                 icon="schedule"
+                tint={tokens.semantic.action.primary}
+                tintSoft={tokens.semantic.action.primarySoft}
                 label={opt.label}
                 accessibilityLabel={`Tắt thông báo ${opt.label.toLowerCase()}`}
+                last={opt.value === 'forever'}
                 onPress={() => onPickMuteDuration(opt.value)}
               />
             ))}
           </>
         )}
-        <View style={styles.bottomPad} />
-      </View>
+        {/* No bottomPad: each row carries its own bottom padding so the
+            sheet's edge hugs the last row. */}
+      </Animated.View>
     </View>
   );
 };
@@ -188,31 +255,45 @@ const ConversationActionSheet: React.FC<Props> = ({
 function SheetRow({
   styles,
   icon,
+  tint,
+  tintSoft,
   label,
   accessibilityLabel,
   destructive = false,
+  last = false,
   onPress,
 }: {
   styles: ReturnType<typeof makeSheetStyles>;
   icon: string;
+  /** Icon color — a semantic token supplied by the caller. */
+  tint: string;
+  /** Shell fill at the same hue (palette `*Soft`), so dark mode gets its own
+   *  tint instead of a light-mode alpha over a dark surface. */
+  tintSoft: string;
   label: string;
   accessibilityLabel: string;
   destructive?: boolean;
+  /** Last row: carries the sheet's bottom inset. */
+  last?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={styles.actionRow}
+      style={[
+        styles.actionRow,
+        !last && styles.rowDivider,
+        last && styles.lastRow,
+      ]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       android_ripple={{ color: styles.rippleColor.color }}>
-      <Icon
-        name={icon}
-        size={22}
-        color={destructive ? styles.destructiveText.color : styles.rowIcon.color}
-        style={styles.rowIcon}
-      />
+      {/* Colored-glyph + soft-tint shell, the app's standard way to colour a
+          row icon (KoolaState, AttachmentSheet) — keeps semantic hue on the
+          glyph while the shell stays quiet on both schemes. */}
+      <View style={[styles.iconShell, { backgroundColor: tintSoft }]}>
+        <Icon name={icon} size={18} color={tint} />
+      </View>
       <KoolaText
         variant="body"
         style={destructive ? styles.destructiveText : styles.rowText}>
@@ -236,31 +317,48 @@ function makeSheetStyles(semantic: SemanticTokens) {
       alignItems: 'center',
       paddingHorizontal: 24,
     },
+    backdropLayer: {
+      ...StyleSheet.absoluteFillObject,
+    },
     backdrop: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: semantic.surface.overlay,
     },
     sheet: {
-      backgroundColor: semantic.surface.level2,
+      // level1 matches KoolaConfirmHost / KoolaDialog so every centered
+      // dialog in the app reads as the same surface.
+      backgroundColor: semantic.surface.level1,
       borderRadius: koolaRadii.lg,
       width: '100%',
       maxWidth: 340,
+      // Clips the row ripples to the rounded corners.
+      overflow: 'hidden',
+      elevation: 8,
+      shadowColor: semantic.text.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.18,
+      shadowRadius: 16,
     },
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      paddingTop: koolaSpacing.xs,
+      paddingBottom: koolaSpacing.xs,
+      paddingRight: koolaSpacing.sm,
     },
     closeButton: {
-      padding: koolaSpacing.sm,
-      marginRight: koolaSpacing.sm,
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     closeIcon: {
       color: semantic.text.muted,
     },
     title: {
       flex: 1,
-      paddingHorizontal: koolaSpacing.lg,
+      paddingLeft: koolaSpacing.lg,
       paddingVertical: koolaSpacing.sm,
       color: semantic.text.primary,
     },
@@ -271,9 +369,21 @@ function makeSheetStyles(semantic: SemanticTokens) {
       paddingVertical: koolaSpacing.sm,
       paddingHorizontal: koolaSpacing.lg,
     },
-    rowIcon: {
-      color: semantic.text.muted,
-      marginRight: 14,
+    rowDivider: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    lastRow: {
+      paddingBottom: koolaSpacing.md,
+    },
+    iconShell: {
+      width: 28,
+      height: 28,
+      borderRadius: koolaRadii.xs,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: koolaSpacing.md,
+      flexShrink: 0,
     },
     rowText: {
       color: semantic.text.primary,
@@ -282,10 +392,7 @@ function makeSheetStyles(semantic: SemanticTokens) {
       color: semantic.status.danger,
     },
     rippleColor: {
-      color: semantic.surface.level0,
-    },
-    bottomPad: {
-      height: 24,
+      color: semantic.action.primarySoft,
     },
   });
 }
