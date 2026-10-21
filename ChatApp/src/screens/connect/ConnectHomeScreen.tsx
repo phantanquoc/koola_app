@@ -322,8 +322,10 @@ const ConnectHomeScreen: React.FC = () => {
   const toggleCategory = useCallback((slug: string) => { setActiveCategory((prev) => (prev === slug ? null : slug)); }, []);
 
   const renderItem = useCallback(({ item }: { item: BusinessAccountItem }) => (
-    <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
-  ), [navigation, handleMessage]);
+    <View style={styles.listContent}>
+      <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
+    </View>
+  ), [navigation, handleMessage, styles]);
 
   const activeSecondaryFilterCount =
     (activeSort !== 'latest' ? 1 : 0) + (activeProvince ? 1 : 0) + (activeCategory !== null ? 1 : 0);
@@ -412,7 +414,7 @@ const ConnectHomeScreen: React.FC = () => {
           ListFooterComponent={hasMore ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color={semantic.action.primary} /> : null}
           onEndReached={loadMore} onEndReachedThreshold={0.3}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={semantic.action.primary} />}
-          contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
+          contentContainerStyle={{ paddingTop: listTopPad, paddingBottom: tabBarInset }}
           showsVerticalScrollIndicator={false} style={styles.screenTransparent}
           onScroll={handleScroll}
           scrollEventThrottle={16}
@@ -429,7 +431,7 @@ const makeStyles = () =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: 'transparent' },
     screenTransparent: { flex: 1, backgroundColor: 'transparent' },
-    listContent: { paddingHorizontal: 6 },
+    listContent: { paddingHorizontal: 12 },
     contentInset: { paddingHorizontal: 12 },
     sheetContent: { paddingHorizontal: 20, paddingTop: 4 },
     sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
