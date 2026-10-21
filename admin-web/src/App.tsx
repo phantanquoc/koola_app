@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 import ForbiddenPage from './pages/ForbiddenPage';
 import DashboardPage from './pages/DashboardPage';
 import BusinessesPage from './pages/BusinessesPage';
+import BusinessDetailPage from './pages/BusinessDetailPage';
 import UsersPage from './pages/UsersPage';
 import ConversationsPage from './pages/ConversationsPage';
 import MessageSearchPage from './pages/MessageSearchPage';
@@ -43,6 +44,8 @@ export default function App() {
               >
                 <Route index element={<DashboardPage />} />
                 <Route path="businesses" element={<BusinessesPage />} />
+                <Route path="businesses/new" element={<BusinessDetailPage />} />
+                <Route path="businesses/:id" element={<BusinessDetailPage />} />
                 <Route path="users" element={<UsersPage />} />
                 <Route path="conversations" element={<ConversationsPage />} />
                 <Route path="messages" element={<MessageSearchPage />} />
