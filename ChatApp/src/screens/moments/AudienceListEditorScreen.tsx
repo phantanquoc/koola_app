@@ -223,6 +223,7 @@ const AudienceListEditorScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
+          removeClippedSubviews={false}
           data={lists}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => (
@@ -351,6 +352,7 @@ const AudienceListEditorScreen: React.FC = () => {
           </View>
 
           <FlatList
+            removeClippedSubviews={false}
             data={memberResults}
             keyExtractor={(item) => item._id}
             keyboardShouldPersistTaps="always"

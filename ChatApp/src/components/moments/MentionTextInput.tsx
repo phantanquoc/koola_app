@@ -133,6 +133,7 @@ const MentionTextInput: React.FC<Props> = ({
       {suggestions.length > 0 && mentionQuery !== null && (
         <View style={styles.suggestionsContainer}>
           <FlatList
+            removeClippedSubviews={false}
             data={suggestions}
             keyExtractor={(item) => item._id}
             keyboardShouldPersistTaps="always"

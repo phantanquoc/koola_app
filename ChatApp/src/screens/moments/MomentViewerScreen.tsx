@@ -28,7 +28,6 @@ import {
   PanResponder,
   ActivityIndicator,
   Animated,
-  Modal,
   FlatList,
   Alert,
   Image,
@@ -40,7 +39,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, koolaColors, koolaRadii, useTheme } from '../../ui';
+import { KoolaOverlay, KoolaText, koolaColors, koolaRadii, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import { storiesApi } from '../../services/moments/momentsApi';
 import { momentsService } from '../../services/moments/momentsService';
@@ -661,51 +660,52 @@ const MomentViewerScreen: React.FC = () => {
           <KoolaText tone="surface">{toastMsg}</KoolaText>
         </View>
       ) : null}
-/* VIEWER_MODAL_PLACEHOLDER */
 
-      {/* Viewers sheet — palette-aware */}
-      <Modal
+      {/* Viewers sheet — palette-aware. In-tree overlay, NOT a native <Modal>:
+          the Dialog window is a separate Fabric surface; opening/closing it
+          while this screen mounts/unmounts crashes with
+          "Cannot remove child at index 0 … childCount may be incorrect". */}
+      <KoolaOverlay
         visible={showViewers}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowViewers(false)}>
-        <View style={modalStyles.viewersModal} accessibilityViewIsModal>
-          <View style={modalStyles.viewersHeader}>
-            <KoolaText variant="label" weight="700">
-              Người đã xem
-            </KoolaText>
-            <TouchableOpacity
-              onPress={() => setShowViewers(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Đóng">
-              <KoolaText tone="primary">Đóng</KoolaText>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={viewers}
-            keyExtractor={(item) => item.viewerId}
-            renderItem={({ item }) => (
-              <View
-                style={modalStyles.viewerItem}
-                accessibilityLabel={`${item.displayName} đã xem`}>
-                <KoolaText variant="body" tone="ink">
-                  {item.displayName}
-                </KoolaText>
-                <KoolaText variant="caption" tone="muted">
-                  {new Date(item.viewedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                </KoolaText>
-              </View>
-            )}
-            ListEmptyComponent={
-              <View style={modalStyles.viewersEmpty}>
-                <KoolaText tone="muted" align="center">
-                  Chưa có ai xem khoảnh khắc này.
-                </KoolaText>
-              </View>
-            }
-          />
+        onRequestClose={() => setShowViewers(false)}
+        animate
+        style={modalStyles.viewersModal}>
+        <View style={modalStyles.viewersHeader}>
+          <KoolaText variant="label" weight="700">
+            Người đã xem
+          </KoolaText>
+          <TouchableOpacity
+            onPress={() => setShowViewers(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Đóng">
+            <KoolaText tone="primary">Đóng</KoolaText>
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <FlatList
+          removeClippedSubviews={false}
+          data={viewers}
+          keyExtractor={(item) => item.viewerId}
+          renderItem={({ item }) => (
+            <View
+              style={modalStyles.viewerItem}
+              accessibilityLabel={`${item.displayName} đã xem`}>
+              <KoolaText variant="body" tone="ink">
+                {item.displayName}
+              </KoolaText>
+              <KoolaText variant="caption" tone="muted">
+                {new Date(item.viewedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              </KoolaText>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={modalStyles.viewersEmpty}>
+              <KoolaText tone="muted" align="center">
+                Chưa có ai xem khoảnh khắc này.
+              </KoolaText>
+            </View>
+          }
+        />
+      </KoolaOverlay>
     </Animated.View>
   );
 };

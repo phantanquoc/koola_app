@@ -324,6 +324,7 @@ const MusicPicker: React.FC<MusicPickerProps> = ({
           />
         ) : (
           <FlatList
+            removeClippedSubviews={false}
             data={tracks}
             keyExtractor={(item) => item._id}
             renderItem={renderTrack}

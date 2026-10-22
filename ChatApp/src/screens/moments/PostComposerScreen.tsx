@@ -387,6 +387,7 @@ const PostComposerScreen: React.FC = () => {
             <View style={{ width: 40 }} />
           </View>
           <FlatList
+            removeClippedSubviews={false}
             data={[
               { id: 'public', label: 'Công khai', scope: 'public' as AudienceScope },
               { id: 'connections', label: 'Người kết nối', scope: 'connections' as AudienceScope },

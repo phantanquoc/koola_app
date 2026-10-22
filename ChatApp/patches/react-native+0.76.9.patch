@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-native/Libraries/Lists/FlatList.js b/node_modules/react-native/Libraries/Lists/FlatList.js
+index 6075f68..e7da140 100644
+--- a/node_modules/react-native/Libraries/Lists/FlatList.js
++++ b/node_modules/react-native/Libraries/Lists/FlatList.js
+@@ -159,11 +159,12 @@ type OptionalProps<ItemT> = {|
+ 
+ // removeClippedSubviewsOrDefault(this.props.removeClippedSubviews)
+ function removeClippedSubviewsOrDefault(removeClippedSubviews: ?boolean) {
+-  if (ReactNativeFeatureFlags.shouldUseRemoveClippedSubviewsAsDefaultOnIOS()) {
+-    return removeClippedSubviews ?? true;
+-  } else {
+-    return removeClippedSubviews ?? Platform.OS === 'android';
+-  }
++  // KOOLA patch: default OFF on every platform. Android's default `true` makes
++  // Fabric unmount (logout / back-nav) crash in
++  // ReactViewGroup.removeViewWithSubviewClippingEnabled →
++  // "Cannot remove child at index N … childCount may be incorrect"
++  // (facebook/react-native#53258). Explicit `true` still opts in.
++  return removeClippedSubviews ?? false;
+ }
+ 
+ // numColumnsOrDefault(this.props.numColumns)

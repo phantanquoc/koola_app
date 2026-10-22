@@ -138,7 +138,7 @@ const ProvincePickerSheet: React.FC<{ value: string; onChange: (v: string) => vo
           <TextInput style={{ flex: 1, fontSize: 15, color: s.text.primary, paddingVertical: 0 }} placeholder="Tìm tỉnh/thành..." placeholderTextColor={s.text.faint} value={query} onChangeText={setQuery} autoFocus returnKeyType="search" />
           {query.length > 0 ? <Pressable onPress={() => setQuery('')} hitSlop={6} style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}><MaterialIcons name="close" size={20} color={s.text.faint} /></Pressable> : null}
         </View>
-        <FlatList data={filtered} keyExtractor={(item) => item} keyboardShouldPersistTaps="handled"
+        <FlatList removeClippedSubviews={false} data={filtered} keyExtractor={(item) => item} keyboardShouldPersistTaps="handled"
           ListHeaderComponent={value ? <Pressable style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: s.border.subtle }} onPress={() => onChange('')}><KoolaText tone="danger" weight="600">Xóa bộ lọc</KoolaText><MaterialIcons name="close" size={18} color={s.status.danger} /></Pressable> : null}
           renderItem={({ item }) => {
             const isSelected = item === value;

@@ -580,6 +580,7 @@ const MomentsScreen: React.FC = () => {
             <View style={{ width: 40 }} />
           </View>
           <FlatList
+            removeClippedSubviews={false}
             data={postComments}
             keyExtractor={(item) => item._id}
             renderItem={({ item }) => (

@@ -11,6 +11,7 @@ export * from './KoolaListItem';
 export * from './KoolaLogo';
 export * from './KoolaMenu';
 export * from './KoolaOtpInput';
+export * from './KoolaOverlay';
 export * from './KoolaSearchField';
 export * from './KoolaSegmentedControl';
 export * from './KoolaSheet';

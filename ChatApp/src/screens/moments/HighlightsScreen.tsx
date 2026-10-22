@@ -217,6 +217,7 @@ const HighlightsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <FlatList
+        removeClippedSubviews={false}
         data={highlights}
         keyExtractor={(item) => item._id}
         numColumns={COLUMN_COUNT}
