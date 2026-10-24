@@ -6,11 +6,23 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Conversation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from './UserAvatar';
-import { KoolaText, KoolaIconButton, koolaRadii, useTheme } from '../ui';
+import {
+  KoolaText,
+  KoolaIconButton,
+  koolaRadii,
+  useTheme,
+} from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
 import { formatShortTimestamp } from '../utils/formatViTimestamp';
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import type { RootStackParamList } from '../navigation/types';
+
+/**
+ * Card fill for the conversation list — matched to the frosted chrome header
+ * band above the list (sampled #F7F7F7 on device), so a card reads as part of
+ * the same surface family instead of a separate white block.
+ */
+const CHROME_CARD_FILL_LIGHT = '#F7F7F7';
 
 interface Props {
   conversation: Conversation;
@@ -91,7 +103,7 @@ function getPreviewIcon(preview: string): string | null {
 
 const ConversationListItem: React.FC<Props> = ({ conversation, onPress, onLongPress, onQuickAction }) => {
   const { user } = useAuth();
-  const { tokens } = useTheme();
+  const { tokens, resolvedScheme } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { displayName, avatar, isOnline } = resolveConversationHeader(
     conversation,
@@ -133,7 +145,10 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, onLongPr
     [onQuickAction, conversation],
   );
 
-  const itemStyles = useMemo(() => makeItemStyles(tokens.semantic), [tokens.semantic]);
+  const itemStyles = useMemo(
+    () => makeItemStyles(tokens.semantic, resolvedScheme),
+    [tokens.semantic, resolvedScheme],
+  );
 
   const showQuickCall = conversation.type === 'direct' && !!resolveOtherUserId(conversation, user?._id);
 
@@ -310,15 +325,41 @@ const ConversationListItem: React.FC<Props> = ({ conversation, onPress, onLongPr
 };
 
 // ─── Token-aware styles ─────────────────────────────────────────────────────
-function makeItemStyles(semantic: SemanticTokens) {
+function makeItemStyles(
+  semantic: SemanticTokens,
+  scheme: 'light' | 'dark',
+): ReturnType<typeof StyleSheet.create> {
+  // Card recipe: the fill matches the frosted chrome header above the list
+  // (sampled #F7F7F7 on device) so the first card reads as a continuation of
+  // the header band rather than a foreign white block. No shadow — rows stay
+  // cheap to render. Dark keeps token surfaces + a subtle border so it never
+  // goes brighter than the canvas. Either way the row is still ONE root View.
+  const container = scheme === 'dark'
+    ? {
+        backgroundColor: semantic.surface.level1,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: semantic.border.subtle,
+      }
+    : {
+        backgroundColor: CHROME_CARD_FILL_LIGHT,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: semantic.border.subtle,
+      };
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: 72,
       paddingVertical: 10,
-      paddingHorizontal: 16,
-      backgroundColor: semantic.surface.level1,
+      // Near-edge card: a 4px gutter two sides keeps each row reading as its
+      // own box while almost touching the screen edge; vertical margin is 1px
+      // per side so cards sit just 2px apart. Insets stay inside the card so
+      // avatar/text never sit on the corner.
+      paddingHorizontal: 12,
+      marginHorizontal: 4,
+      marginVertical: 1,
+      borderRadius: koolaRadii.md,
+      ...container,
     },
     pressableContent: {
       flex: 1,

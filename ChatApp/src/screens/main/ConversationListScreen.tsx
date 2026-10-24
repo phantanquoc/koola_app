@@ -64,8 +64,10 @@ import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 
+// Rows are detached cards — the canvas gap between them is the 1px top + 1px
+// bottom card margins, so the separator only needs to paint nothing visible.
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
-  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
+  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.bg.canvas }} />
 );
 
 // sortConversations is re-exported from ./conversationListPrefs so existing
@@ -519,6 +521,9 @@ const ConversationListScreen: React.FC = () => {
   const handleRefresh = useCallback(() => {
     fetchConversations(true);
   }, [fetchConversations]);
+  // Earlier trigger (0.2 instead of 0.5): fires when the fling is nearly done
+  // rather than while it is still decelerating, so the fetch and the resulting
+  // re-render land after motion has settled.
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
 
   const handleConversationPress = useCallback((conv: Conversation) => {
@@ -696,7 +701,7 @@ const ConversationListScreen: React.FC = () => {
         keyExtractor={(item) => item._id}
         renderItem={renderConversation}
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.2}
         // The list starts at y=0 behind Chat Home's glass header + overlaid
         // sub-tab bar; reserve exactly that resting chrome (incl. the gap) so
         // the first row sits just below it and later rows scroll behind it.
@@ -740,7 +745,13 @@ const ConversationListScreen: React.FC = () => {
           )
         }
         ListFooterComponent={
-          hasMore && loading ? <LoadingFooter /> : null
+          // Slot is ALWAYS mounted at a fixed height; only its inner content
+          // toggles. Swapping `null` → <LoadingFooter/> would insert a new cell
+          // while the list is still decelerating, forcing a full re-measure
+          // mid-momentum — that is the jerk near the end of the fling.
+          <View style={screenStyles.footerSlot}>
+            {hasMore && loading ? <LoadingFooter /> : null}
+          </View>
         }
         refreshControl={
           <RefreshControl
@@ -782,6 +793,8 @@ function makeScreenStyles(semantic: SemanticTokens) {
     container: { flex: 1, backgroundColor: semantic.bg.canvas },
     errorContainer: { flex: 1 },
     listContent: { flexGrow: 1 },
+    // Fixed-height footer slot (LoadingFooter's 18/18 padding + 20px spinner).
+    footerSlot: { height: 56 },
     stateContainer: { flex: 1 },
   });
 }
