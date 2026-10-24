@@ -4,8 +4,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  Platform,
 } from 'react-native';
 import { GiftedChat, SystemMessage, IMessage, SystemMessageProps, DayProps, InputToolbarProps, MessageProps } from 'react-native-gifted-chat';
+import { useAnimatedStyle } from 'react-native-reanimated';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -111,6 +114,14 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
 const NOOP_SEND = () => {};
 const RENDER_NO_LOAD_EARLIER = () => null;
 
+// The flip VirtualizedList applies to an `inverted` list, mirroring its own
+// platform split (VirtualizedList's `styles.verticallyInverted`). Resolved once
+// at module scope so the worklet that re-declares it (see `listShiftStyle`)
+// captures a frozen value instead of reaching for the Platform module on the UI
+// thread every keyboard frame.
+const LIST_INVERSION_FLIP: { scale: -1 } | { scaleY: -1 } =
+  Platform.OS === 'android' ? { scale: -1 } : { scaleY: -1 };
+
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
@@ -125,6 +136,42 @@ const ChatScreen: React.FC = () => {
   // above every screen in the stack (zIndex 10), and hosts this screen's
   // header (chat variant). Content starts right below it.
   const notchPadTop = getNotchHeaderHeight(insets.top, 'chat');
+
+  // The window is edge-to-edge (MainActivity clears decorFitsSystemWindows, and
+  // App.tsx's KeyboardProvider keeps it that way), so `adjustResize` in the
+  // manifest no longer resizes anything — the keyboard arrives purely as a
+  // window inset and the app has to move its own content. GiftedChat's built-in
+  // handling, which translates the whole list+composer block, is deliberately
+  // off (`isKeyboardInternallyHandled={false}` below) because translating a
+  // mounted FlatList through its own Animated.View was the jank source.
+  //
+  // So the list is shifted here instead, by the exact value ChatComposer uses
+  // for the dock (`keyboard.height`, 0 hidden and negative when shown). Both
+  // move together, which is what keeps every existing offset — the composer
+  // clearance reserved in `contentContainerStyle.paddingTop`, the dock's own
+  // absolute bottom:0 anchor — valid without recomputation. Without this the
+  // dock floats over the keyboard while the newest message stays pinned to the
+  // bottom of the window, hidden behind both.
+  //
+  // The inversion flip is re-declared here, and it is not optional. The list is
+  // `inverted`, which VirtualizedList implements by composing its own flip
+  // BEFORE the caller's style (`style: [inversionStyle, this.props.style]`) and
+  // flipping every cell back. `transform` is a single property, not a set of
+  // mergeable parts, so any transform we supply REPLACES that outer flip
+  // instead of adding to it — leaving only the per-cell flip, which renders
+  // every message upside down. Shifting via translateY therefore has to carry
+  // the flip along. Android uses `scale: -1` (both axes) where iOS uses
+  // `scaleY: -1`; this mirrors VirtualizedList's own platform split exactly,
+  // because a mismatch would mirror the rows horizontally.
+  // translateY comes FIRST so it acts in unflipped screen space: the composed
+  // matrix is T·S, so a point is flipped and only then moved, which keeps a
+  // negative keyboard height moving the list up. Reversed, the flip would
+  // invert the travel direction and the list would dive down behind the
+  // keyboard.
+  const keyboard = useReanimatedKeyboardAnimation();
+  const listShiftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboard.height.value }, LIST_INVERSION_FLIP],
+  }));
 
   const { tokens } = useTheme();
   const styles = useMemo(
@@ -934,6 +981,11 @@ const ChatScreen: React.FC = () => {
   const stableListViewProps = useMemo(
     () => ({
       scrollEventThrottle: 16,
+      // MessageContainer renders an Animated.createAnimatedComponent(FlatList)
+      // and spreads `listViewProps` AFTER its own `style={fill}`, so this wins
+      // and the animated style reaches a component that can consume it. `flex: 1`
+      // restores what the overridden `fill` provided.
+      style: [{ flex: 1 }, listShiftStyle],
       contentContainerStyle: {
         paddingTop: composerScrollClearance,
         paddingBottom: notchPadTop,
@@ -967,7 +1019,7 @@ const ChatScreen: React.FC = () => {
         }, 100);
       },
     }),
-    [composerScrollClearance, notchPadTop],
+    [composerScrollClearance, notchPadTop, listShiftStyle],
   );
 
   return (
