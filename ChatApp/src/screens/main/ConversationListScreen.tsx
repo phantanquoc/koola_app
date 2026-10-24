@@ -16,7 +16,6 @@ import { warmMemoryCache } from '../../services/media/mediaCacheService';
 import { useAuth } from '../../contexts/AuthContext';
 import ConversationListItem from '../../components/ConversationListItem';
 import LoadingFooter from '../../components/LoadingFooter';
-import GroupCreateModal from '../../components/GroupCreateModal';
 import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
@@ -167,7 +166,6 @@ const ConversationListScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showGroupModal, setShowGroupModal] = useState(false);
   const fetchingRef = useRef(false);
   const paginationRef = useRef<PaginationState>(INITIAL_PAGINATION_STATE);
   const lastFetchAtRef = useRef(0);
@@ -627,37 +625,6 @@ const ConversationListScreen: React.FC = () => {
     [handleConversationPress, handleConversationLongPress, handleQuickAction],
   );
 
-  const handleGroupCreated = (conv: Conversation) => {
-    if (localFirstEnabled) {
-      // When flag ON: SQLite is the single source of truth.
-      // Upsert the new conversation so the subscription fires loadFromDb()
-      // and updates the UI — do NOT write to in-memory state directly.
-      try {
-        const input: ConversationInput = {
-          id: conv._id,
-          type: conv.type,
-          name: conv.name ?? null,
-          avatarKey: conv.avatar ?? null,
-          members: conv.members,
-          lastMessageId: null,
-          lastMessagePreview: conv.lastMessagePreview ?? null,
-          lastMessageAt: conv.lastMessageAt ?? 0,
-          unreadCount: conv.unreadCount ?? 0,
-          pinned: conv.pinned ?? false,
-          archived: false,
-          mutedUntil: conv.mutedUntil ?? null,
-          clearedAt: conv.clearedAt ?? null,
-          updatedAt: conv.updatedAt,
-        };
-        conversationRepository.upsertMany([input]);
-      } catch (e) {
-        console.warn('[ConversationListScreen] handleGroupCreated: SQLite upsert failed', e);
-      }
-    } else {
-      setConversations((prev) => [conv, ...prev]);
-    }
-  };
-
   const handleStartChat = () => {
     // ConversationListScreen IS the 'Messages' tab, so its `navigation` is
     // already the TopTab navigator — navigate directly. getParent() reaches
@@ -763,12 +730,6 @@ const ConversationListScreen: React.FC = () => {
           />
         }
         ItemSeparatorComponent={SeparatorComponent}
-      />
-
-      <GroupCreateModal
-        visible={showGroupModal}
-        onClose={() => setShowGroupModal(false)}
-        onCreated={handleGroupCreated}
       />
 
       {/* Long-press quick actions (pin / mute / clear-for-me). In-tree

@@ -1,9 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset, useTabDockSuppression } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
@@ -65,7 +65,31 @@ const SettingsScreen: React.FC = () => {
 
   const handleQrPress = useCallback(() => setQrVisible(true), []);
   const handleQrClose = useCallback(() => setQrVisible(false), []);
-  const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
+
+  // The group form no longer suppresses the dock itself (GroupCreateModal is
+  // side-effect free); Personal is not under a Chat Home overlay owner, so this
+  // screen owns the suppression. It is acquired synchronously in the press
+  // handler (an effect would hide the dock one frame late) and released when
+  // the form closes or the screen unmounts. Release is idempotent.
+  const suppressTabDock = useTabDockSuppression();
+  const groupDockReleaseRef = useRef<(() => void) | null>(null);
+  const releaseGroupDock = useCallback(() => {
+    if (groupDockReleaseRef.current !== null) {
+      groupDockReleaseRef.current();
+      groupDockReleaseRef.current = null;
+    }
+  }, []);
+  const handleAddPress = useCallback(() => {
+    if (groupDockReleaseRef.current === null) {
+      groupDockReleaseRef.current = suppressTabDock();
+    }
+    setGroupModalVisible(true);
+  }, [suppressTabDock]);
+  const handleGroupClose = useCallback(() => {
+    releaseGroupDock();
+    setGroupModalVisible(false);
+  }, [releaseGroupDock]);
+  useEffect(() => releaseGroupDock, [releaseGroupDock]);
 
   const handleNavigateProfile = useCallback((userId: string) => {
     navigation.navigate('AccountList' as never);
@@ -78,9 +102,10 @@ const SettingsScreen: React.FC = () => {
   }, [crossTabNavigation]);
 
   const handleGroupCreated = useCallback((conv: { _id: string }) => {
+    releaseGroupDock();
     setGroupModalVisible(false);
     crossTabNavigation.getParent?.()?.navigate('ChatTab', { screen: 'Chat', params: { conversationId: conv._id } } as never);
-  }, [crossTabNavigation]);
+  }, [crossTabNavigation, releaseGroupDock]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.semantic.bg.canvas }]}>
@@ -191,7 +216,7 @@ const SettingsScreen: React.FC = () => {
       />
       <GroupCreateModal
         visible={groupModalVisible}
-        onClose={() => setGroupModalVisible(false)}
+        onClose={handleGroupClose}
         onCreated={handleGroupCreated}
       />
     </View>

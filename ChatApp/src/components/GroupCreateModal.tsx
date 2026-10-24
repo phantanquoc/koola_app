@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,7 +13,7 @@ import {
 } from 'react-native';
 import UserAvatar from './UserAvatar';
 import { conversationsApi, usersApi } from '../services/api/apiService';
-import { useTabDockSuppression } from '../navigation/MainNavigator';
+import { koolaConfirm } from '../ui/KoolaConfirmHost';
 import type { Conversation, UserSearchResult } from '../types';
 import {
   KoolaButton,
@@ -22,14 +24,32 @@ import {
   koolaShadows,
   koolaSpacing,
 } from '../ui';
+import {
+  koolaDurations,
+  koolaEasing,
+  prefersReducedMotion,
+} from '../ui/tokens/motion';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   onCreated: (conversation: Conversation) => void;
+  /**
+   * Callback ref to the form's guarded close. The Chat Home overlay owner
+   * forwards hardware Back here so Back and the ✕ share one guard (design D4);
+   * React calls it with `null` on unmount.
+   */
+  requestCloseRef?: (requestClose: (() => void) | null) => void;
 }
 
 const SEARCH_MIN_LENGTH = 2;
+
+/**
+ * Fallback travel distance for the panel slide-in until the panel's real
+ * height is measured. Sits beyond any tall panel (`maxHeight: '92%'`) so the
+ * form always starts off-screen instead of clipping a percentage.
+ */
+const PANEL_SLIDE_FALLBACK = 720;
 
 function getErrorMessage(err: unknown, fallback: string): string {
   const error = err as { response?: { data?: { message?: string } }; message?: string };
@@ -40,8 +60,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
-  const suppressTabDock = useTabDockSuppression();
+const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, requestCloseRef }) => {
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
@@ -55,13 +74,21 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const searchRequestRef = useRef(0);
   const latestQueryRef = useRef('');
-
-  useEffect(() => {
-    if (!visible) return undefined;
-    return suppressTabDock();
-  }, [suppressTabDock, visible]);
+  // Generation of the form session: bumped whenever the draft is discarded.
+  // A create response from an older generation (the user confirmed discard
+  // mid-flight) must not navigate, apply an error or touch the draft.
+  const sessionRef = useRef(0);
+  // Generation of the create REQUEST (distinct from the form session). Every
+  // request gets its own token; the loading flag belongs to the token and is
+  // cleared by that request's own `finally` no matter which session it started
+  // in (the modal is always mounted, so a discarded request must still release
+  // the spinner before the next open).
+  const createRequestRef = useRef(0);
 
   const resetState = useCallback(() => {
+    sessionRef.current += 1;
+    // Detaches the in-flight request (if any) from this form session.
+    createRequestRef.current += 1;
     searchRequestRef.current += 1;
     latestQueryRef.current = '';
     setName('');
@@ -77,11 +104,105 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     setNextCursor(null);
   }, []);
 
-  const handleClose = useCallback(() => {
-    if (creating) return;
+  // Rising edge of `visible` → the form is guaranteed to open clean. The owner
+  // resets on every close path; this covers a caller that hides the form
+  // without going through requestClose, so a stale draft or spinner can never
+  // be handed back on the next open.
+  const wasVisibleRef = useRef(false);
+  useEffect(() => {
+    if (visible && !wasVisibleRef.current) resetState();
+    wasVisibleRef.current = visible;
+  }, [visible, resetState]);
+
+  // ─── Entrance (scrim fade + panel slide-up) ────────────────────────────────
+  // Native driver: both animated properties are opacity / transform only, so
+  // the two short one-shot timings run on the UI thread. Exit is instant (app
+  // dialog standard): every close path hands straight off to another surface.
+  const [backdropProgress] = useState(() => new Animated.Value(0));
+  const [panelProgress] = useState(() => new Animated.Value(0));
+  // Initial value only — onLayout measures the real panel.
+  const [panelHeight, setPanelHeight] = useState(PANEL_SLIDE_FALLBACK);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (prefersReducedMotion()) {
+      backdropProgress.setValue(1);
+      panelProgress.setValue(1);
+      return;
+    }
+    backdropProgress.setValue(0);
+    panelProgress.setValue(0);
+    const decelerate = Easing.bezier(...koolaEasing.decelerate);
+    Animated.parallel([
+      Animated.timing(backdropProgress, {
+        toValue: 1,
+        duration: koolaDurations.normal,
+        easing: decelerate,
+        useNativeDriver: true,
+      }),
+      // The panel is near-full-height, so a 0.94 scale would read as a jitter
+      // rather than a deliberate zoom — it slides instead.
+      Animated.timing(panelProgress, {
+        toValue: 1,
+        duration: koolaDurations.slow,
+        easing: decelerate,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [visible, backdropProgress, panelProgress]);
+
+  const panelTransform = useMemo(
+    () => ({
+      opacity: panelProgress,
+      transform: [
+        {
+          translateY: panelProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [panelHeight, 0],
+          }),
+        },
+      ],
+    }),
+    [panelProgress, panelHeight],
+  );
+
+  const handlePanelLayout = useCallback((height: number) => {
+    // Ignore degenerate measurements (0 before layout / during teardown).
+    if (height > 1) setPanelHeight(height);
+  }, []);
+
+  // ─── Guarded close (backdrop, ✕, hardware Back) ────────────────────────────
+  // While a create is in flight closing asks first instead of being disabled,
+  // so the user is never trapped. The HTTP request is not aborted: closing is
+  // a client-side discard, and the late result is ignored through the session
+  // generation counter (sessionRef). resetState() also detaches the request
+  // (createRequestRef), so its own `finally` still clears the spinner later.
+  const requestClose = useCallback(() => {
+    if (creating) {
+      koolaConfirm({
+        title: 'Huỷ tạo nhóm?',
+        message:
+          'Nhóm đang được tạo. Nếu huỷ và đóng, bạn sẽ rời khỏi màn hình trước khi nhóm hoàn tất.',
+        confirmLabel: 'Huỷ và đóng',
+        cancelLabel: 'Tiếp tục tạo',
+        destructive: true,
+        onConfirm: () => {
+          resetState();
+          onClose();
+        },
+      });
+      return;
+    }
     resetState();
     onClose();
   }, [creating, onClose, resetState]);
+
+  // Owner-facing guard: the Chat Home overlay owner's Back handler calls this.
+  useEffect(() => {
+    if (!requestCloseRef) return undefined;
+    requestCloseRef(requestClose);
+    return () => requestCloseRef(null);
+  }, [requestClose, requestCloseRef]);
 
   useEffect(() => {
     const trimmedQuery = query.trim();
@@ -199,6 +320,16 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   const handleCreate = useCallback(async () => {
     if (!canCreate || creating) return;
 
+    // Two independent generations per request: the SESSION decides whether the
+    // result may touch the form (draft / navigation / error), the REQUEST
+    // decides who clears the loading flag (only the latest request does, and it
+    // always does — even after its session was discarded).
+    const sessionAtRequest = sessionRef.current;
+    const requestId = createRequestRef.current + 1;
+    createRequestRef.current = requestId;
+    const belongsToSession = () => sessionRef.current === sessionAtRequest;
+    const isLatestRequest = () => createRequestRef.current === requestId;
+
     setCreating(true);
     setCreateError(null);
     try {
@@ -206,10 +337,15 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
         name.trim(),
         selectedUsers.map((user) => user._id),
       );
+      // The draft was discarded while the request was in flight (the user
+      // confirmed "Huỷ và đóng"): the server-side group will arrive on the next
+      // sync, but this form must not navigate away or resurrect the draft.
+      if (!belongsToSession() || !isLatestRequest()) return;
       onCreated(conversation);
       resetState();
       onClose();
     } catch (err: unknown) {
+      if (!belongsToSession() || !isLatestRequest()) return;
       const message = getErrorMessage(
         err,
         'Không tạo được nhóm. Bạn kiểm tra lại thành viên rồi thử lại nhé.',
@@ -217,7 +353,11 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       setCreateError(message);
       Alert.alert('Không tạo được nhóm', message);
     } finally {
-      setCreating(false);
+      // The spinner belongs to this request, not to the session: a discarded
+      // request must still release it, otherwise the next open renders
+      // `creating: true` for a request that is already gone. A newer request
+      // (if the user opened again and pressed create) owns the flag by now.
+      if (isLatestRequest()) setCreating(false);
     }
   }, [canCreate, creating, name, onClose, onCreated, resetState, selectedUsers]);
 
@@ -322,28 +462,34 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     );
   };
 
-  // Keep the sheet in-tree to avoid Android Fabric native Dialog freezes, and
-  // suppress the floating tab dock while visible so the sheet owns the top layer.
+  // Keep the sheet in-tree to avoid Android Fabric native Dialog freezes. The
+  // floating tab dock is suppressed by the caller (overlay owner / Settings),
+  // not here: an effect would hide it one frame late and double-suppress when
+  // the start popup and this form share an owner.
   if (!visible) return null;
 
   return (
     <View style={styles.overlayHost} pointerEvents="box-none">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Đóng tạo nhóm"
-        disabled={creating}
-        onPress={handleClose}
-        style={({ pressed }) => [
-          styles.backdrop,
-          pressed && !creating ? styles.backdropPressed : null,
-        ]}
-      />
+      <Animated.View style={[styles.backdropLayer, { opacity: backdropProgress }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Đóng tạo nhóm"
+          // Stays operable while creating: the guarded close asks first.
+          onPress={requestClose}
+          style={({ pressed }) => [
+            styles.backdrop,
+            pressed ? styles.backdropPressed : null,
+          ]}
+        />
+      </Animated.View>
       <KeyboardAvoidingView
         pointerEvents="box-none"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}>
         <Pressable style={styles.sheetPressGuard} onPress={() => undefined}>
-          <View style={styles.sheet}>
+          <Animated.View
+            style={[styles.sheet, panelTransform]}
+            onLayout={(e) => handlePanelLayout(e.nativeEvent.layout.height)}>
             <View style={styles.handle} />
             <View style={styles.header}>
               <View style={styles.headerCopy}>
@@ -357,13 +503,11 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Đóng tạo nhóm"
-                disabled={creating}
                 android_ripple={{ color: koolaColors.line, borderless: true }}
-                onPress={handleClose}
+                onPress={requestClose}
                 style={({ pressed }) => [
                   styles.closeButton,
-                  creating ? styles.disabled : null,
-                  pressed && !creating ? styles.pressed : null,
+                  pressed ? styles.pressed : null,
                 ]}>
                 <KoolaText variant="heading" tone="muted" weight="700">
                   ×
@@ -467,7 +611,7 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
                 onPress={handleCreate}
               />
             </View>
-          </View>
+          </Animated.View>
         </Pressable>
       </KeyboardAvoidingView>
     </View>
@@ -479,6 +623,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
+  },
+  backdropLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -651,9 +798,6 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78,
     transform: [{ scale: 0.99 }],
-  },
-  disabled: {
-    opacity: 0.55,
   },
 });
 

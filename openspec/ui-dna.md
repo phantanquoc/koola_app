@@ -243,6 +243,7 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Android: use `android_ripple` on Pressable elements
 - Modals: bottom sheets use `animationType="fade"`, full-screen pickers use `animationType="slide"`
 - Dialog/sheet entrance: backdrop fades while the panel fades + lifts (~12px) + scales in (0.94 → 1) with `decelerate` over `normal`; exit is instant so it hands off to the next native surface without lag
+- Tall panels (near-full-height forms, e.g. the group creation form) SLIDE up instead of scaling: backdrop fades over `normal`; panel starts below the screen edge (its measured height, with a constant fallback) and travels to 0 with `decelerate` over `slow`. A 0.94 scale on a near-full-height panel reads as a jitter, not a deliberate zoom. Exit is instant here too.
 
 ### Duration tokens (`koolaDurations`)
 
