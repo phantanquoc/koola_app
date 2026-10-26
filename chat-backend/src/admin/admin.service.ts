@@ -65,14 +65,15 @@ export class AdminService {
     slaDay1_3: number;
     slaFresh: number;
     expiringSoon: number;
+    archivedBusinesses: number;
   }> {
     const now = Date.now();
     const h72 = new Date(now - 72 * 3_600_000);
     const h24 = new Date(now - 24 * 3_600_000);
-    const pendingBase = {
-      accountType: 'business',
-      verificationStatus: 'pending',
-    };
+    // Mọi count phải loại hồ sơ đã xóa mềm — nếu không, số trên tab lớn hơn
+    // danh sách thật (list luôn lọc deletedAt: null) và luôn dư một hồ sơ ma.
+    const liveBase = { accountType: 'business', deletedAt: null };
+    const pendingBase = { ...liveBase, verificationStatus: 'pending' };
     const [
       totalPersonal,
       totalBusiness,
@@ -84,21 +85,13 @@ export class AdminService {
       slaDay1_3,
       slaFresh,
       expiringSoon,
+      archivedBusinesses,
     ] = await Promise.all([
       this.userModel.countDocuments({ accountType: 'personal' }),
-      this.userModel.countDocuments({ accountType: 'business' }),
-      this.userModel.countDocuments({
-        accountType: 'business',
-        verificationStatus: 'pending',
-      }),
-      this.userModel.countDocuments({
-        accountType: 'business',
-        verificationStatus: 'verified',
-      }),
-      this.userModel.countDocuments({
-        accountType: 'business',
-        verificationStatus: 'rejected',
-      }),
+      this.userModel.countDocuments(liveBase),
+      this.userModel.countDocuments({ ...liveBase, verificationStatus: 'pending' }),
+      this.userModel.countDocuments({ ...liveBase, verificationStatus: 'verified' }),
+      this.userModel.countDocuments({ ...liveBase, verificationStatus: 'rejected' }),
       this.userModel.countDocuments({ isBanned: true }),
       this.userModel.countDocuments({ ...pendingBase, createdAt: { $lt: h72 } }),
       this.userModel.countDocuments({
@@ -106,15 +99,16 @@ export class AdminService {
         createdAt: { $gte: h72, $lt: h24 },
       }),
       this.userModel.countDocuments({ ...pendingBase, createdAt: { $gte: h24 } }),
-      // Tab "Sắp hết hạn": verified + licenseExpiresAt trong 30 ngày tới
+      // Tab "Giấy phép": verified + licenseExpiresAt trong 30 ngày tới HOẶC đã
+      // quá hạn. Hết hạn mà không hiện ở đâu = doanh nghiệp mất pháp lý vẫn bán.
+      this.userModel.countDocuments({
+        ...liveBase,
+        verificationStatus: 'verified',
+        licenseExpiresAt: { $lte: new Date(now + 30 * 24 * 3_600_000) },
+      }),
       this.userModel.countDocuments({
         accountType: 'business',
-        verificationStatus: 'verified',
-        deletedAt: null,
-        licenseExpiresAt: {
-          $gte: new Date(now),
-          $lte: new Date(now + 30 * 24 * 3_600_000),
-        },
+        deletedAt: { $ne: null },
       }),
     ]);
 
@@ -129,6 +123,7 @@ export class AdminService {
       slaDay1_3,
       slaFresh,
       expiringSoon,
+      archivedBusinesses,
     };
   }
 
@@ -172,16 +167,21 @@ export class AdminService {
   }> {
     const skip = (page - 1) * limit;
 
-    // ponytail: 'all' omits the status filter; 'expiring' = verified + license due within 30d
+    // ponytail: 'all' omits the status filter; 'expiring' = verified + license
+    // quá hạn HOẶC còn ≤30 ngày — hết hạn rồi mà bị ẩn thì không ai đi gia hạn.
+    // 'archived' = hồ sơ đã xoá mềm: trước đây xoá xong là mất dấu hoàn toàn,
+    // không xem lại được để khôi phục nhầm.
+    const archived = dto.status === 'archived';
     const filter: QueryFilter<UserDocument> = {
       accountType: 'business',
-      deletedAt: null,
+      deletedAt: archived ? { $ne: null } : null,
     };
 
-    if (dto.status === 'expiring') {
+    if (archived) {
+      // giữ nguyên: cột Trạng thái vẫn đọc verificationStatus (đã set 'rejected')
+    } else if (dto.status === 'expiring') {
       (filter as Record<string, unknown>).verificationStatus = 'verified';
       (filter as Record<string, unknown>).licenseExpiresAt = {
-        $gte: new Date(),
         $lte: new Date(Date.now() + 30 * 24 * 3_600_000),
       };
     } else if (dto.status && dto.status !== 'all') {
@@ -208,6 +208,13 @@ export class AdminService {
     } else if (dto.banned === 'false') {
       (filter as Record<string, unknown>).isBanned = { $ne: true };
     }
+    // "Đang tạm ngưng bán" — hồ sơ verified nhưng sản phẩm đang bị ẩn.
+    // Trước đây không lọc được nên moderator không tìm ra ai đang bị ngưng.
+    if (dto.suspended === 'true') {
+      (filter as Record<string, unknown>).suspended = true;
+    } else if (dto.suspended === 'false') {
+      (filter as Record<string, unknown>).suspended = { $ne: true };
+    }
 
     // ponytail: SLA bucket theo tuổi createdAt — chỉ có nghĩa khi duyệt pending
     if (dto.sla) {
@@ -229,7 +236,11 @@ export class AdminService {
       const or: Record<string, unknown>[] = [
         { displayName: regex },
         { email: regex },
+        { contactEmail: regex },
         { contactPhone: regex },
+        // Moderator tra hồ sơ theo MST khi đối chiếu giấy phép — trước đây
+        // gõ MST vào ô tìm kiếm không ra gì.
+        { taxCode: regex },
       ];
       if (Types.ObjectId.isValid(q)) or.push({ _id: new Types.ObjectId(q) });
       (filter as Record<string, unknown>).$or = or;
@@ -242,6 +253,7 @@ export class AdminService {
       'province',
       'businessCategory',
       'relationshipType',
+      'licenseExpiresAt',
     ]);
     let sort: Record<string, 1 | -1> = { createdAt: 1 };
     if (dto.sort) {
@@ -361,7 +373,14 @@ export class AdminService {
 
   // ─── GET /admin/businesses/:id ─────────────────────────────────────────────
 
-  async getBusiness(id: string): Promise<
+  /**
+   * @param opts.includeDeleted đọc được hồ sơ đã xoá mềm — chỉ dùng khi mở từ
+   * tab Lưu trữ để khôi phục nhầm. Mặc định vẫn ẩn.
+   */
+  async getBusiness(
+    id: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<
     UserDocument & {
       licenseImageUrl: string | null;
       logoUrl: string | null;
@@ -375,7 +394,11 @@ export class AdminService {
     }
   > {
     const business = await this.userModel
-      .findOne({ _id: id, accountType: 'business', deletedAt: null })
+      .findOne({
+        _id: id,
+        accountType: 'business',
+        ...(opts.includeDeleted ? {} : { deletedAt: null }),
+      })
       .select(SAFE_PROJECTION)
       .lean();
     if (!business) {
@@ -681,6 +704,25 @@ export class AdminService {
     if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
       throw new BadRequestException('No updatable fields provided');
     }
+
+    // Đổi email liên hệ sang email của hồ sơ khác = 2 doanh nghiệp cùng địa chỉ,
+    // phá luôn giả định "1 email ↔ 1 hồ sơ" mà createBusiness đang bảo vệ.
+    if (typeof set.contactEmail === 'string') {
+      const email = set.contactEmail as string;
+      set.contactEmail = email.toLowerCase();
+      if (email) {
+        const taken = await this.userModel.exists({
+          _id: { $ne: id },
+          accountType: 'business',
+          deletedAt: null,
+          $or: [{ contactEmail: email.toLowerCase() }, { email: email.toLowerCase() }],
+        });
+        if (taken) {
+          throw new ConflictException('Email này đã được dùng cho hồ sơ khác');
+        }
+      }
+    }
+
     const update: Record<string, unknown> = {};
     if (Object.keys(set).length > 0) update.$set = set;
     if (Object.keys(unset).length > 0) update.$unset = unset;
@@ -733,6 +775,47 @@ export class AdminService {
     if (!business) throw new NotFoundException('Business account not found');
     await this.sellerVisibility.syncSellers([id]);
     return { message: 'Business soft-deleted' };
+  }
+
+  // ─── POST /admin/businesses/:id/restore ────────────────────────────────────
+  // Khôi phục hồ sơ đã xoá mềm. Về 'pending' (không phải 'verified'): hồ sơ
+  // từng bị xoá phải được duyệt lại trước khi bán hàng, tránh khôi phục nhầm
+  // một doanh nghiệp đã bị xử lý vì vi phạm.
+
+  async restoreBusiness(id: string): Promise<UserDocument> {
+    const business = await this.userModel
+      .findOneAndUpdate(
+        { _id: id, accountType: 'business', deletedAt: { $ne: null } },
+        {
+          $set: { deletedAt: null, verificationStatus: 'pending' },
+          $unset: { rejectionReason: '' },
+          $push: {
+            verificationHistory: { status: 'restored', at: new Date() },
+          },
+        },
+        { new: true },
+      )
+      .select(SAFE_PROJECTION);
+    if (!business) throw new NotFoundException('Archived business not found');
+    await this.sellerVisibility.syncSellers([id]);
+    return business;
+  }
+
+  // ─── POST /admin/businesses/bulk-assign ────────────────────────────────────
+  // Nhận hồ sơ về mình: 1 updateMany thay vì N request PATCH.
+
+  async bulkAssignBusiness(
+    ids: string[],
+    assignee: string | null,
+  ): Promise<{ modified: number }> {
+    const update = assignee
+      ? { $set: { assignee } }
+      : { $unset: { assignee: '' } };
+    const res = await this.userModel.updateMany(
+      { _id: { $in: ids }, accountType: 'business', deletedAt: null },
+      update,
+    );
+    return { modified: res.modifiedCount };
   }
 
   // ─── POST /admin/businesses/:id/reopen ─────────────────────────────────────

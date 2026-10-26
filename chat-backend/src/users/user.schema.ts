@@ -189,9 +189,14 @@ export const UserSchema = SchemaFactory.createForClass(User);
 // avoid the duplicate-index warning (CLAUDE.md: use schema.index() only).
 UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 UserSchema.index({ createdAt: -1 });
-UserSchema.index({ accountType: 1 });
+// accountType đơn lẻ đã bị phủ bởi compound bên dưới (prefix trái)
 UserSchema.index({ ownerUserId: 1 });
 UserSchema.index({ relationshipType: 1 });
 UserSchema.index({ province: 1 });
 UserSchema.index({ businessCategory: 1 });
 UserSchema.index({ verificationStatus: 1 });
+// Compound cho truy vấn chính của trang admin Doanh nghiệp:
+// accountType + deletedAt + verificationStatus + sort createdAt / licenseExpiresAt.
+UserSchema.index({ accountType: 1, deletedAt: 1, verificationStatus: 1, createdAt: -1 });
+UserSchema.index({ accountType: 1, deletedAt: 1, licenseExpiresAt: 1 });
+UserSchema.index({ ownerUserId: 1, accountType: 1, deletedAt: 1 });

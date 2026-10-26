@@ -16,6 +16,8 @@ export type AdminAuditAction =
   | 'delete_business'
   | 'create_business'
   | 'reopen_business'
+  | 'restore_business'
+  | 'assign_business'
   | 'soft_delete_message'
   | 'takedown_story'
   | 'resolve_report'

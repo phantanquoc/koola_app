@@ -12,11 +12,11 @@ export class ExportBusinessesDto {
   search?: string;
 
   @ApiPropertyOptional({
-    enum: ['pending', 'verified', 'rejected', 'all', 'expiring'],
+    enum: ['pending', 'verified', 'rejected', 'all', 'expiring', 'archived'],
   })
   @IsOptional()
-  @IsIn(['pending', 'verified', 'rejected', 'all', 'expiring'])
-  status?: 'pending' | 'verified' | 'rejected' | 'all' | 'expiring';
+  @IsIn(['pending', 'verified', 'rejected', 'all', 'expiring', 'archived'])
+  status?: 'pending' | 'verified' | 'rejected' | 'all' | 'expiring' | 'archived';
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -47,6 +47,11 @@ export class ExportBusinessesDto {
   @IsOptional()
   @IsIn(['true', 'false'])
   banned?: 'true' | 'false';
+
+  @ApiPropertyOptional({ enum: ['true', 'false'] })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  suspended?: 'true' | 'false';
 
   @ApiPropertyOptional({ example: 'createdAt:asc' })
   @IsOptional()

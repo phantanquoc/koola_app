@@ -120,7 +120,8 @@ describe('AdminService', () => {
         .mockResolvedValueOnce(1) // slaOver72
         .mockResolvedValueOnce(2) // slaDay1_3
         .mockResolvedValueOnce(2) // slaFresh
-        .mockResolvedValueOnce(4); // expiringSoon
+        .mockResolvedValueOnce(4) // expiringSoon
+        .mockResolvedValueOnce(1); // archivedBusinesses
 
       const stats = await service.getStats();
       expect(stats).toEqual({
@@ -134,7 +135,19 @@ describe('AdminService', () => {
         slaDay1_3: 2,
         slaFresh: 2,
         expiringSoon: 4,
+        archivedBusinesses: 1,
       });
+    });
+
+    it('scopes business counts to non-deleted records so tabs match the list', async () => {
+      mockUserModel.countDocuments.mockResolvedValue(0);
+      await service.getStats();
+      const calls = mockUserModel.countDocuments.mock.calls.map((c) => c[0]);
+      // 5 count đầu là business theo verificationStatus → phải có deletedAt: null
+      expect(calls[1]).toMatchObject({ deletedAt: null });
+      expect(calls[2]).toMatchObject({ verificationStatus: 'pending', deletedAt: null });
+      expect(calls[3]).toMatchObject({ verificationStatus: 'verified', deletedAt: null });
+      expect(calls[4]).toMatchObject({ verificationStatus: 'rejected', deletedAt: null });
     });
   });
 
@@ -763,6 +776,32 @@ describe('AdminService', () => {
         service.updateBusiness('ghost', { taxCode: '1' }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('lowercases contactEmail and rejects one already used by another record', async () => {
+      mockUserModel.exists.mockResolvedValue({ _id: 'other' });
+      await expect(
+        service.updateBusiness('biz-1', { contactEmail: 'Other@Koola.VN' }),
+      ).rejects.toThrow(ConflictException);
+      // So sánh trên bản lowercase — trước đây "Other@..." lọt qua check trùng
+      expect(mockUserModel.exists).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _id: { $ne: 'biz-1' },
+          $or: [{ contactEmail: 'other@koola.vn' }, { email: 'other@koola.vn' }],
+        }),
+      );
+      expect(mockUserModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('lowercases contactEmail before writing when free', async () => {
+      mockUserModel.exists.mockResolvedValue(null);
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.updateBusiness('biz-1', { contactEmail: 'New@Koola.VN' });
+      expect(mockUserModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({
+        contactEmail: 'new@koola.vn',
+      });
+    });
   });
 
   // ─── setSuspended ────────────────────────────────────────────────────────
@@ -851,6 +890,56 @@ describe('AdminService', () => {
   });
 
   // ─── createBusiness ──────────────────────────────────────────────────────
+
+  describe('restoreBusiness', () => {
+    it('clears deletedAt, resets to pending, and syncs sellers', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1', verificationStatus: 'pending' }),
+      );
+      const res = await service.restoreBusiness('biz-1');
+      expect(res.verificationStatus).toBe('pending');
+      // Chỉ hồ sơ đã xoá mới khôi phục được
+      const filter = mockUserModel.findOneAndUpdate.mock.calls[0][0];
+      expect(filter.deletedAt).toEqual({ $ne: null });
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set.deletedAt).toBeNull();
+      expect(update.$unset.rejectionReason).toBe('');
+      expect(update.$push.verificationHistory.status).toBe('restored');
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith(['biz-1']);
+    });
+
+    it('throws 404 when the business is not archived', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery(null),
+      );
+      await expect(service.restoreBusiness('live')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('bulkAssignBusiness', () => {
+    it('assigns and unassigns in one updateMany scoped to live businesses', async () => {
+      mockUserModel.updateMany.mockResolvedValue({ modifiedCount: 3 });
+
+      await expect(
+        service.bulkAssignBusiness(['a', 'b', 'c'], 'mod@koola.vn'),
+      ).resolves.toEqual({ modified: 3 });
+      expect(mockUserModel.updateMany.mock.calls[0][0]).toMatchObject({
+        _id: { $in: ['a', 'b', 'c'] },
+        accountType: 'business',
+        deletedAt: null,
+      });
+      expect(mockUserModel.updateMany.mock.calls[0][1]).toEqual({
+        $set: { assignee: 'mod@koola.vn' },
+      });
+
+      await service.bulkAssignBusiness(['a'], null);
+      expect(mockUserModel.updateMany.mock.calls[1][1]).toEqual({
+        $unset: { assignee: '' },
+      });
+    });
+  });
 
   describe('createBusiness', () => {
     it('creates a pending business account', async () => {

@@ -11,12 +11,13 @@ export class ListPendingBusinessesDto extends PaginationDto {
   search?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by verification status; "all" omits the status filter, "expiring" = verified with licenseExpiresAt within 30 days',
-    enum: ['pending', 'verified', 'rejected', 'all', 'expiring'],
+    description:
+      'Filter by verification status; "all" omits the status filter, "expiring" = verified with licenseExpiresAt trong 30 ngày tới hoặc đã quá hạn, "archived" = hồ sơ đã xóa mềm',
+    enum: ['pending', 'verified', 'rejected', 'all', 'expiring', 'archived'],
   })
   @IsOptional()
-  @IsIn(['pending', 'verified', 'rejected', 'all', 'expiring'])
-  status?: 'pending' | 'verified' | 'rejected' | 'all' | 'expiring';
+  @IsIn(['pending', 'verified', 'rejected', 'all', 'expiring', 'archived'])
+  status?: 'pending' | 'verified' | 'rejected' | 'all' | 'expiring' | 'archived';
 
   @ApiPropertyOptional({ description: 'Filter by businessCategory (exact match)' })
   @IsOptional()
@@ -67,4 +68,13 @@ export class ListPendingBusinessesDto extends PaginationDto {
   @IsOptional()
   @IsIn(['true', 'false'])
   banned?: 'true' | 'false';
+
+  @ApiPropertyOptional({
+    description:
+      'true = chỉ hồ sơ đang tạm ngưng bán (sản phẩm ẩn khỏi catalog), false = đang bán bình thường',
+    enum: ['true', 'false'],
+  })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  suspended?: 'true' | 'false';
 }

@@ -11,6 +11,7 @@ import {
   HttpStatus,
   UseGuards,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,6 +30,7 @@ import { ListUsersDto } from './dto/list-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { BulkBusinessDto } from './dto/bulk-business.dto';
+import { BulkAssignBusinessDto } from './dto/bulk-assign-business.dto';
 import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { ExportBusinessesDto } from './dto/export-businesses.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -99,8 +101,14 @@ export class AdminController {
   }
 
   @Get('businesses/:id')
-  async getBusiness(@Param('id') id: string) {
-    return this.adminService.getBusiness(id);
+  async getBusiness(
+    @Param('id') id: string,
+    @Query('includeDeleted') includeDeleted?: string,
+  ) {
+    // includeDeleted=1 chỉ dùng khi mở hồ sơ từ tab Lưu trữ (đã xoá mềm).
+    return this.adminService.getBusiness(id, {
+      includeDeleted: includeDeleted === '1',
+    });
   }
 
   @Post('businesses')
@@ -195,6 +203,24 @@ export class AdminController {
     return res;
   }
 
+  @Post('businesses/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  async restoreBusiness(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.restoreBusiness(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'restore_business',
+      targetType: 'business',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
   @Post('businesses/:id/reopen')
   @HttpCode(HttpStatus.OK)
   async reopenBusiness(
@@ -208,6 +234,43 @@ export class AdminController {
       action: 'reopen_business',
       targetType: 'business',
       targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('businesses/bulk-assign')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async bulkAssign(
+    @Body() dto: BulkAssignBusinessDto,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    // Không gửi assignee = nhận hồ sơ về chính mình; chuỗi rỗng = bỏ gán.
+    // `assignee` lưu email (khớp filter "Của tôi"), không phải actorId.
+    let assignee: string | null;
+    if (dto.assignee === undefined) {
+      const me = await this.adminService.getMe(user.actorId);
+      assignee = me.email ?? null;
+      if (!assignee) {
+        throw new BadRequestException(
+          'Tài khoản admin chưa có email — không gán được người phụ trách',
+        );
+      }
+    } else {
+      assignee = dto.assignee.trim() || null;
+    }
+    const res = await this.adminService.bulkAssignBusiness(dto.ids, assignee);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'assign_business',
+      targetType: 'business',
+      targetId: dto.ids.join(','),
+      payload: { ids: dto.ids, assignee },
       ip: req.ip ?? null,
     });
     return res;
