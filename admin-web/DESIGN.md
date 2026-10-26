@@ -330,8 +330,17 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
   (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409
   nếu lệch, trang chi tiết hiện "Hồ sơ vừa được người khác sửa".
 - **3 trang còn dùng drawer** (`variant="drawer"`) trái quyết định §3B — chuyển sang
-  route/component chi tiết: `ReportDrawer` (báo cáo), `UsersPage` (UserDetailDrawer),
-  `ConversationsPage` (hội thoại). Làm ở PR riêng vì mỗi trang cần route + endpoint detail.
+  route/component chi tiết: `UsersPage` (UserDetailDrawer), `ConversationsPage` (hội thoại).
+  Làm ở PR riêng vì mỗi trang cần route + endpoint detail.
+- **Trang Hội thoại & Tin nhắn chưa đọc param `focus`**: `ReportTargetLink` cũ trỏ tới
+  `/conversations?focus=<id>` và `/messages?focus=<id>` nhưng hai trang bỏ qua param →
+  moderator bấm vào thấy trang trống. Đã bỏ link chết (`reportTargetHref` trả null);
+  khi thêm `focus` thì bật lại một dòng ở đó.
+- **Báo cáo story không xem được ảnh**: report targetType story chỉ resolve được caption,
+  ảnh cần presigned URL + lightbox (`LicensePreview` đã có, chỉ thiếu presign ở server).
+- **Seed data `_id` dạng chuỗi** (`scripts/seed-admin-reports.ts` tạo `seed-report-1`):
+  `findOne` đã fallback đọc collection, nhưng targetId cũng là chuỗi nên không resolve
+  được tên → list hiện "Đối tượng không còn tồn tại". Nên đổi seed sang ObjectId thật.
 - `BusinessDetailDrawer` tên file còn chữ "Drawer" nhưng hình thức đã là modal 720px
   (`dialog--wide`); đổi tên thành `BusinessDetail` khi có dịp sửa file đó.
 - Badge "nghi trùng" mới có trong drawer, chưa có trên hàng của bảng — moderator phải

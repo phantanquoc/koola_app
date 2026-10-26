@@ -63,7 +63,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/messages` | `GET /api/admin/messages/search` (`q` bắt buộc, lọc `conversationId`) + soft-delete có confirm |
 | `/moments` | `GET /api/admin/stories` (lọc authorId) + takedown |
 | `/music` | CRUD `/api/admin/music-tracks` (xóa mềm giữ toàn vẹn story) |
-| `/reports` | `GET /api/admin/reports` (status/targetType) + resolve/dismiss |
+| `/reports` + `/reports/:id` | list `GET /api/admin/reports` (status/targetType, kèm `targetName`/`targetDetail`/`reporterName` resolve server-side) + chi tiết route riêng `GET /reports/:id` (lọc `targetId` cho báo cáo cũ cùng đối tượng) + resolve/dismiss qua confirm |
 | `/products`, `/orders`, `/services`, `/stores` | commerce admin (products gồm cả inactive; orders read-only + detail; seller picker = business verified + unbanned) |
 | `/health` | `GET /api/admin/health` (mongo/redis/coturn/minio), **poll 30s**, không socket |
 | `/broadcast` | `POST /api/admin/broadcast {title, body}` + ghi chú preview (emit toàn server, gõ sai không undo) |

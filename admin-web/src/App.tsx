@@ -14,6 +14,7 @@ import UsersPage from './pages/UsersPage';
 import ConversationsPage from './pages/ConversationsPage';
 import MessageSearchPage from './pages/MessageSearchPage';
 import ReportsPage from './pages/ReportsPage';
+import ReportDetailPage from './pages/ReportDetailPage';
 import MomentsModerationPage from './pages/MomentsModerationPage';
 import MusicCatalogPage from './pages/MusicCatalogPage';
 import CommerceProductsPage from './pages/CommerceProductsPage';
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="moments" element={<MomentsModerationPage />} />
                 <Route path="music" element={<MusicCatalogPage />} />
                 <Route path="reports" element={<ReportsPage />} />
+                <Route path="reports/:id" element={<ReportDetailPage />} />
                 <Route path="products" element={<CommerceProductsPage />} />
                 <Route path="orders" element={<CommerceOrdersPage />} />
                 <Route path="services" element={<CommerceServicesPage />} />

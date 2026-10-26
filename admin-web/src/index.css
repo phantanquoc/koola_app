@@ -2394,8 +2394,7 @@ th.sortable:hover {
 /* Cặp nhãn + input ngày trong filter row (audit log) — cùng nhịp với .filter-check */
 .filter-date {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: center;  gap: 6px;
   white-space: nowrap;
 }
 
@@ -2752,4 +2751,15 @@ th.sortable:hover {
 .confirm-preview .description-list > div,
 .dialog .description-list > div {
   display: contents;
+}
+
+/* Nội dung bị báo cáo: trích nguyên văn, phải nhìn ra ngay là "nội dung của
+   người khác" chứ không phải mô tả của hệ thống. */
+.report-quote {
+  border-left: 3px solid var(--koola-line-strong);
+  background: var(--koola-surface-soft);
+  border-radius: var(--radius-xs);
+  padding: var(--space-3) var(--space-4);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

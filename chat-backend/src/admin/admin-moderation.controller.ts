@@ -36,6 +36,7 @@ import { MusicTrack } from '../moments/schemas/music-track.schema';
 import { AudienceList } from '../moments/schemas/audience-list.schema';
 import { Report } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
+import { AdminReportService } from './admin-report.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChatGateway } from '../gateway/chat.gateway';
 import type { Request } from 'express';
@@ -56,6 +57,7 @@ export class AdminModerationController {
     private audienceListModel: Model<AudienceList>,
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
+    private readonly reportService: AdminReportService,
   ) {}
 
   private displayNameFor(conv: any, members: any[]): string {
@@ -435,24 +437,19 @@ export class AdminModerationController {
 
   @Get('reports')
   async listReports(
-    @Query() dto: PaginationDto & { status?: string; targetType?: string },
+    @Query()
+    dto: PaginationDto & {
+      status?: string;
+      targetType?: string;
+      targetId?: string;
+    },
   ) {
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 20;
-    const skip = (page - 1) * limit;
-    const filter: Record<string, unknown> = {};
-    if ((dto as any).status) filter['status'] = (dto as any).status;
-    if ((dto as any).targetType) filter['targetType'] = (dto as any).targetType;
-    const [data, total] = await Promise.all([
-      this.reportModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      this.reportModel.countDocuments(filter),
-    ]);
-    return { data, total, page, limit };
+    return this.reportService.list(dto);
+  }
+
+  @Get('reports/:id')
+  async getReport(@Param('id') id: string) {
+    return this.reportService.findOne(id);
   }
 
   @Post('reports/:id/resolve')
