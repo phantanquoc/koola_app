@@ -287,6 +287,11 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
 
     renderPage('/businesses?tab=archived');
     expect(await screen.findByText('Công ty Đã Xoá')).toBeTruthy();
+    // Tab Lưu trữ mặc định mới-xoá-trước; sort phải đi lên server, không chỉ đổi mũi tên.
+    expect(mockedGet).toHaveBeenCalledWith(
+      '/admin/businesses/pending',
+      expect.objectContaining({ params: expect.objectContaining({ status: 'archived', sort: 'deletedAt:desc' }) }),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Khôi phục' }));
     expect(await screen.findByRole('heading', { name: 'Khôi phục Công ty Đã Xoá?' })).toBeTruthy();

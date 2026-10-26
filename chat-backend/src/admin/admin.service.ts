@@ -249,6 +249,9 @@ export class AdminService {
     // ponytail: whitelist keeps sort injection-proof; extend list if UI needs more keys
     const ALLOWED_SORT = new Set([
       'createdAt',
+      // Tab Lưu trữ hiển thị cột "Xoá lúc" — thiếu field này thì bấm sort
+      // không có tác dụng (header vẫn đổi mũi tên, dữ liệu không đổi).
+      'deletedAt',
       'displayName',
       'province',
       'businessCategory',

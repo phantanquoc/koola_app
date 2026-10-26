@@ -238,6 +238,18 @@ describe('AdminService', () => {
       expect(q.sort).toHaveBeenCalledWith({ createdAt: 1 });
     });
 
+    // Tab Lưu trữ hiện cột "Xoá lúc" và cho bấm sort cột đó — thiếu field trong
+    // whitelist thì header đổi mũi tên mà dữ liệu đứng yên.
+    it('sorts archived rows by deletedAt', async () => {
+      const q = makeLeanQuery([]);
+      mockUserModel.find.mockReturnValue(q);
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, status: 'archived', sort: 'deletedAt:desc' });
+
+      expect(q.sort).toHaveBeenCalledWith({ deletedAt: -1 });
+    });
+
     it('search matches contactPhone', async () => {
       mockUserModel.find.mockReturnValue(makeLeanQuery([]));
       mockUserModel.countDocuments.mockResolvedValue(0);

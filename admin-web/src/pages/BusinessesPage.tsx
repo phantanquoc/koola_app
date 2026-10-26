@@ -105,8 +105,12 @@ export default function BusinessesPage() {
   const pageSize = [10, 20, 50].includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
   // P0: tab chờ duyệt mặc định cũ nhất trước — duyệt theo thứ tự quá hạn.
   // Tab giấy phép: hạn gần nhất lên đầu, đó mới là việc cần làm.
+  // Tab lưu trữ: vừa xoá lên đầu — đó là hồ sơ có thể phải cứu ngay.
   const effectiveSort = values.sort
-    || (tab === 'pending' ? 'createdAt:asc' : tab === 'expiring' ? 'licenseExpiresAt:asc' : undefined);
+    || (tab === 'pending' ? 'createdAt:asc'
+      : tab === 'expiring' ? 'licenseExpiresAt:asc'
+        : tab === 'archived' ? 'deletedAt:desc'
+          : undefined);
   const params = useMemo(() => ({
     status: tab,
     search: values.search || undefined,
@@ -587,7 +591,7 @@ export default function BusinessesPage() {
                         : tab === 'archived' ? 'Xoá lúc'
                           : tab === 'pending' ? 'Chờ từ' : 'Đăng ký'
                     }
-                    sortField={tab === 'expiring' ? 'licenseExpiresAt' : 'createdAt'}
+                    sortField={tab === 'expiring' ? 'licenseExpiresAt' : tab === 'archived' ? 'deletedAt' : 'createdAt'}
                     sort={effectiveSort}
                     onSort={toggleSort}
                   />

@@ -7,6 +7,10 @@ quyết định nhanh: mật độ cao, quét được bằng mắt, làm đư�
 > DNA marketing (ElevenLabs/Waldenburg/hero) nằm ở `koola_app/DESIGN.md` — KHÔNG áp dụng ở đây.
 > Mobile có DNA riêng: `openspec/ui-dna.md` — KHÔNG áp dụng ở đây.
 > Token sống trong `src/index.css` (`:root`); component kit sống trong `src/components/`.
+>
+> **Bản tham chiếu sống:** `src/pages/BusinessesPage.tsx` + `src/components/BusinessDetailDrawer.tsx`
+> là hiện thân đầy đủ nhất của tài liệu này. Mâu thuẫn giữa tài liệu và code → sửa code
+> hoặc sửa tài liệu trong cùng PR, đừng để lệch.
 
 ## 0. Nguyên tắc (áp dụng trước mọi chi tiết)
 
@@ -20,6 +24,13 @@ quyết định nhanh: mật độ cao, quét được bằng mắt, làm đư�
 4. **Mọi thứ share được phải share được:** filter/search/pagination/sort nằm trong URL
    (deep-link cho moderator khác). Detail route mở trực tiếp được.
 5. **Phá hủy luôn có confirm; diện rộng luôn type-to-confirm.** Không ngoại lệ.
+6. **Mỗi trang chọn đúng một archetype ở §3 — cấm chế layout thứ năm.** Trang list mới
+   lấy khung từ `BusinessesPage`, không dựng toolbar/bảng/pagination mới.
+7. **Không có nút giả.** Mọi control hiển thị ra phải có tác dụng thật; tính năng chưa
+   làm thì ẩn, không để nút bấm không làm gì.
+8. **Mỗi field trong DB mà admin cần quyết định phải đi đủ bộ ba:** hiện ở đâu → lọc
+   được ở server → có hành động đảo ngược. Field không đọc được ở bất kỳ đâu là dead
+   field (đã từng xảy ra với `suspended`).
 
 ## 1. Token (giữ nguyên, làm rõ cách dùng)
 
@@ -54,19 +65,69 @@ Quy tắc: cấm hex/px cứng ngoài `index.css`; auditor grep `#[0-9a-fA-F]` n
 
 ### A. Trang queue/list — mặc định cho users/businesses/reports/messages/orders/…
 
-Thứ tự dọc duy nhất:
+`BusinessesPage.tsx` là **bản tham chiếu duy nhất**. Trang list mới copy khung từ đó,
+không tự dựng lại. Thứ tự dọc, đủ 8 tầng:
 
 ```
-PageHeader gọn (title 20-24px + count + actions)
-→ FilterBar (search + selects + date-range, wrap được)
-→ BulkBar (chỉ hiện khi count > 0, sticky dưới toolbar)
-→ Table (compact, sticky header, cột actions sticky phải)
-→ Footer (tổng số + pagination)
+1. ListHeader        title + count inline + actions (Xuất CSV, Thêm) — một hàng
+                     hàng 2 = filter row: search debounce 400ms + checkbox lọc nhanh
+2. StatusTabs        tab "Tất cả" đầu tiên, count lấy từ /admin/stats
+3. context-row       MỘT hàng: bucket ưu tiên (SLA) + chip lọc đang bật
+4. BulkBar           chỉ render khi count > 0, chỉ ở tab thao tác được hàng loạt
+5. Table             compact, sticky header, cột actions sticky phải, click hàng mở drawer
+6. Pagination        luôn render khi total > 0, page-size 10/20/50 + goto
+7. Drawer 480px      hoặc route riêng khi cần deep-link
+8. Confirm + Toast   cho mọi mutation
 ```
 
-- Filter đang active hiện dạng chip row dưới toolbar, mỗi chip xóa được.
-- Sort mặc định: queue kiểm duyệt = cũ nhất trước (kèm cột Tuổi).
-- Không trang trắng: loading = skeleton rows, rỗng = EmptyState, lỗi = StateBlock + retry.
+Quy ước bắt buộc cho mọi trang list:
+
+| Hạng mục | Quy ước |
+|---|---|
+| State | tab/search/filter/sort/page/pageSize nằm trong URL qua `useUrlFilters`. **Cấm** `useState` cho filter |
+| Fetch | `useAdminList` (TanStack Query). **Cấm** `useEffect` + fetch tay |
+| Sort | `field:asc`/`field:desc`, whitelist field ở server. Queue duyệt mặc định `createdAt:asc` |
+| Search | debounce 400ms + Enter chốt ngay; server tìm trên tên/email/SĐT/MST/ID |
+| Lọc theo cột | `ColumnHeader.filter` (popover portal). Không thêm `<select>` rời ở toolbar |
+| Chọn dòng | reset selection khi tab/filter/page đổi; chỉ chọn được trang hiện tại |
+| Empty | phân biệt "trống thật" vs "không khớp lọc" — copy khác nhau + nút "Xoá bộ lọc" khi có lọc |
+| Error | `StateBlock variant="error"` + nút Thử lại gọi `refetch()`. **Cấm** nuốt lỗi (`.catch(() => {})`) |
+| Mutation | busy chặn double-submit; toast nêu tên đối tượng; hoàn tác được thì có nút Hoàn tác |
+| PII | `MaskedPII` cho mọi SĐT/email trên bảng. CSV xuất không che nhưng phải confirm |
+| Export | `ExportButton` + dialog nêu phạm vi, cap 500 dòng, cảnh báo dữ liệu nhạy cảm |
+| Bàn phím | J/K di chuyển, Enter mở, A/R quyết định, `?` mở bảng trợ giúp |
+| Mobile ≤860px | ẩn cột phụ bằng `.col-hide-mobile`; giữ Tên + Trạng thái + actions |
+
+Empty-state copy theo tab, không dùng một câu chung: tab Chờ duyệt viết
+"Hàng đợi trống — chuyển sang tab khác để kiểm tra", tab Lưu trữ viết
+"Hồ sơ bị xoá mềm sẽ nằm ở đây và khôi phục được".
+
+### A2. Từ vựng trạng thái & thang mức độ phá huỷ (dùng chung mọi trang data)
+
+Một bản ghi quản trị nằm trên **bốn trục trạng thái độc lập** — không gộp thành một
+cột "Trạng thái":
+
+| Trục | Field | Nghĩa | Hiển thị |
+|---|---|---|---|
+| Vòng đời duyệt | `verificationStatus` | pending/verified/rejected | `VerificationBadge` |
+| Ẩn khỏi catalog | `suspended` | tạm ngưng bán — **không** phải vi phạm | badge muted "Tạm ngưng" |
+| Khoá đăng nhập | `isBanned` + `banReason`/`bannedUntil` | vi phạm | badge danger "Bị cấm" |
+| Đã xoá | `deletedAt` | xoá mềm, khôi phục được | tab Lưu trữ |
+
+Mỗi trục phải đủ bộ ba: hiện badge trên hàng → lọc được ở server → có hành động đảo ngược.
+
+Thang mức độ hành động — chọn đúng bậc, không nhảy cóc:
+
+| Bậc | Ví dụ | Confirm | requireText |
+|---|---|---|---|
+| Đảo ngược, hẹp | duyệt, khôi phục, gỡ cấm | ConfirmDialog thường | — |
+| Ẩn tạm | tạm ngưng bán | ConfirmDialog + nêu rõ khác ban | `XACNHAN` |
+| Phá huỷ hẹp | xoá mềm 1 hồ sơ | ConfirmDialog danger + nêu khôi phục được | `XACNHAN` |
+| Diện rộng | bulk duyệt/từ chối | preview ≤10 dòng + "và N nữa" | `XACNHAN` |
+| Không hoàn tác | broadcast | preview + đếm người nhận | gõ đúng chữ khoá |
+
+Ba bậc dễ lẫn nghĩa — copy phải nói rõ: **Vô hiệu hoá = tạm ngưng bán, hồ sơ vẫn
+xác minh** ≠ **Cấm = khoá đăng nhập + thu hồi phiên** ≠ **Xoá = khỏi danh sách, còn trong DB**.
 
 ### B. Trang detail — drawer hay route?
 
@@ -91,7 +152,7 @@ PageHeader gọn (title 20-24px + count + actions)
   nút confirm disabled tới khi hợp lệ. Giữ input khi submit lỗi.
 - Broadcast: form + panel preview + type-to-confirm "BROADCAST" (không undo).
 
-## 4. Table — spec mật độ (trọng tâm của đợt sửa này)
+## 4. Table — spec mật độ
 
 Mặc định mọi bảng quản lý dùng variant **compact**:
 
@@ -108,21 +169,32 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 
 | Component | Spec |
 |---|---|
-| `PageHeader` | title 20–24px/700 + count + actions; eyebrow CHỈ dashboard |
-| `TableShell` | toolbar (title/subtitle + actions) + children + footer built-in |
-| `BulkBar` | sticky dưới toolbar: badge count + 2 nút bulk + tóm tắt trước confirm; style bằng class CSS, cấm inline style |
-| `FilterBar` | composition từ toolbar + chip row (CSS đã có `.table-toolbar`, `.filter-chip-row`) — không component mới |
-| `Tabs` / segmented | pill group, option active nền ink chữ trắng; dùng cho time-range và sub-view |
-| `SearchInput` | ô search trong toolbar, có kbd hint `/` khi là global |
-| `StatusBadge` | mapping cố định: active/verified/success → success; pending → warning; banned/rejected/error → danger; unknown → muted |
-| `Dialog` / `ConfirmDialog` | focus-trap; destructive qua ConfirmDialog + reason bắt buộc; thứ tự nút: **confirm trước, Hủy sau** (mở dialog là Enter chốt luôn); preview slot tóm tắt create/update/delete; `requireText` type-to-confirm cho diện rộng/không undo |
+| `ListHeader` | **header chuẩn cho trang list**: title 20–24px/700 + count inline + actions phải; slot `children` = filter row. Dùng cho mọi trang list mới |
+| `PageHeader` | chỉ cho trang **không phải list** (detail, cài đặt, dashboard). Trang list mà dùng `PageHeader` là lệch mẫu |
+| `TableShell` | vỏ bảng + toolbar tuỳ chọn + footer; trang list mới không truyền `title` (title đã ở `ListHeader`) |
+| `StatusTabs` + `.tabs` | pill group, tab active nền ink chữ trắng; `count` chỉ hiện khi > 0 |
+| `ColumnHeader` | `<th>` sort được (`aria-sort`) + phễu lọc popover portal; `className="col-hide-mobile"` cho cột phụ |
+| `BulkBar` | chỉ render khi `count > 0`; badge count + preview 3 tên + nút bulk + Bỏ chọn; class CSS `.bulk-bar`, cấm inline style |
+| `Pagination` | luôn render khi `total > 0` (kể cả 1 trang) để tổng số không biến mất; page-size + goto cho queue |
+| `ExportButton` | nút + dialog confirm nêu phạm vi (cap 500, PII không che) |
+| `MaskedPII` | SĐT/email che mặc định, click reveal, tự che 30s |
+| `StatusBadge` / `VerificationBadge` | mapping cố định: verified/success → success; pending → warning; banned/rejected → danger; unknown/absent → muted |
+| `ConfirmDialog` | focus-trap; destructive + reason bắt buộc; thứ tự nút **confirm trước, Hủy sau**; slot `preview` tóm tắt; `requireText` theo §3A2 |
+| `StateBlock` | loading/error có nút Thử lại; `EmptyState` cho rỗng, có `action` khi đang lọc |
 | `Drawer` 480px | moderation context theo thứ tự: nội dung gốc → target info + link → lịch sử cũ (tối đa 5 + deep-link xem tất cả) → actions |
+| `LicensePreview` | preview + lightbox 720px trước khi duyệt/gỡ — gỡ mù là cấm. Prop `label` cho ảnh không phải giấy phép |
 | `Toast` | feedback sau mutation; 429 = warning "thao tác quá nhanh" + disable nút 10s |
-| `Pagination` | mọi list; state trong URL |
-| `StateBlock` / `EmptyState` / skeleton | cấm trang trắng; skeleton rows cho bảng (1.2s shimmer) |
-| `LicensePreview` / lightbox 720px | preview trước khi duyệt/gỡ — gỡ mù là cấm |
 
-Button: `.btn` + variant primary/secondary/ghost/danger/danger-ghost, `btn-sm` trong bảng.
+Hook dùng chung (đừng viết lại):
+
+| Hook | Spec |
+|---|---|
+| `useUrlFilters(defaults)` | `{ values, set, reset }` — mọi filter/sort/page đi qua đây |
+| `useAdminList(key, url, params)` | `{ rows, total, isLoading, isError, refetch }`; key phải chứa mọi filter |
+| `useBusinessDecision(...)` | mẫu cho "một nguồn sự thật" của quyết định: list + route detail dùng chung confirm/toast/copy |
+
+Button: `.btn` + variant primary/secondary/ghost/danger/danger-ghost, `btn-sm` trong bảng,
+`btn-icon` cho action icon-only (bắt buộc `aria-label` + `title`).
 Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi ý phím.
 
 ## 6. Motion & responsive
@@ -140,25 +212,121 @@ Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi �
 - Không cache presigned URL trong grid; xin URL mới mỗi lần preview; xử lý 403 hết hạn.
 - Không gọi route legacy `/moments/*` (thiếu AdminGuard + audit).
 - PII (SĐT/email) che mặc định dạng `09•• ••• •28`, click-to-reveal, tự che sau 30s.
-- Export CSV: cap số dòng + lọc ngày; cấm nút "export all" đồng bộ.
+- Export CSV: cap 500 dòng + confirm nêu PII không che; **cấm** nút "export all" đồng bộ.
+  Hiện **chưa có** lọc khoảng ngày cho export (`createdFrom`/`createdTo`) — thêm vào cả
+  DTO list lẫn export cùng lúc khi làm, đừng chỉ thêm cho một bên.
+- Không `.catch(() => {})` để nuốt lỗi mạng: người vận hành phải thấy lỗi và có nút Thử lại.
 
-## 8. Checklist UI trước khi báo done
+## 8. Checklist cho một trang list mới
 
-- [ ] Không double-header; màu/spacing/radius qua `var(--...)`
-- [ ] Bảng dùng variant compact; trạng thái qua `StatusBadge` đúng mapping
-- [ ] Filter/sort/pagination trong URL; reload giữ view; detail mở trực tiếp được
-- [ ] Bulk qua `BulkBar` (class CSS) + tóm tắt trước confirm; diện rộng type-to-confirm
-- [ ] Phá hủy qua `ConfirmDialog` + reason; feedback qua `Toast`
-- [ ] Loading/empty/error có skeleton/state; không trang trắng
-- [ ] Focus visible + Dialog focus-trap + điều hướng bàn phím; phím tắt queue có gợi ý
-- [ ] Test 1440/860/390; PII che mặc định; nội dung user render as text
+Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, không phải cảm nhận.
 
-## 9. Code follow-ups (ghi nợ khi viết spec này — làm ở PR riêng)
+**Khung & dữ liệu**
+- [ ] `ListHeader` (không `PageHeader`), title + count, actions bên phải
+- [ ] Filter/sort/page/pageSize nằm trong URL: `useUrlFilters`; reload giữ nguyên view; copy link mở đúng filter
+- [ ] Fetch qua `useAdminList`; không có `useEffect(() => { fetch... })` hay `.catch(() => {})`
+- [ ] Query key chứa **mọi** filter — đổi filter mà không refetch là bug
+- [ ] Server có whitelist sort; default sort nêu lý do (queue = cũ nhất trước)
 
-1. `BulkBar.tsx` đang inline style → chuyển sang class `.bulk-bar` trong `index.css`.
-2. `.page-title` clamp(28–40px) + eyebrow bắt buộc → page header gọn theo §3A
-   (title 20–24px, eyebrow optional); `.btn-primary` bỏ chữ "pill" trong comment cũ.
-3. Thêm class `.data-table--compact` + cột actions sticky + sortable header style.
-4. Thêm CSS tabs/segmented control (chưa có).
-5. `MetricCard` bỏ orb `::after` trên dashboard (giữ CSS class cho login/empty-state).
-6. `.btn-primary:hover` đang nhảy sang chàm — sửa thành ink đậm.
+**Bảng**
+- [ ] `data-table--compact`; cột phụ có `col-hide-mobile`; actions dùng `btn-icon` + `aria-label`
+- [ ] Click hàng mở drawer; nút trong hàng không kích hoạt click hàng
+- [ ] Trạng thái dùng `StatusBadge`/`VerificationBadge`, không tự map màu
+- [ ] Cột ngày/số dùng `formatDateTime`/`formatNumber`; id dùng `.k-mono` rút gọn
+- [ ] `Pagination` luôn render khi có dữ liệu, có page-size
+
+**Hành động**
+- [ ] Bậc xác nhận đúng bảng §3A2 (đảo ngược / ẩn tạm / phá huỷ / diện rộng / không hoàn tác)
+- [ ] Bulk: `BulkBar` + preview ≤10 dòng + `requireText`; selection reset khi đổi filter/trang
+- [ ] Mọi hành động có hành động đảo ngược, hoặc copy nói rõ là không đảo ngược
+- [ ] Mutation chặn double-submit (`busy`), toast nêu tên đối tượng, lỗi hiện message từ server
+- [ ] Đọc đúng shape response (`{modified, results}` không phải `{approved, failed}`)
+
+**An toàn & trạng thái**
+- [ ] PII che mặc định (`MaskedPII`); CSV có confirm nêu PII + cap 500
+- [ ] Loading = skeleton giữ toolbar; rỗng = `EmptyState` phân biệt trống thật vs không khớp lọc; lỗi = `StateBlock` + Thử lại
+- [ ] Focus visible; dialog focus-trap; Esc đóng; focus trả về nút đã mở
+- [ ] Bàn phím: J/K/Enter/A/R/`?` (nếu là queue); bảng trợ giúp `?`
+
+**Kiểm thử**
+- [ ] Vitest cho hành động chính (bulk, restore, filter); `tsc --noEmit`
+- [ ] Test tay 1440 / 860 / 390
+- [ ] Tab và đường dẫn trực tiếp cùng mở đúng một hồ sơ (drawer ↔ route detail)
+
+Lệnh chốt trước khi báo done:
+
+```bash
+cd admin-web && npx vitest run && npx tsc --noEmit
+cd chat-backend && npx jest src/admin && ./node_modules/.bin/tsc --noEmit
+```
+
+Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi admin):
+`scripts/reseed-businesses.ts`, `src/accounts/accounts.service.spec.ts`,
+`src/commerce/orders/commerce-orders.service.spec.ts`.
+
+## 9. Công thức dựng trang list mới (~1 file page + 1 file drawer)
+
+1. Copy khung `BusinessesPage.tsx`, xoá phần đặc thù nghiệp vụ (SLA bucket, license).
+2. `useUrlFilters({ tab, search, page, pageSize, sort, ...filter riêng })`.
+3. `useAdminList` → `params` map 1-1 với DTO server; thêm filter mới thì **thêm cả 3 chỗ**:
+   DTO list, DTO export, `filter` trong `queryBusinesses` tương đương của module đó.
+4. `TABS` + count lấy từ endpoint stats của module (không đếm ở client).
+5. Bảng: `ColumnHeader` cho cột sort/lọc được; `cell-title` + `cell-meta`.
+6. Hành động: tách logic mutation ra hook `use<Domain>Decision` nếu dùng ở cả list và detail.
+7. Drawer: block ngữ cảnh → timeline (`verificationHistory` hoặc audit) → actions.
+8. Server: list/export/search/sort/stats + index cho tổ hợp filter chính.
+
+Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
+
+- `UsersPage`, `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`, `AuditLogPage`
+  vẫn dùng `PageHeader` + filter `useState`/`fetch tay` → lệch §3A.
+- `CommerceOrdersPage` đặt filter ngoài `TableShell`, dùng inline style, `sellerId`/`buyerId`
+  thô thay vì ô tìm kiếm chung; `AuditLogPage` nuốt lỗi (`.catch(() => {})`) và chưa có filter.
+- `ReportsPage` dùng `StateBlock variant="empty"` cho lỗi — sai tone, phải `variant="error"`;
+  nút "Resolve/Dismiss" chưa Việt hoá (§10).
+- Chưa trang nào có lọc theo khoảng ngày (`createdFrom`/`createdTo`) dù §7 yêu cầu lọc ngày cho export.
+- `BulkBar` chưa generic: chữ "Duyệt/Từ chối" hardcode theo nghiệp vụ business.
+- Chưa có guard chống ghi đè: hai moderator sửa cùng hồ sơ, người sau thắng im lặng
+  (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409
+  nếu lệch, drawer hiện "Hồ sơ vừa được người khác sửa".
+- Badge "nghi trùng" mới có trong drawer, chưa có trên hàng của bảng — moderator phải
+  mở từng hồ sơ mới biết.
+- **Drawer trên list không vào URL**: `BusinessesPage` dùng `setDetailId`, nên không share
+  được "đang xem hồ sơ nào". Muốn share phải sang route `/businesses/:id`. Cách sửa đúng:
+  thêm `id` vào `useUrlFilters` cho drawer và để route detail dùng cùng nguồn đó.
+- Phân công mới đi một chiều: `bulk-assign` không gửi `assignee` = nhận về mình; chưa có
+  picker chọn moderator khác (chưa có endpoint danh sách admin) và chưa có nút gỡ phân công
+  trên UI dù server đã hỗ trợ `assignee: ''`.
+- Bulk action ghi **một** dòng audit với `targetId = ids.join(',')`; muốn soi từng hồ sơ
+  phải đọc `verificationHistory[]`. Đừng bỏ field này khi refactor.
+- `verificationHistory[]` **có** `actorId` cho approve/reject/disable/enable nhưng drawer
+  chưa hiện (chỉ hiện `reason` + `at`). Muốn hiện tên người thao tác phải resolve id → tên
+  giống `AdminAuditService.list()` đang làm cho audit log.
+
+## 10. Ngôn ngữ & copy (chuẩn hoá, không tuỳ hứng)
+
+Tiếng Việt, giọng vận hành — nói việc xảy ra và việc tiếp theo, không cảm thán.
+Đại từ: "hồ sơ", "doanh nghiệp", "người dùng" (không gọi "bản ghi", "record", "item").
+Không trộn tiếng Anh trừ thuật ngữ đã quen (CSV, ID, SLA).
+
+| Loại | Khuôn | Ví dụ đúng |
+|---|---|---|
+| Toast thành công | `Đã {động từ} {đối tượng}.` + bước tiếp nếu có | "Đã duyệt Công ty A. Tiếp theo: Công ty B." |
+| Toast thành công có hoàn tác | + nêu cách quay lại | "Đã xoá hồ sơ — xem lại ở tab Lưu trữ nếu cần khôi phục." + nút "Xem lưu trữ" |
+| Toast lỗi | `{Việc} thất bại.` + `Vui lòng thử lại.` hoặc message từ server | "Duyệt thất bại. Vui lòng thử lại." |
+| Toast lỗi một phần (bulk) | `Đã {động từ} X/Y …` + tối đa 3 lỗi + `(+N)` | "Đã duyệt 4/6 hồ sơ. Lỗi: đã xử lý; không tìm thấy (+1)" |
+| Confirm tiêu đề | câu hỏi có đối tượng | "Xoá hồ sơ doanh nghiệp?" |
+| Confirm mô tả | hệ quả + có khôi phục được không | "Hồ sơ bị xoá mềm, không hiện trong danh sách nhưng vẫn giữ trong DB để đối soát." |
+| Empty thật | nêu vì sao trống | "Chưa có hồ sơ nào… Hồ sơ sẽ xuất hiện ở đây khi doanh nghiệp đăng ký." |
+| Empty do lọc | nêu lọc + lối thoát | "Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm." + nút "Xoá bộ lọc" |
+| Lỗi tải | nguyên nhân đọc được + nút | "Không tải được danh sách" / "Kiểm tra kết nối rồi thử lại." + "Thử lại" |
+| Nhãn nút | động từ + đối tượng, ≤4 từ | "Duyệt hồ sơ", "Nhận hồ sơ", "Khôi phục hồ sơ" |
+
+Cấm:
+- "Thao tác thất bại" trần trụi khi biết lỗi nào (đang có ở vài trang — nợ §9).
+- "Đã lưu 3 thay đổi" khi server có thể đã bỏ qua field (xem bug `displayName` cũ):
+  chỉ báo số field server **thực sự** ghi.
+- Nhãn dịch nửa vời: "Resolve/Dismiss" trên trang Báo cáo phải là "Đã xử lý/Bỏ qua".
+- Dùng cùng một từ cho hai khái niệm khác nhau. Ba khái niệm tách biệt, copy phải nói rõ:
+  **Vô hiệu hoá = tạm ngưng bán** · **Cấm = khoá đăng nhập + thu hồi phiên** ·
+  **Xoá = khỏi danh sách, khôi phục được**.

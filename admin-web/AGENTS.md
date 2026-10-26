@@ -57,7 +57,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/login` | `POST /api/auth/login` → `GET /api/admin/me` (platform-admin only, no self-register) |
 | `/` Dashboard | `GET /api/admin/stats` + sparklines |
 | `/analytics` | `GET /api/admin/analytics?range=7d\|30d\|90d` (recharts) |
-| `/businesses` | `GET /api/admin/businesses/pending` (chỉ page/limit — chưa có search server-side, UI đang lọc client), approve/reject đơn + bulk, preview license qua presigned GET |
+| `/businesses` | **trang mẫu** — `GET /api/admin/businesses/pending` với tabs `all/pending/verified/rejected/expiring/archived`, search server-side (tên/email/SĐT/MST/ID), lọc category/province/relationship/banned/suspended/sla, sort whitelist, export CSV (cap 500). Actions: duyệt/từ chối đơn + bulk (per-item result), tạm ngưng bán, ban, xoá mềm, khôi phục, nhận hồ sơ (`bulk-assign`), PATCH inline edit |
 | `/users` | `GET /api/admin/users` (search theo displayName/email/phone + `accountType`), detail, `POST .../ban {reason?, durationDays? 1-365}` / `unban` |
 | `/conversations` + detail | list (search tên + member, filter type/hasPendingReport/minReports/hasMedia/activeAfter/minMembers/maxMembers, sort recent/reported/created), detail = conversation + members + recentMessages (limit 1-50, mặc định 20, `before` để load thêm, `hasMore`, `reportedMessageCounts`) |
 | `/messages` | `GET /api/admin/messages/search` (`q` bắt buộc, lọc `conversationId`) + soft-delete có confirm |
@@ -67,7 +67,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/products`, `/orders`, `/services`, `/stores` | commerce admin (products gồm cả inactive; orders read-only + detail; seller picker = business verified + unbanned) |
 | `/health` | `GET /api/admin/health` (mongo/redis/coturn/minio), **poll 30s**, không socket |
 | `/broadcast` | `POST /api/admin/broadcast {title, body}` + ghi chú preview (emit toàn server, gõ sai không undo) |
-| `/audit-logs` | bảng phân trang — `GET /audit-logs` chỉ có page/limit (chưa lọc actor/action/ngày), link từ mỗi mutation |
+| `/audit-logs` | bảng phân trang — `GET /audit-logs` có page/limit + `targetType`/`targetId` (chưa lọc actor/action/ngày); actor đã resolve tên server-side |
 
 ## 4. Phase triển khai
 
@@ -158,8 +158,8 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
   lỗi của tool nội bộ mà không ai biết thì moderator im lặng chịu đựng.
 - [ ] **Export có giới hạn (cần backend):** xuất CSV audit-log/users phải có cap số dòng +
   lọc theo khoảng ngày; export lớn chuyển async — cấm nút "export all"同步 kéo sập DB.
-- [ ] **Audit-log filter mở rộng (cần backend):** hiện tại `GET /audit-logs` chỉ có page/limit —
-  cần thêm lọc actor/action/khoảng ngày thì mới truy vết được sự cố.
+- [ ] **Audit-log filter mở rộng (cần backend):** `GET /audit-logs` đã có `targetType`/`targetId`;
+  còn thiếu lọc actor/action/khoảng ngày thì mới truy vết được sự cố.
 
 > Ghi chú PM — cố tình LOẠI khỏi checklist hiện tại: impersonation (đăng nhập hộ user —
 > backend chưa có, rủi ro tuân thủ cao, chưa có nhu cầu support); MFA/SSO bắt buộc
