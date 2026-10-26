@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Eye, Pencil, Plus, Trash2, Undo2, X, Ban, RotateCcw } from 'lucide-react';
+import { Check, Eye, Plus, Trash2, X, RotateCcw, PauseCircle } from 'lucide-react';
 import apiClient from '../apiClient';
 import { StatusTabs } from '../components/StatusTabs';
 import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
+import { ColumnHeader } from '../components/ColumnHeader';
 import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
@@ -13,7 +14,7 @@ import { VerificationBadge, StatusBadge } from '../components/StatusBadge';
 import { MaskedPII } from '../components/MaskedPII';
 import { ExportButton } from '../components/ExportButton';
 import { formatDateTime, ageLabel, ageTone } from '../components/formatters';
-import { categoryVi, PROVINCES, CATEGORY_OPTIONS } from '../components/vn-data';
+import { categoryVi, relationshipVi, RELATIONSHIP_VI, PROVINCES, CATEGORY_OPTIONS } from '../components/vn-data';
 import Dialog from '../components/Dialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BulkBar } from '../components/BulkBar';
@@ -21,6 +22,8 @@ import { useToast } from '../components/Toast';
 import { BusinessDetailDrawer } from '../components/BusinessDetailDrawer';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
+import { useBusinessDecision, REJECT_TEMPLATES, appendReason } from '../hooks/useBusinessDecision';
+import { BanDialog } from '../components/UserModeration';
 import { useAuth } from '../useAuth';
 
 interface Business {
@@ -31,17 +34,13 @@ interface Business {
   contactPhone?: string;
   businessCategory?: string;
   province?: string;
+  relationshipType?: 'partner' | 'supplier';
   verificationStatus: string;
   suspended?: boolean;
+  isBanned?: boolean;
   createdAt?: string;
   licenseImageUrl?: string | null;
 }
-
-const rejectTemplates = [
-  'Ảnh giấy phép không rõ, vui lòng tải lại ảnh sắc nét hơn.',
-  'Thông tin doanh nghiệp chưa khớp với giấy phép.',
-  'Thiếu giấy phép hợp lệ để xác minh doanh nghiệp.',
-];
 
 const TABS = [
   { key: 'all', label: 'Tất cả' },
@@ -49,6 +48,13 @@ const TABS = [
   { key: 'verified', label: 'Đã duyệt' },
   { key: 'rejected', label: 'Bị từ chối' },
   { key: 'expiring', label: 'Sắp hết hạn' },
+] as const;
+
+/** Bucket SLA theo tuổi hồ sơ chờ duyệt — bấm để lọc. */
+const SLA_BUCKETS = [
+  { key: 'over72', label: 'Quá 72h' },
+  { key: 'day1_3', label: '24–72h' },
+  { key: 'fresh', label: 'Mới <24h' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -69,24 +75,29 @@ export default function BusinessesPage() {
   const queryClient = useQueryClient();
   const { identity } = useAuth();
   const { values, set, reset } = useUrlFilters({
-    tab: 'pending', search: '', category: '', province: '', mine: '', page: '1', pageSize: '20', sort: '',
+    tab: 'pending', search: '', category: '', province: '', mine: '', page: '1', pageSize: '20', sort: '', sla: '', relationship: '', banned: '',
   });
 
   const tab = (TABS.some((t) => t.key === values.tab) ? values.tab : 'pending') as TabKey;
   const pageNum = Math.max(1, Number(values.page) || 1);
   const pageSize = [10, 20, 50].includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  // P0: tab chờ duyệt mặc định cũ nhất trước — duyệt theo thứ tự quá hạn.
+  const effectiveSort = values.sort || (tab === 'pending' ? 'createdAt:asc' : undefined);
   const params = useMemo(() => ({
     status: tab,
     search: values.search || undefined,
     category: values.category || undefined,
     province: values.province || undefined,
     assignee: values.mine === '1' ? identity?.email : undefined,
+    sla: tab === 'pending' && values.sla ? values.sla : undefined,
+    relationshipType: values.relationship || undefined,
+    banned: values.banned || undefined,
     page: pageNum,
     limit: pageSize,
-    sort: values.sort || undefined,
-  }), [tab, values.search, values.category, values.province, values.mine, values.sort, pageNum, pageSize, identity?.email]);
+    sort: effectiveSort,
+  }), [tab, values.search, values.category, values.province, values.mine, values.sort, values.sla, values.relationship, values.banned, pageNum, pageSize, effectiveSort, identity?.email]);
   const { rows: businesses, total, isLoading, isError, error, refetch } = useAdminList<Business & { assignee?: string }>(
-    ['businesses', tab, values.search, values.category, values.province, values.mine, pageNum, pageSize, values.sort],
+    ['businesses', tab, values.search, values.category, values.province, values.mine, pageNum, pageSize, values.sort, values.sla, values.relationship, values.banned],
     '/admin/businesses/pending',
     params,
     { refetchOnWindowFocus: true },
@@ -95,7 +106,7 @@ export default function BusinessesPage() {
   // Mini-metric từ stats có sẵn
   const { data: stats } = useQuery({
     queryKey: ['admin-stats'],
-    queryFn: async () => (await apiClient.get<{ pendingVerification: number; verifiedBusinesses: number; rejectedBusinesses: number }>('/admin/stats')).data,
+    queryFn: async () => (await apiClient.get<{ pendingVerification: number; verifiedBusinesses: number; rejectedBusinesses: number; slaOver72: number; slaDay1_3: number; slaFresh: number; expiringSoon: number }>('/admin/stats')).data,
     staleTime: 60_000,
   });
 
@@ -111,29 +122,71 @@ export default function BusinessesPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const goDetail = (id: string) => setDetailId(id);
   // ponytail: index-only highlight, no scroll management until list outgrows viewport
-  const [highlight, setHighlight] = useState(0);
+  // -1 = chưa chọn dòng nào; nếu mặc định 0 thì dòng đầu trông như "đang chọn" khi vừa mở trang
+  const [highlight, setHighlight] = useState(-1);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  const [approveTarget, setApproveTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
-  const [rejectTargets, setRejectTargets] = useState<string[] | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectError, setRejectError] = useState<string | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<{ id: string; suspend: boolean } | null>(null);
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
 
+  // Một nguồn sự thật cho duyệt/từ chối/vô hiệu hóa — dùng chung với route chi tiết.
+  const decision = useBusinessDecision({
+    onChanged: () => {
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['businesses'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+    undoable: true,
+    nextOf: (id) => {
+      const idx = businesses.findIndex((b) => b._id === id);
+      const next = businesses[idx + 1] ?? businesses[idx - 1];
+      return next && next._id !== id ? { id: next._id, displayName: next.displayName } : undefined;
+    },
+    // Duyệt liên tiếp: nhảy sang hồ sơ kế tiếp nếu đang mở drawer
+    onAdvance: (next) => setDetailId((cur) => (cur ? next.id : cur)),
+  });
+
+  // Đổi bộ lọc/trang thì bỏ chọn + bỏ con trỏ bàn phím
   useEffect(() => {
     setSelected(new Set());
-    setHighlight(0);
-  }, [tab, values.search, values.category, values.province, pageNum, pageSize]);
+    setHighlight(-1);
+  }, [tab, values.search, values.category, values.province, values.sla, pageNum, pageSize]);
+
+  // Danh sách co lại thì kẹp con trỏ vào phạm vi; rỗng thì bỏ chọn hẳn
+  useEffect(() => {
+    setHighlight((h) => (h < 0 ? -1 : businesses.length === 0 ? -1 : Math.min(h, businesses.length - 1)));
+  }, [businesses.length]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const selectedRows = businesses.filter((b) => selected.has(b._id));
-  const approvingBusiness = businesses.find((b) => b._id === approveTarget);
 
   function refresh() {
     setSelected(new Set());
     void queryClient.invalidateQueries({ queryKey: ['businesses'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+  }
+
+  const hasActiveFilter = Boolean(values.search || values.category || values.province || values.mine || values.sla || values.relationship || values.banned);
+  /** Chip hiển thị đúng thứ đang lọc — mỗi chip gỡ được riêng, thay vì nút "Xóa lọc" mù. */
+  const activeFilters: Array<{ key: 'search' | 'category' | 'province' | 'mine' | 'sla' | 'relationship' | 'banned'; label: string }> = [];
+  if (values.search) activeFilters.push({ key: 'search', label: `Từ khóa: ${values.search}` });
+  if (values.category) activeFilters.push({ key: 'category', label: `Danh mục: ${categoryVi(values.category)}` });
+  if (values.province) activeFilters.push({ key: 'province', label: `Tỉnh: ${values.province}` });
+  if (values.mine === '1') activeFilters.push({ key: 'mine', label: 'Của tôi' });
+  if (values.sla) activeFilters.push({ key: 'sla', label: `Ưu tiên: ${SLA_BUCKETS.find((b) => b.key === values.sla)?.label ?? values.sla}` });
+  if (values.relationship) activeFilters.push({ key: 'relationship', label: `Loại: ${relationshipVi(values.relationship)}` });
+  if (values.banned) activeFilters.push({ key: 'banned', label: values.banned === 'true' ? 'Đang bị cấm' : 'Không bị cấm' });
+
+  function clearFilters() {
+    setSearchInput('');
+    reset();
   }
 
   function toggleOne(id: string) {
@@ -152,51 +205,9 @@ export default function BusinessesPage() {
   }
 
   function toggleSort(field: string) {
-    const [cur, dir] = values.sort.split(':');
+    const [cur, dir] = (effectiveSort ?? '').split(':');
     set({ sort: cur === field && dir === 'asc' ? `${field}:desc` : `${field}:asc`, page: '1' });
   }
-
-  function sortAria(field: string): 'ascending' | 'descending' | 'none' {
-    const [cur, dir] = values.sort.split(':');
-    if (cur !== field) return 'none';
-    return dir === 'desc' ? 'descending' : 'ascending';
-  }
-
-  function copyId(id: string) {
-    void navigator.clipboard?.writeText(id).then(
-      () => addToast('success', 'Đã sao chép ID.'),
-      () => addToast('error', 'Sao chép thất bại.'),
-    );
-  }
-
-  async function confirmApprove() {
-    if (!approveTarget || busy) return;
-    const targetId = approveTarget;
-    const targetName = approvingBusiness?.displayName ?? '';
-    setBusy(true);
-    try {
-      await apiClient.post(`/admin/businesses/${targetId}/approve`);
-      // Xét tiếp: sang hồ sơ kế tiếp trong queue thay vì đóng drawer
-      const idx = businesses.findIndex((b) => b._id === targetId);
-      const next = businesses[idx + 1] ?? businesses[idx - 1];
-      addToast('success', `Đã duyệt ${targetName} thành công.`, {
-        label: 'Hoàn tác',
-        onClick: () => {
-          apiClient.post(`/admin/businesses/${targetId}/reopen`)
-            .then(() => { addToast('success', 'Đã hoàn tác, hồ sơ về Chờ duyệt.'); refresh(); })
-            .catch(() => addToast('error', 'Hoàn tác thất bại.'));
-        },
-      });
-      setApproveTarget(null);
-      refresh();
-    } catch {
-      addToast('error', 'Duyệt thất bại. Vui lòng thử lại.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   async function confirmDelete() {
     if (!deleteTarget || busy) return;
@@ -234,76 +245,63 @@ export default function BusinessesPage() {
     }
   }
 
-  function openReject(ids: string[]) {
-    setRejectTargets(ids);
-    setRejectReason('');
-    setRejectError(null);
-  }
-
-  async function handleRejectSubmit() {
-    if (!rejectTargets || rejectTargets.length === 0 || busy) return;
-    if (!rejectReason.trim()) {
-      setRejectError('Vui lòng nhập lý do từ chối.');
+  async function handleBulkReject() {
+    if (selected.size === 0 || busy) return;
+    if (!bulkReason.trim()) {
+      setBulkError('Vui lòng nhập lý do từ chối.');
       return;
     }
     setBusy(true);
     try {
-      if (rejectTargets.length === 1) {
-        await apiClient.post(`/admin/businesses/${rejectTargets[0]}/reject`, { rejectionReason: rejectReason.trim() });
-      } else {
-        const res = await apiClient.post<{ approved: number; failed: string[] }>(
-          '/admin/businesses/bulk-reject', { ids: rejectTargets, rejectionReason: rejectReason.trim() },
-        );
-        if (res.data.failed.length > 0) addToast('error', `Đã từ chối ${res.data.approved}, thất bại ${res.data.failed.length} hồ sơ.`);
-      }
-      addToast('success', rejectTargets.length === 1
-        ? `Đã từ chối ${businesses.find((b) => b._id === rejectTargets[0])?.displayName ?? ''}.`
-        : `Đã từ chối ${rejectTargets.length} doanh nghiệp.`);
-      setRejectTargets(null);
-      setRejectReason('');
-      // ở lại list sau mutation
+      const res = await apiClient.post<{ approved: number; failed: string[] }>(
+        '/admin/businesses/bulk-reject', { ids: [...selected], rejectionReason: bulkReason.trim() },
+      );
+      addToast(res.data.failed.length > 0 ? 'error' : 'success',
+        res.data.failed.length > 0
+          ? `Đã từ chối ${res.data.approved}, thất bại ${res.data.failed.length} hồ sơ.`
+          : `Đã từ chối ${res.data.approved} doanh nghiệp.`);
+      setBulkRejectOpen(false);
+      setBulkReason('');
       refresh();
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.status === 400) setRejectError('Lý do từ chối không hợp lệ.');
-      else addToast('error', 'Từ chối thất bại. Vui lòng thử lại.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmSuspend() {
-    if (!suspendTarget || busy) return;
-    setBusy(true);
-    try {
-      await apiClient.post(`/admin/businesses/${suspendTarget.id}/${suspendTarget.suspend ? 'disable' : 'enable'}`);
-      addToast('success', suspendTarget.suspend ? 'Đã vô hiệu hóa doanh nghiệp.' : 'Đã kích hoạt lại doanh nghiệp.');
-      setSuspendTarget(null);
-      // ở lại list sau mutation
-      refresh();
-    } catch {
-      addToast('error', 'Thao tác thất bại. Vui lòng thử lại.');
+      if (axios.isAxiosError(err) && err.response?.status === 400) setBulkError('Lý do từ chối không hợp lệ.');
+      else addToast('error', 'Từ chối hàng loạt thất bại. Vui lòng thử lại.');
     } finally {
       setBusy(false);
     }
   }
 
   async function handleExport() {
+    setExporting(true);
     try {
-      const res = await apiClient.get<{ data: Business[]; total: number }>('/admin/businesses/pending', {
-        params: { ...params, page: 1, limit: 500 },
+      const res = await apiClient.get<{ data: Business[]; total: number; truncated: boolean }>('/admin/businesses/export', {
+        params: {
+          status: tab,
+          search: values.search || undefined,
+          category: values.category || undefined,
+          province: values.province || undefined,
+          assignee: values.mine === '1' ? identity?.email : undefined,
+          sla: tab === 'pending' && values.sla ? values.sla : undefined,
+          sort: effectiveSort,
+          relationshipType: values.relationship || undefined,
+          banned: values.banned || undefined,
+        },
       });
-      if (res.data.total > 500) addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
-      const header = ['ID', 'Tên doanh nghiệp', 'Email', 'Điện thoại', 'Danh mục', 'Tỉnh', 'Trạng thái', 'Ngày đăng ký'];
-      const lines = res.data.data.map((b) => [b._id, b.displayName, b.contactEmail ?? b.email ?? '', b.contactPhone ?? '', b.businessCategory ?? '', b.province ?? '', b.verificationStatus, b.createdAt ?? ''].map(toCsvCell).join(','));
+      if (res.data.truncated) addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
+      const header = ['ID', 'Tên doanh nghiệp', 'Email', 'Điện thoại', 'Loại quan hệ', 'Danh mục', 'Tỉnh', 'Trạng thái', 'Bị cấm', 'Ngày đăng ký'];
+      const lines = res.data.data.map((b) => [b._id, b.displayName, b.contactEmail ?? b.email ?? '', b.contactPhone ?? '', relationshipVi(b.relationshipType), b.businessCategory ?? '', b.province ?? '', b.verificationStatus, b.isBanned ? 'Có' : '', b.createdAt ?? ''].map(toCsvCell).join(','));
       const blob = new Blob([['﻿' + header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `doanh-nghiep-${tab}.csv`;
+      a.download = `doanh-nghiep-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
       addToast('success', `Đã xuất ${lines.length} dòng CSV.`);
+      setExportConfirmOpen(false);
     } catch {
       addToast('error', 'Xuất CSV thất bại. Vui lòng thử lại.');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -312,23 +310,23 @@ export default function BusinessesPage() {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-      if (approveTarget || rejectTargets || suspendTarget || bulkApproveOpen || helpOpen) return;
+      if (detailId || bulkApproveOpen || bulkRejectOpen || deleteTarget || exportConfirmOpen || helpOpen) return;
       if (e.key === 'j' || e.key === 'J') setHighlight((h) => Math.min(h + 1, businesses.length - 1));
-      else if (e.key === 'k' || e.key === 'K') setHighlight((h) => Math.max(h - 1, 0));
+      else if (e.key === 'k' || e.key === 'K') setHighlight((h) => Math.max(h - 1, -1));
       else if (e.key === 'Enter') {
         const b = businesses[highlight];
         if (b) goDetail(b._id);
       } else if ((e.key === 'a' || e.key === 'A') && tab === 'pending') {
         const b = businesses[highlight];
-        if (b) setApproveTarget(b._id);
+        if (b) decision.requestApprove({ id: b._id, displayName: b.displayName });
       } else if ((e.key === 'r' || e.key === 'R') && tab === 'pending') {
         const b = businesses[highlight];
-        if (b) openReject([b._id]);
+        if (b) decision.requestReject({ id: b._id, displayName: b.displayName });
       } else if (e.key === '?') setHelpOpen(true);
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [businesses, highlight, approveTarget, rejectTargets, suspendTarget, bulkApproveOpen, helpOpen, tab]);
+  }, [businesses, highlight, detailId, bulkApproveOpen, bulkRejectOpen, deleteTarget, exportConfirmOpen, helpOpen, tab]);
 
   const showCheckbox = tab === 'pending';
   const loadError = axios.isAxiosError(error)
@@ -340,75 +338,178 @@ export default function BusinessesPage() {
       <ListHeader
         title="Danh sách doanh nghiệp"
         count={total}
-        actions={<><ExportButton onExport={handleExport} /><button className="btn btn-primary btn-sm" onClick={() => setDetailId('new')} type="button"><Plus size={14} aria-hidden /> Thêm</button></>}
+        actions={<><ExportButton onExport={() => setExportConfirmOpen(true)} /><button className="btn btn-primary btn-sm" onClick={() => setDetailId('new')} type="button"><Plus size={14} aria-hidden /> Thêm</button></>}
       >
         <input
           className="input filter-search" type="search" value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') set({ search: searchInput.trim(), page: '1' }); }}
-          placeholder="Tên, email, SĐT, ID...  ( / )" aria-label="Tìm kiếm doanh nghiệp"
+          placeholder="Tìm theo tên, email, SĐT hoặc ID" aria-label="Tìm kiếm doanh nghiệp"
         />
-        <select className="input input-sm filter-select" value={values.category} onChange={(e) => set({ category: e.target.value, page: '1' })} aria-label="Danh mục">
-          <option value="">Danh mục</option>
-          {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{categoryVi(c)}</option>)}
-        </select>
-        <select className="input input-sm filter-select" value={values.province} onChange={(e) => set({ province: e.target.value, page: '1' })} aria-label="Tỉnh/Thành">
-          <option value="">Tỉnh/Thành</option>
-          {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
         <label className="filter-check">
           <input type="checkbox" checked={values.mine === '1'} onChange={(e) => set({ mine: e.target.checked ? '1' : '', page: '1' })} />
           Của tôi
         </label>
-        {(values.search || values.category || values.province || values.mine) && (
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setSearchInput(''); reset(); }}>Xóa lọc</button>
-        )}
       </ListHeader>
 
       <div className="filter-bar">
-        <StatusTabs tabs={[...TABS]} active={tab} onChange={(k) => set({ tab: k === 'pending' ? '' : k, page: '1' })} />
-        <span className="cell-meta">
-          {stats ? `Chờ ${stats.pendingVerification} · Đã duyệt ${stats.verifiedBusinesses} · Từ chối ${stats.rejectedBusinesses}` : 'Nhấn dòng để xem · phím ? trợ giúp'}
-        </span>
+        <StatusTabs
+          tabs={TABS.map((t) => ({
+            ...t,
+            count: stats
+              ? t.key === 'pending' ? stats.pendingVerification
+                : t.key === 'verified' ? stats.verifiedBusinesses
+                  : t.key === 'rejected' ? stats.rejectedBusinesses
+                    : t.key === 'expiring' ? stats.expiringSoon
+                      : undefined
+              : undefined,
+          }))}
+          active={tab}
+          onChange={(k) => set({ tab: k === 'pending' ? '' : k, page: '1' })}
+        />
+        <span className="cell-meta">Nhấn dòng để xem chi tiết · phím ? trợ giúp</span>
       </div>
+
+      {/* Một hàng duy nhất cho mọi điều kiện đang lọc + bucket SLA:
+          trước đây tách 2 hàng chip riêng nên đẩy bảng xuống quá xa. */}
+      {(tab === 'pending' || activeFilters.length > 0) && (
+        <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
+          {tab === 'pending' && stats && (
+            <>
+              <span className="cell-meta">Ưu tiên duyệt:</span>
+              {SLA_BUCKETS.map(({ key, label }) => {
+                const count = key === 'over72' ? stats.slaOver72 ?? 0 : key === 'day1_3' ? stats.slaDay1_3 ?? 0 : stats.slaFresh ?? 0;
+                const active = values.sla === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`filter-chip${active ? ' filter-chip-active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => set({ sla: active ? '' : key, page: '1' })}
+                  >
+                    {label} ({count})
+                  </button>
+                );
+              })}
+            </>
+          )}
+          {activeFilters.length > 0 && (
+            <>
+              {tab === 'pending' && stats && <span className="context-row-sep" aria-hidden />}
+              {activeFilters.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  className="filter-chip filter-chip-removable"
+                  onClick={() => {
+                    if (f.key === 'search') setSearchInput('');
+                    set({ [f.key]: '', page: '1' });
+                  }}
+                  aria-label={`Gỡ lọc ${f.label}`}
+                >
+                  {f.label} <X size={12} aria-hidden />
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       <TableShell>
         {showCheckbox && (
-          <BulkBar count={selected.size} onApprove={() => setBulkApproveOpen(true)} onReject={() => openReject([...selected])} busy={busy} />
+          <BulkBar
+            count={selected.size}
+            names={selectedRows.map((b) => b.displayName)}
+            onApprove={() => setBulkApproveOpen(true)}
+            onReject={() => { setBulkRejectOpen(true); setBulkReason(''); setBulkError(null); }}
+            onClear={() => setSelected(new Set())}
+            busy={busy}
+          />
         )}
 
         {isError && (
-          <StateBlock variant="error" icon="!" title="Không tải được danh sách" copy={loadError ?? 'Kiểm tra kết nối rồi thử lại.'}>
+          <StateBlock variant="error" title="Không tải được danh sách" copy={loadError ?? 'Kiểm tra kết nối rồi thử lại.'}>
             <button className="btn btn-secondary btn-sm" onClick={() => refetch()} type="button">Thử lại</button>
           </StateBlock>
         )}
-        {isLoading && <StateBlock variant="loading" icon="⌁" title="Đang tải danh sách" copy="Koola đang lấy hồ sơ doanh nghiệp." />}
+        {isLoading && <StateBlock variant="loading" title="Đang tải danh sách" copy="Đang lấy hồ sơ doanh nghiệp." />}
         {!isLoading && !isError && (
-          <div className="table-scroll">
+          <div className="table-scroll table-scroll--fit">
             <table className="data-table data-table--compact" aria-label="Danh sách doanh nghiệp">
               <thead>
                 <tr>
                   {showCheckbox && (
-                    <th scope="col"><input type="checkbox" checked={businesses.length > 0 && selected.size === businesses.length} onChange={toggleAll} aria-label="Chọn tất cả trang này" /></th>
+                    <th scope="col" className="th-check"><input type="checkbox" checked={businesses.length > 0 && selected.size === businesses.length} onChange={toggleAll} aria-label="Chọn tất cả trang này" /></th>
                   )}
-                  <th scope="col" aria-sort={sortAria('displayName')}>
-                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => toggleSort('displayName')}>Doanh nghiệp</button>
-                  </th>
-                  <th scope="col">Liên hệ</th>
-                  <th scope="col" className="col-hide-mobile">Danh mục/Tỉnh</th>
-                  <th scope="col" aria-sort={sortAria('createdAt')}>
-                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => toggleSort('createdAt')}>Tuổi</button>
-                  </th>
-                  {tab === 'all' && <th scope="col">Trạng thái</th>}
-                  <th scope="col" className="col-hide-mobile">Ngày đăng ký</th>
-                  <th scope="col" className="col-sticky">Hành động</th>
+                  <ColumnHeader
+                    label="Doanh nghiệp"
+                    sortField="displayName"
+                    sort={effectiveSort}
+                    onSort={toggleSort}
+                  />
+                  <ColumnHeader label="Liên hệ" />
+                  <ColumnHeader
+                    label="Loại"
+                    className="col-hide-mobile"
+                    sortField="relationshipType"
+                    sort={effectiveSort}
+                    onSort={toggleSort}
+                    filter={{
+                      value: values.relationship,
+                      options: [
+                        { value: '', label: 'Tất cả loại' },
+                        ...Object.entries(RELATIONSHIP_VI).map(([value, label]) => ({ value, label })),
+                      ],
+                      onChange: (v) => set({ relationship: v, page: '1' }),
+                    }}
+                  />
+                  <ColumnHeader
+                    label="Danh mục"
+                    className="col-hide-mobile"
+                    sortField="businessCategory"
+                    sort={effectiveSort}
+                    onSort={toggleSort}
+                    filter={{
+                      value: values.category,
+                      options: [{ value: '', label: 'Tất cả danh mục' }, ...CATEGORY_OPTIONS.map((c) => ({ value: c, label: categoryVi(c) }))],
+                      onChange: (v) => set({ category: v, page: '1' }),
+                    }}
+                  />
+                  <ColumnHeader
+                    label="Tỉnh / Thành"
+                    className="col-hide-mobile"
+                    sortField="province"
+                    sort={effectiveSort}
+                    onSort={toggleSort}
+                    filter={{
+                      value: values.province,
+                      options: [{ value: '', label: 'Tất cả tỉnh thành' }, ...PROVINCES.map((p) => ({ value: p, label: p }))],
+                      onChange: (v) => set({ province: v, page: '1' }),
+                    }}
+                  />
+                  <ColumnHeader
+                    label={tab === 'pending' ? 'Chờ từ' : 'Đăng ký'}
+                    sortField="createdAt"
+                    sort={effectiveSort}
+                    onSort={toggleSort}
+                  />
+                  {/* Tab theo trạng thái thì mọi dòng cùng một trạng thái — cột này chỉ có nghĩa ở tab trộn */}
+                  {(tab === 'all' || tab === 'expiring') && <ColumnHeader label="Trạng thái" />}
+                  <th scope="col" className="th-center col-sticky">Hành động</th>
                 </tr>
               </thead>
               <tbody>
                 {businesses.length === 0 && (
                   <tr>
-                    <td colSpan={showCheckbox ? 8 : 7}>
-                      <EmptyState title="Không có hồ sơ" copy="Thử đổi từ khóa hoặc xóa bộ lọc." />
+                    <td colSpan={(showCheckbox ? 8 : 7) + (tab === 'all' || tab === 'expiring' ? 1 : 0)}>
+                      <EmptyState
+                        title={hasActiveFilter ? 'Không khớp hồ sơ nào' : tab === 'pending' ? 'Đã duyệt hết hồ sơ chờ' : 'Chưa có hồ sơ nào'}
+                        copy={hasActiveFilter
+                          ? 'Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm.'
+                          : tab === 'pending' ? 'Hàng đợi trống — chuyển sang tab khác để kiểm tra.' : 'Hồ sơ sẽ xuất hiện ở đây khi doanh nghiệp đăng ký.'}
+                        action={hasActiveFilter ? <button className="btn btn-secondary btn-sm" type="button" onClick={clearFilters}>Xóa bộ lọc</button> : undefined}
+                      />
                     </td>
                   </tr>
                 )}
@@ -426,44 +527,51 @@ export default function BusinessesPage() {
                       <td><input type="checkbox" checked={selected.has(b._id)} onChange={() => toggleOne(b._id)} aria-label={`Chọn ${b.displayName}`} /></td>
                     )}
                     <td>
-                      <div className="cell-title">{b.displayName}</div>
-                      <div className="cell-meta k-mono">{shortId(b._id)}
-                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => copyId(b._id)} aria-label={`Sao chép ID ${b.displayName}`}>Sao chép</button>
+                      <div className="cell-title">
+                        {b.displayName}
+                        {b.isBanned && <span className="badge badge-danger cell-badge">Bị cấm</span>}
+                        {b.suspended && !b.isBanned && <span className="badge badge-muted cell-badge">Tạm ngưng</span>}
                       </div>
-                      {b.licenseImageUrl && (
-                        <a href={b.licenseImageUrl} target="_blank" rel="noopener noreferrer" className="license-thumb" aria-label={`Xem giấy phép ${b.displayName}`}>
-                          <img src={b.licenseImageUrl} alt="" loading="lazy" width={40} height={28} />
-                        </a>
-                      )}
+                      <div className="cell-meta k-mono">{shortId(b._id)}</div>
                     </td>
                     <td>
                       <div>{b.contactPhone ? <MaskedPII value={b.contactPhone} kind="phone" /> : '—'}</div>
                       <div className="cell-meta">{(b.contactEmail ?? b.email) ? <MaskedPII value={b.contactEmail ?? b.email ?? ''} kind="email" /> : '—'}</div>
                     </td>
                     <td className="col-hide-mobile">
+                      <div className="cell-title">{relationshipVi(b.relationshipType)}</div>
+                    </td>
+                    <td className="col-hide-mobile">
                       <div className="cell-title">{categoryVi(b.businessCategory)}</div>
-                      <div className="cell-meta">{b.province ?? ''}</div>
+                    </td>
+                    <td className="col-hide-mobile">
+                      <div className="cell-title">{b.province ?? '—'}</div>
                     </td>
                     <td>
-                      {tab === 'pending'
-                        ? <span title={formatDateTime(b.createdAt)}><StatusBadge tone={ageTone(b.createdAt)} label={ageLabel(b.createdAt)} /></span>
-                        : <span title={formatDateTime(b.createdAt)}>{ageLabel(b.createdAt)}</span>}
+                      <span className="cell-date" title={formatDateTime(b.createdAt)}>
+                        {/* Tab chờ duyệt: tuổi là tín hiệu ưu tiên (badge màu).
+                            Tab khác: tuổi không phải việc gấp — hiện ngày đăng ký. */}
+                        {tab === 'pending'
+                          ? <StatusBadge tone={ageTone(b.createdAt)} label={ageLabel(b.createdAt)} />
+                          : formatDateTime(b.createdAt)}
+                      </span>
                     </td>
-                    {tab === 'all' && <td><VerificationBadge status={b.verificationStatus} /></td>}
-                    <td className="col-hide-mobile cell-meta">{formatDateTime(b.createdAt)}</td>
+                    {(tab === 'all' || tab === 'expiring') && (
+                      <td><VerificationBadge status={b.verificationStatus} /></td>
+                    )}
                     <td className="col-sticky">
-                      <div className="table-actions">
+                      <div className="table-actions table-actions--end">
                         <button className="btn btn-ghost btn-icon" type="button" onClick={() => goDetail(b._id)} aria-label={`Xem ${b.displayName}`} title="Chi tiết"><Eye size={16} aria-hidden /></button>
                         {tab === 'pending' && (
                           <>
-                            <button className="btn btn-primary btn-icon" type="button" disabled={busy} onClick={() => setApproveTarget(b._id)} aria-label={`Duyệt ${b.displayName}`} title="Duyệt"><Check size={16} aria-hidden /></button>
-                            <button className="btn btn-danger-ghost btn-icon" type="button" disabled={busy} onClick={() => openReject([b._id])} aria-label={`Từ chối ${b.displayName}`} title="Từ chối"><X size={16} aria-hidden /></button>
+                            <button className="btn btn-primary btn-icon" type="button" disabled={busy} onClick={() => decision.requestApprove({ id: b._id, displayName: b.displayName })} aria-label={`Duyệt ${b.displayName}`} title="Duyệt"><Check size={16} aria-hidden /></button>
+                            <button className="btn btn-danger-ghost btn-icon" type="button" disabled={busy} onClick={() => decision.requestReject({ id: b._id, displayName: b.displayName })} aria-label={`Từ chối ${b.displayName}`} title="Từ chối"><X size={16} aria-hidden /></button>
                           </>
                         )}
                         {tab === 'verified' && (
                           b.suspended
-                            ? <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => setSuspendTarget({ id: b._id, suspend: false })} aria-label={`Kích hoạt ${b.displayName}`} title="Kích hoạt"><RotateCcw size={16} aria-hidden /></button>
-                            : <button className="btn btn-danger-ghost btn-icon" type="button" disabled={busy} onClick={() => setSuspendTarget({ id: b._id, suspend: true })} aria-label={`Vô hiệu hóa ${b.displayName}`} title="Vô hiệu hóa"><Ban size={16} aria-hidden /></button>
+                            ? <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: false })} aria-label={`Cho ${b.displayName} bán lại`} title="Cho bán lại"><RotateCcw size={16} aria-hidden /></button>
+                            : <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: true })} aria-label={`Tạm ngưng bán ${b.displayName}`} title="Tạm ngưng bán"><PauseCircle size={16} aria-hidden /></button>
                         )}
                         <button className="btn btn-ghost btn-icon" type="button" disabled={busy} onClick={() => setDeleteTarget(b._id)} aria-label={`Xóa ${b.displayName}`} title="Xóa"><Trash2 size={16} aria-hidden /></button>
                       </div>
@@ -486,23 +594,34 @@ export default function BusinessesPage() {
       <BusinessDetailDrawer
         businessId={detailId}
         onClose={() => setDetailId(null)}
-        onApprove={(id) => setApproveTarget(id)}
-        onReject={(id) => openReject([id])}
-        onSuspend={(id, suspend) => setSuspendTarget({ id, suspend })}
+        onApprove={(id) => {
+          const b = businesses.find((x) => x._id === id);
+          decision.requestApprove({ id, displayName: b?.displayName ?? '' });
+        }}
+        onReject={(id) => {
+          const b = businesses.find((x) => x._id === id);
+          decision.requestReject({ id, displayName: b?.displayName ?? '' });
+        }}
+        onSuspend={(id, suspend) => {
+          const b = businesses.find((x) => x._id === id);
+          decision.requestSuspend({ id, displayName: b?.displayName ?? '', suspend });
+        }}
+        onBan={(id, displayName, ban) => {
+          setBanTarget({ id, name: displayName, action: ban ? 'ban' : 'unban' });
+        }}
       />
 
-      <ConfirmDialog
-        open={approveTarget !== null} onClose={() => setApproveTarget(null)}
-        title="Xác nhận duyệt" confirmLabel="Xác nhận duyệt" variant="primary" busy={busy} onConfirm={confirmApprove}
-        description={approvingBusiness ? `Duyệt "${approvingBusiness.displayName}" thành tài khoản business?` : undefined}
-        preview={approvingBusiness ? (
-          <dl className="description-list">
-            <div><dt>Doanh nghiệp</dt><dd>{approvingBusiness.displayName}</dd></div>
-            {approvingBusiness.email && <div><dt>Email</dt><dd className="k-mono">{approvingBusiness.email}</dd></div>}
-            <div><dt>ID</dt><dd className="k-mono">{approvingBusiness._id}</dd></div>
-          </dl>
-        ) : undefined}
+      <BanDialog
+        target={banTarget}
+        onClose={() => setBanTarget(null)}
+        onDone={() => {
+          setBanTarget(null);
+          refresh();
+        }}
       />
+
+      {/* Confirm duyệt / từ chối / vô hiệu hóa dùng chung với route chi tiết */}
+      {decision.dialogs}
 
       <ConfirmDialog
         open={bulkApproveOpen} onClose={() => setBulkApproveOpen(false)}
@@ -518,44 +637,64 @@ export default function BusinessesPage() {
       />
 
       <ConfirmDialog
-        open={suspendTarget !== null} onClose={() => setSuspendTarget(null)}
-        title={suspendTarget?.suspend ? 'Vô hiệu hóa doanh nghiệp?' : 'Kích hoạt lại doanh nghiệp?'}
-        confirmLabel={suspendTarget?.suspend ? 'Vô hiệu hóa' : 'Kích hoạt'}
-        variant={suspendTarget?.suspend ? 'danger' : 'primary'} busy={busy} onConfirm={confirmSuspend}
-      />
-
-      <ConfirmDialog
         open={deleteTarget !== null} onClose={() => setDeleteTarget(null)}
         title="Xóa hồ sơ doanh nghiệp?"
         description="Hồ sơ bị xóa mềm, không hiện trong danh sách nhưng vẫn giữ trong DB để đối soát."
         confirmLabel="Xóa hồ sơ" variant="danger" busy={busy} onConfirm={confirmDelete}
+        requireText="XACNHAN"
       />
 
-      <Dialog open={rejectTargets !== null} onClose={() => { setRejectTargets(null); setRejectError(null); }} labelId="reject-dialog-title" variant="dialog">
+      <ConfirmDialog
+        open={exportConfirmOpen} onClose={() => setExportConfirmOpen(false)}
+        title="Xuất CSV danh sách doanh nghiệp?"
+        description="File chứa số điện thoại và email đầy đủ (không che) của tối đa 500 hồ sơ khớp bộ lọc hiện tại."
+        confirmLabel="Tải CSV" variant="primary" busy={exporting} onConfirm={handleExport}
+        preview={(
+          <dl className="description-list">
+            <div><dt>Phạm vi</dt><dd>{total} hồ sơ khớp bộ lọc</dd></div>
+            <div><dt>Dữ liệu nhạy cảm</dt><dd>SĐT, email — không che</dd></div>
+          </dl>
+        )}
+      />
+
+      <Dialog open={bulkRejectOpen} onClose={() => { setBulkRejectOpen(false); setBulkError(null); }} labelId="bulk-reject-title" variant="dialog">
         <div className="dialog">
           <div className="dialog-header">
             <div>
-              <h2 id="reject-dialog-title" className="panel-title">
-                {rejectTargets && rejectTargets.length > 1 ? `Từ chối ${rejectTargets.length} doanh nghiệp` : 'Lý do từ chối'}
-              </h2>
-              <p className="panel-subtitle">Gửi phản hồi rõ ràng để doanh nghiệp nộp lại đúng.</p>
+              <h2 id="bulk-reject-title" className="panel-title">Từ chối {selected.size} doanh nghiệp</h2>
+              <p className="panel-subtitle">Cùng một lý do được gửi cho tất cả hồ sơ đã chọn.</p>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setRejectTargets(null); setRejectError(null); }} type="button">Đóng</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setBulkRejectOpen(false); setBulkError(null); }} type="button">Đóng</button>
           </div>
           <div className="dialog-body page-stack">
             <div className="filter-chip-row" style={{ padding: 0 }}>
-              {rejectTemplates.map((t) => (
-                <button className="filter-chip" key={t} onClick={() => setRejectReason(t)} type="button">{t.split(',')[0]}</button>
+              {REJECT_TEMPLATES.map((t) => (
+                <button
+                  className="filter-chip filter-chip-removable" key={t.short}
+                  onClick={() => setBulkReason((r) => appendReason(r, t.text))}
+                  type="button"
+                  title={t.text}
+                >
+                  <Plus size={12} aria-hidden /> {t.short}
+                </button>
               ))}
             </div>
             <div className="form-field">
-              <label className="form-label" htmlFor="reject-reason">Lý do</label>
-              <textarea className="textarea" id="reject-reason" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} aria-label="Nhập lý do từ chối" aria-required="true" placeholder="Nhập lý do cụ thể để doanh nghiệp biết cần sửa gì..." />
+              <label className="form-label" htmlFor="bulk-reject-reason">Lý do gửi cho doanh nghiệp</label>
+              <textarea
+                className="textarea" id="bulk-reject-reason" value={bulkReason}
+                onChange={(e) => setBulkReason(e.target.value)}
+                aria-label="Nhập lý do từ chối" aria-required="true" rows={4}
+                placeholder="Nêu cụ thể cần sửa gì để doanh nghiệp nộp lại đúng..."
+              />
+              <span className="cell-meta">{bulkReason.trim().length} ký tự · doanh nghiệp sẽ đọc lý do này</span>
             </div>
-            {rejectError && <p className="alert" role="alert">{rejectError}</p>}
-            <div className="table-actions">
-              <button className="btn btn-danger" onClick={handleRejectSubmit} type="button" disabled={busy}>{busy ? 'Đang gửi...' : 'Xác nhận từ chối'}</button>
-              <button className="btn btn-secondary" onClick={() => { setRejectTargets(null); setRejectError(null); }} type="button">Hủy</button>
+            {bulkError && <p className="alert" role="alert">{bulkError}</p>}
+            <div className="dialog-actions">
+              <button className="btn btn-secondary" onClick={() => { setBulkRejectOpen(false); setBulkError(null); }} type="button">Hủy</button>
+              <button className="btn btn-danger" onClick={handleBulkReject} type="button" disabled={busy}>
+                {busy ? 'Đang gửi...' : 'Xác nhận từ chối'}
+              </button>
             </div>
           </div>
         </div>

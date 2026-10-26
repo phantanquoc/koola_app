@@ -1,13 +1,16 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Check, X, Ban, RotateCcw } from 'lucide-react';
+import { Pencil, Check, X, Ban, RotateCcw, Copy, AlertTriangle, Plus, PauseCircle } from 'lucide-react';
 import apiClient from '../apiClient';
 import Dialog from './Dialog';
 import { useToast } from './Toast';
-import { VerificationBadge } from './StatusBadge';
-import { initials, formatDateTime, ageLabel } from './formatters';
-import { categoryVi, PROVINCES } from './vn-data';
+import { VerificationBadge, StatusBadge } from './StatusBadge';
+import { MaskedPII } from './MaskedPII';
+import { initials, formatDateTime, ageLabel, ageTone, apiErrorMessage, banStatusLabel } from './formatters';
+import { categoryVi, relationshipVi, PROVINCES, CATEGORY_OPTIONS } from './vn-data';
 import LicensePreview from './LicensePreview';
+import { BusinessCreateForm } from './BusinessCreateForm';
 import StateBlock from './StateBlock';
 
 export interface BusinessDetail {
@@ -16,6 +19,9 @@ export interface BusinessDetail {
   email?: string;
   verificationStatus: string;
   suspended?: boolean;
+  isBanned?: boolean;
+  banReason?: string | null;
+  bannedUntil?: string | null;
   rejectionReason?: string;
   businessCategory?: string;
   province?: string;
@@ -30,15 +36,37 @@ export interface BusinessDetail {
   internalNote?: string;
   assignee?: string;
   createdAt?: string;
+  relationshipType?: 'partner' | 'supplier';
   licenseImageUrl: string | null;
+  logoUrl?: string | null;
+  coverUrl?: string | null;
+  owner?: { _id: string; displayName: string; email?: string } | null;
+  ownerBusinessCount?: number;
 }
 
 interface AuditLog {
   _id: string;
   action: string;
   actorId?: string;
+  actorName?: string;
   createdAt?: string;
 }
+
+/** Nhãn nghiệp vụ cho audit action — thay vì hiện mã kỹ thuật. */
+const AUDIT_LABELS: Record<string, string> = {
+  create_business: 'Tạo hồ sơ',
+  update_business: 'Cập nhật thông tin',
+  approve_business: 'Duyệt hồ sơ',
+  reject_business: 'Từ chối hồ sơ',
+  suspend_business: 'Tạm ngưng bán',
+  unsuspend_business: 'Bán hàng trở lại',
+  delete_business: 'Xóa hồ sơ',
+  reopen_business: 'Mở lại hồ sơ',
+  bulk_approve_business: 'Duyệt hàng loạt',
+  bulk_reject_business: 'Từ chối hàng loạt',
+  ban_user: 'Cấm tài khoản',
+  unban_user: 'Gỡ cấm',
+};
 
 interface Duplicate {
   _id: string;
@@ -62,6 +90,11 @@ const EDIT_ORDER: EditableKey[] = [
   'tagline', 'description', 'contactEmail', 'contactPhone', 'taxCode',
   'licenseExpiresAt', 'internalNote', 'assignee',
 ];
+
+/** ID rút gọn cho header — đủ để đối chiếu, không chiếm cả dòng. */
+function shortId(id: string) {
+  return id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+}
 
 /** 4 nhóm thông tin liên quan — render theo section có tiêu đề.
  *  stack: true = xếp dọc 1 cột (field dài như email/SĐT/địa chỉ). */
@@ -106,7 +139,7 @@ function InlineField({
           {fieldKey === 'businessCategory' ? (
             <select className="input input-sm" value={draft} onChange={(e) => onDraft(e.target.value)} aria-label={EDIT_LABELS[fieldKey]} autoFocus>
               <option value="">—</option>
-              {Object.keys(EDIT_LABELS).length > 0 && ['food-beverage', 'retail', 'finance', 'education', 'real-estate', 'technology', 'manufacturing', 'healthcare', 'logistics', 'hospitality', 'fashion', 'services', 'other'].map((c) => (
+              {[...CATEGORY_OPTIONS, 'other'].map((c) => (
                 <option key={c} value={c}>{categoryVi(c)}</option>
               ))}
             </select>
@@ -143,7 +176,11 @@ function InlineField({
         </dd>
       ) : (
         <dd className={mono ? 'k-mono' : undefined}>
-          {displayValue(data, fieldKey)}
+          {fieldKey === 'contactEmail' && data.contactEmail
+            ? <MaskedPII value={data.contactEmail} kind="email" />
+            : fieldKey === 'contactPhone' && data.contactPhone
+              ? <MaskedPII value={data.contactPhone} kind="phone" />
+              : displayValue(data, fieldKey)}
           <button
             className="btn btn-ghost btn-icon inline-edit-btn"
             type="button"
@@ -165,13 +202,16 @@ export function BusinessDetailDrawer({
   onApprove,
   onReject,
   onSuspend,
+  onBan,
   embedded,
 }: {
   businessId: string | null;
   onClose: () => void;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
-  onSuspend?: (id: string, suspend: boolean) => void;
+  onApprove: (id: string, displayName: string) => void;
+  onReject: (id: string, displayName: string) => void;
+  onSuspend?: (id: string, displayName: string, suspend: boolean) => void;
+  /** Cấm/gỡ cấm tài khoản — khác tạm ngưng bán (ban khoá login + thu hồi phiên). */
+  onBan?: (id: string, displayName: string, ban: boolean) => void;
   /** true = render nội dung trực tiếp (route share URL), không bọc Dialog modal */
   embedded?: boolean;
 }) {
@@ -183,7 +223,6 @@ export function BusinessDetailDrawer({
   const [editAll, setEditAll] = useState(false);
   const [formAll, setFormAll] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [newForm, setNewForm] = useState({ displayName: '', contactPhone: '', businessCategory: '' });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['business', businessId],
@@ -225,17 +264,22 @@ export function BusinessDetailDrawer({
 
   async function saveField() {
     if (!businessId || !editingKey || busy) return;
+    const v = draft.trim();
+    // Backend từ chối tên <2 ký tự (UpdateBusinessDto) — bắt tại chỗ cho phản hồi tức thì
+    if (editingKey === 'displayName' && v.length < 2) {
+      addToast('error', 'Tên doanh nghiệp phải có ít nhất 2 ký tự.');
+      return;
+    }
     setBusy(true);
     try {
-      const v = draft.trim();
       await apiClient.patch(`/admin/businesses/${businessId}`, { [editingKey]: v });
       addToast('success', `Đã cập nhật ${EDIT_LABELS[editingKey]}.`);
       setEditingKey(null);
       setDraft('');
       void queryClient.invalidateQueries({ queryKey: ['business', businessId] });
       void queryClient.invalidateQueries({ queryKey: ['businesses'] });
-    } catch {
-      addToast('error', 'Lưu thất bại. Vui lòng thử lại.');
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Lưu thất bại. Vui lòng thử lại.'));
     } finally {
       setBusy(false);
     }
@@ -257,21 +301,25 @@ export function BusinessDetailDrawer({
 
   async function saveAll() {
     if (!businessId || busy) return;
+    const payload: Record<string, string> = pendingChanges();
+    if (Object.keys(payload).length === 0) {
+      addToast('info', 'Không có thay đổi nào.');
+      setEditAll(false);
+      return;
+    }
+    if (payload.displayName !== undefined && payload.displayName.length < 2) {
+      addToast('error', 'Tên doanh nghiệp phải có ít nhất 2 ký tự.');
+      return;
+    }
     setBusy(true);
     try {
-      const payload: Record<string, string> = pendingChanges();
-      if (Object.keys(payload).length === 0) {
-        addToast('info', 'Không có thay đổi nào.');
-        setEditAll(false);
-        return;
-      }
       await apiClient.patch(`/admin/businesses/${businessId}`, payload);
       addToast('success', `Đã lưu ${Object.keys(payload).length} thay đổi.`);
       setEditAll(false);
       void queryClient.invalidateQueries({ queryKey: ['business', businessId] });
       void queryClient.invalidateQueries({ queryKey: ['businesses'] });
-    } catch {
-      addToast('error', 'Lưu thất bại. Vui lòng thử lại.');
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Lưu thất bại. Vui lòng thử lại.'));
     } finally {
       setBusy(false);
     }
@@ -295,80 +343,121 @@ export function BusinessDetailDrawer({
     setFormAll({});
   }
 
-  async function handleCreate() {
-    if (busy) return;
-    if (!newForm.displayName.trim()) {
-      addToast('error', 'Tên doanh nghiệp là bắt buộc.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await apiClient.post<{ _id: string }>('/admin/businesses', {
-        displayName: newForm.displayName.trim(),
-        ...(newForm.contactPhone.trim() ? { contactPhone: newForm.contactPhone.trim() } : {}),
-        ...(newForm.businessCategory ? { businessCategory: newForm.businessCategory } : {}),
-      });
-      addToast('success', 'Đã tạo doanh nghiệp.');
-      void queryClient.invalidateQueries({ queryKey: ['businesses'] });
-      onClose();
-      onApprove(res.data._id);
-    } catch {
-      addToast('error', 'Tạo thất bại. Vui lòng thử lại.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const body = (
     <>
-          {isLoading && <StateBlock variant="loading" icon="⌁" title="Đang tải hồ sơ" copy="Lấy thông tin chi tiết doanh nghiệp." />}
-          {isError && <StateBlock variant="error" icon="!" title="Không tải được hồ sơ" copy="Vui lòng đóng và thử lại." />}
+          {isLoading && <StateBlock variant="loading" title="Đang tải hồ sơ" copy="Đang lấy thông tin chi tiết doanh nghiệp." />}
+          {isError && <StateBlock variant="error" title="Không tải được hồ sơ" copy="Đóng hồ sơ này rồi mở lại để thử." />}
 
           {isNew && (
-            <div className="page-stack">
-              <div className="form-field">
-                <label className="form-label" htmlFor="biz-new-name">Tên doanh nghiệp *</label>
-                <input className="input" id="biz-new-name" value={newForm.displayName} onChange={(e) => setNewForm((f) => ({ ...f, displayName: e.target.value }))} autoFocus />
-              </div>
-              <div className="form-field">
-                <label className="form-label" htmlFor="biz-new-phone">Điện thoại</label>
-                <input className="input" id="biz-new-phone" value={newForm.contactPhone} onChange={(e) => setNewForm((f) => ({ ...f, contactPhone: e.target.value }))} />
-              </div>
-              <div className="form-field">
-                <label className="form-label" htmlFor="biz-new-cat">Danh mục</label>
-                <select className="input" id="biz-new-cat" value={newForm.businessCategory} onChange={(e) => setNewForm((f) => ({ ...f, businessCategory: e.target.value }))}>
-                  <option value="">—</option>
-                  {['food-beverage', 'retail', 'finance', 'education', 'real-estate', 'technology', 'manufacturing', 'healthcare', 'logistics', 'hospitality', 'fashion', 'services', 'other'].map((c) => (
-                    <option key={c} value={c}>{categoryVi(c)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="table-actions">
-                <button className="btn btn-primary" type="button" disabled={busy} onClick={handleCreate}>{busy ? 'Đang tạo...' : 'Tạo'}</button>
-              </div>
-            </div>
+            <BusinessCreateForm onCreated={() => onClose()} onCancel={onClose} />
           )}
 
           {data && (
             <div className="page-stack">
-              <div className="cell-primary">
-                <div className="cell-avatar" aria-hidden="true">{initials(data.displayName, 'B')}</div>
-                <div>
-                  <div className="cell-title">{data.displayName}</div>
-                  <div className="cell-meta k-mono">{data._id}</div>
+              {/* P0: bằng chứng + tín hiệu đối chiếu đặt TRƯỚC sections, ngay dưới header */}
+              <section className="verify-block" aria-label="Đối chiếu nhanh">
+                <div className="verify-media">
+                  <LicensePreview url={data.licenseImageUrl} businessName={data.displayName} />
                 </div>
-                <VerificationBadge status={data.verificationStatus} />
-              </div>
+                <dl className="verify-facts">
+                  <div>
+                    <dt>Mã số thuế</dt>
+                    <dd className="k-mono">{data.taxCode || '— chưa có —'}</dd>
+                  </div>
+                  <div>
+                    <dt>Giấy phép hết hạn</dt>
+                    <dd>{data.licenseExpiresAt ? formatDateTime(data.licenseExpiresAt) : '—'}</dd>
+                  </div>
+                  <div>
+                    {/* Chỉ gọi là "Chờ duyệt" khi hồ sơ còn pending — hồ sơ đã duyệt
+                        thì đây chỉ là tuổi hồ sơ, gọi sai sẽ khiến moderator tưởng còn nợ việc. */}
+                    <dt>{data.verificationStatus === 'pending' ? 'Đã chờ' : 'Tuổi hồ sơ'}</dt>
+                    <dd>
+                      <StatusBadge
+                        tone={data.verificationStatus === 'pending' ? ageTone(data.createdAt) : 'muted'}
+                        label={ageLabel(data.createdAt)}
+                      />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Đăng ký</dt>
+                    <dd>{formatDateTime(data.createdAt)}</dd>
+                  </div>
+                </dl>
+              </section>
 
               {duplicates && duplicates.length > 0 && (
-                <div className="alert" role="alert">
-                  <strong>Trùng lặp nghi ngờ ({duplicates.length}):</strong>{' '}
-                  {duplicates.map((d) => (
-                    <span key={d._id}>
-                      {d.displayName} <span className="k-mono">{d._id}</span>{' '}
-                    </span>
-                  ))}
+                <div className="alert alert--warning" role="alert">
+                  <AlertTriangle size={14} aria-hidden />
+                  <div>
+                    <strong>Có {duplicates.length} hồ sơ nghi trùng:</strong>{' '}
+                    {duplicates.map((d) => (
+                      <span key={d._id} className="dup-item">{d.displayName}</span>
+                    ))}
+                    <p className="cell-meta">Đối chiếu giấy phép và mã số thuế trước khi duyệt.</p>
+                  </div>
                 </div>
+              )}
+
+              {data.isBanned && (
+                <div className="alert" role="alert">
+                  <div>
+                    <strong>Đang bị cấm:</strong> {banStatusLabel(data)}
+                    {data.banReason ? ` — ${data.banReason}` : ''}
+                    <p className="cell-meta">
+                      Tài khoản không đăng nhập được, gian hàng bị ẩn khỏi catalog, phiên đã bị thu hồi.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {data.suspended && !data.isBanned && (
+                <div className="alert alert--warning" role="status">
+                  <div>
+                    <strong>Tạm ngưng bán:</strong> sản phẩm đang bị ẩn khỏi catalog.
+                    Hồ sơ không bị đánh dấu vi phạm — bấm “Kích hoạt lại” để mở bán.
+                  </div>
+                </div>
+              )}
+
+              {data.verificationStatus === 'rejected' && data.rejectionReason && (
+                <div className="alert" role="status">
+                  <div>
+                    <strong>Lý do đã từ chối:</strong> {data.rejectionReason}
+                  </div>
+                </div>
+              )}
+
+              {(data.owner !== undefined || data.relationshipType) && (
+                <section className="detail-section" aria-label="Nguồn hồ sơ">
+                  <h3 className="detail-section-title">Nguồn hồ sơ</h3>
+                  <dl className="description-list">
+                    <div className="inline-field">
+                      <dt className="cell-meta">Chủ tài khoản</dt>
+                      <dd>
+                        {data.owner ? (
+                          <>
+                            <Link className="cell-link" to={`/users?search=${data.owner._id}`}>
+                              {data.owner.displayName}
+                            </Link>
+                            {data.owner.email && (
+                              <span className="cell-meta"> · {data.owner.email}</span>
+                            )}
+                            {typeof data.ownerBusinessCount === 'number' && data.ownerBusinessCount > 1 && (
+                              <span className="cell-meta"> · sở hữu {data.ownerBusinessCount} doanh nghiệp</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="cell-meta">Tạo trực tiếp bởi admin — chưa gắn chủ tài khoản</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="inline-field">
+                      <dt className="cell-meta">Loại quan hệ</dt>
+                      <dd>{relationshipVi(data.relationshipType)}</dd>
+                    </div>
+                  </dl>
+                </section>
               )}
 
               <div className="detail-sections edit-all-list">
@@ -400,7 +489,7 @@ export function BusinessDetailDrawer({
                         {k === 'businessCategory' ? (
                           <select className="input" value={formAll[k] ?? ''} onChange={(e) => setFormAll((f) => ({ ...f, [k]: e.target.value }))} aria-label={EDIT_LABELS[k]}>
                             <option value="">—</option>
-                            {['food-beverage', 'retail', 'finance', 'education', 'real-estate', 'technology', 'manufacturing', 'healthcare', 'logistics', 'hospitality', 'fashion', 'services', 'other'].map((c) => (
+                            {[...CATEGORY_OPTIONS, 'other'].map((c) => (
                               <option key={c} value={c}>{categoryVi(c)}</option>
                             ))}
                           </select>
@@ -421,39 +510,24 @@ export function BusinessDetailDrawer({
                     </dl>
                   </section>
                 ))}
-                {data.createdAt && (
-                  <section className="detail-section" aria-label="Hệ thống">
-                    <h3 className="detail-section-title">Hệ thống</h3>
-                    <dl className="description-list">
-                      <div>
-                        <dt className="cell-meta">Đăng ký</dt>
-                        <dd title={formatDateTime(data.createdAt)}>{ageLabel(data.createdAt)}</dd>
-                      </div>
-                      {data.verificationStatus === 'rejected' && data.rejectionReason && (
-                        <div>
-                          <dt className="cell-meta">Lý do từ chối</dt>
-                          <dd>{data.rejectionReason}</dd>
-                        </div>
-                      )}
-                    </dl>
-                  </section>
-                )}
-              </div>
-
-              <div>
-                <p className="cell-meta">Giấy phép kinh doanh</p>
-                <LicensePreview url={data.licenseImageUrl} businessName={data.displayName} />
               </div>
 
               {timeline && timeline.length > 0 && (
-                <div>
-                  <p className="cell-meta">Lịch sử thao tác</p>
+                <details className="detail-section" open>
+                  <summary className="detail-section-title">Lịch sử thao tác ({timeline.length})</summary>
                   <ul className="confirm-list">
                     {timeline.map((t) => (
-                      <li key={t._id}>{t.action} <span className="cell-meta">{t.actorId ?? ''} · {t.createdAt ? formatDateTime(t.createdAt) : ''}</span></li>
+                      <li key={t._id}>
+                        {AUDIT_LABELS[t.action] ?? t.action}
+                        <span className="cell-meta">
+                          {t.actorName ? ` · ${t.actorName}` : ''}
+                          {!t.actorName && t.actorId ? ` · ${t.actorId.slice(0, 8)}` : ''}
+                          {t.createdAt ? ` · ${formatDateTime(t.createdAt)}` : ''}
+                        </span>
+                      </li>
                     ))}
                   </ul>
-                </div>
+                </details>
               )}
 
             </div>
@@ -461,45 +535,129 @@ export function BusinessDetailDrawer({
     </>
   );
 
+  const changedCount = editAll ? Object.keys(pendingChanges()).length : 0;
+
+  // Header dùng chung cho modal và route: danh tính hồ sơ nằm ở đây, thân form
+  // không lặp lại tên doanh nghiệp nữa.
+  const header = (
+    <div className="detail-header">
+      {data ? (
+        <>
+          <div className="detail-avatar" aria-hidden="true">{initials(data.displayName, 'B')}</div>
+          <div className="detail-heading">
+            <div className="detail-title-row">
+              <h2 id="business-drawer-title" className="detail-title">
+                {data.displayName}
+              </h2>
+              <VerificationBadge status={data.verificationStatus} />
+              {data.suspended && <span className="badge badge-muted">Tạm ngưng bán</span>}
+              {data.isBanned && <span className="badge badge-danger">Đang bị cấm</span>}
+            </div>
+            <div className="detail-subline">
+              <span>{data.businessCategory ? categoryVi(data.businessCategory) : 'Chưa rõ danh mục'}</span>
+              <span className="detail-dot" aria-hidden>·</span>
+              <span>{data.province || 'Chưa rõ tỉnh thành'}</span>
+              {data.relationshipType && (
+                <>
+                  <span className="detail-dot" aria-hidden>·</span>
+                  <span>{relationshipVi(data.relationshipType)}</span>
+                </>
+              )}
+              <span className="detail-dot" aria-hidden>·</span>
+              <button
+                className="detail-id"
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(data._id).then(
+                    () => addToast('success', 'Đã sao chép ID.'),
+                    () => addToast('error', 'Sao chép thất bại.'),
+                  );
+                }}
+                title={`Sao chép ID · ${data._id}`}
+                aria-label="Sao chép ID hồ sơ"
+              >
+                <span className="k-mono">{shortId(data._id)}</span>
+                <Copy size={11} aria-hidden />
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {isNew && (
+            <div className="detail-avatar" aria-hidden="true">
+              <Plus size={18} />
+            </div>
+          )}
+          <div className="detail-heading">
+            <h2 id="business-drawer-title" className="detail-title">
+              {isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}
+            </h2>
+            {isNew && <p className="detail-subline">Hồ sơ tạo ra sẽ nằm trong tab Chờ duyệt.</p>}
+          </div>
+        </>
+      )}
+      <button className="btn btn-ghost btn-icon detail-close" onClick={onClose} type="button" aria-label="Đóng hồ sơ">
+        <X size={16} aria-hidden />
+      </button>
+    </div>
+  );
+
   const bottomBar = data && !isNew ? (
     <div className="detail-bottombar">
       {!editAll ? (
         <>
-          <span className="detail-bottombar-spacer" />
-          <button className="btn btn-secondary btn-sm" onClick={startEditAll} type="button">
-            <Pencil size={14} aria-hidden /> Chỉnh sửa
+          {/* Trái: hành động phụ (không phải quyết định duyệt). Phải: quyết định. */}
+          <button className="btn btn-ghost btn-sm" onClick={startEditAll} type="button">
+            <Pencil size={14} aria-hidden /> Chỉnh sửa hồ sơ
           </button>
+          <span className="detail-bottombar-spacer" />
+          {data.verificationStatus === 'rejected' && (
+            <span className="detail-bottombar-note">Hồ sơ đã bị từ chối</span>
+          )}
           {data.verificationStatus === 'pending' && (
             <>
-              <button className="btn btn-primary btn-sm" onClick={() => onApprove(data._id)} type="button">
-                <Check size={14} aria-hidden /> Duyệt
-              </button>
-              <button className="btn btn-danger-ghost btn-sm" onClick={() => onReject(data._id)} type="button">
+              <button className="btn btn-secondary btn-sm" onClick={() => onReject(data._id, data.displayName)} type="button">
                 <X size={14} aria-hidden /> Từ chối
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => onApprove(data._id, data.displayName)} type="button">
+                <Check size={14} aria-hidden /> Duyệt hồ sơ
               </button>
             </>
           )}
-          {data.verificationStatus === 'verified' && onSuspend && (
-            data.suspended
-              ? <button className="btn btn-secondary btn-sm" onClick={() => onSuspend(data._id, false)} type="button">
-                  <RotateCcw size={14} aria-hidden /> Kích hoạt
-                </button>
-              : <button className="btn btn-danger-ghost btn-sm" onClick={() => onSuspend(data._id, true)} type="button">
-                  <Ban size={14} aria-hidden /> Vô hiệu hóa
-                </button>
-          )}
-          {data.verificationStatus === 'rejected' && (
-            <span className="cell-meta">Đã từ chối — xem lý do ở trên</span>
+          {data.verificationStatus === 'verified' && (
+            <>
+              {/* Ban khoá tài khoản + ẩn gian hàng + thu hồi phiên (khác "tạm ngưng bán") */}
+              {onBan && (data.isBanned
+                ? <button className="btn btn-secondary btn-sm" onClick={() => onBan(data._id, data.displayName, false)} type="button">
+                    <RotateCcw size={14} aria-hidden /> Gỡ cấm
+                  </button>
+                : <button className="btn btn-danger-ghost btn-sm" onClick={() => onBan(data._id, data.displayName, true)} type="button">
+                    <Ban size={14} aria-hidden /> Cấm tài khoản
+                  </button>
+              )}
+              {onSuspend && (data.suspended
+                ? <button className="btn btn-secondary btn-sm" onClick={() => onSuspend(data._id, data.displayName, false)} type="button">
+                    <RotateCcw size={14} aria-hidden /> Bán hàng trở lại
+                  </button>
+                : <button className="btn btn-secondary btn-sm" onClick={() => onSuspend(data._id, data.displayName, true)} type="button">
+                    <PauseCircle size={14} aria-hidden /> Tạm ngưng bán
+                  </button>
+              )}
+            </>
           )}
         </>
       ) : (
         <>
+          <span className="detail-bottombar-edit-count">
+            {changedCount > 0 ? `${changedCount} thay đổi chưa lưu` : 'Chưa có thay đổi'}
+          </span>
           <span className="detail-bottombar-spacer" />
           <button className="btn btn-ghost btn-sm" onClick={cancelEditAll} type="button">
             <X size={14} aria-hidden /> Hủy
           </button>
-          <button className="btn btn-primary btn-sm" onClick={saveAll} type="button" disabled={busy}>
-            <Check size={14} aria-hidden /> {busy ? 'Đang lưu...' : 'Lưu tất cả'}
+          <button className="btn btn-primary btn-sm" onClick={saveAll} type="button" disabled={busy || changedCount === 0}>
+            <Check size={14} aria-hidden /> {busy ? 'Đang lưu...' : 'Lưu thay đổi'}
           </button>
         </>
       )}
@@ -509,14 +667,8 @@ export function BusinessDetailDrawer({
   if (embedded) {
     return (
       <section className="table-shell detail-card" aria-label={isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}>
-        <div className="table-toolbar">
-          <div>
-            <h2 className="panel-title">{isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}</h2>
-            {data && <div className="panel-subtitle">{data.displayName}</div>}
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} type="button">Đóng</button>
-        </div>
-        <div style={{ padding: 'var(--space-4) var(--space-5)' }}>
+        {header}
+        <div className="detail-card-body">
           {body}
         </div>
         {bottomBar}
@@ -527,13 +679,7 @@ export function BusinessDetailDrawer({
   return (
     <Dialog open={businessId !== null} onClose={onClose} labelId="business-drawer-title" variant="dialog">
       <div className="dialog dialog--wide">
-        <div className="dialog-header">
-          <div>
-            <h2 id="business-drawer-title" className="panel-title">{isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}</h2>
-            {data && <p className="panel-subtitle">{data.displayName}</p>}
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} type="button">Đóng</button>
-        </div>
+        {header}
         <div className="dialog-body">
           {body}
         </div>

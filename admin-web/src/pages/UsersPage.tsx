@@ -5,7 +5,7 @@ import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { VerificationBadge } from '../components/StatusBadge';
-import { initials } from '../components/formatters';
+import { initials, banStatusLabel } from '../components/formatters';
 import Dialog from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { useAdminList } from '../hooks/useAdminList';
@@ -34,15 +34,7 @@ function accountTypeLabel(type: string) {
 }
 
 function banStatus(u: User): string {
-  if (!u.isBanned) return 'Hoạt động';
-  if (u.bannedUntil) {
-    const until = new Date(u.bannedUntil);
-    if (until.getTime() > Date.now()) {
-      return `Cấm tới ${until.toLocaleDateString('vi-VN')}`;
-    }
-    return 'Hết hạn cấm (chờ gỡ)';
-  }
-  return 'Cấm vĩnh viễn';
+  return banStatusLabel(u);
 }
 
 export default function UsersPage() {

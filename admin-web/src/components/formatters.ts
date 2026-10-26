@@ -49,3 +49,34 @@ export function ageLabel(createdAt: string | null | undefined) {
   if (hours < 24) return `${Math.floor(hours)} giờ`;
   return `${Math.floor(hours / 24)} ngày`;
 }
+
+/**
+ * Trích thông điệp lỗi đọc được từ response API (ValidationPipe trả mảng).
+ * Dùng cho toast lỗi form — trước đây luôn hiện câu chung chung.
+ */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as { response?: { data?: { message?: string | string[] } } })
+    ?.response?.data?.message;
+  if (Array.isArray(message)) return message[0] ?? fallback;
+  return message ?? fallback;
+}
+
+/**
+ * Nhãn trạng thái ban (dùng chung Users + Businesses):
+ * "Cấm tới ngày X" / "Hết hạn cấm (chờ gỡ)" / "Cấm vĩnh viễn".
+ * bannedUntil KHÔNG có cron auto-unban — hết hạn vẫn phải gỡ tay.
+ */
+export function banStatusLabel(user: {
+  isBanned?: boolean;
+  bannedUntil?: string | null;
+}): string {
+  if (!user.isBanned) return 'Hoạt động';
+  if (user.bannedUntil) {
+    const until = new Date(user.bannedUntil);
+    if (until.getTime() > Date.now()) {
+      return `Cấm tới ${until.toLocaleDateString('vi-VN')}`;
+    }
+    return 'Hết hạn cấm (chờ gỡ)';
+  }
+  return 'Cấm vĩnh viễn';
+}
