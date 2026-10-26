@@ -415,7 +415,7 @@ export function BusinessDetailDrawer({
                 <div className="alert alert--warning" role="status">
                   <div>
                     <strong>Tạm ngưng bán:</strong> sản phẩm đang bị ẩn khỏi catalog.
-                    Hồ sơ không bị đánh dấu vi phạm — bấm “Kích hoạt lại” để mở bán.
+                    Hồ sơ không bị đánh dấu vi phạm — bấm “Bán hàng trở lại” để mở bán.
                   </div>
                 </div>
               )}

@@ -602,9 +602,8 @@ export default function BusinessesPage() {
           const b = businesses.find((x) => x._id === id);
           decision.requestReject({ id, displayName: b?.displayName ?? '' });
         }}
-        onSuspend={(id, suspend) => {
-          const b = businesses.find((x) => x._id === id);
-          decision.requestSuspend({ id, displayName: b?.displayName ?? '', suspend });
+        onSuspend={(_id, displayName, suspend) => {
+          decision.requestSuspend({ id: _id, displayName, suspend });
         }}
         onBan={(id, displayName, ban) => {
           setBanTarget({ id, name: displayName, action: ban ? 'ban' : 'unban' });
