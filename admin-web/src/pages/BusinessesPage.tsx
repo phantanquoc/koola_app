@@ -13,7 +13,7 @@ import { EmptyState } from '../components/EmptyState';
 import { VerificationBadge, StatusBadge } from '../components/StatusBadge';
 import { MaskedPII } from '../components/MaskedPII';
 import { ExportButton } from '../components/ExportButton';
-import { formatDateTime, ageLabel, ageTone } from '../components/formatters';
+import { formatDateTime, ageLabel, ageTone, apiErrorMessage } from '../components/formatters';
 import { categoryVi, relationshipVi, RELATIONSHIP_VI, PROVINCES, CATEGORY_OPTIONS } from '../components/vn-data';
 import Dialog from '../components/Dialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -32,14 +32,24 @@ interface Business {
   email?: string;
   contactEmail?: string;
   contactPhone?: string;
+  taxCode?: string;
   businessCategory?: string;
   province?: string;
   relationshipType?: 'partner' | 'supplier';
   verificationStatus: string;
   suspended?: boolean;
   isBanned?: boolean;
+  assignee?: string;
+  licenseExpiresAt?: string;
+  deletedAt?: string | null;
   createdAt?: string;
   licenseImageUrl?: string | null;
+}
+
+/** Response thật của bulk-approve / bulk-reject (xem AdminService.bulk*Business). */
+interface BulkResult {
+  modified: number;
+  results: { id: string; ok: boolean; error?: string }[];
 }
 
 const TABS = [
@@ -47,7 +57,8 @@ const TABS = [
   { key: 'pending', label: 'Chờ duyệt' },
   { key: 'verified', label: 'Đã duyệt' },
   { key: 'rejected', label: 'Bị từ chối' },
-  { key: 'expiring', label: 'Sắp hết hạn' },
+  { key: 'expiring', label: 'Giấy phép' },
+  { key: 'archived', label: 'Lưu trữ' },
 ] as const;
 
 /** Bucket SLA theo tuổi hồ sơ chờ duyệt — bấm để lọc. */
@@ -70,19 +81,32 @@ function toCsvCell(v: unknown) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** Ngày hết hạn giấy phép: quá hạn tô đỏ, ≤30 ngày tô vàng, còn lại xám. */
+function LicenseExpiry({ date }: { date?: string | null }) {
+  if (!date) return <span className="cell-meta">Chưa có hạn</span>;
+  const days = Math.floor((new Date(date).getTime() - Date.now()) / 86_400_000);
+  const tone = days < 0 ? 'danger' : days <= 30 ? 'warning' : 'muted';
+  const label = days < 0 ? `Quá hạn ${Math.abs(days)} ngày` : `Còn ${days} ngày`;
+  return (
+    <StatusBadge tone={tone} label={label} />
+  );
+}
+
 export default function BusinessesPage() {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
   const { identity } = useAuth();
   const { values, set, reset } = useUrlFilters({
-    tab: 'pending', search: '', category: '', province: '', mine: '', page: '1', pageSize: '20', sort: '', sla: '', relationship: '', banned: '',
+    tab: 'pending', search: '', category: '', province: '', mine: '', page: '1', pageSize: '20', sort: '', sla: '', relationship: '', banned: '', suspended: '',
   });
 
   const tab = (TABS.some((t) => t.key === values.tab) ? values.tab : 'pending') as TabKey;
   const pageNum = Math.max(1, Number(values.page) || 1);
   const pageSize = [10, 20, 50].includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
   // P0: tab chờ duyệt mặc định cũ nhất trước — duyệt theo thứ tự quá hạn.
-  const effectiveSort = values.sort || (tab === 'pending' ? 'createdAt:asc' : undefined);
+  // Tab giấy phép: hạn gần nhất lên đầu, đó mới là việc cần làm.
+  const effectiveSort = values.sort
+    || (tab === 'pending' ? 'createdAt:asc' : tab === 'expiring' ? 'licenseExpiresAt:asc' : undefined);
   const params = useMemo(() => ({
     status: tab,
     search: values.search || undefined,
@@ -92,12 +116,13 @@ export default function BusinessesPage() {
     sla: tab === 'pending' && values.sla ? values.sla : undefined,
     relationshipType: values.relationship || undefined,
     banned: values.banned || undefined,
+    suspended: values.suspended || undefined,
     page: pageNum,
     limit: pageSize,
     sort: effectiveSort,
-  }), [tab, values.search, values.category, values.province, values.mine, values.sort, values.sla, values.relationship, values.banned, pageNum, pageSize, effectiveSort, identity?.email]);
-  const { rows: businesses, total, isLoading, isError, error, refetch } = useAdminList<Business & { assignee?: string }>(
-    ['businesses', tab, values.search, values.category, values.province, values.mine, pageNum, pageSize, values.sort, values.sla, values.relationship, values.banned],
+  }), [tab, values.search, values.category, values.province, values.mine, values.sort, values.sla, values.relationship, values.banned, values.suspended, pageNum, pageSize, effectiveSort, identity?.email]);
+  const { rows: businesses, total, isLoading, isError, error, refetch } = useAdminList<Business>(
+    ['businesses', tab, values.search, values.category, values.province, values.mine, pageNum, pageSize, values.sort, values.sla, values.relationship, values.banned, values.suspended],
     '/admin/businesses/pending',
     params,
     { refetchOnWindowFocus: true },
@@ -106,7 +131,7 @@ export default function BusinessesPage() {
   // Mini-metric từ stats có sẵn
   const { data: stats } = useQuery({
     queryKey: ['admin-stats'],
-    queryFn: async () => (await apiClient.get<{ pendingVerification: number; verifiedBusinesses: number; rejectedBusinesses: number; slaOver72: number; slaDay1_3: number; slaFresh: number; expiringSoon: number }>('/admin/stats')).data,
+    queryFn: async () => (await apiClient.get<{ pendingVerification: number; verifiedBusinesses: number; rejectedBusinesses: number; slaOver72: number; slaDay1_3: number; slaFresh: number; expiringSoon: number; archivedBusinesses: number }>('/admin/stats')).data,
     staleTime: 60_000,
   });
 
@@ -135,6 +160,7 @@ export default function BusinessesPage() {
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Một nguồn sự thật cho duyệt/từ chối/vô hiệu hóa — dùng chung với route chi tiết.
   const decision = useBusinessDecision({
@@ -173,9 +199,9 @@ export default function BusinessesPage() {
     void queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
   }
 
-  const hasActiveFilter = Boolean(values.search || values.category || values.province || values.mine || values.sla || values.relationship || values.banned);
+  const hasActiveFilter = Boolean(values.search || values.category || values.province || values.mine || values.sla || values.relationship || values.banned || values.suspended);
   /** Chip hiển thị đúng thứ đang lọc — mỗi chip gỡ được riêng, thay vì nút "Xóa lọc" mù. */
-  const activeFilters: Array<{ key: 'search' | 'category' | 'province' | 'mine' | 'sla' | 'relationship' | 'banned'; label: string }> = [];
+  const activeFilters: Array<{ key: 'search' | 'category' | 'province' | 'mine' | 'sla' | 'relationship' | 'banned' | 'suspended'; label: string }> = [];
   if (values.search) activeFilters.push({ key: 'search', label: `Từ khóa: ${values.search}` });
   if (values.category) activeFilters.push({ key: 'category', label: `Danh mục: ${categoryVi(values.category)}` });
   if (values.province) activeFilters.push({ key: 'province', label: `Tỉnh: ${values.province}` });
@@ -183,6 +209,7 @@ export default function BusinessesPage() {
   if (values.sla) activeFilters.push({ key: 'sla', label: `Ưu tiên: ${SLA_BUCKETS.find((b) => b.key === values.sla)?.label ?? values.sla}` });
   if (values.relationship) activeFilters.push({ key: 'relationship', label: `Loại: ${relationshipVi(values.relationship)}` });
   if (values.banned) activeFilters.push({ key: 'banned', label: values.banned === 'true' ? 'Đang bị cấm' : 'Không bị cấm' });
+  if (values.suspended) activeFilters.push({ key: 'suspended', label: values.suspended === 'true' ? 'Đang tạm ngưng bán' : 'Đang bán' });
 
   function clearFilters() {
     setSearchInput('');
@@ -214,7 +241,10 @@ export default function BusinessesPage() {
     setBusy(true);
     try {
       await apiClient.delete(`/admin/businesses/${deleteTarget}`);
-      addToast('success', 'Đã xóa hồ sơ.');
+      addToast('success', 'Đã xoá hồ sơ — xem lại ở tab Lưu trữ nếu cần khôi phục.', {
+        label: 'Xem lưu trữ',
+        onClick: () => set({ tab: 'archived', page: '1' }),
+      });
       setDeleteTarget(null);
       // ở lại list sau mutation
       refresh();
@@ -225,21 +255,45 @@ export default function BusinessesPage() {
     }
   }
 
+  /** Toast chung cho bulk-approve/bulk-reject — đọc đúng shape `{modified, results}`. */
+  function reportBulk(verb: string, res: BulkResult) {
+    const failed = res.results.filter((r) => !r.ok);
+    addToast(failed.length > 0 ? 'warning' : 'success',
+      failed.length > 0
+        ? `Đã ${verb} ${res.modified}/${res.results.length} hồ sơ. Lỗi: ${failed.slice(0, 3).map((f) => f.error ?? 'không rõ').join('; ')}${failed.length > 3 ? ` (+${failed.length - 3})` : ''}`
+        : `Đã ${verb} ${res.modified} doanh nghiệp.`);
+  }
+
   async function confirmBulkApprove() {
     if (selected.size === 0 || busy) return;
     setBusy(true);
     try {
-      const res = await apiClient.post<{ approved: number; failed: string[] }>(
+      const res = await apiClient.post<BulkResult>(
         '/admin/businesses/bulk-approve', { ids: [...selected] },
       );
-      addToast(res.data.failed.length > 0 ? 'error' : 'success',
-        res.data.failed.length > 0
-          ? `Đã duyệt ${res.data.approved}, thất bại ${res.data.failed.length} hồ sơ.`
-          : `Đã duyệt ${res.data.approved} doanh nghiệp.`);
+      reportBulk('duyệt', res.data);
       setBulkApproveOpen(false);
       refresh();
     } catch {
       addToast('error', 'Duyệt hàng loạt thất bại. Vui lòng thử lại.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmBulkAssign() {
+    if (selected.size === 0 || busy) return;
+    setBusy(true);
+    try {
+      // Không gửi assignee = backend lấy email của chính admin đang đăng nhập.
+      const res = await apiClient.post<{ modified: number }>(
+        '/admin/businesses/bulk-assign', { ids: [...selected] },
+      );
+      addToast('success', `Đã nhận ${res.data.modified} hồ sơ về bạn.`);
+      setSelected(new Set());
+      refresh();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Nhận hồ sơ thất bại. Vui lòng thử lại.'));
     } finally {
       setBusy(false);
     }
@@ -253,13 +307,10 @@ export default function BusinessesPage() {
     }
     setBusy(true);
     try {
-      const res = await apiClient.post<{ approved: number; failed: string[] }>(
+      const res = await apiClient.post<BulkResult>(
         '/admin/businesses/bulk-reject', { ids: [...selected], rejectionReason: bulkReason.trim() },
       );
-      addToast(res.data.failed.length > 0 ? 'error' : 'success',
-        res.data.failed.length > 0
-          ? `Đã từ chối ${res.data.approved}, thất bại ${res.data.failed.length} hồ sơ.`
-          : `Đã từ chối ${res.data.approved} doanh nghiệp.`);
+      reportBulk('từ chối', res.data);
       setBulkRejectOpen(false);
       setBulkReason('');
       refresh();
@@ -285,11 +336,18 @@ export default function BusinessesPage() {
           sort: effectiveSort,
           relationshipType: values.relationship || undefined,
           banned: values.banned || undefined,
+          suspended: values.suspended || undefined,
         },
       });
       if (res.data.truncated) addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
-      const header = ['ID', 'Tên doanh nghiệp', 'Email', 'Điện thoại', 'Loại quan hệ', 'Danh mục', 'Tỉnh', 'Trạng thái', 'Bị cấm', 'Ngày đăng ký'];
-      const lines = res.data.data.map((b) => [b._id, b.displayName, b.contactEmail ?? b.email ?? '', b.contactPhone ?? '', relationshipVi(b.relationshipType), b.businessCategory ?? '', b.province ?? '', b.verificationStatus, b.isBanned ? 'Có' : '', b.createdAt ?? ''].map(toCsvCell).join(','));
+      const header = ['ID', 'Tên doanh nghiệp', 'Email', 'Điện thoại', 'Loại quan hệ', 'Danh mục', 'Tỉnh', 'Mã số thuế', 'Giấy phép hết hạn', 'Người phụ trách', 'Trạng thái', 'Bị cấm', 'Tạm ngưng bán', 'Ngày đăng ký'];
+      const lines = res.data.data.map((b) => [
+        b._id, b.displayName, b.contactEmail ?? b.email ?? '', b.contactPhone ?? '',
+        relationshipVi(b.relationshipType), b.businessCategory ?? '', b.province ?? '',
+        b.taxCode ?? '', b.licenseExpiresAt ? formatDateTime(b.licenseExpiresAt) : '',
+        b.assignee ?? '', b.verificationStatus, b.isBanned ? 'Có' : '', b.suspended ? 'Có' : '',
+        b.createdAt ?? '',
+      ].map(toCsvCell).join(','));
       const blob = new Blob([['﻿' + header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -302,6 +360,21 @@ export default function BusinessesPage() {
       addToast('error', 'Xuất CSV thất bại. Vui lòng thử lại.');
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function confirmRestore() {
+    if (!restoreTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/admin/businesses/${restoreTarget.id}/restore`);
+      addToast('success', `Đã khôi phục ${restoreTarget.name} — hồ sơ về Chờ duyệt.`);
+      setRestoreTarget(null);
+      refresh();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Khôi phục thất bại. Vui lòng thử lại.'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -344,11 +417,29 @@ export default function BusinessesPage() {
           className="input filter-search" type="search" value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') set({ search: searchInput.trim(), page: '1' }); }}
-          placeholder="Tìm theo tên, email, SĐT hoặc ID" aria-label="Tìm kiếm doanh nghiệp"
+          placeholder="Tìm theo tên, email, SĐT, MST hoặc ID" aria-label="Tìm kiếm doanh nghiệp"
         />
         <label className="filter-check">
           <input type="checkbox" checked={values.mine === '1'} onChange={(e) => set({ mine: e.target.checked ? '1' : '', page: '1' })} />
           Của tôi
+        </label>
+        {/* `banned` / `suspended` trước đây chỉ nằm trong URL: server lọc được
+            nhưng không có nút nào bật — giờ có lối vào thật. */}
+        <label className="filter-check">
+          <input
+            type="checkbox"
+            checked={values.banned === 'true'}
+            onChange={(e) => set({ banned: e.target.checked ? 'true' : '', page: '1' })}
+          />
+          Đang bị cấm
+        </label>
+        <label className="filter-check">
+          <input
+            type="checkbox"
+            checked={values.suspended === 'true'}
+            onChange={(e) => set({ suspended: e.target.checked ? 'true' : '', page: '1' })}
+          />
+          Tạm ngưng bán
         </label>
       </ListHeader>
 
@@ -361,7 +452,8 @@ export default function BusinessesPage() {
                 : t.key === 'verified' ? stats.verifiedBusinesses
                   : t.key === 'rejected' ? stats.rejectedBusinesses
                     : t.key === 'expiring' ? stats.expiringSoon
-                      : undefined
+                      : t.key === 'archived' ? stats.archivedBusinesses
+                        : undefined
               : undefined,
           }))}
           active={tab}
@@ -423,6 +515,7 @@ export default function BusinessesPage() {
             names={selectedRows.map((b) => b.displayName)}
             onApprove={() => setBulkApproveOpen(true)}
             onReject={() => { setBulkRejectOpen(true); setBulkReason(''); setBulkError(null); }}
+            onAssign={confirmBulkAssign}
             onClear={() => setSelected(new Set())}
             busy={busy}
           />
@@ -489,25 +582,32 @@ export default function BusinessesPage() {
                     }}
                   />
                   <ColumnHeader
-                    label={tab === 'pending' ? 'Chờ từ' : 'Đăng ký'}
-                    sortField="createdAt"
+                    label={
+                      tab === 'expiring' ? 'Giấy phép hết hạn'
+                        : tab === 'archived' ? 'Xoá lúc'
+                          : tab === 'pending' ? 'Chờ từ' : 'Đăng ký'
+                    }
+                    sortField={tab === 'expiring' ? 'licenseExpiresAt' : 'createdAt'}
                     sort={effectiveSort}
                     onSort={toggleSort}
                   />
                   {/* Tab theo trạng thái thì mọi dòng cùng một trạng thái — cột này chỉ có nghĩa ở tab trộn */}
-                  {(tab === 'all' || tab === 'expiring') && <ColumnHeader label="Trạng thái" />}
-                  <th scope="col" className="th-center col-sticky">Hành động</th>
+                  {(tab === 'all' || tab === 'expiring' || tab === 'archived') && <ColumnHeader label="Trạng thái" />}
+                  <th scope="col" className="th-center col-sticky">{tab === 'archived' ? 'Khôi phục' : 'Hành động'}</th>
                 </tr>
               </thead>
               <tbody>
                 {businesses.length === 0 && (
                   <tr>
-                    <td colSpan={(showCheckbox ? 8 : 7) + (tab === 'all' || tab === 'expiring' ? 1 : 0)}>
+                    <td colSpan={(showCheckbox ? 8 : 7) + (tab === 'all' || tab === 'expiring' || tab === 'archived' ? 1 : 0)}>
                       <EmptyState
-                        title={hasActiveFilter ? 'Không khớp hồ sơ nào' : tab === 'pending' ? 'Đã duyệt hết hồ sơ chờ' : 'Chưa có hồ sơ nào'}
+                        title={hasActiveFilter ? 'Không khớp hồ sơ nào' : tab === 'pending' ? 'Đã duyệt hết hồ sơ chờ' : tab === 'archived' ? 'Chưa có hồ sơ nào bị xoá' : tab === 'expiring' ? 'Không có giấy phép nào cần gia hạn' : 'Chưa có hồ sơ nào'}
                         copy={hasActiveFilter
                           ? 'Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm.'
-                          : tab === 'pending' ? 'Hàng đợi trống — chuyển sang tab khác để kiểm tra.' : 'Hồ sơ sẽ xuất hiện ở đây khi doanh nghiệp đăng ký.'}
+                          : tab === 'pending' ? 'Hàng đợi trống — chuyển sang tab khác để kiểm tra.'
+                            : tab === 'archived' ? 'Hồ sơ bị xoá mềm sẽ nằm ở đây và khôi phục được.'
+                              : tab === 'expiring' ? 'Mọi giấy phép còn hạn trên 30 ngày.'
+                                : 'Hồ sơ sẽ xuất hiện ở đây khi doanh nghiệp đăng ký.'}
                         action={hasActiveFilter ? <button className="btn btn-secondary btn-sm" type="button" onClick={clearFilters}>Xóa bộ lọc</button> : undefined}
                       />
                     </td>
@@ -532,7 +632,12 @@ export default function BusinessesPage() {
                         {b.isBanned && <span className="badge badge-danger cell-badge">Bị cấm</span>}
                         {b.suspended && !b.isBanned && <span className="badge badge-muted cell-badge">Tạm ngưng</span>}
                       </div>
-                      <div className="cell-meta k-mono">{shortId(b._id)}</div>
+                      <div className="cell-meta">
+                        <span className="k-mono">{shortId(b._id)}</span>
+                        {/* Người phụ trách: "Của tôi" lọc theo field này, phải thấy được
+                            để biết hồ sơ đã có người nhận hay còn trong hàng đợi chung. */}
+                        {b.assignee && <span> · {b.assignee}</span>}
+                      </div>
                     </td>
                     <td>
                       <div>{b.contactPhone ? <MaskedPII value={b.contactPhone} kind="phone" /> : '—'}</div>
@@ -548,33 +653,47 @@ export default function BusinessesPage() {
                       <div className="cell-title">{b.province ?? '—'}</div>
                     </td>
                     <td>
-                      <span className="cell-date" title={formatDateTime(b.createdAt)}>
+                      <span className="cell-date" title={tab === 'expiring' ? 'Giấy phép hết hạn' : formatDateTime(b.createdAt)}>
                         {/* Tab chờ duyệt: tuổi là tín hiệu ưu tiên (badge màu).
+                            Tab giấy phép: ngày hết hạn mới là thứ cần đọc.
                             Tab khác: tuổi không phải việc gấp — hiện ngày đăng ký. */}
-                        {tab === 'pending'
-                          ? <StatusBadge tone={ageTone(b.createdAt)} label={ageLabel(b.createdAt)} />
-                          : formatDateTime(b.createdAt)}
+                        {tab === 'expiring'
+                          ? <LicenseExpiry date={b.licenseExpiresAt} />
+                          : tab === 'pending'
+                            ? <StatusBadge tone={ageTone(b.createdAt)} label={ageLabel(b.createdAt)} />
+                            : tab === 'archived'
+                              ? <span className="cell-meta">Xoá lúc {formatDateTime(b.deletedAt)}</span>
+                              : formatDateTime(b.createdAt)}
                       </span>
                     </td>
-                    {(tab === 'all' || tab === 'expiring') && (
+                    {(tab === 'all' || tab === 'expiring' || tab === 'archived') && (
                       <td><VerificationBadge status={b.verificationStatus} /></td>
                     )}
                     <td className="col-sticky">
-                      <div className="table-actions table-actions--end">
-                        <button className="btn btn-ghost btn-icon" type="button" onClick={() => goDetail(b._id)} aria-label={`Xem ${b.displayName}`} title="Chi tiết"><Eye size={16} aria-hidden /></button>
-                        {tab === 'pending' && (
-                          <>
-                            <button className="btn btn-primary btn-icon" type="button" disabled={busy} onClick={() => decision.requestApprove({ id: b._id, displayName: b.displayName })} aria-label={`Duyệt ${b.displayName}`} title="Duyệt"><Check size={16} aria-hidden /></button>
-                            <button className="btn btn-danger-ghost btn-icon" type="button" disabled={busy} onClick={() => decision.requestReject({ id: b._id, displayName: b.displayName })} aria-label={`Từ chối ${b.displayName}`} title="Từ chối"><X size={16} aria-hidden /></button>
-                          </>
-                        )}
-                        {tab === 'verified' && (
-                          b.suspended
-                            ? <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: false })} aria-label={`Cho ${b.displayName} bán lại`} title="Cho bán lại"><RotateCcw size={16} aria-hidden /></button>
-                            : <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: true })} aria-label={`Tạm ngưng bán ${b.displayName}`} title="Tạm ngưng bán"><PauseCircle size={16} aria-hidden /></button>
-                        )}
-                        <button className="btn btn-ghost btn-icon" type="button" disabled={busy} onClick={() => setDeleteTarget(b._id)} aria-label={`Xóa ${b.displayName}`} title="Xóa"><Trash2 size={16} aria-hidden /></button>
-                      </div>
+                      {tab === 'archived' ? (
+                        <div className="table-actions table-actions--end">
+                          {/* Xem được trước khi khôi phục — không thì phải khôi phục
+                              mò rồi mới biết là hồ sơ nào. */}
+                          <button className="btn btn-ghost btn-icon" type="button" onClick={() => goDetail(b._id)} aria-label={`Xem ${b.displayName}`} title="Chi tiết"><Eye size={16} aria-hidden /></button>
+                          <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={() => setRestoreTarget({ id: b._id, name: b.displayName })}>Khôi phục</button>
+                        </div>
+                      ) : (
+                        <div className="table-actions table-actions--end">
+                          <button className="btn btn-ghost btn-icon" type="button" onClick={() => goDetail(b._id)} aria-label={`Xem ${b.displayName}`} title="Chi tiết"><Eye size={16} aria-hidden /></button>
+                          {tab === 'pending' && (
+                            <>
+                              <button className="btn btn-primary btn-icon" type="button" disabled={busy} onClick={() => decision.requestApprove({ id: b._id, displayName: b.displayName })} aria-label={`Duyệt ${b.displayName}`} title="Duyệt"><Check size={16} aria-hidden /></button>
+                              <button className="btn btn-danger-ghost btn-icon" type="button" disabled={busy} onClick={() => decision.requestReject({ id: b._id, displayName: b.displayName })} aria-label={`Từ chối ${b.displayName}`} title="Từ chối"><X size={16} aria-hidden /></button>
+                            </>
+                          )}
+                          {tab === 'verified' && (
+                            b.suspended
+                              ? <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: false })} aria-label={`Cho ${b.displayName} bán lại`} title="Cho bán lại"><RotateCcw size={16} aria-hidden /></button>
+                              : <button className="btn btn-secondary btn-icon" type="button" disabled={busy} onClick={() => decision.requestSuspend({ id: b._id, displayName: b.displayName, suspend: true })} aria-label={`Tạm ngưng bán ${b.displayName}`} title="Tạm ngưng bán"><PauseCircle size={16} aria-hidden /></button>
+                          )}
+                          <button className="btn btn-ghost btn-icon" type="button" disabled={busy} onClick={() => setDeleteTarget(b._id)} aria-label={`Xóa ${b.displayName}`} title="Xóa"><Trash2 size={16} aria-hidden /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -633,6 +752,13 @@ export default function BusinessesPage() {
             {selectedRows.length > 10 && <li>...và {selectedRows.length - 10} hồ sơ nữa</li>}
           </ul>
         )}
+      />
+
+      <ConfirmDialog
+        open={restoreTarget !== null} onClose={() => setRestoreTarget(null)}
+        title={`Khôi phục ${restoreTarget?.name ?? ''}?`}
+        description="Hồ sơ được đưa về Chờ duyệt để kiểm tra lại trước khi bán hàng. Không tự động xác minh lại."
+        confirmLabel="Khôi phục hồ sơ" variant="primary" busy={busy} onConfirm={confirmRestore}
       />
 
       <ConfirmDialog

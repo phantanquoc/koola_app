@@ -1,11 +1,13 @@
 export function BulkBar({
-  count, names, onApprove, onReject, onClear, busy,
+  count, names, onApprove, onReject, onAssign, onClear, busy,
 }: {
   count: number;
   /** Tên vài hồ sơ đầu để moderator biết đang chọn nhầm ai. */
   names?: string[];
   onApprove: () => void;
   onReject: () => void;
+  /** Nhận các hồ sơ đã chọn về mình (gán người phụ trách). */
+  onAssign?: () => void;
   onClear: () => void;
   busy?: boolean;
 }) {
@@ -21,6 +23,11 @@ export function BulkBar({
         </span>
       )}
       <span className="bulk-bar-spacer" />
+      {onAssign && (
+        <button className="btn btn-secondary btn-sm" onClick={onAssign} disabled={busy} type="button">
+          Nhận hồ sơ
+        </button>
+      )}
       <button className="btn btn-primary btn-sm" onClick={onApprove} disabled={busy} type="button">Duyệt hàng loạt</button>
       <button className="btn btn-danger-ghost btn-sm" onClick={onReject} disabled={busy} type="button">Từ chối hàng loạt</button>
       <button className="btn btn-ghost btn-sm" onClick={onClear} disabled={busy} type="button">Bỏ chọn</button>

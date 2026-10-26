@@ -124,7 +124,10 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
   });
 
   it('chọn checkbox hiện BulkBar, bulk approve qua type-to-confirm', async () => {
-    mockedPost.mockResolvedValue({ data: { approved: 2, failed: [] } });
+    // Shape thật của AdminService.bulkApproveBusiness: { modified, results }
+    mockedPost.mockResolvedValue({
+      data: { modified: 2, results: [{ id: 'b1', ok: true }, { id: 'b2', ok: true }] },
+    });
     renderPage();
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
@@ -149,6 +152,9 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
         ids: ['b1', 'b2'],
       }),
     );
+    // Toast phải đọc đúng shape `results` — đọc `failed` (không tồn tại) sẽ
+    // throw sau khi backend đã duyệt xong.
+    expect(await screen.findByText('Đã duyệt 2 doanh nghiệp.')).toBeTruthy();
   });
 
   it('duyệt lẻ dùng ConfirmDialog có preview', async () => {
@@ -167,7 +173,9 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
   });
 
   it('từ chối bulk yêu cầu reason, gọi bulk-reject', async () => {
-    mockedPost.mockResolvedValue({ data: { approved: 2, failed: [] } });
+    mockedPost.mockResolvedValue({
+      data: { modified: 2, results: [{ id: 'b1', ok: true }, { id: 'b2', ok: true }] },
+    });
     renderPage();
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
@@ -192,6 +200,7 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
         rejectionReason: 'Giấy phép mờ',
       }),
     );
+    expect(await screen.findByText('Đã từ chối 2 doanh nghiệp.')).toBeTruthy();
   });
 
   it('nút Xem mở modal chi tiết giữa màn hình', async () => {
@@ -202,7 +211,10 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     // modal giữa màn hình, backdrop mờ (role dialog)
     expect(await screen.findByRole('heading', { name: 'Hồ sơ doanh nghiệp' })).toBeTruthy();
     await waitFor(() =>
-      expect(mockedGet).toHaveBeenCalledWith('/admin/businesses/b1'),
+      expect(mockedGet).toHaveBeenCalledWith(
+        '/admin/businesses/b1',
+        expect.objectContaining({ params: { includeDeleted: '1' } }),
+      ),
     );
   });
 
@@ -249,5 +261,55 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     await waitFor(() =>
       expect(mockedDelete).toHaveBeenCalledWith('/admin/businesses/b1'),
     );
+  });
+
+  it('tab Lưu trữ liệt kê hồ sơ đã xoá và khôi phục được', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/me') return Promise.resolve({ data: { name: 'Tester', email: 't@koola.app' } });
+      if (url === '/admin/businesses/pending') {
+        return Promise.resolve({
+          data: {
+            data: [{
+              _id: 'b9',
+              displayName: 'Công ty Đã Xoá',
+              verificationStatus: 'rejected',
+              deletedAt: new Date().toISOString(),
+            }],
+            total: 1,
+            page: 1,
+            limit: 20,
+          },
+        });
+      }
+      return Promise.resolve({ data: bizList });
+    });
+    mockedPost.mockResolvedValue({ data: { _id: 'b9' } });
+
+    renderPage('/businesses?tab=archived');
+    expect(await screen.findByText('Công ty Đã Xoá')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Khôi phục' }));
+    expect(await screen.findByRole('heading', { name: 'Khôi phục Công ty Đã Xoá?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Khôi phục hồ sơ' }));
+
+    await waitFor(() =>
+      expect(mockedPost).toHaveBeenCalledWith('/admin/businesses/b9/restore'),
+    );
+  });
+
+  it('BulkBar có nút Nhận hồ sơ gọi bulk-assign', async () => {
+    mockedPost.mockResolvedValue({ data: { modified: 1 } });
+    renderPage();
+    expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Chọn Công ty Alpha'));
+    fireEvent.click(screen.getByRole('button', { name: 'Nhận hồ sơ' }));
+
+    await waitFor(() =>
+      expect(mockedPost).toHaveBeenCalledWith('/admin/businesses/bulk-assign', {
+        ids: ['b1'],
+      }),
+    );
+    expect(await screen.findByText('Đã nhận 1 hồ sơ về bạn.')).toBeTruthy();
   });
 });

@@ -719,6 +719,18 @@ code,
   background: var(--koola-surface);
 }
 
+/* Nhiều ảnh bằng chứng (giấy phép + logo + bìa): xếp dọc, ảnh phụ gọn hơn
+   để khối Đối chiếu không cao gấp ba. */
+.verify-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.verify-media > :not(:first-child) img,
+.verify-media > :not(:first-child) .license-thumb {
+  max-height: 96px;
+}
+
 .verify-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

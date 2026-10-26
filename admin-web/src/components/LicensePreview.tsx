@@ -8,6 +8,8 @@ interface LicensePreviewProps {
   businessName: string;
   /** Callback when a missing/broken image needs refresh */
   onRefresh?: () => void;
+  /** Nhãn thumbnail + tiêu đề lightbox; mặc định "Giấy phép". */
+  label?: string;
 }
 
 /**
@@ -21,6 +23,7 @@ export default function LicensePreview({
   url,
   businessName,
   onRefresh,
+  label = 'Giấy phép',
 }: LicensePreviewProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -28,13 +31,13 @@ export default function LicensePreview({
   if (!url) {
     return (
       <div className="license-missing">
-        <span className="badge badge-muted">Không có ảnh</span>
+        <span className="badge badge-muted">Không có {label.toLowerCase()}</span>
         {onRefresh && (
           <button
             className="btn btn-ghost btn-sm"
             onClick={onRefresh}
             type="button"
-            aria-label={`Yêu cầu ảnh giấy phép mới từ ${businessName}`}
+            aria-label={`Yêu cầu ảnh ${label.toLowerCase()} mới từ ${businessName}`}
           >
             Yêu cầu lại
           </button>
@@ -49,12 +52,12 @@ export default function LicensePreview({
         className="license-preview"
         onClick={() => setLightboxOpen(true)}
         type="button"
-        aria-label={`Xem giấy phép của ${businessName}`}
+        aria-label={`Xem ${label.toLowerCase()} của ${businessName}`}
       >
         <img
           className="license-thumb"
           src={url}
-          alt={`Giấy phép doanh nghiệp ${businessName}`}
+          alt={`${label} doanh nghiệp ${businessName}`}
           onError={() => setImageError(true)}
         />
         <span>{imageError ? 'Ảnh lỗi' : 'Xem ảnh'}</span>
@@ -71,7 +74,7 @@ export default function LicensePreview({
             <div>
               <div className="page-eyebrow">License evidence</div>
               <h2 id="license-lightbox-title" className="panel-title">
-                Giấy phép — {businessName}
+                {label} — {businessName}
               </h2>
             </div>
             <button
@@ -111,7 +114,7 @@ export default function LicensePreview({
                 <img
                   className="lightbox-image"
                   src={url}
-                  alt={`Giấy phép doanh nghiệp ${businessName} — ảnh đầy đủ`}
+                  alt={`${label} doanh nghiệp ${businessName} — ảnh đầy đủ`}
                   onError={() => setImageError(true)}
                 />
                 <div className="lightbox-actions">

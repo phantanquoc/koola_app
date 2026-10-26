@@ -36,12 +36,14 @@ export interface BusinessDetail {
   internalNote?: string;
   assignee?: string;
   createdAt?: string;
+  deletedAt?: string | null;
   relationshipType?: 'partner' | 'supplier';
   licenseImageUrl: string | null;
   logoUrl?: string | null;
   coverUrl?: string | null;
   owner?: { _id: string; displayName: string; email?: string } | null;
   ownerBusinessCount?: number;
+  verificationHistory?: Array<{ status: string; at: string; actorId?: string; reason?: string }>;
 }
 
 interface AuditLog {
@@ -61,6 +63,8 @@ const AUDIT_LABELS: Record<string, string> = {
   suspend_business: 'Tạm ngưng bán',
   unsuspend_business: 'Bán hàng trở lại',
   delete_business: 'Xóa hồ sơ',
+  restore_business: 'Khôi phục hồ sơ',
+  assign_business: 'Gán người phụ trách',
   reopen_business: 'Mở lại hồ sơ',
   bulk_approve_business: 'Duyệt hàng loạt',
   bulk_reject_business: 'Từ chối hàng loạt',
@@ -72,6 +76,22 @@ interface Duplicate {
   _id: string;
   displayName: string;
 }
+
+/**
+ * Nhãn cho verificationHistory[].status — nguồn per-hồ-sơ, ghi cả thao tác
+ * hàng loạt (audit log bulk chỉ ghi 1 dòng với targetId = danh sách id nên
+ * không truy được về từng hồ sơ).
+ */
+const HISTORY_LABELS: Record<string, string> = {
+  pending: 'Tạo hồ sơ',
+  verified: 'Duyệt',
+  rejected: 'Từ chối',
+  suspended: 'Tạm ngưng bán',
+  unsuspended: 'Bán hàng trở lại',
+  deleted: 'Xoá hồ sơ',
+  restored: 'Khôi phục',
+  reopened: 'Mở lại chờ duyệt',
+};
 
 type EditableKey =
   | 'displayName' | 'businessCategory' | 'province' | 'address' | 'website'
@@ -116,7 +136,7 @@ function displayValue(data: BusinessDetail, key: EditableKey): string {
 
 /** Một dòng field: xem giá trị + bút sửa inline, Enter lưu / Esc hủy. */
 function InlineField({
-  fieldKey, data, editingKey, draft, busy,
+  fieldKey, data, editingKey, draft, busy, readOnly,
   onStart, onDraft, onSave, onCancel,
 }: {
   fieldKey: EditableKey;
@@ -124,6 +144,8 @@ function InlineField({
   editingKey: EditableKey | null;
   draft: string;
   busy: boolean;
+  /** Hồ sơ đã xoá mềm: chỉ đọc, backend chặn mọi PATCH. */
+  readOnly?: boolean;
   onStart: (k: EditableKey) => void;
   onDraft: (v: string) => void;
   onSave: () => void;
@@ -181,15 +203,17 @@ function InlineField({
             : fieldKey === 'contactPhone' && data.contactPhone
               ? <MaskedPII value={data.contactPhone} kind="phone" />
               : displayValue(data, fieldKey)}
-          <button
-            className="btn btn-ghost btn-icon inline-edit-btn"
-            type="button"
-            onClick={() => onStart(fieldKey)}
-            aria-label={`Sửa ${EDIT_LABELS[fieldKey]}`}
-            title={`Sửa ${EDIT_LABELS[fieldKey]}`}
-          >
-            <Pencil size={13} aria-hidden />
-          </button>
+          {!readOnly && (
+            <button
+              className="btn btn-ghost btn-icon inline-edit-btn"
+              type="button"
+              onClick={() => onStart(fieldKey)}
+              aria-label={`Sửa ${EDIT_LABELS[fieldKey]}`}
+              title={`Sửa ${EDIT_LABELS[fieldKey]}`}
+            >
+              <Pencil size={13} aria-hidden />
+            </button>
+          )}
         </dd>
       )}
     </div>
@@ -227,7 +251,11 @@ export function BusinessDetailDrawer({
   const { data, isLoading, isError } = useQuery({
     queryKey: ['business', businessId],
     queryFn: async () => {
-      const res = await apiClient.get<BusinessDetail>(`/admin/businesses/${businessId}`);
+      // includeDeleted: hồ sơ ở tab Lưu trữ vẫn mở được. Backend vẫn chặn với
+      // mọi thao tác ghi nên không nới quyền gì thêm.
+      const res = await apiClient.get<BusinessDetail>(`/admin/businesses/${businessId}`, {
+        params: { includeDeleted: '1' },
+      });
       return res.data;
     },
     enabled: businessId !== null && !isNew,
@@ -358,6 +386,14 @@ export function BusinessDetailDrawer({
               <section className="verify-block" aria-label="Đối chiếu nhanh">
                 <div className="verify-media">
                   <LicensePreview url={data.licenseImageUrl} businessName={data.displayName} />
+                  {/* Logo/bìa cũng là bằng chứng nhận diện: hồ sơ mạo danh thường
+                      dùng ảnh chụp lại của thương hiệu khác. */}
+                  {data.logoUrl && (
+                    <LicensePreview url={data.logoUrl} businessName={data.displayName} label="Logo" />
+                  )}
+                  {data.coverUrl && (
+                    <LicensePreview url={data.coverUrl} businessName={data.displayName} label="Ảnh bìa" />
+                  )}
                 </div>
                 <dl className="verify-facts">
                   <div>
@@ -395,6 +431,17 @@ export function BusinessDetailDrawer({
                       <span key={d._id} className="dup-item">{d.displayName}</span>
                     ))}
                     <p className="cell-meta">Đối chiếu giấy phép và mã số thuế trước khi duyệt.</p>
+                  </div>
+                </div>
+              )}
+
+              {data.deletedAt && (
+                <div className="alert" role="alert">
+                  <div>
+                    <strong>Hồ sơ đã xoá mềm:</strong> {formatDateTime(data.deletedAt)}
+                    <p className="cell-meta">
+                      Không hiện trong danh sách và mọi thao tác sửa đều bị chặn. Khôi phục ở tab Lưu trữ.
+                    </p>
                   </div>
                 </div>
               )}
@@ -475,6 +522,7 @@ export function BusinessDetailDrawer({
                                 editingKey={editingKey}
                                 draft={draft}
                                 busy={busy}
+                                readOnly={Boolean(data.deletedAt)}
                                 onStart={startEdit}
                                 onDraft={setDraft}
                                 onSave={saveField}
@@ -511,6 +559,23 @@ export function BusinessDetailDrawer({
                   </section>
                 ))}
               </div>
+
+              {data.verificationHistory && data.verificationHistory.length > 0 && (
+                <details className="detail-section" open>
+                  <summary className="detail-section-title">Vòng đời hồ sơ ({data.verificationHistory.length})</summary>
+                  <ul className="confirm-list">
+                    {[...data.verificationHistory].reverse().map((h, i) => (
+                      <li key={`${h.status}-${h.at}-${i}`}>
+                        {HISTORY_LABELS[h.status] ?? h.status}
+                        <span className="cell-meta">
+                          {h.reason ? ` · ${h.reason}` : ''}
+                          {h.at ? ` · ${formatDateTime(h.at)}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
 
               {timeline && timeline.length > 0 && (
                 <details className="detail-section" open>
@@ -603,7 +668,7 @@ export function BusinessDetailDrawer({
     </div>
   );
 
-  const bottomBar = data && !isNew ? (
+  const bottomBar = data && !isNew && !data.deletedAt ? (
     <div className="detail-bottombar">
       {!editAll ? (
         <>
