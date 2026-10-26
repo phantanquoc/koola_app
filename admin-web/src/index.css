@@ -2310,17 +2310,26 @@ th.sortable:hover {
   gap: var(--space-2);
 }
 
-/* Mobile: title và action xếp dọc, action chia đều bề ngang */
+/* Mobile: title và action GIỮ cùng hàng (title co lại, nút phụ bên phải) —
+   xếp dọc làm header chiếm thêm một hàng trước khi tới bộ lọc. */
 @media (max-width: 560px) {
   .list-header-top {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
     gap: var(--space-3);
+    flex-wrap: nowrap;
+  }
+
+  .list-title {
+    min-width: 0;
+    font-size: 18px;
+  }
+
+  .list-actions {
+    flex: 0 0 auto;
   }
 
   .list-actions .btn {
-    flex: 1;
-    justify-content: center;
+    flex: 0 0 auto;
   }
 
   .filter-row .filter-search {
@@ -2389,13 +2398,6 @@ th.sortable:hover {
   color: var(--koola-muted);
   white-space: nowrap;
   cursor: pointer;
-}
-
-/* Cặp nhãn + input ngày trong filter row (audit log) — cùng nhịp với .filter-check */
-.filter-date {
-  display: inline-flex;
-  align-items: center;  gap: 6px;
-  white-space: nowrap;
 }
 
 /* Payload audit log: JSON thô, phải giữ xuống dòng và không đẩy cột rộng ra */
@@ -2762,4 +2764,165 @@ th.sortable:hover {
   padding: var(--space-3) var(--space-4);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ─── Filter: ô tìm kiếm chính + panel nâng cao ────────────────────────────────
+   Trước đây audit log nhét 6 điều kiện vào một hàng: 2 ô search, 2 select, 2 ô
+   ngày → wrap thành 2–3 dòng, đẩy bảng xuống và trộn loại điều kiện khác nhau.
+   Mẫu mới: 1 ô tìm kiếm (gộp người + mã) → nút "Bộ lọc" có badge số điều kiện →
+   chip cho điều kiện đang bật. */
+.filter-search-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 1 340px;
+  align-items: center;
+}
+
+.filter-search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--koola-muted);
+  pointer-events: none;
+}
+
+.filter-row .filter-search--icon {
+  width: 100%;
+  flex: 1 1 auto;
+  padding-left: 34px;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.filter-toggle--open {
+  border-color: var(--koola-primary);
+  color: var(--koola-primary-dark);
+}
+
+/* Badge số điều kiện đang bật — để không phải mở panel mới biết đang lọc gì. */
+.filter-toggle-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--koola-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 5px;
+}
+
+.filter-panel {
+  z-index: 1200;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.filter-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  padding: var(--space-3) var(--space-4);
+}
+
+.filter-panel-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--koola-muted);
+}
+
+.filter-panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.filter-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+/* Panel dùng .form-field dọc: nhãn trên, control dưới — khác filter-row ngang. */
+.filter-panel .form-field {
+  gap: 6px;
+}
+
+.filter-panel .select,
+.filter-panel .input {
+  width: 100%;
+}
+
+/* Hai ô ngày cạnh nhau, mũi tên ở giữa — đọc như một khoảng, không phải 2 field rời. */
+.filter-date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-date-range .input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  /* Search và nút Bộ lọc nằm chung một hàng — tách hàng thì header chiếm 4–5
+     dòng trước khi tới bảng, đúng thứ §0.1 cấm. */
+  .filter-search-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+/* ─── Bảng: 3 mức ẩn cột theo bề ngang ─────────────────────────────────────────
+   .col-hide-mobile  ≤860px  giấu cột phụ (IP, đối tượng…)
+   .col-hide-xs      ≤560px  giấu thêm cột thứ cấp (Người thao tác)
+   .show-xs          chỉ hiện ≤560px (khi cột bị ẩn thì đưa dữ liệu vào dòng meta)
+   Trước đây mobile còn tràn ngang vì bảng min-width 760px mà chỉ ẩn 1 cột. */
+.col-hide-xs {
+  display: table-cell;
+}
+
+.show-xs {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .col-hide-xs {
+    display: none;
+  }
+
+  .show-xs {
+    display: block;
+  }
+}
+
+/* Bảng rộng 760px là đúng ở desktop, nhưng ở mobile chỉ còn 2–3 cột hiển thị —
+   giữ min-width đó là bắt người dùng vuốt ngang để đọc một cột duy nhất.
+   §6 yêu cầu "bảng luôn có .table-scroll, không tràn ngang": hạ min-width theo
+   số cột còn lại thay vì để thanh cuộn ngang xuất hiện. */
+@media (max-width: 860px) {
+  .data-table {
+    min-width: 520px;
+  }
+}
+
+@media (max-width: 560px) {
+  .data-table {
+    min-width: 0;
+  }
 }

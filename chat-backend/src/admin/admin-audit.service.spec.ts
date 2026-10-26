@@ -165,6 +165,59 @@ describe('AdminAuditService filters', () => {
     expect(arg.targetId.test('b1,b9,b12')).toBe(true);
   });
 
+  // Ô tìm kiếm chính: gõ tên admin ra kết quả, gõ ObjectId cũng ra — một ô cho
+  // hai thứ người điều tra thật sự nhớ.
+  it('q khớp cả tên admin lẫn mã đối tượng bằng $and (không ghi đè $or)', async () => {
+    mockAuditModel.find.mockReturnValue(makeListQuery([]));
+    mockAuditModel.countDocuments.mockResolvedValue(0);
+    const actorId = '507f1f77bcf86cd799439011';
+    mockUserModel.find.mockReturnValueOnce({
+      select: () => ({
+        limit: () => ({ lean: jest.fn().mockResolvedValue([{ _id: actorId }]) }),
+      }),
+    });
+
+    await service.list({ page: 1, limit: 20, q: 'quoc' });
+
+    const arg = mockAuditModel.find.mock.calls[0][0] as {
+      $and: { $or: Record<string, unknown>[] }[];
+    };
+    expect(arg.$and[0].$or).toEqual([
+      { targetId: expect.any(RegExp) },
+      { actorId: { $in: [actorId] } },
+    ]);
+    // countDocuments phải dùng CÙNG filter — lệch là tổng số sai với danh sách
+    expect(mockAuditModel.countDocuments).toHaveBeenCalledWith(arg);
+  });
+
+  it('q vẫn khớp targetId khi không tìm được admin nào', async () => {
+    mockAuditModel.find.mockReturnValue(makeListQuery([]));
+    mockAuditModel.countDocuments.mockResolvedValue(0);
+    mockUserModel.find.mockReturnValueOnce({
+      select: () => ({
+        limit: () => ({ lean: jest.fn().mockResolvedValue([]) }),
+      }),
+    });
+
+    await service.list({ page: 1, limit: 20, q: '6adec9ac' });
+
+    const arg = mockAuditModel.find.mock.calls[0][0] as {
+      $and: { $or: Record<string, unknown>[] }[];
+    };
+    expect(arg.$and[0].$or).toHaveLength(1);
+  });
+
+  it('sort createdAt:asc khi được yêu cầu, mặc định desc', async () => {
+    mockAuditModel.find.mockReturnValue(makeListQuery([]));
+    mockAuditModel.countDocuments.mockResolvedValue(0);
+    await service.list({ page: 1, limit: 20, sort: 'createdAt:asc' });
+    expect(mockAuditModel.find.mock.results[0].value.sort).toHaveBeenCalledWith({ createdAt: 1 });
+
+    mockAuditModel.find.mockReturnValue(makeListQuery([]));
+    await service.list({ page: 1, limit: 20 });
+    expect(mockAuditModel.find.mock.results[1].value.sort).toHaveBeenCalledWith({ createdAt: -1 });
+  });
+
   // Điều tra sự cố đọc tên, không đọc ObjectId. Business dùng chung collection
   // User nên một lượt query phủ cả actor lẫn target.
   it('resolves targetName in the same batch query as actorName', async () => {

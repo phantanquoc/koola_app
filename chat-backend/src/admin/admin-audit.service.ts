@@ -69,6 +69,10 @@ export class AdminAuditService {
     from?: string;
     to?: string;
     search?: string;
+    /** Ô tìm kiếm chung: khớp actor (tên/email) HOẶC mã đối tượng. */
+    q?: string;
+    /** `createdAt:asc|desc`. Log mặc định mới nhất trước. */
+    sort?: string;
   }): Promise<{
     data: AuditLogWithActor[];
     total: number;
@@ -78,6 +82,9 @@ export class AdminAuditService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
+    // Dựng bằng $and: `$or` của q và $or của actor không thể cùng nằm ở top-level,
+    // gộp sai là bộ lọc này ghi đè bộ lọc kia (bug im lặng, chỉ thấy kết quả rộng hơn).
+    const and: Record<string, unknown>[] = [];
     const filter: Record<string, unknown> = {};
     if (dto.action) filter.action = dto.action;
     if (dto.targetType) filter.targetType = dto.targetType;
@@ -86,14 +93,9 @@ export class AdminAuditService {
     // Tra theo tên/email: người điều tra nhớ "ai làm" chứ không nhớ ObjectId.
     // Không tìm thấy admin nào khớp thì trả rỗng ngay, đừng query audit cả bảng.
     if (dto.actor?.trim()) {
-      const regex = new RegExp(escapeRegExp(dto.actor.trim()), 'i');
-      const matched = await this.userModel
-        .find({ $or: [{ displayName: regex }, { email: regex }] })
-        .select('_id')
-        .limit(50)
-        .lean();
+      const matched = await this.matchActorIds(dto.actor);
       if (matched.length === 0) return { data: [], total: 0, page, limit };
-      filter.actorId = { $in: matched.map((u) => String(u._id)) };
+      filter.actorId = { $in: matched };
     }
 
     // Dòng bulk ghi targetId = "id1,id2,id3", nên khớp chính xác không bao giờ
@@ -103,6 +105,19 @@ export class AdminAuditService {
       filter.targetId = new RegExp(escapeRegExp(dto.search.trim()), 'i');
     }
 
+    // Ô tìm kiếm chung: một ô cho hai thứ người ta thật sự gõ vào (tên admin
+    // hoặc mẩu id). Không tìm được admin nào khớp thì vẫn thử khớp id — gõ một
+    // ObjectId vào ô này phải ra kết quả.
+    if (dto.q?.trim()) {
+      const q = dto.q.trim();
+      const actorIds = await this.matchActorIds(q);
+      const or: Record<string, unknown>[] = [
+        { targetId: new RegExp(escapeRegExp(q), 'i') },
+      ];
+      if (actorIds.length > 0) or.push({ actorId: { $in: actorIds } });
+      and.push({ $or: or });
+    }
+
     // from/to tính cả biên: from <= createdAt <= to. Chỉ dựng $gte/$lte khi có
     // giá trị — truyền undefined vào $gte làm Mongo bỏ qua toàn bộ điều kiện.
     const createdAt: Record<string, Date> = {};
@@ -110,14 +125,22 @@ export class AdminAuditService {
     if (dto.to) createdAt.$lte = new Date(dto.to);
     if (Object.keys(createdAt).length > 0) filter.createdAt = createdAt;
 
+    const query = and.length > 0 ? { ...filter, $and: and } : filter;
+
+    // Log mặc định mới nhất trước; cho phép đảo để đọc một sự cố từ đầu.
+    // Whitelist: chỉ createdAt sort được — audit log không có nghĩa "xếp theo tên".
+    const sort: Record<string, 1 | -1> = dto.sort === 'createdAt:asc'
+      ? { createdAt: 1 }
+      : { createdAt: -1 };
+
     const [data, total] = await Promise.all([
       this.auditModel
-        .find(filter)
-        .sort({ createdAt: -1 })
+        .find(query)
+        .sort(sort)
         .skip(skip)
         .limit(limit)
         .lean(),
-      this.auditModel.countDocuments(filter),
+      this.auditModel.countDocuments(query),
     ]);
 
     return {
@@ -126,6 +149,17 @@ export class AdminAuditService {
       page,
       limit,
     };
+  }
+
+  /** Tên/email → danh sách actorId khớp. Dùng chung cho `actor` và `q`. */
+  private async matchActorIds(term: string): Promise<string[]> {
+    const regex = new RegExp(escapeRegExp(term.trim()), 'i');
+    const matched = await this.userModel
+      .find({ $or: [{ displayName: regex }, { email: regex }] })
+      .select('_id')
+      .limit(50)
+      .lean();
+    return matched.map((u) => String(u._id));
   }
 
   /**

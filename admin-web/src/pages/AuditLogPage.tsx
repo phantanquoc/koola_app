@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Eye } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eye, Search } from 'lucide-react';
 import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
+import { FilterPopover } from '../components/FilterPopover';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -32,6 +33,19 @@ function isoToDay(iso: string) {
   return iso ? iso.slice(0, 10) : '';
 }
 
+/**
+ * Nhãn ngày cho chip: 'YYYY-MM-DD' → '31/10/2026'.
+ *
+ * Cắt chuỗi chứ không qua `new Date()`: `to` lưu dạng 23:59:59.999Z, đổi sang
+ * giờ máy (UTC+7) thành 06:59 ngày hôm sau → chip hiện lệch một ngày so với ô
+ * ngày người dùng vừa chọn.
+ */
+function dayLabel(iso: string) {
+  const day = isoToDay(iso);
+  const [y, m, d] = day.split('-');
+  return y && m && d ? `${d}/${m}/${y}` : day;
+}
+
 /** Link sang đối tượng bị tác động — chỉ user/business tra được theo id. */
 function TargetLink({ type, id }: { type: string; id: string }) {
   const path = type === 'user' ? '/users' : type === 'business' ? '/businesses' : null;
@@ -47,38 +61,53 @@ function TargetLink({ type, id }: { type: string; id: string }) {
 
 export default function AuditLogPage() {
   const { values, set, reset } = useUrlFilters({
-    actor: '', action: '', targetType: '', search: '', from: '', to: '', page: '1', pageSize: '20',
+    q: '', action: '', targetType: '', from: '', to: '', sort: '', page: '1', pageSize: '20',
   });
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  const sort = values.sort === 'createdAt:asc' ? 'createdAt:asc' : 'createdAt:desc';
 
   const params = useMemo(() => ({
     page,
     limit: pageSize,
-    actor: values.actor || undefined,
+    q: values.q || undefined,
     action: values.action || undefined,
     targetType: values.targetType || undefined,
-    search: values.search || undefined,
     from: values.from || undefined,
     to: values.to || undefined,
-  }), [page, pageSize, values.actor, values.action, values.targetType, values.search, values.from, values.to]);
+    sort,
+  }), [page, pageSize, values.q, values.action, values.targetType, values.from, values.to, sort]);
 
   const { rows, total, isLoading, isError, error, refetch } = useAdminList<AuditLog>(
-    ['audit-logs', values.actor, values.action, values.targetType, values.search, values.from, values.to, page, pageSize],
+    ['audit-logs', values.q, values.action, values.targetType, values.from, values.to, sort, page, pageSize],
     '/admin/audit-logs',
     params,
   );
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Ô tìm kiếm debounce: gõ tới đâu lọc tới đó, không bắt bấm Enter.
+  const [searchInput, setSearchInput] = useState(values.q);
+  useEffect(() => setSearchInput(values.q), [values.q]);
+  useEffect(() => {
+    if (searchInput.trim() === values.q) return;
+    const t = setTimeout(() => set({ q: searchInput.trim(), page: '1' }), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   /** Mở chi tiết bằng route riêng: deep-link được, back giữ nguyên filter list. */
   function openDetail(id: string) {
     navigate(`/audit-logs/${id}`, { state: { from: `${location.pathname}${location.search}` } });
   }
 
-  const hasActiveFilter = Boolean(
-    values.actor || values.action || values.targetType || values.search || values.from || values.to,
-  );
+  // `q` không tính là "bộ lọc nâng cao" — nó là ô tìm kiếm chính.
+  // Khoảng ngày tính là MỘT điều kiện (khớp một chip), không phải hai — badge
+  // lệch với số chip đang hiện là loại lỗi khiến người dùng mất tin vào bộ lọc.
+  const advancedCount =
+    (values.action ? 1 : 0)
+    + (values.targetType ? 1 : 0)
+    + (values.from || values.to ? 1 : 0);
+  const hasActiveFilter = Boolean(values.q || advancedCount);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const loadError = apiErrorMessage(error, 'Không tải được audit log.');
 
@@ -103,62 +132,64 @@ export default function AuditLogPage() {
         count={total}
         actions={<button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>}
       >
-        <input
-          className="input filter-search" type="search" value={values.actor}
-          onChange={(e) => set({ actor: e.target.value, page: '1' })}
-          placeholder="Người thao tác (tên hoặc email)" aria-label="Lọc theo người thao tác"
-        />
-        <input
-          className="input filter-search" type="search" value={values.search}
-          onChange={(e) => set({ search: e.target.value, page: '1' })}
-          placeholder="ID đối tượng (khớp một phần)" aria-label="Lọc theo ID đối tượng"
-        />
-        <select
-          className="select" value={values.action}
-          onChange={(e) => set({ action: e.target.value, page: '1' })}
-          aria-label="Lọc theo hành động"
-        >
-          <option value="">Mọi hành động</option>
-          {actionOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select
-          className="select" value={values.targetType}
-          onChange={(e) => set({ targetType: e.target.value, page: '1' })}
-          aria-label="Lọc theo loại đối tượng"
-        >
-          <option value="">Mọi đối tượng</option>
-          {Object.entries(AUDIT_TARGET_LABELS).map(([v, label]) => (
-            <option key={v} value={v}>{label}</option>
-          ))}
-        </select>
-        <label className="filter-date">
-          <span className="cell-meta">Từ</span>
+        <div className="filter-search-wrap">
+          <Search size={15} className="filter-search-icon" aria-hidden />
           <input
-            className="input input-sm" type="date" value={isoToDay(values.from)}
-            onChange={(e) => setDay('from', e.target.value)} aria-label="Từ ngày"
+            className="input filter-search filter-search--icon" type="search" value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') set({ q: searchInput.trim(), page: '1' }); }}
+            placeholder="Tìm người thao tác hoặc mã đối tượng"
+            aria-label="Tìm người thao tác hoặc mã đối tượng"
           />
-        </label>
-        <label className="filter-date">
-          <span className="cell-meta">Đến</span>
-          <input
-            className="input input-sm" type="date" value={isoToDay(values.to)}
-            onChange={(e) => setDay('to', e.target.value)} aria-label="Đến ngày"
-          />
-        </label>
+        </div>
+
+        <FilterPopover
+          activeCount={advancedCount}
+          onClear={() => set({ action: '', targetType: '', from: '', to: '', page: '1' })}
+        >
+          <label className="form-field">
+            <span className="form-label">Hành động</span>
+            <select
+              className="select" value={values.action}
+              onChange={(e) => set({ action: e.target.value, page: '1' })}
+            >
+              <option value="">Mọi hành động</option>
+              {actionOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+
+          <label className="form-field">
+            <span className="form-label">Loại đối tượng</span>
+            <select
+              className="select" value={values.targetType}
+              onChange={(e) => set({ targetType: e.target.value, page: '1' })}
+            >
+              <option value="">Mọi đối tượng</option>
+              {Object.entries(AUDIT_TARGET_LABELS).map(([v, label]) => (
+                <option key={v} value={v}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="form-field">
+            <span className="form-label">Khoảng thời gian</span>
+            <div className="filter-date-range">
+              <input
+                className="input input-sm" type="date" value={isoToDay(values.from)}
+                onChange={(e) => setDay('from', e.target.value)} aria-label="Từ ngày"
+              />
+              <span className="cell-meta" aria-hidden>→</span>
+              <input
+                className="input input-sm" type="date" value={isoToDay(values.to)}
+                onChange={(e) => setDay('to', e.target.value)} aria-label="Đến ngày"
+              />
+            </div>
+          </div>
+        </FilterPopover>
       </ListHeader>
 
       {hasActiveFilter && (
         <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
-          {values.actor && (
-            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ actor: '', page: '1' })}>
-              Người: {values.actor} ✕
-            </button>
-          )}
-          {values.search && (
-            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ search: '', page: '1' })}>
-              ID: {values.search} ✕
-            </button>
-          )}
           {values.action && (
             <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ action: '', page: '1' })}>
               {auditActionLabel(values.action)} ✕
@@ -171,7 +202,12 @@ export default function AuditLogPage() {
           )}
           {(values.from || values.to) && (
             <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ from: '', to: '', page: '1' })}>
-              {isoToDay(values.from) || '…'} → {isoToDay(values.to) || '…'} ✕
+              {values.from ? dayLabel(values.from) : '…'} → {values.to ? dayLabel(values.to) : '…'} ✕
+            </button>
+          )}
+          {values.q && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ q: '', page: '1' })}>
+              Từ khoá: {values.q} ✕
             </button>
           )}
           <button className="btn btn-ghost btn-sm" type="button" onClick={reset}>Xoá bộ lọc</button>
@@ -190,10 +226,24 @@ export default function AuditLogPage() {
             <table className="data-table data-table--compact" aria-label="Lịch sử thao tác quản trị">
               <thead>
                 <tr>
-                  <th scope="col">Thời gian</th>
-                  <th scope="col">Người thao tác</th>
+                  <th scope="col" aria-sort={sort === 'createdAt:asc' ? 'ascending' : 'descending'}>
+                    <div className="th-inner">
+                      <button
+                        type="button"
+                        className="th-sort th-sort--active"
+                        onClick={() => set({ sort: sort === 'createdAt:asc' ? 'createdAt:desc' : 'createdAt:asc', page: '1' })}
+                        title={sort === 'createdAt:asc' ? 'Đang xếp cũ nhất trước — bấm để mới nhất trước' : 'Đang xếp mới nhất trước — bấm để cũ nhất trước'}
+                      >
+                        <span>Thời gian</span>
+                        {sort === 'createdAt:asc'
+                          ? <ArrowUp size={13} className="th-sort-icon" aria-hidden />
+                          : <ArrowDown size={13} className="th-sort-icon" aria-hidden />}
+                      </button>
+                    </div>
+                  </th>
+                  <th scope="col" className="col-hide-xs">Người thao tác</th>
                   <th scope="col">Hành động</th>
-                  <th scope="col">Đối tượng</th>
+                  <th scope="col" className="col-hide-mobile">Đối tượng</th>
                   <th scope="col" className="col-hide-mobile">IP truy cập</th>
                   <th scope="col" className="th-center col-sticky">Chi tiết</th>
                 </tr>
@@ -224,8 +274,13 @@ export default function AuditLogPage() {
                         openDetail(a._id);
                       }}
                     >
-                      <td><span className="cell-date k-mono">{formatDateTime(a.createdAt)}</span></td>
                       <td>
+                        <span className="cell-date k-mono">{formatDateTime(a.createdAt)}</span>
+                        {/* ≤560px cột Người thao tác bị ẩn — đưa tên xuống đây để
+                            vẫn đọc được ai làm, không phải vuốt ngang. */}
+                        <div className="cell-meta show-xs">{a.actorName ?? 'Không xác định'}</div>
+                      </td>
+                      <td className="col-hide-xs">
                         <div className="cell-title">{a.actorName ?? 'Không xác định'}</div>
                       </td>
                       <td>
@@ -234,7 +289,7 @@ export default function AuditLogPage() {
                             phải đọc được mã gốc — im lặng là mất dấu. */}
                         {!AUDIT_ACTION_LABELS[a.action] && <div className="cell-meta k-mono">{a.action}</div>}
                       </td>
-                      <td>
+                      <td className="col-hide-mobile">
                         <div className="cell-title">{auditTargetLabel(a.targetType)}</div>
                         <div className="cell-meta">
                           {isBulk

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { PaginationDto } from './pagination.dto';
 import {
   ADMIN_AUDIT_ACTIONS,
@@ -61,10 +61,27 @@ export class ListAuditLogsDto extends PaginationDto {
 
   @ApiPropertyOptional({
     description:
+      'Tìm chung: khớp tên/email admin thực hiện HOẶC phần mã đối tượng. Dùng cho ô tìm kiếm chính — người điều tra gõ thứ mình nhớ, không phải chọn đúng field.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description:
       'Khớp một phần trên targetId. Dùng cho dòng bulk (targetId = "id1,id2,id3") — tra một hồ sơ vẫn ra lần duyệt hàng loạt đã đụng nó.',
   })
   @IsOptional()
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sort as field:direction. Chỉ createdAt (mặc định) — log luôn xếp mới nhất trước.',
+    example: 'createdAt:desc',
+  })
+  @IsOptional()
+  @Matches(/^createdAt:(asc|desc)$/)
+  sort?: string;
 }

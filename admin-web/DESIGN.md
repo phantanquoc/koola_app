@@ -89,6 +89,8 @@ Quy ước bắt buộc cho mọi trang list:
 | Sort | `field:asc`/`field:desc`, whitelist field ở server. Queue duyệt mặc định `createdAt:asc` |
 | Search | debounce 400ms + Enter chốt ngay; server tìm trên tên/email/SĐT/MST/ID |
 | Lọc theo cột | `ColumnHeader.filter` (popover portal). Không thêm `<select>` rời ở toolbar |
+| Nhiều filter (>3 điều kiện) | **1 ô tìm kiếm chính** (gộp những gì người ta thật sự gõ) + `FilterPopover` có badge số điều kiện + chip. **Cấm** nhét 5–6 control vào một hàng: wrap thành 2–3 dòng đẩy bảng xuống |
+| Ngày tháng | trong `FilterPopover`, 2 ô cạnh nhau với mũi tên `→`; chip hiện `dd/mm/yyyy → dd/mm/yyyy` cắt từ ISO, **không** qua `new Date()` (lệch múi giờ làm chip sai một ngày) |
 | Chọn dòng | reset selection khi tab/filter/page đổi; chỉ chọn được trang hiện tại |
 | Empty | phân biệt "trống thật" vs "không khớp lọc" — copy khác nhau + nút "Xoá bộ lọc" khi có lọc |
 | Error | `StateBlock variant="error"` + nút Thử lại gọi `refetch()`. **Cấm** nuốt lỗi (`.catch(() => {})`) |
@@ -96,7 +98,7 @@ Quy ước bắt buộc cho mọi trang list:
 | PII | `MaskedPII` cho mọi SĐT/email trên bảng. CSV xuất không che nhưng phải confirm |
 | Export | `ExportButton` + dialog nêu phạm vi, cap 500 dòng, cảnh báo dữ liệu nhạy cảm |
 | Bàn phím | J/K di chuyển, Enter mở, A/R quyết định, `?` mở bảng trợ giúp |
-| Mobile ≤860px | ẩn cột phụ bằng `.col-hide-mobile`; giữ Tên + Trạng thái + actions |
+| Mobile ≤860px | ẩn cột phụ bằng `.col-hide-mobile`; ≤560px ẩn thêm `.col-hide-xs` và đưa dữ liệu đó vào dòng meta bằng `.show-xs`. Bảng hạ `min-width` (760 → 520 → 0) để không phải vuốt ngang |
 
 Empty-state copy theo tab, không dùng một câu chung: tab Chờ duyệt viết
 "Hàng đợi trống — chuyển sang tab khác để kiểm tra", tab Lưu trữ viết
@@ -206,6 +208,7 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `TableShell` | vỏ bảng + toolbar tuỳ chọn + footer; trang list mới không truyền `title` (title đã ở `ListHeader`) |
 | `StatusTabs` + `.tabs` | pill group, tab active nền ink chữ trắng; `count` chỉ hiện khi > 0 |
 | `ColumnHeader` | `<th>` sort được (`aria-sort`) + phễu lọc popover portal; `className="col-hide-mobile"` cho cột phụ |
+| `FilterPopover` | nút "Bộ lọc" + badge số điều kiện đang bật → panel neo dưới nút (portal, 380px). Dùng khi filter > 3 điều kiện: ô search chính + panel + chip, thay vì nhét hết vào một hàng |
 | `BulkBar` | chỉ render khi `count > 0`; badge count + preview 3 tên + nút bulk + Bỏ chọn; class CSS `.bulk-bar`, cấm inline style |
 | `Pagination` | luôn render khi `total > 0` (kể cả 1 trang) để tổng số không biến mất; page-size + goto cho queue |
 | `ExportButton` | nút + dialog confirm nêu phạm vi (cap 500, PII không che) |

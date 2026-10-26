@@ -83,24 +83,30 @@ describe('AuditLogPage', () => {
     )).toBeTruthy();
   });
 
-  it('lọc theo người thao tác gửi param lên server', async () => {
+  // Ô tìm kiếm chính gộp hai thứ người điều tra thật sự gõ: tên admin hoặc mã
+  // đối tượng. Trước đây là 2 ô riêng nên phải biết trước mình đang tìm cái gì.
+  it('ô tìm kiếm chính gửi q lên server, debounce', async () => {
     renderPage();
     await screen.findByText('Công ty Alpha');
 
-    fireEvent.change(screen.getByLabelText('Lọc theo người thao tác'), { target: { value: 'nguyễn' } });
+    fireEvent.change(screen.getByLabelText('Tìm người thao tác hoặc mã đối tượng'), {
+      target: { value: 'nguyễn' },
+    });
 
-    await waitFor(() =>
-      expect(mockedGet).toHaveBeenCalledWith(
+    await waitFor(
+      () => expect(mockedGet).toHaveBeenCalledWith(
         '/admin/audit-logs',
-        expect.objectContaining({ params: expect.objectContaining({ actor: 'nguyễn' }) }),
+        expect.objectContaining({ params: expect.objectContaining({ q: 'nguyễn' }) }),
       ),
+      { timeout: 2000 },
     );
   });
 
-  it('lọc ngày gửi from 00:00 và to 23:59:59.999', async () => {
+  it('bộ lọc nâng cao: mở panel rồi chọn ngày gửi from 00:00', async () => {
     renderPage();
     await screen.findByText('Công ty Alpha');
 
+    fireEvent.click(screen.getByRole('button', { name: /^Bộ lọc/ }));
     fireEvent.change(screen.getByLabelText('Từ ngày'), { target: { value: '2026-10-01' } });
 
     await waitFor(() => {
@@ -109,6 +115,43 @@ describe('AuditLogPage', () => {
       expect(from.getHours()).toBe(0);
       expect(from.getMinutes()).toBe(0);
     });
+  });
+
+  it('sort mặc định mới nhất trước, bấm cột đảo sang cũ nhất', async () => {
+    renderPage();
+    await screen.findByText('Công ty Alpha');
+
+    expect(mockedGet).toHaveBeenCalledWith(
+      '/admin/audit-logs',
+      expect.objectContaining({ params: expect.objectContaining({ sort: 'createdAt:desc' }) }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Thời gian/ }));
+
+    await waitFor(() =>
+      expect(mockedGet).toHaveBeenCalledWith(
+        '/admin/audit-logs',
+        expect.objectContaining({ params: expect.objectContaining({ sort: 'createdAt:asc' }) }),
+      ),
+    );
+  });
+
+  it('badge trên nút Bộ lọc đếm đúng số điều kiện nâng cao', async () => {
+    renderPage('/audit-logs?action=delete_business&targetType=business');
+    await screen.findByText('Công ty Alpha');
+
+    const btn = screen.getByRole('button', { name: /^Bộ lọc/ });
+    expect(btn.textContent).toContain('2');
+  });
+
+  // Khoảng ngày là MỘT điều kiện, không phải hai — badge phải khớp số chip.
+  it('badge đếm khoảng ngày là một điều kiện', async () => {
+    renderPage('/audit-logs?from=2026-10-01T00:00:00.000Z&to=2026-10-31T23:59:59.999Z');
+    await screen.findByText('Công ty Alpha');
+
+    const btn = screen.getByRole('button', { name: /^Bộ lọc/ });
+    expect(btn.textContent).toContain('1');
+    expect(screen.getByRole('button', { name: /1\/10\/2026/ })).toBeTruthy();
   });
 
   // Chi tiết là ROUTE riêng, không phải drawer/overlay: deep-link được và
