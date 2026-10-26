@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye } from 'lucide-react';
 import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
@@ -7,7 +7,6 @@ import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
-import Dialog from '../components/Dialog';
 import { apiErrorMessage, formatDateTime } from '../components/formatters';
 import {
   AUDIT_ACTION_LABELS,
@@ -19,18 +18,10 @@ import {
 } from '../components/audit-labels';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
+import type { AuditLogEntry } from '../components/AuditLogDetail';
 
-interface AuditLog {
-  _id: string;
-  actorId: string;
-  actorName?: string;
-  action: string;
-  targetType: string;
-  targetId: string;
+interface AuditLog extends AuditLogEntry {
   targetName?: string;
-  payload?: Record<string, unknown> | null;
-  ip?: string | null;
-  createdAt?: string;
 }
 
 const PAGE_SIZES = [20, 50, 100];
@@ -77,7 +68,13 @@ export default function AuditLogPage() {
     '/admin/audit-logs',
     params,
   );
-  const [detail, setDetail] = useState<AuditLog | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  /** Mở chi tiết bằng route riêng: deep-link được, back giữ nguyên filter list. */
+  function openDetail(id: string) {
+    navigate(`/audit-logs/${id}`, { state: { from: `${location.pathname}${location.search}` } });
+  }
 
   const hasActiveFilter = Boolean(
     values.actor || values.action || values.targetType || values.search || values.from || values.to,
@@ -219,7 +216,14 @@ export default function AuditLogPage() {
                   const ids = auditTargetIds(a.targetId);
                   const isBulk = ids.length > 1;
                   return (
-                    <tr key={a._id} onClick={() => setDetail(a)}>
+                    <tr
+                      key={a._id}
+                      onClick={(e) => {
+                        // Bấm link đối tượng thì đi tới đối tượng, không mở chi tiết log.
+                        if ((e.target as HTMLElement).closest('a,button')) return;
+                        openDetail(a._id);
+                      }}
+                    >
                       <td><span className="cell-date k-mono">{formatDateTime(a.createdAt)}</span></td>
                       <td>
                         <div className="cell-title">{a.actorName ?? <span className="k-mono">{shortId(a.actorId)}</span>}</div>
@@ -244,7 +248,7 @@ export default function AuditLogPage() {
                         <div className="table-actions table-actions--end">
                           <button
                             className="btn btn-ghost btn-icon" type="button"
-                            onClick={(e) => { e.stopPropagation(); setDetail(a); }}
+                            onClick={(e) => { e.stopPropagation(); openDetail(a._id); }}
                             aria-label={`Xem chi tiết ${auditActionLabel(a.action)}`} title="Chi tiết"
                           >
                             <Eye size={16} aria-hidden />
@@ -266,34 +270,6 @@ export default function AuditLogPage() {
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
-
-      <Dialog open={detail !== null} onClose={() => setDetail(null)} labelId="audit-detail-title" variant="drawer">
-        {detail && (
-          <aside className="drawer">
-            <div className="drawer-header">
-              <div>
-                <div className="page-eyebrow">{auditTargetLabel(detail.targetType)}</div>
-                <h2 id="audit-detail-title" className="panel-title">{auditActionLabel(detail.action)}</h2>
-              </div>
-              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setDetail(null)}>Đóng</button>
-            </div>
-            <div className="drawer-body page-stack">
-              <dl className="description-list">
-                <div><dt>Thời gian</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
-                <div><dt>Người thao tác</dt><dd>{detail.actorName ?? <span className="k-mono">{detail.actorId}</span>}</dd></div>
-                <div><dt>Hành động</dt><dd className="k-mono">{detail.action}</dd></div>
-                <div><dt>Đối tượng</dt><dd>{detail.targetName ?? '—'}</dd></div>
-                <div><dt>ID đối tượng</dt><dd className="k-mono">{detail.targetId}</dd></div>
-                <div><dt>IP</dt><dd className="k-mono">{detail.ip ?? '—'}</dd></div>
-              </dl>
-              <div className="form-field">
-                <span className="form-label">Payload (secret đã được che khi ghi)</span>
-                <pre className="audit-payload">{detail.payload ? JSON.stringify(detail.payload, null, 2) : '—'}</pre>
-              </div>
-            </div>
-          </aside>
-        )}
-      </Dialog>
     </div>
   );
 }

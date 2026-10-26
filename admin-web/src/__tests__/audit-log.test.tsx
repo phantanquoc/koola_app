@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AuditLogPage from '../pages/AuditLogPage';
+import AuditLogDetailPage from '../pages/AuditLogDetailPage';
 import apiClient from '../apiClient';
 
 vi.mock('../apiClient', () => ({
@@ -39,7 +40,10 @@ function renderPage(initialPath = '/audit-logs') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <QueryClientProvider client={client}>
-        <AuditLogPage />
+        <Routes>
+          <Route path="/audit-logs" element={<AuditLogPage />} />
+          <Route path="/audit-logs/:id" element={<AuditLogDetailPage />} />
+        </Routes>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -98,13 +102,42 @@ describe('AuditLogPage', () => {
     });
   });
 
-  it('mở drawer chi tiết hiện payload đã che secret', async () => {
+  // Chi tiết là ROUTE riêng, không phải drawer/overlay: deep-link được và
+  // không che danh sách.
+  it('bấm chi tiết điều hướng sang route /audit-logs/:id', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/audit-logs/log1') return Promise.resolve({ data: row });
+      return Promise.resolve({ data: { data: [row, bulkRow], total: 2, page: 1, limit: 20 } });
+    });
     renderPage();
     await screen.findByText('Công ty Alpha');
 
     fireEvent.click(screen.getByRole('button', { name: /Xem chi tiết Duyệt hồ sơ/ }));
+
     expect(await screen.findByRole('heading', { name: 'Duyệt hồ sơ' })).toBeTruthy();
+    // Dữ liệu lấy từ endpoint chi tiết, không lọc lại từ list
+    expect(mockedGet).toHaveBeenCalledWith('/admin/audit-logs/log1');
     expect(screen.getByText(/"note": "ok"/)).toBeTruthy();
+    // Không còn overlay/modal nào bọc ngoài
+    expect(document.querySelector('.overlay')).toBeNull();
+    expect(screen.getByRole('link', { name: /Về danh sách/ })).toBeTruthy();
+  });
+
+  it('mở thẳng link chi tiết được (deep-link)', async () => {
+    mockedGet.mockResolvedValue({ data: row });
+    renderPage('/audit-logs/log1');
+
+    expect(await screen.findByRole('heading', { name: 'Duyệt hồ sơ' })).toBeTruthy();
+    expect(mockedGet).toHaveBeenCalledWith('/admin/audit-logs/log1');
+  });
+
+  it('dòng bulk liệt kê từng id trong chi tiết', async () => {
+    mockedGet.mockResolvedValue({ data: bulkRow });
+    renderPage('/audit-logs/log2');
+
+    expect(await screen.findByText(/2 đối tượng trong một lần/)).toBeTruthy();
+    expect(screen.getByText('507f1f77bcf86cd799439012')).toBeTruthy();
+    expect(screen.getByText('507f1f77bcf86cd799439013')).toBeTruthy();
   });
 
   it('lỗi hiện StateBlock + nút Thử lại (không nuốt lỗi)', async () => {

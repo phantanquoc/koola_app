@@ -80,6 +80,12 @@ export class AdminController {
     return this.auditService.list(dto);
   }
 
+  @Get('audit-logs/:id')
+  @ApiOperation({ summary: 'Get one audit log entry (shareable detail route)' })
+  async getAuditLog(@Param('id') id: string) {
+    return this.auditService.findOne(id);
+  }
+
   // ─── Business verification ──────────────────────────────────────────────────
 
   @Get('businesses/pending')

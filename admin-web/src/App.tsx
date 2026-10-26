@@ -23,6 +23,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import HealthPage from './pages/HealthPage';
 import BroadcastPage from './pages/BroadcastPage';
 import AuditLogPage from './pages/AuditLogPage';
+import AuditLogDetailPage from './pages/AuditLogDetailPage';
 
 export default function App() {
   return (
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="health" element={<HealthPage />} />
                 <Route path="broadcast" element={<BroadcastPage />} />
                 <Route path="audit-logs" element={<AuditLogPage />} />
+                <Route path="audit-logs/:id" element={<AuditLogDetailPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

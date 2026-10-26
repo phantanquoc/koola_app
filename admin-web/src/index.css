@@ -2743,3 +2743,13 @@ th.sortable:hover {
 .detail-section--stack .inline-field {
   grid-template-columns: 150px minmax(0, 1fr);
 }
+
+/* `.description-list` là grid 2 cột, nhưng một số chỗ (preview confirm, bảng
+   phím tắt) bọc từng cặp trong <div> để nhóm. Không có rule này thì mỗi <div>
+   thành một ô grid → nhãn và giá trị chồng nhau trong cột 150px.
+   Chỉ áp cho ngữ cảnh dùng kiểu bọc <div>; drawer chi tiết dùng .inline-field nên
+   không bị ảnh hưởng. */
+.confirm-preview .description-list > div,
+.dialog .description-list > div {
+  display: contents;
+}

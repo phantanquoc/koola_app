@@ -97,10 +97,23 @@ const routeTitles: Record<string, string> = {
   '/audit-logs': 'Audit log',
 };
 
+/**
+ * Title cho breadcrumb. Route con (`/audit-logs/:id`, `/businesses/:id`) không
+ * có trong map, nên fallback theo prefix gần nhất thay vì rơi về "Koola Admin" —
+ * người dùng mất dấu mình đang ở đâu.
+ */
+function breadcrumbTitle(pathname: string): string {
+  if (routeTitles[pathname]) return routeTitles[pathname];
+  const parent = Object.keys(routeTitles)
+    .filter((p) => p !== '/' && pathname.startsWith(`${p}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  return parent ? routeTitles[parent] : 'Koola Admin';
+}
+
 export default function AppLayout() {
   const { logout, identity, identityLoading } = useAuth();
   const location = useLocation();
-  const currentTitle = routeTitles[location.pathname] ?? 'Koola Admin';
+  const currentTitle = breadcrumbTitle(location.pathname);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(

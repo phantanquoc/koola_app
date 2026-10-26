@@ -120,7 +120,9 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
 - [ ] **Testing:** vitest cho mutation/hook + Playwright smoke 3 flow chính (login, approve-business, ban-user).
 - [ ] **URL-as-state (deep link):** mọi filter/search/pagination/sort nằm trong URL search params
   (`?status=pending&page=2&q=...`); reload giữ nguyên view; detail route (`/users/:id`,
-  `/conversations/:id`) mở trực tiếp được, copy link chia sẻ cho moderator khác được.
+  `/conversations/:id`, `/audit-logs/:id`) mở trực tiếp được, copy link chia sẻ cho moderator khác được.
+- [ ] **Chi tiết là route/component, không drawer:** hàng → `navigate('/x/'+id, { state: { from } })`,
+  component `<XDetail>` render `detail-card`. `variant="drawer"` chỉ còn ở 3 trang legacy (DESIGN §9).
 - [ ] **Destructive-action guard:** ban / takedown / soft-delete / bulk-reject / broadcast đều qua
   Dialog confirm nêu rõ hậu quả + ô lý do bắt buộc khi backend yêu cầu (`reason`,
   `rejectionReason`); broadcast confirm 2 bước.

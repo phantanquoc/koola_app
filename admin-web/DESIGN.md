@@ -76,7 +76,7 @@ không tự dựng lại. Thứ tự dọc, đủ 8 tầng:
 4. BulkBar           chỉ render khi count > 0, chỉ ở tab thao tác được hàng loạt
 5. Table             compact, sticky header, cột actions sticky phải, click hàng mở drawer
 6. Pagination        luôn render khi total > 0, page-size 10/20/50 + goto
-7. Drawer 480px      hoặc route riêng khi cần deep-link
+7. Detail             route riêng `/x/:id` (component inline) hoặc modal 720px — xem §3B
 8. Confirm + Toast   cho mọi mutation
 ```
 
@@ -129,14 +129,26 @@ Thang mức độ hành động — chọn đúng bậc, không nhảy cóc:
 Ba bậc dễ lẫn nghĩa — copy phải nói rõ: **Vô hiệu hoá = tạm ngưng bán, hồ sơ vẫn
 xác minh** ≠ **Cấm = khoá đăng nhập + thu hồi phiên** ≠ **Xoá = khỏi danh sách, còn trong DB**.
 
-### B. Trang detail — drawer hay route?
+### B. Trang detail — luôn là component/route, KHÔNG dùng drawer
 
-- **Drawer 480px** khi xem nhanh từ queue (moderation context, preview license/media).
-  Đóng drawer quay lại đúng vị trí queue (giữ URL filter).
-- **Route riêng** (`/users/:id`, `/conversations/:id`) khi cần deep-link/share
-  hoặc nội dung dài. Nội dung: header (avatar + tên + badge trạng thái + actions)
-  → description-list → block ngữ cảnh (tin nhắn/report cũ) → timeline/audit.
+**Quyết định (2026-10-26): bỏ drawer khỏi mọi trang quản trị.** Chi tiết hiển thị
+bằng component inline; overlay chỉ dùng cho hộp thoại ngắn (confirm, form < 6 field).
+
+Hai hình thức, chọn theo nhu cầu chia sẻ:
+
+| Hình thức | Khi nào | Cách làm |
+|---|---|---|
+| **Route riêng** `/audit-logs/:id`, `/businesses/:id` (chuẩn) | Chi tiết có nhiều mục, cần deep-link/share, người khác mở đúng bản ghi | Page mỏng + component `<XDetail id>` render `<section className="detail-card">`. Nút "Quay lại" dùng `location.state.from` để về đúng filter/trang cũ |
+| **Modal giữa màn hình** (`dialog--wide` 720px) | Xem nhanh từ list, nội dung vừa một màn, không cần share | `<BusinessDetailDrawer>` hiện là modal này — tên file giữ nguyên, hình thức là modal |
+
+Nội dung chi tiết, thứ tự cố định: header (avatar/tên + badge trạng thái + actions)
+→ `description-list` → block ngữ cảnh (payload/tin nhắn/report cũ) → timeline/audit
+→ bottom bar (hành động phụ trái, quyết định phải).
+
+Cấm:
+- Không `variant="drawer"` cho trang mới (nó trượt từ phải, che list, không share được).
 - Không mở tab mới ở bất kỳ bước nào.
+- Không nhồi chi tiết dài vào overlay: nội dung > 1 màn thì phải là route.
 
 ### C. Dashboard —marketing duy nhất được phép to
 
@@ -145,9 +157,10 @@ xác minh** ≠ **Cấm = khoá đăng nhập + thu hồi phiên** ≠ **Xoá = 
 - Chart (recharts): series dùng tone-dark theo ngữ nghĩa; grid hairline;
   time-range = segmented control; range rỗng = EmptyState, không vẽ trục trống.
 
-### D. Form/mutation — dialog/drawer
+### D. Form/mutation — dialog, không drawer
 
-- Dialog 520px cho confirm/form ngắn (ban/reject/soft-delete); drawer cho form dài.
+- Dialog 520px cho confirm/form ngắn (ban/reject/soft-delete); `dialog--wide` 720px
+  cho form nhiều nhóm field (tạo/sửa hồ sơ).
 - reason = textarea bắt buộc, durationDays = select (1/3/7/30 + vĩnh viễn);
   nút confirm disabled tới khi hợp lệ. Giữ input khi submit lỗi.
 - Broadcast: form + panel preview + type-to-confirm "BROADCAST" (không undo).
@@ -181,7 +194,8 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `StatusBadge` / `VerificationBadge` | mapping cố định: verified/success → success; pending → warning; banned/rejected → danger; unknown/absent → muted |
 | `ConfirmDialog` | focus-trap; destructive + reason bắt buộc; thứ tự nút **confirm trước, Hủy sau**; slot `preview` tóm tắt; `requireText` theo §3A2 |
 | `StateBlock` | loading/error có nút Thử lại; `EmptyState` cho rỗng, có `action` khi đang lọc |
-| `Drawer` 480px | moderation context theo thứ tự: nội dung gốc → target info + link → lịch sử cũ (tối đa 5 + deep-link xem tất cả) → actions |
+| `AuditLogDetail` | chi tiết audit inline: header + `description-list` + payload JSON + bottom bar. Route `/audit-logs/:id`, không overlay |
+| `detail-card` + `detail-header`/`detail-card-body`/`detail-bottombar` | khung chi tiết inline dùng chung cho route `/:id` — header (avatar/tên/badge) → body → bottombar |
 | `LicensePreview` | preview + lightbox 720px trước khi duyệt/gỡ — gỡ mù là cấm. Prop `label` cho ảnh không phải giấy phép |
 | `Toast` | feedback sau mutation; 429 = warning "thao tác quá nhanh" + disable nút 10s |
 
@@ -230,7 +244,7 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 
 **Bảng**
 - [ ] `data-table--compact`; cột phụ có `col-hide-mobile`; actions dùng `btn-icon` + `aria-label`
-- [ ] Click hàng mở drawer; nút trong hàng không kích hoạt click hàng
+- [ ] Click hàng mở chi tiết (route `/:id` hoặc modal 720px — **không** drawer); nút/link trong hàng không kích hoạt click hàng
 - [ ] Trạng thái dùng `StatusBadge`/`VerificationBadge`, không tự map màu
 - [ ] Cột ngày/số dùng `formatDateTime`/`formatNumber`; id dùng `.k-mono` rút gọn
 - [ ] `Pagination` luôn render khi có dữ liệu, có page-size
@@ -251,7 +265,7 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 **Kiểm thử**
 - [ ] Vitest cho hành động chính (bulk, restore, filter); `tsc --noEmit`
 - [ ] Test tay 1440 / 860 / 390
-- [ ] Tab và đường dẫn trực tiếp cùng mở đúng một hồ sơ (drawer ↔ route detail)
+- [ ] Tab và đường dẫn trực tiếp cùng mở đúng một bản ghi (route `/:id` share được)
 
 Lệnh chốt trước khi báo done:
 
@@ -264,7 +278,7 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 `scripts/reseed-businesses.ts`, `src/accounts/accounts.service.spec.ts`,
 `src/commerce/orders/commerce-orders.service.spec.ts`.
 
-## 9. Công thức dựng trang list mới (~1 file page + 1 file drawer)
+## 9. Công thức dựng trang list mới (~1 page + 1 detail page + 1 detail component)
 
 1. Copy khung `BusinessesPage.tsx`, xoá phần đặc thù nghiệp vụ (SLA bucket, license).
 2. `useUrlFilters({ tab, search, page, pageSize, sort, ...filter riêng })`.
@@ -273,8 +287,12 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 4. `TABS` + count lấy từ endpoint stats của module (không đếm ở client).
 5. Bảng: `ColumnHeader` cho cột sort/lọc được; `cell-title` + `cell-meta`.
 6. Hành động: tách logic mutation ra hook `use<Domain>Decision` nếu dùng ở cả list và detail.
-7. Drawer: block ngữ cảnh → timeline (`verificationHistory` hoặc audit) → actions.
-8. Server: list/export/search/sort/stats + index cho tổ hợp filter chính.
+7. **Chi tiết = route riêng**, theo mẫu `AuditLogPage` + `AuditLogDetailPage` + `AuditLogDetail`:
+   - page mỏng `pages/XDetailPage.tsx`: lấy `:id`, đọc `location.state.from` để back về đúng filter;
+   - component `components/XDetail.tsx`: `useQuery` gọi `GET /x/:id` (endpoint riêng, không lọc từ list),
+     render `<section className="table-shell detail-card">` + `detail-header`/`detail-card-body`/`detail-bottombar`;
+   - list: `onClick` hàng → `navigate('/x/'+id, { state: { from: pathname+search } })`.
+8. Server: list/export/search/sort/stats + `GET :id` + index cho tổ hợp filter chính.
 
 Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
 
@@ -289,7 +307,12 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
 - `BulkBar` chưa generic: chữ "Duyệt/Từ chối" hardcode theo nghiệp vụ business.
 - Chưa có guard chống ghi đè: hai moderator sửa cùng hồ sơ, người sau thắng im lặng
   (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409
-  nếu lệch, drawer hiện "Hồ sơ vừa được người khác sửa".
+  nếu lệch, trang chi tiết hiện "Hồ sơ vừa được người khác sửa".
+- **3 trang còn dùng drawer** (`variant="drawer"`) trái quyết định §3B — chuyển sang
+  route/component chi tiết: `ReportDrawer` (báo cáo), `UsersPage` (UserDetailDrawer),
+  `ConversationsPage` (hội thoại). Làm ở PR riêng vì mỗi trang cần route + endpoint detail.
+- `BusinessDetailDrawer` tên file còn chữ "Drawer" nhưng hình thức đã là modal 720px
+  (`dialog--wide`); đổi tên thành `BusinessDetail` khi có dịp sửa file đó.
 - Badge "nghi trùng" mới có trong drawer, chưa có trên hàng của bảng — moderator phải
   mở từng hồ sơ mới biết.
 - **Drawer trên list không vào URL**: `BusinessesPage` dùng `setDetailId`, nên không share

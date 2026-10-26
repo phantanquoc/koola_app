@@ -7,6 +7,7 @@ import { User } from '../users/user.schema';
 const mockAuditModel = {
   create: jest.fn(),
   find: jest.fn(),
+  findById: jest.fn(),
   countDocuments: jest.fn(),
 };
 
@@ -208,5 +209,57 @@ describe('AdminAuditService filters', () => {
 
     const res = await service.list({ page: 1, limit: 20 });
     expect(res.data[0].targetName).toBe('DN 1, DN 2, DN 3 (+1)');
+  });
+});
+
+describe('AdminAuditService.findOne', () => {
+  let service: AdminAuditService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AdminAuditService,
+        { provide: getModelToken(AdminAuditLog.name), useValue: mockAuditModel },
+        { provide: getModelToken(User.name), useValue: mockUserModel },
+      ],
+    }).compile();
+    service = module.get<AdminAuditService>(AdminAuditService);
+  });
+
+  it('returns an enriched entry by id', async () => {
+    const id = '507f1f77bcf86cd7994390f1';
+    const actorId = '507f1f77bcf86cd799439011';
+    mockAuditModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: id, actorId, action: 'approve_business', targetType: 'business', targetId: '507f1f77bcf86cd799439012',
+      }),
+    });
+    mockUserModel.find.mockReturnValueOnce({
+      select: () => ({
+        lean: jest.fn().mockResolvedValue([
+          { _id: actorId, displayName: 'Admin A' },
+          { _id: '507f1f77bcf86cd799439012', displayName: 'Công ty B' },
+        ]),
+      }),
+    });
+
+    const res = await service.findOne(id);
+
+    expect(res.actorName).toBe('Admin A');
+    expect(res.targetName).toBe('Công ty B');
+  });
+
+  it('throws 404 for a valid-but-missing id', async () => {
+    mockAuditModel.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    await expect(service.findOne('507f1f77bcf86cd7994390f2')).rejects.toThrow(
+      'Audit log not found',
+    );
+  });
+
+  // Id sai định dạng phải là 404, không phải CastError 500 lộ stack ra UI.
+  it('throws 404 for a malformed id without hitting the DB', async () => {
+    await expect(service.findOne('not-an-object-id')).rejects.toThrow('Audit log not found');
+    expect(mockAuditModel.findById).not.toHaveBeenCalled();
   });
 });

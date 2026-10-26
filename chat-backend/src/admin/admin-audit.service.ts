@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../users/user.schema';
@@ -115,11 +115,36 @@ export class AdminAuditService {
       this.auditModel.countDocuments(filter),
     ]);
 
-    // Resolve tên admin lúc đọc: log cũ (chỉ có actorId) cũng hiện tên, không
-    // phải backfill, không đổi schema. 1 query cho cả trang, không phải N+1.
-    // Gộp luôn targetName vào cùng query: user và business đều nằm ở collection
-    // User, nên một lượt find phủ cả hai — điều tra đọc được tên thay vì ObjectId.
-    const entries = data as unknown as AuditLogWithActor[];
+    return {
+      data: await this.enrich(data as unknown as AuditLogWithActor[]),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
+   * Một dòng audit theo id — cho route chi tiết share được (/audit-logs/:id).
+   * Không có endpoint này thì deep-link phải gọi list rồi lọc ở client, sai
+   * ngay khi log rơi ra ngoài trang đầu.
+   */
+  async findOne(id: string): Promise<AuditLogWithActor> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Audit log not found');
+    }
+    const entry = await this.auditModel.findById(id).lean();
+    if (!entry) throw new NotFoundException('Audit log not found');
+    const [enriched] = await this.enrich([entry as unknown as AuditLogWithActor]);
+    return enriched;
+  }
+
+  /**
+   * Gắn tên admin + tên đối tượng lúc đọc: log cũ (chỉ có actorId) cũng hiện
+   * tên, không phải backfill, không đổi schema. Một query cho cả trang, không
+   * phải N+1. user và business chung collection User nên một lượt find phủ cả
+   * actor lẫn target.
+   */
+  private async enrich(entries: AuditLogWithActor[]): Promise<AuditLogWithActor[]> {
     const resolveIds = new Set<string>();
     for (const d of entries) {
       if (d.actorId && Types.ObjectId.isValid(d.actorId)) resolveIds.add(d.actorId);
@@ -137,7 +162,7 @@ export class AdminAuditService {
         .lean();
       for (const p of people) nameById.set(String(p._id), p.displayName);
     }
-    const enriched: AuditLogWithActor[] = entries.map((d) => {
+    return entries.map((d) => {
       const out = Object.assign({}, d) as AuditLogWithActor;
       const actorName = nameById.get(d.actorId);
       if (actorName) out.actorName = actorName;
@@ -153,8 +178,6 @@ export class AdminAuditService {
       }
       return out;
     });
-
-    return { data: enriched, total, page, limit };
   }
 
   private redact(payload: Record<string, unknown>): Record<string, unknown> {
