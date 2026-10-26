@@ -12,6 +12,7 @@ describe('SellerVisibilityService', () => {
   const verifiedId = new Types.ObjectId().toString();
   const pendingId = new Types.ObjectId().toString();
   const bannedId = new Types.ObjectId().toString();
+  const suspendedId = new Types.ObjectId().toString();
   const missingId = new Types.ObjectId().toString();
 
   const users = [
@@ -20,18 +21,28 @@ describe('SellerVisibilityService', () => {
       accountType: 'business',
       verificationStatus: 'verified',
       isBanned: false,
+      suspended: false,
     },
     {
       _id: new Types.ObjectId(pendingId),
       accountType: 'business',
       verificationStatus: 'pending',
       isBanned: false,
+      suspended: false,
     },
     {
       _id: new Types.ObjectId(bannedId),
       accountType: 'business',
       verificationStatus: 'verified',
       isBanned: true,
+      suspended: false,
+    },
+    {
+      _id: new Types.ObjectId(suspendedId),
+      accountType: 'business',
+      verificationStatus: 'verified',
+      isBanned: false,
+      suspended: true,
     },
   ];
 
@@ -61,7 +72,7 @@ describe('SellerVisibilityService', () => {
     service = mod.get(SellerVisibilityService);
   });
 
-  it('isSellerVisible requires business + verified + not banned', () => {
+  it('isSellerVisible requires business + verified + not banned + not suspended', () => {
     expect(
       isSellerVisible({
         accountType: 'business',
@@ -93,11 +104,24 @@ describe('SellerVisibilityService', () => {
     expect(isSellerVisible(null)).toBe(false);
   });
 
-  it('shows verified sellers and hides pending/banned/missing/malformed ones', async () => {
+  it('hides a suspended business even when everything else is valid', () => {
+    // suspended = admin tạm ngưng bán; trước đây field này bị bỏ qua hoàn toàn
+    expect(
+      isSellerVisible({
+        accountType: 'business',
+        verificationStatus: 'verified',
+        isBanned: false,
+        suspended: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('shows verified sellers and hides pending/banned/suspended/missing/malformed ones', async () => {
     await service.syncSellers([
       verifiedId,
       pendingId,
       bannedId,
+      suspendedId,
       missingId,
       'garbage',
     ]);
@@ -112,7 +136,7 @@ describe('SellerVisibilityService', () => {
     const hide = calls.find(([, u]) => u.$set.sellerActive === false)!;
     expect(show[0].sellerId.$in).toEqual([verifiedId]);
     expect([...hide[0].sellerId.$in].sort()).toEqual(
-      [pendingId, bannedId, missingId, 'garbage'].sort(),
+      [pendingId, bannedId, suspendedId, missingId, 'garbage'].sort(),
     );
   });
 

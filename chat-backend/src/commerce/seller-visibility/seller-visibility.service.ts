@@ -7,10 +7,17 @@ import {
   CommerceProductDocument,
 } from '../schemas/commerce-product.schema';
 
-/** A seller is publicly visible iff it is a verified, non-banned business. */
+/**
+ * A seller is publicly visible iff it is a verified, non-banned, non-suspended
+ * business. `suspended` = admin tạm ngưng bán (hồ sơ còn nguyên, không phải vi
+ * phạm); `isBanned` = vi phạm, khoá tài khoản. Cả hai đều ẩn gian hàng.
+ */
 export function isSellerVisible(
   seller:
-    | Pick<User, 'accountType' | 'verificationStatus' | 'isBanned'>
+    | Pick<
+        User,
+        'accountType' | 'verificationStatus' | 'isBanned' | 'suspended'
+      >
     | null
     | undefined,
 ): boolean {
@@ -18,7 +25,8 @@ export function isSellerVisible(
     !!seller &&
     seller.accountType === 'business' &&
     seller.verificationStatus === 'verified' &&
-    seller.isBanned !== true
+    seller.isBanned !== true &&
+    seller.suspended !== true
   );
 }
 
@@ -57,7 +65,7 @@ export class SellerVisibilityService {
     const sellers = objectIds.length
       ? await this.userModel
           .find({ _id: { $in: objectIds } })
-          .select('_id accountType verificationStatus isBanned')
+          .select('_id accountType verificationStatus isBanned suspended')
           .lean()
       : [];
 

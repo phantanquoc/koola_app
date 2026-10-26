@@ -64,7 +64,7 @@ export interface OrderCaller {
 type LeanOrder = CommerceOrder & { _id: Types.ObjectId };
 type LeanSeller = Pick<
   User,
-  'displayName' | 'accountType' | 'verificationStatus' | 'isBanned'
+  'displayName' | 'accountType' | 'verificationStatus' | 'isBanned' | 'suspended'
 > & { _id: Types.ObjectId };
 
 const ORDER_CODE_MAX_RETRIES = 5;
@@ -536,7 +536,7 @@ export class OrdersService {
     }
     const seller = await this.userModel
       .findById(sellerId)
-      .select('_id displayName accountType verificationStatus isBanned')
+      .select('_id displayName accountType verificationStatus isBanned suspended')
       .lean<LeanSeller | null>();
     if (
       !seller ||
@@ -547,7 +547,7 @@ export class OrdersService {
         'Seller is not a verified business account',
       );
     }
-    if (seller.isBanned === true) {
+    if (seller.isBanned === true || seller.suspended === true) {
       throw new BadRequestException('Seller account is not available');
     }
     return seller;
