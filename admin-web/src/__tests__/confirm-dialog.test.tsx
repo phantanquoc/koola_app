@@ -29,11 +29,11 @@ describe('ConfirmDialog', () => {
     expect(screen.getByText('preview-content')).toBeTruthy();
   });
 
-  it('places confirm before cancel in DOM order (Enter confirms)', () => {
+  it('places cancel before the destructive confirm (safer default focus)', () => {
     renderDialog();
     const buttons = screen.getAllByRole('button');
     const labels = buttons.map((b) => b.textContent);
-    expect(labels.indexOf('Xác nhận')).toBeLessThan(labels.indexOf('Hủy'));
+    expect(labels.indexOf('Hủy')).toBeLessThan(labels.indexOf('Xác nhận'));
   });
 
   it('disables confirm until requireText matches exactly', () => {

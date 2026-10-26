@@ -1,4 +1,8 @@
-import { useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useEffect, useRef, useCallback, useId, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+
+/** Stack hộp thoại đang mở — Escape/backdrop chỉ đóng cái trên cùng. */
+const openDialogs: string[] = [];
 
 interface DialogProps {
   open: boolean;
@@ -14,6 +18,8 @@ interface DialogProps {
  * Accessible dialog/drawer primitive.
  *
  * Features:
+ * - Portal to document.body: hộp thoại lồng nhau (lightbox trong hồ sơ) không bị
+ *   cắt bởi `overflow: hidden` hay containing block của overlay cha.
  * - Focus trap (Tab/Shift+Tab cycle within)
  * - Escape key closes
  * - Focus moves to first focusable element on open
@@ -31,20 +37,24 @@ export default function Dialog({
   const overlayRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const previousOverflow = useRef<string>('');
+  const dialogId = useId();
 
-  // Capture the trigger element on open
+  // Capture the trigger element on open; register in the dialog stack so only
+  // the top-most dialog reacts to Escape.
   useEffect(() => {
-    if (open) {
-      triggerRef.current = document.activeElement;
-      previousOverflow.current = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
+    if (!open) return;
+    triggerRef.current = document.activeElement;
+    previousOverflow.current = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    openDialogs.push(dialogId);
     return () => {
-      if (open) {
+      const idx = openDialogs.lastIndexOf(dialogId);
+      if (idx !== -1) openDialogs.splice(idx, 1);
+      if (openDialogs.length === 0) {
         document.body.style.overflow = previousOverflow.current;
       }
     };
-  }, [open]);
+  }, [open, dialogId]);
 
   // Move focus into the dialog on open
   useEffect(() => {
@@ -68,18 +78,18 @@ export default function Dialog({
     });
   }, [onClose]);
 
-  // Escape handler
+  // Escape handler — chỉ hộp thoại trên cùng đóng
   useEffect(() => {
     if (!open) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeAndRestore();
-      }
+      if (e.key !== 'Escape') return;
+      if (openDialogs[openDialogs.length - 1] !== dialogId) return;
+      e.preventDefault();
+      closeAndRestore();
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, closeAndRestore]);
+  }, [open, closeAndRestore, dialogId])
 
   // Focus trap
   const handleKeyDown = useCallback(
@@ -121,7 +131,7 @@ export default function Dialog({
   const overlayClass =
     variant === 'drawer' ? 'overlay' : 'overlay dialog-overlay';
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       className={overlayClass}
@@ -133,7 +143,8 @@ export default function Dialog({
       tabIndex={-1}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

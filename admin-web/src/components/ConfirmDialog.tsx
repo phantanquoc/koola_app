@@ -24,7 +24,8 @@ interface ConfirmDialogProps {
 
 /**
  * Confirm dùng chung cho mọi mutation (DESIGN.md §5 kit).
- * - Confirm trước, Hủy sau: mở dialog là focus rơi vào confirm, Enter chốt luôn.
+ * - Hủy đứng trước, hành động chính dồn phải. Hủy cũng là phần tử focus đầu
+ *   tiên nên Enter/space không vô tình kích hoạt thao tác nguy hiểm.
  * - preview slot cho create/update/delete; requireText cho diện rộng.
  */
 export function ConfirmDialog({
@@ -75,7 +76,10 @@ export function ConfirmDialog({
               />
             </div>
           )}
-          <div className="table-actions confirm-actions">
+          <div className="dialog-actions confirm-actions">
+            <button className="btn btn-secondary" onClick={onClose} disabled={busy} type="button">
+              Hủy
+            </button>
             <button
               className={variant === 'danger' ? 'btn btn-danger' : 'btn btn-primary'}
               onClick={onConfirm}
@@ -83,9 +87,6 @@ export function ConfirmDialog({
               type="button"
             >
               {busy ? 'Đang xử lý...' : (confirmLabel ?? 'Xác nhận')}
-            </button>
-            <button className="btn btn-secondary" onClick={onClose} disabled={busy} type="button">
-              Hủy
             </button>
           </div>
         </div>

@@ -103,12 +103,12 @@ describe('AppLayout sidebar + identity', () => {
     // preview hiện identity (chip topbar + dialog preview đều có tên)
     expect(screen.getAllByText('Test Admin').length).toBeGreaterThanOrEqual(2);
 
-    // Confirm trước, Hủy sau (mở dialog là Enter chốt luôn)
+    // Hủy trước, hành động chính sau — focus mặc định không rơi vào nút nguy hiểm
     const dialogButtons = screen
       .getByRole('dialog')
       .querySelectorAll('button');
     const dialogLabels = Array.from(dialogButtons).map((b) => b.textContent);
-    expect(dialogLabels.indexOf('Đăng xuất')).toBeLessThan(dialogLabels.indexOf('Hủy'));
+    expect(dialogLabels.indexOf('Hủy')).toBeLessThan(dialogLabels.indexOf('Đăng xuất'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
     expect(authState.logout).not.toHaveBeenCalled();

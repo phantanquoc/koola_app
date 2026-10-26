@@ -110,7 +110,7 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     renderPage();
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
-    fireEvent.change(screen.getByPlaceholderText(/Tên, email/), {
+    fireEvent.change(screen.getByPlaceholderText(/Tìm theo tên, email/), {
       target: { value: 'alpha' },
     });
 
@@ -157,10 +157,10 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Duyệt Công ty Alpha' }));
-    expect(await screen.findByRole('heading', { name: 'Xác nhận duyệt' })).toBeTruthy();
-    expect(screen.getAllByText('alpha@example.com').length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByRole('heading', { name: 'Duyệt hồ sơ doanh nghiệp?' })).toBeTruthy();
+    expect(screen.getAllByText('Công ty Alpha').length).toBeGreaterThanOrEqual(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận duyệt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt hồ sơ' }));
     await waitFor(() =>
       expect(mockedPost).toHaveBeenCalledWith('/admin/businesses/b1/approve'),
     );
@@ -219,7 +219,7 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Duyệt Công ty Alpha' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận duyệt' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Duyệt hồ sơ' }));
 
     await waitFor(() =>
       expect(mockedPost).toHaveBeenCalledWith('/admin/businesses/b1/approve'),
@@ -232,7 +232,7 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     );
   });
 
-  it('nút Xóa gọi soft-delete qua confirm', async () => {
+  it('nút Xóa gọi soft-delete qua type-to-confirm', async () => {
     mockedDelete.mockResolvedValue({ data: {} });
     renderPage();
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
@@ -240,7 +240,12 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xóa Công ty Alpha' }));
     expect(await screen.findByRole('heading', { name: 'Xóa hồ sơ doanh nghiệp?' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xóa hồ sơ' }));
+    // P0: xóa mềm cũng phải type-to-confirm như bulk
+    const confirmBtn = screen.getByRole('button', { name: 'Xóa hồ sơ' }) as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Gõ/), { target: { value: 'XACNHAN' } });
+    fireEvent.click(confirmBtn);
+
     await waitFor(() =>
       expect(mockedDelete).toHaveBeenCalledWith('/admin/businesses/b1'),
     );
