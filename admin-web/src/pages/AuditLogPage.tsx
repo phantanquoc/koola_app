@@ -15,6 +15,8 @@ import {
   auditActionTone,
   auditTargetIds,
   auditTargetLabel,
+  isInternalIp,
+  normalizeIp,
 } from '../components/audit-labels';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
@@ -30,17 +32,15 @@ function isoToDay(iso: string) {
   return iso ? iso.slice(0, 10) : '';
 }
 
-function shortId(id: string) {
-  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
-}
-
 /** Link sang đối tượng bị tác động — chỉ user/business tra được theo id. */
 function TargetLink({ type, id }: { type: string; id: string }) {
   const path = type === 'user' ? '/users' : type === 'business' ? '/businesses' : null;
-  if (!path) return <span className="k-mono">{shortId(id)}</span>;
+  // Không resolve được tên (hồ sơ đã xoá cứng, target không phải user/business):
+  // hiện nhãn thay vì ObjectId — mã đầy đủ nằm trong trang chi tiết.
+  if (!path) return <span>Không xác định</span>;
   return (
-    <Link className="cell-link k-mono" to={`${path}?search=${encodeURIComponent(id)}`}>
-      {shortId(id)}
+    <Link className="cell-link" to={`${path}?search=${encodeURIComponent(id)}`}>
+      Xem đối tượng
     </Link>
   );
 }
@@ -194,7 +194,7 @@ export default function AuditLogPage() {
                   <th scope="col">Người thao tác</th>
                   <th scope="col">Hành động</th>
                   <th scope="col">Đối tượng</th>
-                  <th scope="col" className="col-hide-mobile">IP</th>
+                  <th scope="col" className="col-hide-mobile">IP truy cập</th>
                   <th scope="col" className="th-center col-sticky">Chi tiết</th>
                 </tr>
               </thead>
@@ -226,8 +226,7 @@ export default function AuditLogPage() {
                     >
                       <td><span className="cell-date k-mono">{formatDateTime(a.createdAt)}</span></td>
                       <td>
-                        <div className="cell-title">{a.actorName ?? <span className="k-mono">{shortId(a.actorId)}</span>}</div>
-                        {a.actorName && <div className="cell-meta k-mono">{shortId(a.actorId)}</div>}
+                        <div className="cell-title">{a.actorName ?? 'Không xác định'}</div>
                       </td>
                       <td>
                         <StatusBadge tone={auditActionTone(a.action)} label={auditActionLabel(a.action)} />
@@ -243,7 +242,13 @@ export default function AuditLogPage() {
                             : a.targetName ?? <TargetLink type={a.targetType} id={a.targetId} />}
                         </div>
                       </td>
-                      <td className="col-hide-mobile"><span className="cell-meta k-mono">{a.ip ?? '—'}</span></td>
+                      {/* IP nội bộ (dev/docker) không nói lên điều gì — hiện "—"
+                          thay vì chuỗi ::ffff:192.168… gây rối. */}
+                      <td className="col-hide-mobile">
+                        <span className="cell-meta k-mono">
+                          {isInternalIp(a.ip) ? '—' : normalizeIp(a.ip ?? '')}
+                        </span>
+                      </td>
                       <td className="col-sticky">
                         <div className="table-actions table-actions--end">
                           <button

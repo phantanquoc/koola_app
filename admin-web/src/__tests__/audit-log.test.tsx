@@ -32,6 +32,11 @@ const bulkRow = {
   action: 'bulk_approve_business',
   targetType: 'business',
   targetId: '507f1f77bcf86cd799439012,507f1f77bcf86cd799439013',
+  targetName: 'Công ty Alpha, Công ty Beta',
+  targetItems: [
+    { id: '507f1f77bcf86cd799439012', name: 'Công ty Alpha' },
+    { id: '507f1f77bcf86cd799439013', name: 'Công ty Beta' },
+  ],
   createdAt: new Date().toISOString(),
 };
 
@@ -71,7 +76,11 @@ describe('AuditLogPage', () => {
 
   it('dòng bulk đọc ra số đối tượng thay vì chuỗi id', async () => {
     renderPage();
-    expect(await screen.findByText('2 đối tượng')).toBeTruthy();
+    // Số lượng và tên là hai text node cạnh nhau trong cùng ô → matcher theo
+    // textContent của ô, không phải getByText khớp cả chuỗi.
+    expect(await screen.findByText((_, el) =>
+      el?.className === 'cell-meta' && el.textContent?.startsWith('2 đối tượng') === true,
+    )).toBeTruthy();
   });
 
   it('lọc theo người thao tác gửi param lên server', async () => {
@@ -131,13 +140,64 @@ describe('AuditLogPage', () => {
     expect(mockedGet).toHaveBeenCalledWith('/admin/audit-logs/log1');
   });
 
-  it('dòng bulk liệt kê từng id trong chi tiết', async () => {
+  it('dòng bulk liệt kê từng đối tượng theo tên, mã nằm ở phần kỹ thuật', async () => {
     mockedGet.mockResolvedValue({ data: bulkRow });
     renderPage('/audit-logs/log2');
 
     expect(await screen.findByText(/2 đối tượng trong một lần/)).toBeTruthy();
-    expect(screen.getByText('507f1f77bcf86cd799439012')).toBeTruthy();
-    expect(screen.getByText('507f1f77bcf86cd799439013')).toBeTruthy();
+    // `targetItems` có tên → hiện tên, không bắt moderator đọc ObjectId
+    expect(screen.getByText('Công ty Alpha')).toBeTruthy();
+    expect(screen.getByText('Công ty Beta')).toBeTruthy();
+  });
+
+  it('dịch key payload sang tiếng Việt thay vì hiện JSON thô', async () => {
+    mockedGet.mockResolvedValue({
+      data: {
+        ...row,
+        action: 'update_business',
+        payload: { displayName: 'Công ty Mới', businessCategory: 'retail' },
+      },
+    });
+    renderPage('/audit-logs/log1');
+
+    expect(await screen.findByText('Nội dung thay đổi')).toBeTruthy();
+    expect(screen.getByText('Tên doanh nghiệp')).toBeTruthy();
+    expect(screen.getByText('Công ty Mới')).toBeTruthy();
+    // Danh mục slug được dịch, không hiện "retail"
+    expect(screen.getByText('Bán lẻ')).toBeTruthy();
+    expect(screen.queryByText('retail')).toBeNull();
+  });
+
+  it('che email/số điện thoại trong payload', async () => {
+    mockedGet.mockResolvedValue({
+      data: { ...row, payload: { contactEmail: 'alpha@example.com', contactPhone: '0901111111' } },
+    });
+    renderPage('/audit-logs/log1');
+
+    expect(await screen.findByText('Email liên hệ')).toBeTruthy();
+    // MaskedPII che mặc định — email/PII không lộ trần trong audit log
+    expect(screen.queryByText('alpha@example.com')).toBeNull();
+    expect(screen.queryByText('0901111111')).toBeNull();
+  });
+
+  it('ẩn IP nội bộ (dev/docker) khỏi phần đọc chính, chỉ giữ ở chi tiết kỹ thuật', async () => {
+    mockedGet.mockResolvedValue({ data: { ...row, ip: '::ffff:192.168.65.1' } });
+    renderPage('/audit-logs/log1');
+
+    await screen.findByRole('heading', { name: 'Duyệt hồ sơ' });
+    // Không có dòng "IP truy cập" — moderator không cần đọc địa chỉ máy dev
+    expect(screen.queryByText('IP truy cập')).toBeNull();
+    // Nhưng giá trị thô vẫn còn trong <details> để đối soát kỹ thuật
+    expect(screen.getByText('Chi tiết kỹ thuật')).toBeTruthy();
+    expect(screen.getByText(/192\.168\.65\.1/)).toBeTruthy();
+  });
+
+  it('hiện IP public ở dạng đọc được', async () => {
+    mockedGet.mockResolvedValue({ data: { ...row, ip: '::ffff:203.0.113.7' } });
+    renderPage('/audit-logs/log1');
+
+    expect(await screen.findByText('IP truy cập')).toBeTruthy();
+    expect(screen.getByText('203.0.113.7')).toBeTruthy();
   });
 
   it('lỗi hiện StateBlock + nút Thử lại (không nuốt lỗi)', async () => {

@@ -150,6 +150,25 @@ Cấm:
 - Không mở tab mới ở bất kỳ bước nào.
 - Không nhồi chi tiết dài vào overlay: nội dung > 1 màn thì phải là route.
 
+### B2. Không hiển thị dữ liệu thô cho moderator
+
+Người dùng trang này ra quyết định, không debug hệ thống. Mọi giá trị kỹ thuật
+phải được dịch hoặc giấu sau "Chi tiết kỹ thuật".
+
+| Dữ liệu thô | Cấm hiện | Hiện thay bằng |
+|---|---|---|
+| ObjectId (`6adec9ac…`) | cột/hàng chính | tên bản ghi; mã đầy đủ chỉ trong `details` "Chi tiết kỹ thuật" |
+| JSON payload (`{"internalNote": "…"}`) | `<pre>` ở thân trang | `description-list` với nhãn tiếng Việt (`AUDIT_FIELD_LABELS`); JSON gốc trong `details` |
+| Slug (`retail`, `supplier`, `food-beverage`) | nguyên slug | `categoryVi()` / `RELATIONSHIP_VI` |
+| Enum (`business`, `verified`) | nguyên enum | nhãn tiếng Việt qua map cố định |
+| Raw ms / giá | `180000`, `250000` | `3 phút`, `250.000đ` |
+| IP nội bộ (`::ffff:192.168…`, `127.0.0.1`, `10.x`) | hiện như IP thật | ẩn hẳn (`isInternalIp()`); IP public bỏ tiền tố `::ffff:` |
+| Mảng id (`ids: [3 id]`) | lặp lại danh sách đối tượng | số lượng; danh sách tên đã hiện ở block trên |
+| Key lạ chưa có nhãn | gán nhãn tiếng Việt giả | gom vào "Chi tiết kỹ thuật" với tên field gốc |
+
+Nguyên tắc: **mỗi dòng trên màn hình phải trả lời được "người vận hành cần biết
+điều này để làm gì"**. Không trả lời được → ẩn sau `details` hoặc bỏ.
+
 ### C. Dashboard —marketing duy nhất được phép to
 
 - KPI row: MetricCard gọn (label 13px + value 28–32px/800 + delta/helper),
@@ -194,7 +213,8 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `StatusBadge` / `VerificationBadge` | mapping cố định: verified/success → success; pending → warning; banned/rejected → danger; unknown/absent → muted |
 | `ConfirmDialog` | focus-trap; destructive + reason bắt buộc; thứ tự nút **confirm trước, Hủy sau**; slot `preview` tóm tắt; `requireText` theo §3A2 |
 | `StateBlock` | loading/error có nút Thử lại; `EmptyState` cho rỗng, có `action` khi đang lọc |
-| `AuditLogDetail` | chi tiết audit inline: header + `description-list` + payload JSON + bottom bar. Route `/audit-logs/:id`, không overlay |
+| `AuditLogDetail` | chi tiết audit inline: header + `description-list` + payload đã dịch + `details` "Chi tiết kỹ thuật". Route `/audit-logs/:id`, không overlay |
+| `audit-labels.ts` | một nguồn nhãn: action, target, field payload (`AUDIT_FIELD_LABELS`), `auditPayloadRows()` dịch giá trị (slug→tiếng Việt, mảng→số lượng, ngày→dd/mm), `isInternalIp()` |
 | `detail-card` + `detail-header`/`detail-card-body`/`detail-bottombar` | khung chi tiết inline dùng chung cho route `/:id` — header (avatar/tên/badge) → body → bottombar |
 | `LicensePreview` | preview + lightbox 720px trước khi duyệt/gỡ — gỡ mù là cấm. Prop `label` cho ảnh không phải giấy phép |
 | `Toast` | feedback sau mutation; 429 = warning "thao tác quá nhanh" + disable nút 10s |
@@ -258,6 +278,7 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 
 **An toàn & trạng thái**
 - [ ] PII che mặc định (`MaskedPII`); CSV có confirm nêu PII + cap 500
+- [ ] Không ObjectId/JSON/slug/enum thô ở thân trang — theo bảng §3B2; mã đầy đủ chỉ trong `details`
 - [ ] Loading = skeleton giữ toolbar; rỗng = `EmptyState` phân biệt trống thật vs không khớp lọc; lỗi = `StateBlock` + Thử lại
 - [ ] Focus visible; dialog focus-trap; Esc đóng; focus trả về nút đã mở
 - [ ] Bàn phím: J/K/Enter/A/R/`?` (nếu là queue); bảng trợ giúp `?`

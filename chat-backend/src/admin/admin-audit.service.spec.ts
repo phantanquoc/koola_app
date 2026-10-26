@@ -190,6 +190,11 @@ describe('AdminAuditService filters', () => {
     expect(res.data[0].actorName).toBe('Admin A');
     // id không resolve được thì bỏ, không để "undefined" trong chuỗi
     expect(res.data[0].targetName).toBe('Công ty B');
+    // targetItems giữ đủ cặp id↔tên để UI hiện tên thay ObjectId ở dòng bulk
+    expect(res.data[0].targetItems).toEqual([
+      { id: bizId, name: 'Công ty B' },
+      { id: 'deadbeef', name: undefined },
+    ]);
     expect(mockUserModel.find).toHaveBeenCalledTimes(1);
   });
 

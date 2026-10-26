@@ -10,7 +10,7 @@ import {
   AdminAuditTargetType,
 } from './schemas/admin-audit-log.schema';
 
-/** Audit log entry + tên admin resolve lúc đọc (không denormalize). */
+/** Audit log entry + tên resolve lúc đọc (không denormalize). */
 export type AuditLogWithActor = AdminAuditLogDocument & {
   actorName?: string;
   /**
@@ -19,6 +19,11 @@ export type AuditLogWithActor = AdminAuditLogDocument & {
    * không gộp được vào đây mà không thêm 4 model; UI fallback id rút gọn.
    */
   targetName?: string;
+  /**
+   * Từng đối tượng kèm tên đã resolve — dòng bulk ghi targetId = "id1,id2,…"
+   * nên UI cần danh sách này để hiện tên thay vì bắt moderator đọc ObjectId.
+   */
+  targetItems?: { id: string; name?: string }[];
 };
 
 @Injectable()
@@ -168,7 +173,9 @@ export class AdminAuditService {
       if (actorName) out.actorName = actorName;
       if (d.targetType === 'user' || d.targetType === 'business') {
         const ids = String(d.targetId).split(',').filter(Boolean);
-        const names = ids.map((id) => nameById.get(id)).filter(Boolean) as string[];
+        const items = ids.map((id) => ({ id, name: nameById.get(id) }));
+        if (items.some((it) => it.name)) out.targetItems = items;
+        const names = items.map((it) => it.name).filter(Boolean) as string[];
         if (names.length > 0) {
           // Dòng bulk: "A, B, C (+2)" để không nở hàng dài hàng trăm ký tự.
           out.targetName = names.length > 3
