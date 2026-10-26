@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { AdminService } from './admin.service';
 import { User } from '../users/user.schema';
@@ -116,7 +116,11 @@ describe('AdminService', () => {
         .mockResolvedValueOnce(5) // pendingVerification
         .mockResolvedValueOnce(12) // verifiedBusinesses
         .mockResolvedValueOnce(3) // rejectedBusinesses
-        .mockResolvedValueOnce(2); // bannedUsers
+        .mockResolvedValueOnce(2) // bannedUsers
+        .mockResolvedValueOnce(1) // slaOver72
+        .mockResolvedValueOnce(2) // slaDay1_3
+        .mockResolvedValueOnce(2) // slaFresh
+        .mockResolvedValueOnce(4); // expiringSoon
 
       const stats = await service.getStats();
       expect(stats).toEqual({
@@ -126,6 +130,10 @@ describe('AdminService', () => {
         verifiedBusinesses: 12,
         rejectedBusinesses: 3,
         bannedUsers: 2,
+        slaOver72: 1,
+        slaDay1_3: 2,
+        slaFresh: 2,
+        expiringSoon: 4,
       });
     });
   });
@@ -239,6 +247,37 @@ describe('AdminService', () => {
       const findFilter = mockUserModel.find.mock.calls[0][0];
       const idBranch = findFilter.$or.find((b: object) => '_id' in b);
       expect(idBranch._id.toString()).toBe(oid);
+    });
+
+    it('sla over72 filters createdAt older than 72h', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, sla: 'over72' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter.createdAt.$lt).toBeInstanceOf(Date);
+    });
+
+    it('sla day1_3 filters createdAt between 72h and 24h', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, sla: 'day1_3' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter.createdAt.$gte).toBeInstanceOf(Date);
+      expect(findFilter.createdAt.$lt).toBeInstanceOf(Date);
+    });
+
+    it('sla fresh filters createdAt within 24h', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, sla: 'fresh' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      expect(findFilter.createdAt.$gte).toBeInstanceOf(Date);
     });
   });
 
@@ -669,16 +708,49 @@ describe('AdminService', () => {
       await service.updateBusiness('biz-1', {
         taxCode: '123',
         internalNote: 'vip',
-        verificationStatus: 'verified',
-        isBanned: true,
       });
       const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
       expect(update.$set).toEqual({ taxCode: '123', internalNote: 'vip' });
     });
 
+    it('updates displayName (was silently dropped before)', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.updateBusiness('biz-1', { displayName: '  Tên mới  ' });
+      expect(mockUserModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({
+        displayName: 'Tên mới',
+      });
+    });
+
+    it('casts licenseExpiresAt to Date', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.updateBusiness('biz-1', { licenseExpiresAt: '2027-12-31' });
+      const set = mockUserModel.findOneAndUpdate.mock.calls[0][1].$set;
+      expect(set.licenseExpiresAt).toBeInstanceOf(Date);
+    });
+
+    it('unsets licenseExpiresAt when empty string (was 500 CastError)', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeFindOneAndUpdateQuery({ _id: 'biz-1' }),
+      );
+      await service.updateBusiness('biz-1', { licenseExpiresAt: '' });
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$unset).toEqual({ licenseExpiresAt: '' });
+      expect(update.$set).toBeUndefined();
+    });
+
+    it('throws 400 for an unparseable date', async () => {
+      await expect(
+        service.updateBusiness('biz-1', { licenseExpiresAt: 'nope' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('throws 400 when no whitelisted fields provided', async () => {
       await expect(
-        service.updateBusiness('biz-1', { verificationStatus: 'verified' }),
+        service.updateBusiness('biz-1', {}),
       ).rejects.toThrow(BadRequestException);
       expect(mockUserModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
@@ -801,6 +873,46 @@ describe('AdminService', () => {
       await expect(service.createBusiness({ displayName: '  ' })).rejects.toThrow(
         BadRequestException,
       );
+      expect(mockUserModel.create).not.toHaveBeenCalled();
+    });
+
+    it('normalizes email, seeds verificationHistory, and stores profile fields', async () => {
+      mockUserModel.exists.mockResolvedValue(null);
+      mockUserModel.create.mockResolvedValue({ _id: 'new-biz' });
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: 'new-biz', verificationStatus: 'pending' }),
+      );
+
+      await service.createBusiness(
+        {
+          displayName: '  Shop B  ',
+          contactEmail: '  Contact@Shop.VN ',
+          contactPhone: '0901234567',
+          businessCategory: 'retail',
+          province: 'Hà Nội',
+          address: '1 Tràng Tiền',
+          taxCode: '0101234567',
+          licenseExpiresAt: '2027-12-31',
+          internalNote: 'Ưu tiên',
+        },
+        'admin-1',
+      );
+
+      const payload = mockUserModel.create.mock.calls[0][0];
+      expect(payload.displayName).toBe('Shop B');
+      expect(payload.contactEmail).toBe('contact@shop.vn');
+      expect(payload.address).toBe('1 Tràng Tiền');
+      expect(payload.licenseExpiresAt).toBeInstanceOf(Date);
+      expect(payload.verificationHistory).toEqual([
+        expect.objectContaining({ status: 'pending', actorId: 'admin-1' }),
+      ]);
+    });
+
+    it('throws 409 when the contact email already belongs to an account', async () => {
+      mockUserModel.exists.mockResolvedValue({ _id: 'other' });
+      await expect(
+        service.createBusiness({ displayName: 'Shop C', contactEmail: 'dup@x.vn' }),
+      ).rejects.toThrow(ConflictException);
       expect(mockUserModel.create).not.toHaveBeenCalled();
     });
   });

@@ -15,6 +15,9 @@ import { MediaService } from '../media/media.service';
 import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
 import { ListUsersDto } from './dto/list-users.dto';
 import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
+import { ExportBusinessesDto } from './dto/export-businesses.dto';
+import { CreateBusinessDto } from './dto/create-business.dto';
+import { UpdateBusinessDto } from './dto/update-business.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 
@@ -58,7 +61,18 @@ export class AdminService {
     verifiedBusinesses: number;
     rejectedBusinesses: number;
     bannedUsers: number;
+    slaOver72: number;
+    slaDay1_3: number;
+    slaFresh: number;
+    expiringSoon: number;
   }> {
+    const now = Date.now();
+    const h72 = new Date(now - 72 * 3_600_000);
+    const h24 = new Date(now - 24 * 3_600_000);
+    const pendingBase = {
+      accountType: 'business',
+      verificationStatus: 'pending',
+    };
     const [
       totalPersonal,
       totalBusiness,
@@ -66,6 +80,10 @@ export class AdminService {
       verifiedBusinesses,
       rejectedBusinesses,
       bannedUsers,
+      slaOver72,
+      slaDay1_3,
+      slaFresh,
+      expiringSoon,
     ] = await Promise.all([
       this.userModel.countDocuments({ accountType: 'personal' }),
       this.userModel.countDocuments({ accountType: 'business' }),
@@ -82,6 +100,22 @@ export class AdminService {
         verificationStatus: 'rejected',
       }),
       this.userModel.countDocuments({ isBanned: true }),
+      this.userModel.countDocuments({ ...pendingBase, createdAt: { $lt: h72 } }),
+      this.userModel.countDocuments({
+        ...pendingBase,
+        createdAt: { $gte: h72, $lt: h24 },
+      }),
+      this.userModel.countDocuments({ ...pendingBase, createdAt: { $gte: h24 } }),
+      // Tab "Sắp hết hạn": verified + licenseExpiresAt trong 30 ngày tới
+      this.userModel.countDocuments({
+        accountType: 'business',
+        verificationStatus: 'verified',
+        deletedAt: null,
+        licenseExpiresAt: {
+          $gte: new Date(now),
+          $lte: new Date(now + 30 * 24 * 3_600_000),
+        },
+      }),
     ]);
 
     return {
@@ -91,6 +125,10 @@ export class AdminService {
       verifiedBusinesses,
       rejectedBusinesses,
       bannedUsers,
+      slaOver72,
+      slaDay1_3,
+      slaFresh,
+      expiringSoon,
     };
   }
 
@@ -104,6 +142,34 @@ export class AdminService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
+    return this.queryBusinesses(dto, page, limit);
+  }
+
+  /**
+   * Export: cùng bộ lọc với list nhưng cap riêng 500 dòng (list thường cap 100
+   * để bảo vệ API — export qua endpoint list sẽ 400 vì limit vượt Max).
+   */
+  async exportBusinesses(dto: ExportBusinessesDto): Promise<{
+    data: (UserDocument & { licenseImageUrl: string | null })[];
+    total: number;
+    page: number;
+    limit: number;
+    truncated: boolean;
+  }> {
+    const result = await this.queryBusinesses(dto, 1, 500);
+    return { ...result, truncated: result.total > result.data.length };
+  }
+
+  private async queryBusinesses(
+    dto: ListPendingBusinessesDto | ExportBusinessesDto,
+    page: number,
+    limit: number,
+  ): Promise<{
+    data: (UserDocument & { licenseImageUrl: string | null })[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const skip = (page - 1) * limit;
 
     // ponytail: 'all' omits the status filter; 'expiring' = verified + license due within 30d
@@ -133,6 +199,28 @@ export class AdminService {
     if (dto.assignee?.trim()) {
       (filter as Record<string, unknown>).assignee = dto.assignee.trim();
     }
+    if (dto.relationshipType) {
+      (filter as Record<string, unknown>).relationshipType =
+        dto.relationshipType;
+    }
+    if (dto.banned === 'true') {
+      (filter as Record<string, unknown>).isBanned = true;
+    } else if (dto.banned === 'false') {
+      (filter as Record<string, unknown>).isBanned = { $ne: true };
+    }
+
+    // ponytail: SLA bucket theo tuổi createdAt — chỉ có nghĩa khi duyệt pending
+    if (dto.sla) {
+      const now = Date.now();
+      const h72 = new Date(now - 72 * 3_600_000);
+      const h24 = new Date(now - 24 * 3_600_000);
+      (filter as Record<string, unknown>).createdAt =
+        dto.sla === 'over72'
+          ? { $lt: h72 }
+          : dto.sla === 'day1_3'
+            ? { $gte: h72, $lt: h24 }
+            : { $gte: h24 };
+    }
 
     if (dto.search && dto.search.trim().length > 0) {
       const q = dto.search.trim();
@@ -148,7 +236,13 @@ export class AdminService {
     }
 
     // ponytail: whitelist keeps sort injection-proof; extend list if UI needs more keys
-    const ALLOWED_SORT = new Set(['createdAt', 'displayName']);
+    const ALLOWED_SORT = new Set([
+      'createdAt',
+      'displayName',
+      'province',
+      'businessCategory',
+      'relationshipType',
+    ]);
     let sort: Record<string, 1 | -1> = { createdAt: 1 };
     if (dto.sort) {
       const [field, dir] = dto.sort.split(':');
@@ -267,28 +361,85 @@ export class AdminService {
 
   // ─── GET /admin/businesses/:id ─────────────────────────────────────────────
 
-  async getBusiness(
-    id: string,
-  ): Promise<UserDocument & { licenseImageUrl: string | null }> {
+  async getBusiness(id: string): Promise<
+    UserDocument & {
+      licenseImageUrl: string | null;
+      logoUrl: string | null;
+      coverUrl: string | null;
+      owner: {
+        _id: string;
+        displayName: string;
+        email?: string;
+      } | null;
+      ownerBusinessCount: number;
+    }
+  > {
     const business = await this.userModel
-      .findOne({ _id: id, accountType: 'business' })
+      .findOne({ _id: id, accountType: 'business', deletedAt: null })
       .select(SAFE_PROJECTION)
       .lean();
     if (!business) {
       throw new NotFoundException('Business account not found');
     }
-    let licenseImageUrl: string | null = null;
-    if (business.licenseImageKey) {
+
+    // Presign chỉ ở detail (URL hết hạn sau 1h + payload). Presign là HMAC cục
+    // bộ, không round-trip MinIO, nên 3 key song song là rẻ.
+    const presign = async (key?: string): Promise<string | null> => {
+      if (!key) return null;
       try {
-        licenseImageUrl = await this.mediaService.generatePresignedGetUrl(
-          business.licenseImageKey,
-        );
+        return await this.mediaService.generatePresignedGetUrl(key);
       } catch {
-        licenseImageUrl = null;
+        return null;
+      }
+    };
+    const [licenseImageUrl, logoUrl, coverUrl] = await Promise.all([
+      presign(business.licenseImageKey),
+      presign(business.logoKey),
+      presign(business.coverKey),
+    ]);
+
+    // Chủ tài khoản (chỉ có khi business do user tự tạo qua app) + số business
+    // cùng chủ — tín hiệu phát hiện farm tài khoản (giới hạn 10/owner).
+    let owner: { _id: string; displayName: string; email?: string } | null = null;
+    let ownerBusinessCount = 0;
+    const ownerId = business.ownerUserId
+      ? String(business.ownerUserId)
+      : undefined;
+    if (ownerId) {
+      const [ownerDoc, count] = await Promise.all([
+        this.userModel
+          .findById(ownerId)
+          .select('displayName email')
+          .lean(),
+        this.userModel.countDocuments({
+          ownerUserId: business.ownerUserId,
+          accountType: 'business',
+          deletedAt: null,
+        }),
+      ]);
+      ownerBusinessCount = count;
+      if (ownerDoc) {
+        owner = {
+          _id: ownerId,
+          displayName: ownerDoc.displayName,
+          ...(ownerDoc.email ? { email: ownerDoc.email } : {}),
+        };
       }
     }
-    return { ...business, licenseImageUrl } as unknown as UserDocument & {
+
+    return {
+      ...business,
+      licenseImageUrl,
+      logoUrl,
+      coverUrl,
+      owner,
+      ownerBusinessCount,
+    } as unknown as UserDocument & {
       licenseImageUrl: string | null;
+      logoUrl: string | null;
+      coverUrl: string | null;
+      owner: { _id: string; displayName: string; email?: string } | null;
+      ownerBusinessCount: number;
     };
   }
 
@@ -311,13 +462,18 @@ export class AdminService {
     }
 
     if (dto.search && dto.search.trim().length > 0) {
-      const escaped = escapeRegExp(dto.search.trim());
+      const q = dto.search.trim();
+      const escaped = escapeRegExp(q);
       const regex = new RegExp(escaped, 'i');
-      filterParts.$or = [
+      const or: Record<string, unknown>[] = [
         { displayName: regex },
         { email: regex },
         { phone: regex },
       ];
+      // Link /users?search=<id> (từ ReportDrawer, owner của business) chỉ hoạt
+      // động khi search match _id — trước đây thiếu nhánh này.
+      if (Types.ObjectId.isValid(q)) or.push({ _id: new Types.ObjectId(q) });
+      filterParts.$or = or;
     }
 
     const filter = filterParts as QueryFilter<UserDocument>;
@@ -354,7 +510,7 @@ export class AdminService {
   async banUser(
     id: string,
     opts?: { reason?: string; durationDays?: number },
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; accountType: string }> {
     const update: Record<string, unknown> = { isBanned: true };
     if (opts?.reason) update['banReason'] = opts.reason;
     if (opts?.durationDays && opts.durationDays > 0) {
@@ -381,12 +537,15 @@ export class AdminService {
       await this.sellerVisibility.syncSellers([id]);
     }
 
-    return { message: 'User banned and all refresh tokens revoked' };
+    return {
+      message: 'User banned and all refresh tokens revoked',
+      accountType: user.accountType,
+    };
   }
 
   // ─── POST /admin/users/:id/unban ────────────────────────────────────────────
 
-  async unbanUser(id: string): Promise<{ message: string }> {
+  async unbanUser(id: string): Promise<{ message: string; accountType: string }> {
     const user = await this.userModel
       .findByIdAndUpdate(
         id,
@@ -407,16 +566,17 @@ export class AdminService {
       await this.sellerVisibility.syncSellers([id]);
     }
 
-    return { message: 'User unbanned' };
+    return { message: 'User unbanned', accountType: user.accountType };
   }
 
   async bulkApproveBusiness(
     ids: string[],
+    actorId?: string,
   ): Promise<{ modified: number; results: { id: string; ok: boolean; error?: string }[] }> {
     const results: { id: string; ok: boolean; error?: string }[] = [];
     for (const id of ids) {
       try {
-        await this.approveBusiness(id);
+        await this.approveBusiness(id, actorId);
         results.push({ id, ok: true });
       } catch (e) {
         results.push({ id, ok: false, error: (e as Error).message });
@@ -429,13 +589,14 @@ export class AdminService {
   async bulkRejectBusiness(
     ids: string[],
     reason: string,
+    actorId?: string,
   ): Promise<{ modified: number; results: { id: string; ok: boolean; error?: string }[] }> {
     if (!reason || reason.trim().length === 0)
       throw new BadRequestException('rejectionReason is required');
     const results: { id: string; ok: boolean; error?: string }[] = [];
     for (const id of ids) {
       try {
-        await this.rejectBusiness(id, reason);
+        await this.rejectBusiness(id, reason, actorId);
         results.push({ id, ok: true });
       } catch (e) {
         results.push({ id, ok: false, error: (e as Error).message });
@@ -450,18 +611,20 @@ export class AdminService {
   async findDuplicates(id: string): Promise<UserDocument[]> {
     const self = await this.userModel
       .findOne({ _id: id, accountType: 'business' })
-      .select('taxCode contactPhone licenseImageKey')
+      .select('taxCode contactPhone contactEmail licenseImageKey')
       .lean();
     if (!self) throw new NotFoundException('Business account not found');
     // ponytail: O(1) $or scan capped at 10; dedicated compound index if this gets hot
     const or: Record<string, unknown>[] = [];
     if (self.taxCode) or.push({ taxCode: self.taxCode });
     if (self.contactPhone) or.push({ contactPhone: self.contactPhone });
+    if (self.contactEmail) or.push({ contactEmail: self.contactEmail });
     if (self.licenseImageKey) or.push({ licenseImageKey: self.licenseImageKey });
     if (or.length === 0) return [];
     const docs = await this.userModel
       .find({
         accountType: 'business',
+        deletedAt: null,
         _id: { $ne: self._id },
         $or: or,
       })
@@ -473,6 +636,7 @@ export class AdminService {
 
   // Whitelisted patch keys — never allow verificationStatus/isBanned via PATCH.
   static readonly BUSINESS_PATCH_KEYS = [
+    'displayName',
     'businessCategory',
     'province',
     'address',
@@ -489,19 +653,42 @@ export class AdminService {
 
   async updateBusiness(
     id: string,
-    patch: Record<string, unknown>,
+    patch: UpdateBusinessDto,
   ): Promise<UserDocument> {
     const set: Record<string, unknown> = {};
+    const unset: Record<string, ''> = {};
     for (const k of AdminService.BUSINESS_PATCH_KEYS) {
-      if (patch[k] !== undefined) set[k] = patch[k];
+      const raw = (patch as Record<string, unknown>)[k];
+      if (raw === undefined) continue;
+
+      if (k === 'licenseExpiresAt') {
+        const s = String(raw).trim();
+        if (!s) {
+          // Chuỗi rỗng = xoá ngày. Trước đây '' được $set thẳng → CastError 500.
+          unset.licenseExpiresAt = '';
+          continue;
+        }
+        const d = new Date(s);
+        if (Number.isNaN(d.getTime())) {
+          throw new BadRequestException('licenseExpiresAt is not a valid date');
+        }
+        set[k] = d;
+        continue;
+      }
+
+      set[k] = typeof raw === 'string' ? raw.trim() : raw;
     }
-    if (Object.keys(set).length === 0) {
+    if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
       throw new BadRequestException('No updatable fields provided');
     }
+    const update: Record<string, unknown> = {};
+    if (Object.keys(set).length > 0) update.$set = set;
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+
     const business = await this.userModel
       .findOneAndUpdate(
         { _id: id, accountType: 'business', deletedAt: null },
-        { $set: set },
+        update,
         { new: true },
       )
       .select(SAFE_PROJECTION);
@@ -570,24 +757,53 @@ export class AdminService {
     return business;
   }
 
-  async createBusiness(data: {
-    displayName: string;
-    contactEmail?: string;
-    contactPhone?: string;
-    businessCategory?: string;
-    province?: string;
-  }): Promise<UserDocument> {
+  async createBusiness(
+    data: CreateBusinessDto,
+    actorId?: string,
+  ): Promise<UserDocument> {
     if (!data.displayName?.trim()) {
       throw new BadRequestException('displayName is required');
+    }
+    const email = data.contactEmail?.trim().toLowerCase();
+    if (email) {
+      // Kiểm ĐÚNG field sẽ lưu (contactEmail), không phải `email` — business
+      // account không có `email` nên check cũ không bao giờ bắt được trùng.
+      const taken = await this.userModel.exists({
+        accountType: 'business',
+        deletedAt: null,
+        $or: [{ contactEmail: email }, { email }],
+      });
+      if (taken) {
+        throw new ConflictException('Email này đã được dùng cho tài khoản khác');
+      }
     }
     const doc = await this.userModel.create({
       accountType: 'business',
       displayName: data.displayName.trim(),
-      contactEmail: data.contactEmail,
-      contactPhone: data.contactPhone,
-      businessCategory: data.businessCategory,
-      province: data.province,
+      ...(email ? { contactEmail: email } : {}),
+      ...(data.contactPhone?.trim()
+        ? { contactPhone: data.contactPhone.trim() }
+        : {}),
+      ...(data.businessCategory
+        ? { businessCategory: data.businessCategory }
+        : {}),
+      ...(data.province ? { province: data.province } : {}),
+      ...(data.address?.trim() ? { address: data.address.trim() } : {}),
+      ...(data.taxCode ? { taxCode: data.taxCode } : {}),
+      ...(data.licenseExpiresAt
+        ? { licenseExpiresAt: new Date(data.licenseExpiresAt) }
+        : {}),
+      ...(data.internalNote?.trim()
+        ? { internalNote: data.internalNote.trim() }
+        : {}),
       verificationStatus: 'pending',
+      verificationHistory: [
+        {
+          status: 'pending',
+          at: new Date(),
+          ...(actorId ? { actorId } : {}),
+        },
+      ],
     });
     return (await this.userModel
       .findById(doc._id)

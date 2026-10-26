@@ -30,6 +30,9 @@ import { PaginationDto } from './dto/pagination.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { BulkBusinessDto } from './dto/bulk-business.dto';
 import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
+import { ExportBusinessesDto } from './dto/export-businesses.dto';
+import { CreateBusinessDto } from './dto/create-business.dto';
+import { UpdateBusinessDto } from './dto/update-business.dto';
 import { AdminAuditService } from './admin-audit.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { Request } from 'express';
@@ -84,6 +87,12 @@ export class AdminController {
     return this.adminService.listPendingBusinesses(dto);
   }
 
+  @Get('businesses/export')
+  @ApiOperation({ summary: 'Export businesses (max 500 rows, same filters as list)' })
+  async exportBusinesses(@Query() dto: ExportBusinessesDto) {
+    return this.adminService.exportBusinesses(dto);
+  }
+
   @Get('businesses/:id/duplicates')
   async findDuplicates(@Param('id') id: string) {
     return this.adminService.findDuplicates(id);
@@ -97,25 +106,17 @@ export class AdminController {
   @Post('businesses')
   @ApiOperation({ summary: 'Create a business account (pending verification)' })
   async createBusiness(
-    @Body() body: Record<string, unknown>,
+    @Body() dto: CreateBusinessDto,
     @CurrentUser() user: { actorId: string },
     @Req() req: Request,
   ) {
-    const res = await this.adminService.createBusiness(
-      body as {
-        displayName: string;
-        contactEmail?: string;
-        contactPhone?: string;
-        businessCategory?: string;
-        province?: string;
-      },
-    );
+    const res = await this.adminService.createBusiness(dto, user.actorId);
     await this.auditService.log({
       actorId: user.actorId,
       action: 'create_business',
       targetType: 'business',
       targetId: String((res as unknown as { _id: unknown })._id),
-      payload: body,
+      payload: dto as unknown as Record<string, unknown>,
       ip: req.ip ?? null,
     });
     return res;
@@ -125,17 +126,17 @@ export class AdminController {
   @ApiOperation({ summary: 'Update whitelisted business profile fields' })
   async updateBusiness(
     @Param('id') id: string,
-    @Body() body: Record<string, unknown>,
+    @Body() dto: UpdateBusinessDto,
     @CurrentUser() user: { actorId: string },
     @Req() req: Request,
   ) {
-    const res = await this.adminService.updateBusiness(id, body);
+    const res = await this.adminService.updateBusiness(id, dto);
     await this.auditService.log({
       actorId: user.actorId,
       action: 'update_business',
       targetType: 'business',
       targetId: id,
-      payload: body,
+      payload: dto as unknown as Record<string, unknown>,
       ip: req.ip ?? null,
     });
     return res;
@@ -223,7 +224,7 @@ export class AdminController {
     @CurrentUser() user: { actorId: string },
     @Req() req: Request,
   ) {
-    const res = await this.adminService.bulkApproveBusiness(dto.ids);
+    const res = await this.adminService.bulkApproveBusiness(dto.ids, user.actorId);
     await this.auditService.log({
       actorId: user.actorId,
       action: 'bulk_approve_business',
@@ -249,6 +250,7 @@ export class AdminController {
     const res = await this.adminService.bulkRejectBusiness(
       dto.ids,
       dto.rejectionReason ?? 'Bulk rejection',
+      user.actorId,
     );
     await this.auditService.log({
       actorId: user.actorId,
@@ -272,7 +274,7 @@ export class AdminController {
     @CurrentUser() user: { actorId: string },
     @Req() req: Request,
   ) {
-    const res = await this.adminService.approveBusiness(id);
+    const res = await this.adminService.approveBusiness(id, user.actorId);
     await this.auditService.log({
       actorId: user.actorId,
       action: 'approve_business',
@@ -295,7 +297,11 @@ export class AdminController {
     @CurrentUser() user: { actorId: string },
     @Req() req: Request,
   ) {
-    const res = await this.adminService.rejectBusiness(id, dto.rejectionReason);
+    const res = await this.adminService.rejectBusiness(
+      id,
+      dto.rejectionReason,
+      user.actorId,
+    );
     await this.auditService.log({
       actorId: user.actorId,
       action: 'reject_business',
@@ -338,7 +344,8 @@ export class AdminController {
     await this.auditService.log({
       actorId: user.actorId,
       action: 'ban_user',
-      targetType: 'user',
+      // Business bị cấm phải hiện trong timeline của hồ sơ doanh nghiệp
+      targetType: res.accountType === 'business' ? 'business' : 'user',
       targetId: id,
       payload: { reason: dto.reason, durationDays: dto.durationDays },
       ip: req.ip ?? null,
@@ -357,7 +364,7 @@ export class AdminController {
     await this.auditService.log({
       actorId: user.actorId,
       action: 'unban_user',
-      targetType: 'user',
+      targetType: res.accountType === 'business' ? 'business' : 'user',
       targetId: id,
       ip: req.ip ?? null,
     });

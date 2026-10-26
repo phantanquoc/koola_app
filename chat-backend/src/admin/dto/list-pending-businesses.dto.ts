@@ -41,4 +41,30 @@ export class ListPendingBusinessesDto extends PaginationDto {
   @IsString()
   @Matches(/^[a-zA-Z]+:(asc|desc)$/)
   sort?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'SLA bucket by hồ sơ chờ duyệt: over72 (>72h), day1_3 (24-72h), fresh (<24h). Chỉ áp dụng khi duyệt pending.',
+    enum: ['over72', 'day1_3', 'fresh'],
+  })
+  @IsOptional()
+  @IsIn(['over72', 'day1_3', 'fresh'])
+  sla?: 'over72' | 'day1_3' | 'fresh';
+
+  @ApiPropertyOptional({
+    description:
+      'Loại quan hệ doanh nghiệp do user chọn lúc đăng ký: partner (đối tác) hoặc supplier (nhà cung cấp)',
+    enum: ['partner', 'supplier'],
+  })
+  @IsOptional()
+  @IsIn(['partner', 'supplier'])
+  relationshipType?: 'partner' | 'supplier';
+
+  @ApiPropertyOptional({
+    description: 'true = chỉ hồ sơ đang bị cấm, false = chỉ hồ sơ không bị cấm',
+    enum: ['true', 'false'],
+  })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  banned?: 'true' | 'false';
 }

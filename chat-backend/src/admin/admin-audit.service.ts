@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
+import { User, UserDocument } from '../users/user.schema';
 import {
   AdminAuditLog,
   AdminAuditLogDocument,
@@ -8,12 +9,18 @@ import {
   AdminAuditTargetType,
 } from './schemas/admin-audit-log.schema';
 
+/** Audit log entry + tên admin resolve lúc đọc (không denormalize). */
+export type AuditLogWithActor = AdminAuditLogDocument & {
+  actorName?: string;
+};
+
 @Injectable()
 export class AdminAuditService {
   private readonly logger = new Logger(AdminAuditService.name);
   constructor(
     @InjectModel(AdminAuditLog.name)
     private readonly auditModel: Model<AdminAuditLogDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
   async log(params: {
@@ -45,7 +52,7 @@ export class AdminAuditService {
     targetType?: string;
     targetId?: string;
   }): Promise<{
-    data: AdminAuditLogDocument[];
+    data: AuditLogWithActor[];
     total: number;
     page: number;
     limit: number;
@@ -65,7 +72,30 @@ export class AdminAuditService {
         .lean(),
       this.auditModel.countDocuments(filter),
     ]);
-    return { data: data as AdminAuditLogDocument[], total, page, limit };
+
+    // Resolve tên admin lúc đọc: log cũ (chỉ có actorId) cũng hiện tên, không
+    // phải backfill, không đổi schema. 1 query cho cả trang, không phải N+1.
+    const entries = data as unknown as AuditLogWithActor[];
+    const actorIds = [
+      ...new Set(
+        entries.map((d) => d.actorId).filter((id) => id && Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const nameById = new Map<string, string>();
+    if (actorIds.length > 0) {
+      const actors = await this.userModel
+        .find({ _id: { $in: actorIds } })
+        .select('displayName')
+        .lean();
+      for (const a of actors) nameById.set(String(a._id), a.displayName);
+    }
+    const enriched: AuditLogWithActor[] = entries.map((d) => {
+      const actorName = nameById.get(d.actorId);
+      if (!actorName) return d;
+      return Object.assign({}, d, { actorName }) as AuditLogWithActor;
+    });
+
+    return { data: enriched, total, page, limit };
   }
 
   private redact(payload: Record<string, unknown>): Record<string, unknown> {
