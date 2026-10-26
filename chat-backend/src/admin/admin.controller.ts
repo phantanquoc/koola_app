@@ -27,7 +27,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RejectBusinessDto } from './dto/reject-business.dto';
 import { ListUsersDto } from './dto/list-users.dto';
-import { PaginationDto } from './dto/pagination.dto';
+import { ListAuditLogsDto } from './dto/list-audit-logs.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { BulkBusinessDto } from './dto/bulk-business.dto';
 import { BulkAssignBusinessDto } from './dto/bulk-assign-business.dto';
@@ -73,13 +73,11 @@ export class AdminController {
   // ─── Audit logs ─────────────────────────────────────────────────────────────
 
   @Get('audit-logs')
-  @ApiOperation({ summary: 'List admin audit logs (paginated)' })
-  async listAuditLogs(
-    @Query() dto: PaginationDto,
-    @Query('targetType') targetType?: string,
-    @Query('targetId') targetId?: string,
-  ) {
-    return this.auditService.list({ ...dto, targetType, targetId });
+  @ApiOperation({
+    summary: 'List admin audit logs (paginated; filter by action/actor/target/date)',
+  })
+  async listAuditLogs(@Query() dto: ListAuditLogsDto) {
+    return this.auditService.list(dto);
   }
 
   // ─── Business verification ──────────────────────────────────────────────────

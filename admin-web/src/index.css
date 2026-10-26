@@ -2269,6 +2269,13 @@ th.sortable:hover {
   flex: 0 1 280px;
 }
 
+/* `.select` mặc định width:100% (dùng trong form dọc). Trong filter row phải
+   co lại, không thì mỗi select chiếm cả hàng và đẩy filter khác xuống dưới. */
+.filter-row .select {
+  width: auto;
+  flex: 0 1 220px;
+}
+
 /* List header gọn (mẫu chung): 1 hàng title + actions, 1 hàng filter */
 .list-header {
   display: flex;
@@ -2382,6 +2389,30 @@ th.sortable:hover {
   color: var(--koola-muted);
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* Cặp nhãn + input ngày trong filter row (audit log) — cùng nhịp với .filter-check */
+.filter-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Payload audit log: JSON thô, phải giữ xuống dòng và không đẩy cột rộng ra */
+.audit-payload {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--koola-canvas);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
 }
 
 /* Dòng đang chọn bằng bàn phím (J/K) — khác focus ring, có thêm nền */

@@ -67,7 +67,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/products`, `/orders`, `/services`, `/stores` | commerce admin (products gồm cả inactive; orders read-only + detail; seller picker = business verified + unbanned) |
 | `/health` | `GET /api/admin/health` (mongo/redis/coturn/minio), **poll 30s**, không socket |
 | `/broadcast` | `POST /api/admin/broadcast {title, body}` + ghi chú preview (emit toàn server, gõ sai không undo) |
-| `/audit-logs` | bảng phân trang — `GET /audit-logs` có page/limit + `targetType`/`targetId` (chưa lọc actor/action/ngày); actor đã resolve tên server-side |
+| `/audit-logs` | bảng phân trang — `GET /audit-logs` có `page/limit` + `action`/`actor` (tên hoặc email)/`targetType`/`targetId`/`search` (khớp một phần, bắt được dòng bulk)/`from`/`to`; actor + target name resolve server-side |
 
 ## 4. Phase triển khai
 
@@ -158,8 +158,10 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
   lỗi của tool nội bộ mà không ai biết thì moderator im lặng chịu đựng.
 - [ ] **Export có giới hạn (cần backend):** xuất CSV audit-log/users phải có cap số dòng +
   lọc theo khoảng ngày; export lớn chuyển async — cấm nút "export all"同步 kéo sập DB.
-- [ ] **Audit-log filter mở rộng (cần backend):** `GET /audit-logs` đã có `targetType`/`targetId`;
-  còn thiếu lọc actor/action/khoảng ngày thì mới truy vết được sự cố.
+- [ ] **Audit-log filter mở rộng:** đã có action/actor/target/ngày + `search` khớp một phần
+  (bắt được dòng bulk). Còn thiếu: dedupe/aggregation (một người duyệt 200 hồ sơ = 200 dòng
+  bulk hay 200 dòng đơn?) và export audit log có cap — chưa nên thêm export khi chưa chốt
+  chính sách lưu trữ.
 
 > Ghi chú PM — cố tình LOẠI khỏi checklist hiện tại: impersonation (đăng nhập hộ user —
 > backend chưa có, rủi ro tuân thủ cao, chưa có nhu cầu support); MFA/SSO bắt buộc

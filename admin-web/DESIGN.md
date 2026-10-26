@@ -278,13 +278,14 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 
 Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
 
-- `UsersPage`, `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`, `AuditLogPage`
+- `UsersPage`, `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`
   vẫn dùng `PageHeader` + filter `useState`/`fetch tay` → lệch §3A.
 - `CommerceOrdersPage` đặt filter ngoài `TableShell`, dùng inline style, `sellerId`/`buyerId`
-  thô thay vì ô tìm kiếm chung; `AuditLogPage` nuốt lỗi (`.catch(() => {})`) và chưa có filter.
+  thô thay vì ô tìm kiếm chung.
 - `ReportsPage` dùng `StateBlock variant="empty"` cho lỗi — sai tone, phải `variant="error"`;
   nút "Resolve/Dismiss" chưa Việt hoá (§10).
-- Chưa trang nào có lọc theo khoảng ngày (`createdFrom`/`createdTo`) dù §7 yêu cầu lọc ngày cho export.
+- Chưa trang nào có lọc theo khoảng ngày (`createdFrom`/`createdTo`) cho **list/export**.
+  Audit log đã có `from`/`to` — đó là mẫu để copy khi thêm cho list/export khác.
 - `BulkBar` chưa generic: chữ "Duyệt/Từ chối" hardcode theo nghiệp vụ business.
 - Chưa có guard chống ghi đè: hai moderator sửa cùng hồ sơ, người sau thắng im lặng
   (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409

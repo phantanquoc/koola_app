@@ -264,8 +264,11 @@ export function BusinessDetailDrawer({
   const { data: timeline } = useQuery({
     queryKey: ['business-timeline', businessId],
     queryFn: async () => {
+      // `search` (khớp một phần) chứ không phải `targetId` (khớp chính xác):
+      // bulk action ghi targetId = "id1,id2,..." nên so khớp tuyệt đối sẽ bỏ
+      // sót đúng những lần duyệt/từ chối hàng loạt đã đụng hồ sơ này.
       const res = await apiClient.get<{ data: AuditLog[] }>('/admin/audit-logs', {
-        params: { targetType: 'business', targetId: businessId, limit: 20 },
+        params: { targetType: 'business', search: businessId, limit: 20 },
       });
       return res.data.data;
     },

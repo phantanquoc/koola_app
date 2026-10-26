@@ -225,6 +225,22 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     expect(await screen.findByRole('button', { name: 'Sửa Tên doanh nghiệp' })).toBeTruthy();
   });
 
+  // Bulk action ghi targetId = "id1,id2,..." nên khớp chính xác bỏ sót đúng
+  // những lần duyệt/từ chối hàng loạt đã đụng hồ sơ này.
+  it('timeline trong drawer dùng search (khớp một phần) để bắt cả dòng bulk', async () => {
+    renderPage('/businesses/b1');
+    await screen.findByRole('heading', { name: 'Hồ sơ doanh nghiệp' });
+
+    await waitFor(() =>
+      expect(mockedGet).toHaveBeenCalledWith(
+        '/admin/audit-logs',
+        expect.objectContaining({
+          params: expect.objectContaining({ targetType: 'business', search: 'b1' }),
+        }),
+      ),
+    );
+  });
+
   it('duyệt xong toast có nút Hoàn tác gọi reopen', async () => {
     mockedPost.mockResolvedValue({ data: {} });
     renderPage();
