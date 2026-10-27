@@ -261,7 +261,18 @@ Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi �
   dùng `overflow: clip` (giữ bo góc, không tạo scroll container).
 - ≤1099px ẩn `.col-hide-xs` và hạ `.data-table { min-width: 0 }`: nội dung chỉ
   còn ~700px sau sidebar, nhưng nếu để bảng tràn thì phải bật `overflow-x`, mà
-  `overflow-x: auto` kéo theo `overflow-y: auto` → thead hết sticky.
+  `overflow-x: auto` kéo theo `overflow-y: auto` → thead hết sticky. Cùng mốc đó
+  `.col-sticky` chuyển về `position: static` — sticky chỉ có nghĩa khi bảng cuộn
+  ngang, để nguyên thì cột Hành động đè lên cột dữ liệu cuối.
+- **Cột bị ẩn phải có đường về:** dữ liệu không được biến mất khỏi bảng. Mỗi cột
+  ẩn theo bề ngang cần một dòng `.show-under-1100` / `.show-under-860` / `.show-xs`
+  tương ứng nằm trong ô đầu của hàng, và ô gốc phải gắn đúng lớp ẩn
+  (`.col-hide-xs` mốc 1099, `.col-hide-xxs` mốc 560, `.col-hide-mobile` mốc 860).
+  Ba lớp `show-*` tách riêng vì mốc ẩn khác nhau — dùng `.show-xs` cho cột ẩn ở
+  1099px là mất dữ liệu suốt khoảng 560–1099px.
+- ≤560px: siết padding ô bảng xuống 10px và cho `.badge` trong bảng xuống dòng.
+  Nhãn hành động dài ("Cập nhật tài khoản") một dòng rộng 160px, tự nó đẩy cột
+  Hành động ra ngoài khung 358px của 390px.
 - ≤820px cao (1366×768, 1440×900 trừ browser chrome): nén `.admin-content` padding
   xuống `16px 24px`, `.page-stack` gap 24px để bảng còn thêm ~2 dòng.
 - Icon-button trong bảng tối thiểu 44px; focus visible outline primary 2px offset 2px.
