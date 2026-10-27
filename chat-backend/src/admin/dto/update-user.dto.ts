@@ -7,10 +7,10 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsVnPhone, NormalizeVnPhone } from '../../common/utils/vn-phone.validator';
 
 /** Đồng bộ với UsersService.updateProfile + UpdateProfileDto của app. */
 const USERNAME = /^[a-zA-Z0-9_]{3,30}$/;
-const VN_PHONE = /^(?:\+84|0)(?:\d){9}$/;
 
 /**
  * PATCH tài khoản từ trang quản trị.
@@ -48,9 +48,8 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({ example: '0901234567' })
   @IsOptional()
-  @Matches(VN_PHONE, {
-    message: 'Số điện thoại phải là số Việt Nam (10 số hoặc +84…)',
-  })
+  @NormalizeVnPhone()
+  @IsVnPhone()
   phone?: string;
 
   @ApiPropertyOptional({ maxLength: 160 })

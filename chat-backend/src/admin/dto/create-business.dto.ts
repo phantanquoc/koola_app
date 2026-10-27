@@ -8,6 +8,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsVnPhone, NormalizeVnPhone } from '../../common/utils/vn-phone.validator';
 
 /** Slug danh mục hợp lệ — hợp nhất tập của admin và mobile (ChatApp/src/screens/connect/constants.ts). */
 export const BUSINESS_CATEGORIES = [
@@ -31,7 +32,6 @@ export const BUSINESS_CATEGORIES = [
 ] as const;
 
 /** SĐT Việt Nam: 10 số bắt đầu bằng 0, hoặc +84 theo sau 9 số. */
-const VN_PHONE = /^(?:\+84|0)(?:\d){9}$/;
 
 export class CreateBusinessDto {
   @ApiProperty({ example: 'Công ty TNHH Koola' })
@@ -47,9 +47,8 @@ export class CreateBusinessDto {
 
   @ApiPropertyOptional({ example: '0901234567' })
   @IsOptional()
-  @Matches(VN_PHONE, {
-    message: 'Số điện thoại phải là số Việt Nam (10 số hoặc +84…)',
-  })
+  @NormalizeVnPhone()
+  @IsVnPhone()
   contactPhone?: string;
 
   @ApiPropertyOptional({ enum: BUSINESS_CATEGORIES })

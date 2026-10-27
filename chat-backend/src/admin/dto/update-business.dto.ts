@@ -8,10 +8,10 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsVnPhone, NormalizeVnPhone } from '../../common/utils/vn-phone.validator';
 import { BUSINESS_CATEGORIES } from './create-business.dto';
 
 /** SĐT Việt Nam — đồng bộ với CreateBusinessDto. */
-const VN_PHONE = /^(?:\+84|0)(?:\d){9}$/;
 const TAX_CODE = /^\d{10}(?:\d{3})?$/;
 /** Chấp nhận YYYY-MM-DD (input date) hoặc ISO datetime đầy đủ. */
 const DATE_INPUT = /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?$/;
@@ -76,9 +76,8 @@ export class UpdateBusinessDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Matches(VN_PHONE, {
-    message: 'Số điện thoại phải là số Việt Nam (10 số hoặc +84…)',
-  })
+  @NormalizeVnPhone()
+  @IsVnPhone()
   contactPhone?: string;
 
   @ApiPropertyOptional()
