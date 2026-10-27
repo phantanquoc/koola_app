@@ -4,9 +4,10 @@ import { Building2, Scale, UserRound, StickyNote } from 'lucide-react';
 import apiClient from '../apiClient';
 import { useToast } from './Toast';
 import { categoryVi, PROVINCES, CATEGORY_OPTIONS } from './vn-data';
+import { PhoneInput, IntegerInput } from './StructuredInput';
+import { VN_PHONE, normalizeVnPhone } from './input-masks';
 
-/** SĐT Việt Nam — khớp regex DTO backend để lỗi hiện ngay, không chờ round-trip. */
-const VN_PHONE = /^(?:\+84|0)\d{9}$/;
+/** Mã số thuế: 10 hoặc 13 chữ số (đồng bộ UpdateBusinessDto). */
 const TAX_CODE = /^\d{10}(?:\d{3})?$/;
 
 interface Fields {
@@ -35,8 +36,8 @@ function validate(f: Fields): Errors {
   if (f.contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.contactEmail.trim())) {
     e.contactEmail = 'Email không hợp lệ.';
   }
-  if (f.contactPhone.trim() && !VN_PHONE.test(f.contactPhone.trim())) {
-    e.contactPhone = 'SĐT phải là 10 số hoặc bắt đầu bằng +84.';
+  if (f.contactPhone.trim() && !VN_PHONE.test(normalizeVnPhone(f.contactPhone))) {
+    e.contactPhone = 'SĐT phải là di động 10 số hoặc số cố định 11 số.';
   }
   if (f.taxCode.trim() && !TAX_CODE.test(f.taxCode.trim())) {
     e.taxCode = 'Mã số thuế phải là 10 hoặc 13 chữ số.';
@@ -113,7 +114,7 @@ export function BusinessCreateForm({ onCreated, onCancel }: {
       const res = await apiClient.post<{ _id: string; displayName: string }>('/admin/businesses', {
         displayName: trim(form.displayName),
         ...(trim(form.contactEmail) ? { contactEmail: trim(form.contactEmail) } : {}),
-        ...(trim(form.contactPhone) ? { contactPhone: trim(form.contactPhone) } : {}),
+        ...(trim(form.contactPhone) ? { contactPhone: normalizeVnPhone(form.contactPhone) } : {}),
         ...(form.businessCategory ? { businessCategory: form.businessCategory } : {}),
         ...(form.province ? { province: form.province } : {}),
         ...(trim(form.address) ? { address: trim(form.address) } : {}),
@@ -184,11 +185,18 @@ export function BusinessCreateForm({ onCreated, onCancel }: {
             error={errors.contactEmail} placeholder="contact@koola.vn"
             hint="Dùng để gửi kết quả duyệt — phải chưa gắn với tài khoản nào."
           />
-          <Field
-            id="cb-phone" label="Điện thoại" type="tel" inputMode="tel"
-            value={form.contactPhone} onChange={set('contactPhone')}
-            error={errors.contactPhone} placeholder="0901 234 567"
-          />
+          <div className="form-field">
+            <label className="form-label" htmlFor="cb-phone">Điện thoại</label>
+            <PhoneInput
+              id="cb-phone" value={form.contactPhone} placeholder="090 123 4567"
+              onChange={set('contactPhone')}
+              aria-invalid={errors.contactPhone ? true : undefined}
+              aria-describedby={errors.contactPhone ? 'cb-phone-err' : undefined}
+            />
+            {errors.contactPhone
+              ? <span className="form-error" id="cb-phone-err" role="alert">{errors.contactPhone}</span>
+              : <span className="form-hint">Di động 10 số hoặc số cố định 11 số.</span>}
+          </div>
           <div className="form-grid-full">
             <Field
               id="cb-address" label="Địa chỉ"
@@ -204,12 +212,18 @@ export function BusinessCreateForm({ onCreated, onCancel }: {
           <Scale size={13} aria-hidden /> Pháp lý
         </h3>
         <div className="form-grid">
-          <Field
-            id="cb-tax" label="Mã số thuế" inputMode="numeric"
-            value={form.taxCode} onChange={set('taxCode')}
-            error={errors.taxCode} placeholder="0101234567"
-            hint="10 hoặc 13 chữ số."
-          />
+          <div className="form-field">
+            <label className="form-label" htmlFor="cb-tax">Mã số thuế</label>
+            <IntegerInput
+              id="cb-tax" maxLength={13} placeholder="0101234567" value={form.taxCode}
+              onChange={set('taxCode')}
+              aria-invalid={errors.taxCode ? true : undefined}
+              aria-describedby={errors.taxCode ? 'cb-tax-err' : undefined}
+            />
+            {errors.taxCode
+              ? <span className="form-error" id="cb-tax-err" role="alert">{errors.taxCode}</span>
+              : <span className="form-hint">10 hoặc 13 chữ số, không dấu cách.</span>}
+          </div>
           <Field
             id="cb-license" label="Giấy phép hết hạn" type="date"
             value={form.licenseExpiresAt} onChange={set('licenseExpiresAt')}

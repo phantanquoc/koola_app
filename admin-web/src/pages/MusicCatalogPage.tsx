@@ -6,6 +6,7 @@ import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import Dialog from '../components/Dialog';
+import { IntegerInput } from '../components/StructuredInput';
 import { useToast } from '../components/Toast';
 
 type Track = {
@@ -211,7 +212,16 @@ export default function MusicCatalogPage() {
             </div>
             <div className="form-field">
               <label className="form-label" htmlFor="music-duration">Thời lượng (ms)</label>
-              <input id="music-duration" className="input" type="number" placeholder="Duration ms" value={form.durationMs} onChange={(e) => setForm({ ...form, durationMs: Number(e.target.value) })} />
+              <IntegerInput
+                id="music-duration" placeholder="VD: 180000" maxLength={9}
+                value={String(form.durationMs)} aria-label="Thời lượng tính bằng mili giây"
+                onChange={(v) => setForm({ ...form, durationMs: v ? Number(v) : 0 })}
+              />
+              <span className="form-hint">
+                {form.durationMs > 0
+                  ? `≈ ${Math.floor(form.durationMs / 60000)}:${String(Math.floor((form.durationMs % 60000) / 1000)).padStart(2, '0')}`
+                  : 'Nhập số mili giây, chỉ chữ số.'}
+              </span>
             </div>
             <div className="form-field">
               <label className="form-label" htmlFor="music-license">License</label>

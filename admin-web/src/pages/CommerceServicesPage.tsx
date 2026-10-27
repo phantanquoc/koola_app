@@ -6,6 +6,8 @@ import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import Dialog from '../components/Dialog';
 import StateBlock from '../components/StateBlock';
+import { MoneyInput } from '../components/StructuredInput';
+import { parseVnd as parseVndInput, formatVnd as vnd } from '../components/input-masks';
 import { EmptyState } from '../components/EmptyState';
 import { useToast } from '../components/Toast';
 import { apiErrorMessage } from '../components/formatters';
@@ -31,17 +33,6 @@ interface FormState {
 type Errors = Partial<Record<keyof FormState, string>>;
 
 const EMPTY_FORM: FormState = { name: '', price: '', description: '' };
-
-/** Parse a VND input ("89000" or "89.000") into an integer, NaN if invalid. */
-function parseVndInput(s: string): number {
-  const t = s.replace(/[.\s,]/g, '');
-  return /^\d+$/.test(t) ? Number(t) : NaN;
-}
-
-function vnd(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—';
-  return `${Number(n).toLocaleString('vi-VN')}đ`;
-}
 
 function validate(f: FormState): Errors {
   const e: Errors = {};
@@ -242,12 +233,12 @@ export default function CommerceServicesPage() {
               />
             </Field>
             <Field id="sv-price" label="Giá (VND)" error={errors.price}>
-              <input
-                className={`input${errors.price ? ' input--error' : ''}`}
-                id="sv-price" inputMode="numeric" value={form.price} placeholder="89000"
+              <MoneyInput
+                className={errors.price ? 'input--error' : undefined}
+                id="sv-price" value={form.price} placeholder="89.000"
                 aria-invalid={errors.price ? true : undefined}
                 aria-describedby={errors.price ? 'sv-price-err' : undefined}
-                onChange={(e) => input('price')(e.target.value)}
+                onChange={input('price')}
               />
             </Field>
             <Field id="sv-desc" label="Mô tả" hint="Không bắt buộc.">

@@ -14,6 +14,7 @@ import { useToast } from './Toast';
 import { BanDialog } from './UserModeration';
 import { useViolationHistory } from '../hooks/useViolationHistory';
 import { accountTypeLabel, banBadge } from './user-labels';
+import { PhoneInput } from './StructuredInput';
 
 /** Doanh nghiệp do một tài khoản cá nhân sở hữu (ownerUserId trỏ tới họ). */
 export interface OwnedBusiness {
@@ -536,6 +537,26 @@ function EditableRow({
               onChange={(e) => onDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'phone' ? (
+            // SĐT hiển thị nhóm theo đầu số khi gõ; lưu về dạng 0… như cũ.
+            <PhoneInput
+              className="input-sm" value={draft} autoFocus aria-label={label}
+              onChange={onDraft}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'email' ? (
+            <input
+              className="input input-sm" value={draft} autoFocus aria-label={label}
+              type="email" inputMode="email" autoComplete="off" spellCheck={false}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
                 if (e.key === 'Escape') onCancel();
               }}
             />

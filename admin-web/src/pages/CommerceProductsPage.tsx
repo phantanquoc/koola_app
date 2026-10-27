@@ -6,6 +6,8 @@ import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
+import { MoneyInput } from '../components/StructuredInput';
+import { parseVnd } from '../components/input-masks';
 import {
   COMMERCE_CATEGORIES,
   PRODUCT_IMAGE_MAX_BYTES,
@@ -86,18 +88,12 @@ function formFromProduct(p: AdminProduct): FormState {
   };
 }
 
-/** Parse a VND input ("89000" or "89.000") into an integer, NaN if invalid. */
-function parseVndInput(s: string): number {
-  const t = s.replace(/[.\s,]/g, '');
-  return /^\d+$/.test(t) ? Number(t) : NaN;
-}
-
 function toPayload(f: FormState): ProductWritePayload {
   return {
     name: f.name.trim(),
     description: f.description,
-    price: parseVndInput(f.price),
-    originalPrice: f.originalPrice.trim() === '' ? null : parseVndInput(f.originalPrice),
+    price: parseVnd(f.price),
+    originalPrice: f.originalPrice.trim() === '' ? null : parseVnd(f.originalPrice),
     imageKeys: f.images.filter((s): s is Extract<ImageSlot, { kind: 'ready' }> => s.kind === 'ready').map((s) => s.key),
     category: f.category as CommerceCategory,
     tags: parseTags(f.tags),
@@ -438,12 +434,12 @@ export default function CommerceProductsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="Giá bán (VND)" id="pf-price" error={errors.price}>
-                  <input id="pf-price" className="input" inputMode="numeric" value={form.price}
-                    onChange={(e) => set('price', e.target.value)} aria-invalid={!!errors.price} placeholder="89000" />
+                  <MoneyInput id="pf-price" value={form.price} placeholder="89.000"
+                    aria-invalid={!!errors.price} onChange={(v) => set('price', v)} />
                 </Field>
                 <Field label="Giá gốc (VND, tùy chọn)" id="pf-original" error={errors.originalPrice}>
-                  <input id="pf-original" className="input" inputMode="numeric" value={form.originalPrice}
-                    onChange={(e) => set('originalPrice', e.target.value)} aria-invalid={!!errors.originalPrice} placeholder="119000" />
+                  <MoneyInput id="pf-original" value={form.originalPrice} placeholder="119.000"
+                    aria-invalid={!!errors.originalPrice} onChange={(v) => set('originalPrice', v)} />
                 </Field>
               </div>
 

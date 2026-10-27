@@ -10,6 +10,7 @@ import { initials, formatDateTime, ageLabel, ageTone, apiErrorMessage, banStatus
 import { categoryVi, relationshipVi, PROVINCES, CATEGORY_OPTIONS } from './vn-data';
 import LicensePreview from './LicensePreview';
 import { BusinessCreateForm } from './BusinessCreateForm';
+import { PhoneInput, IntegerInput } from './StructuredInput';
 import StateBlock from './StateBlock';
 
 export interface BusinessDetail {
@@ -178,6 +179,59 @@ function InlineField({
                 if (e.key === 'Escape') onCancel();
               }}
               aria-label={EDIT_LABELS[fieldKey]}
+            />
+          ) : fieldKey === 'contactPhone' ? (
+            // SĐT: nhóm theo đầu số khi gõ, chuẩn hoá 0… lúc rời ô. Di động 10
+            // số lẫn cố định 11 số đều hợp lệ (backend đã nới regex).
+            <PhoneInput
+              className="input-sm" value={draft} autoFocus aria-label={EDIT_LABELS[fieldKey]}
+              onChange={onDraft}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'taxCode' ? (
+            <IntegerInput
+              className="input-sm" value={draft} autoFocus maxLength={13}
+              aria-label={EDIT_LABELS[fieldKey]}
+              onChange={onDraft}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'licenseExpiresAt' ? (
+            // type=date mở lịch; nhãn + giá trị là ngày, không phải chuỗi tự do
+            // (gõ "31/02" hay "hết tháng sau" trước đây chỉ lỗi sau round-trip).
+            <input
+              className="input input-sm" type="date" value={draft} autoFocus
+              aria-label={EDIT_LABELS[fieldKey]}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'contactEmail' ? (
+            <input
+              className="input input-sm" type="email" inputMode="email" autoComplete="off" spellCheck={false}
+              value={draft} autoFocus aria-label={EDIT_LABELS[fieldKey]}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
+          ) : fieldKey === 'website' ? (
+            <input
+              className="input input-sm" type="url" inputMode="url" autoComplete="off" spellCheck={false}
+              placeholder="https://" value={draft} autoFocus aria-label={EDIT_LABELS[fieldKey]}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
             />
           ) : (
             <input
