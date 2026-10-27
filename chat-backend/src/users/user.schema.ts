@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, SchemaTypes, Types } from 'mongoose';
 
 export type UserDocument = User & Document;
 
@@ -15,7 +15,7 @@ export class User {
   accountType: AccountType;
 
   /** Set only on business accounts — references the root owner User */
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   ownerUserId?: Types.ObjectId;
 
   // ─── Credentials (optional at schema level; enforced by service for personal) ─

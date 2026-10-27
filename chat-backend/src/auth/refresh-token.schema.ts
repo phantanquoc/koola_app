@@ -1,12 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, SchemaTypes, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 
 export type RefreshTokenDocument = RefreshToken & Document;
 
 @Schema({ timestamps: true })
 export class RefreshToken {
-  @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
+  @Prop({ required: true, type: SchemaTypes.ObjectId, ref: 'User' })
   userId: Types.ObjectId;
 
   @Prop({ required: true })

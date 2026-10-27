@@ -1,20 +1,20 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, SchemaTypes, Types } from 'mongoose';
 
 export type UserConversationDocument = UserConversation & Document;
 
 @Schema({ timestamps: true })
 export class UserConversation {
-  @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
+  @Prop({ required: true, type: SchemaTypes.ObjectId, ref: 'User' })
   userId: Types.ObjectId;
 
-  @Prop({ required: true, type: Types.ObjectId, ref: 'Conversation' })
+  @Prop({ required: true, type: SchemaTypes.ObjectId, ref: 'Conversation' })
   conversationId: Types.ObjectId;
 
   @Prop({ required: true, type: Number, default: 0 })
   unreadCount: number;
 
-  @Prop({ type: Types.ObjectId, default: null })
+  @Prop({ type: SchemaTypes.ObjectId, default: null })
   lastReadMessageId: Types.ObjectId | null;
 
   @Prop({ required: true, type: Date, default: () => new Date() })
