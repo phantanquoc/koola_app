@@ -1,30 +1,230 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../apiClient';
-import { PageHeader } from '../components/PageHeader';
+import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
+import StateBlock from '../components/StateBlock';
+import { EmptyState } from '../components/EmptyState';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
+import { apiErrorMessage } from '../components/formatters';
+import { useUrlFilters } from '../hooks/useUrlFilters';
+import type { AdminListResult } from '../hooks/useAdminList';
 
+const PAGE_SIZE = 20;
+
+interface MessageItem {
+  _id: string;
+  content?: string;
+  conversationId?: string;
+  /** Tên hội thoại resolve lúc đọc; null khi hội thoại đã bị xoá. */
+  conversationName?: string | null;
+  senderId?: string;
+  /** Tên người gửi resolve lúc đọc; null khi tài khoản đã bị xoá. */
+  senderName?: string | null;
+  createdAt?: string;
+}
+
+/** Rút gọn định danh — không dán ObjectId đầy đủ lên UI. */
+function shortId(id: string) {
+  return `${id.slice(0, 8)}…`;
+}
+
+/**
+ * Trang Tìm tin nhắn — archetype list §3A.
+ *
+ * `q` nằm trong URL nên link từ command palette
+ * (`/messages?q=...`) mở đúng kết quả, và đổi trang là đổi query key →
+ * TanStack Query tự fetch lại (trước đây đổi page chỉ đổi state, API không
+ * chạy lại nên trang 2 hiện dữ liệu trang 1).
+ */
 export default function MessageSearchPage() {
   const { addToast } = useToast();
-  const [q, setQ] = useState('');
-  const [data, setData] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  async function search() {
-    if (!q.trim()) return;
-    try { const r = await apiClient.get('/admin/messages/search', { params: { q, page, limit: 20 } }); setData(r.data.data ?? []); setTotal(r.data.total ?? 0); } catch { addToast('error', 'Tìm kiếm thất bại'); }
+  const queryClient = useQueryClient();
+  const { values, set } = useUrlFilters({ q: '', page: '1' });
+  const q = values.q.trim();
+  const page = Math.max(1, Number(values.page) || 1);
+
+  // Ô nhập tách khỏi `q` trong URL: gõ chưa bấm Tìm thì chưa gọi API.
+  const [qInput, setQInput] = useState(values.q);
+  useEffect(() => setQInput(values.q), [values.q]);
+
+  const queryKey = useMemo(() => ['admin-messages', q, page], [q, page]);
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey,
+    queryFn: async () => (
+      await apiClient.get<AdminListResult<MessageItem>>('/admin/messages/search', {
+        params: { q, page, limit: PAGE_SIZE },
+      })
+    ).data,
+    // Deep link `?q=...` tự fetch; chưa có từ khoá thì không gọi (API 400 vì q bắt buộc).
+    enabled: q.length > 0,
+  });
+
+  const rows = data?.data ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const [deleteTarget, setDeleteTarget] = useState<MessageItem | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Trang vượt quá tổng số trang (deep-link page cũ) → kẹp về trang cuối.
+  useEffect(() => {
+    if (q && !isLoading && total > 0 && page > totalPages) set({ page: String(totalPages) });
+  }, [q, isLoading, total, page, totalPages, set]);
+
+  function submitSearch() {
+    const next = qInput.trim();
+    // Cùng từ khoá + cùng trang thì URL không đổi → query key không đổi, phải
+    // gọi refetch tay, nếu không bấm "Tìm" lần hai không thấy gì xảy ra.
+    if (next === q && page === 1) void refetch();
+    else set({ q: next, page: '1' });
   }
-  async function softDelete(id: string) {
-    try { await apiClient.post(`/admin/messages/${id}/soft-delete`); addToast('success', 'Đã xóa mềm'); setData(d => d.filter(m => m._id !== id)); } catch { addToast('error', 'Xóa thất bại'); }
+
+  async function confirmDelete() {
+    if (!deleteTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/admin/messages/${deleteTarget._id}/soft-delete`);
+      queryClient.setQueryData<AdminListResult<MessageItem>>(queryKey, (prev) => prev ? {
+        ...prev,
+        data: prev.data.filter((m) => m._id !== deleteTarget._id),
+        total: Math.max(0, prev.total - 1),
+      } : prev);
+      addToast('success', 'Đã gỡ tin nhắn.');
+      setDeleteTarget(null);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Gỡ tin nhắn thất bại. Vui lòng thử lại.'));
+    } finally {
+      setBusy(false);
+    }
   }
+
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Kiểm duyệt" title="Tin nhắn" description="Tìm kiếm xuyên hội thoại và xóa mềm nội dung vi phạm." />
-      <TableShell title="Tìm kiếm" actions={<><input className="input" placeholder="Từ khóa q (bắt buộc)" value={q} onChange={e => setQ(e.target.value)} aria-label="Từ khóa tin nhắn" style={{ width: 300 }} /><button className="btn btn-primary" onClick={search} type="button">Tìm</button></>}>
-        <div className="table-scroll"><table className="data-table"><thead><tr><th>Nội dung</th><th>Hội thoại</th><th>Người gửi</th><th>Hành động</th></tr></thead><tbody>{data.map((m: any) => (<tr key={m._id}><td>{m.content?.slice(0, 80)}</td><td className="k-mono">{m.conversationId}</td><td>{m.senderId}</td><td><button className="btn btn-danger-ghost btn-sm" onClick={() => softDelete(m._id)} type="button">Xóa mềm</button></td></tr>))}</tbody></table></div>
-        <Pagination page={page} totalPages={Math.ceil(total/20)} total={total} onPageChange={setPage} />
+      <ListHeader
+        title="Tin nhắn"
+        count={total}
+        actions={(
+          <button
+            className="btn btn-secondary btn-sm" type="button"
+            onClick={() => refetch()} disabled={!q}
+          >
+            Làm mới
+          </button>
+        )}
+      >
+        <div className="filter-search-wrap">
+          <Search size={15} className="filter-search-icon" aria-hidden />
+          <input
+            className="input filter-search filter-search--icon" type="search" value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitSearch(); }}
+            placeholder="Từ khoá trong nội dung tin nhắn"
+            aria-label="Từ khoá tìm tin nhắn"
+          />
+        </div>
+        <button
+          className="btn btn-primary btn-sm" type="button"
+          onClick={submitSearch} disabled={!qInput.trim()}
+        >
+          Tìm
+        </button>
+      </ListHeader>
+
+      <TableShell>
+        {isError && (
+          <StateBlock
+            variant="error" title="Không tải được tin nhắn"
+            copy={apiErrorMessage(error, 'Kiểm tra kết nối rồi thử lại.')}
+          >
+            <button className="btn btn-secondary btn-sm" onClick={() => refetch()} type="button">Thử lại</button>
+          </StateBlock>
+        )}
+        {isLoading && (
+          <StateBlock variant="loading" title="Đang tìm tin nhắn" copy="Đang quét nội dung trên mọi hội thoại." />
+        )}
+        {!isLoading && !isError && (
+          <div className="table-scroll table-scroll--fit">
+            <table className="data-table data-table--compact" aria-label="Kết quả tìm tin nhắn">
+              <thead>
+                <tr>
+                  <th scope="col">Nội dung</th>
+                  <th scope="col" className="col-hide-mobile">Hội thoại</th>
+                  <th scope="col" className="col-hide-xs">Người gửi</th>
+                  <th scope="col" className="th-center col-sticky">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>
+                      <EmptyState
+                        title={q ? 'Không tìm thấy tin nhắn nào khớp' : 'Nhập từ khoá để tìm tin nhắn'}
+                        copy={q
+                          ? 'Thử từ khoá ngắn hơn hoặc một cụm khác. Tin nhắn đã gỡ không nằm trong kết quả.'
+                          : 'Tìm xuyên mọi hội thoại theo nội dung tin nhắn.'}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {rows.map((m) => {
+                  const content = (m.content ?? '').trim();
+                  const sender = m.senderName
+                    ?? (m.senderId ? shortId(m.senderId) : null);
+                  return (
+                    <tr key={m._id}>
+                      <td>
+                        {content
+                          ? <span title={content}>{content.length > 140 ? `${content.slice(0, 140)}…` : content}</span>
+                          : <span className="cell-meta">Không có nội dung văn bản</span>}
+                      </td>
+                      <td className="col-hide-mobile">
+                        {m.conversationName
+                          ?? (m.conversationId
+                            ? <span className="cell-meta k-mono">{shortId(m.conversationId)}</span>
+                            : <span className="cell-meta">—</span>)}
+                      </td>
+                      <td className="col-hide-xs">
+                        {sender
+                          ?? <span className="cell-meta">—</span>}
+                      </td>
+                      <td className="col-sticky">
+                        <div className="table-actions table-actions--end">
+                          <button
+                            className="btn btn-danger-ghost btn-sm" type="button"
+                            onClick={() => setDeleteTarget(m)}
+                            aria-label={sender ? `Gỡ tin nhắn của ${sender}` : 'Gỡ tin nhắn'}
+                          >
+                            Gỡ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <Pagination
+          page={page} totalPages={totalPages} total={total}
+          onPageChange={(p) => set({ page: String(p) })}
+        />
       </TableShell>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Gỡ tin nhắn?"
+        description="Tin nhắn bị gỡ khỏi phía người dùng — họ không còn đọc được nội dung này trong hội thoại. Bản ghi vẫn giữ trong DB để đối soát."
+        confirmLabel="Gỡ tin nhắn"
+        busy={busy}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

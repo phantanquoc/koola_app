@@ -1,24 +1,198 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import apiClient from '../apiClient';
-import { PageHeader } from '../components/PageHeader';
+import { ListHeader } from '../components/ListHeader';
+import { StatusTabs } from '../components/StatusTabs';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
+import StateBlock from '../components/StateBlock';
+import { EmptyState } from '../components/EmptyState';
+import { StatusBadge } from '../components/StatusBadge';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
+import { apiErrorMessage } from '../components/formatters';
+import { useUrlFilters } from '../hooks/useUrlFilters';
+import { useAdminList } from '../hooks/useAdminList';
 
+const PAGE_SIZES = [20, 50];
+
+interface StoryItem {
+  _id: string;
+  authorId?: string;
+  /** Tên tác giả resolve lúc đọc; null khi tài khoản đã bị xoá. */
+  authorName?: string | null;
+  caption?: string;
+  isActive?: boolean;
+}
+
+const ACTIVE_TABS = ['', 'true', 'false'] as const;
+
+/**
+ * Trang Moments — duyệt và gỡ story.
+ *
+ * Gỡ story là ẩn tạm (isActive=false), nội dung vẫn trong DB nên không cần
+ * type-to-confirm; chi tiết này nói thẳng trong description của ConfirmDialog.
+ */
 export default function MomentsModerationPage() {
   const { addToast } = useToast();
-  const [data, setData] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  useEffect(() => { apiClient.get('/admin/stories', { params: { page, limit: 20 } }).then(r => { setData(r.data.data ?? []); setTotal(r.data.total ?? 0); }).catch(() => {}); }, [page]);
-  async function takedown(id: string) { try { await apiClient.post(`/admin/stories/${id}/takedown`); addToast('success', 'Đã gỡ story'); } catch { addToast('error', 'Thao tác thất bại'); } }
+  const queryClient = useQueryClient();
+  const { values, set } = useUrlFilters({ active: '', page: '1', pageSize: '20' });
+  const page = Math.max(1, Number(values.page) || 1);
+  const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  const active = (ACTIVE_TABS as readonly string[]).includes(values.active) ? values.active : '';
+
+  const { rows, total, isLoading, isError, error, refetch } = useAdminList<StoryItem>(
+    ['stories', active, page, pageSize],
+    '/admin/stories',
+    {
+      page,
+      limit: pageSize,
+      active: active === '' ? undefined : active,
+    },
+  );
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const [takedownTarget, setTakedownTarget] = useState<StoryItem | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function confirmTakedown() {
+    if (!takedownTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/admin/stories/${takedownTarget._id}/takedown`);
+      addToast('success', 'Đã gỡ story.');
+      setTakedownTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ['stories'] });
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Gỡ story thất bại. Vui lòng thử lại.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Kiểm duyệt" title="Moments" description="Duyệt và gỡ story vi phạm." />
-      <TableShell title="Stories">
-        <div className="table-scroll"><table className="data-table"><thead><tr><th>Author</th><th>Caption</th><th>Hoạt động</th><th>Hành động</th></tr></thead><tbody>{data.map((s: any) => (<tr key={s._id}><td>{s.authorId}</td><td>{s.caption?.slice(0, 60)}</td><td>{s.isActive ? 'active' : 'hidden'}</td><td><button className="btn btn-danger-ghost btn-sm" onClick={() => takedown(s._id)} type="button">Gỡ</button></td></tr>))}</tbody></table></div>
-        <Pagination page={page} totalPages={Math.ceil(total/20)} total={total} onPageChange={setPage} />
+      <ListHeader
+        title="Moments"
+        count={total}
+        actions={(
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>
+            Làm mới
+          </button>
+        )}
+      >
+        <StatusTabs
+          tabs={[
+            { key: '', label: 'Tất cả' },
+            { key: 'true', label: 'Đang hiển thị' },
+            { key: 'false', label: 'Đã gỡ' },
+          ]}
+          active={active}
+          onChange={(k) => set({ active: k, page: '1' })}
+        />
+      </ListHeader>
+
+      <TableShell>
+        {isError && (
+          <StateBlock
+            variant="error" title="Không tải được story"
+            copy={apiErrorMessage(error, 'Kiểm tra kết nối rồi thử lại.')}
+          >
+            <button className="btn btn-secondary btn-sm" onClick={() => refetch()} type="button">Thử lại</button>
+          </StateBlock>
+        )}
+        {isLoading && (
+          <StateBlock variant="loading" title="Đang tải story" copy="Đang lấy danh sách story mới nhất." />
+        )}
+        {!isLoading && !isError && (
+          <div className="table-scroll table-scroll--fit">
+            <table className="data-table data-table--compact" aria-label="Danh sách story">
+              <thead>
+                <tr>
+                  <th scope="col">Tác giả</th>
+                  <th scope="col">Caption</th>
+                  <th scope="col">Hoạt động</th>
+                  <th scope="col" className="th-center col-sticky">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>
+                      <EmptyState
+                        title={active === 'true'
+                          ? 'Không có story đang hiển thị'
+                          : active === 'false'
+                            ? 'Chưa có story nào bị gỡ'
+                            : 'Chưa có story nào'}
+                        copy={active === 'true'
+                          ? 'Mọi story đang hoạt động đã bị gỡ hoặc hết hạn.'
+                          : active === 'false'
+                            ? 'Story bị gỡ sẽ nằm ở đây để đối soát.'
+                            : 'Story sẽ xuất hiện khi người dùng đăng.'}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {rows.map((s) => {
+                  const caption = s.caption ?? '';
+                  return (
+                    <tr key={s._id}>
+                      <td>
+                        {s.authorName
+                          ?? <span className="cell-meta">Tài khoản đã xoá</span>}
+                      </td>
+                      <td>
+                        {caption
+                          ? (
+                            <span title={caption}>
+                              {caption.length > 60 ? `${caption.slice(0, 60)}…` : caption}
+                            </span>
+                          )
+                          : <span className="cell-meta">Không có caption</span>}
+                      </td>
+                      <td>
+                        {s.isActive === false
+                          ? <StatusBadge tone="muted" label="Đã gỡ" />
+                          : <StatusBadge tone="success" label="Đang hiển thị" />}
+                      </td>
+                      <td className="col-sticky">
+                        <div className="table-actions table-actions--end">
+                          <button
+                            className="btn btn-danger-ghost btn-sm" type="button"
+                            disabled={s.isActive === false}
+                            onClick={() => setTakedownTarget(s)}
+                            aria-label={s.authorName ? `Gỡ story của ${s.authorName}` : 'Gỡ story'}
+                          >
+                            Gỡ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <Pagination
+          page={page} totalPages={totalPages} total={total}
+          onPageChange={(p) => set({ page: String(p) })}
+          showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
+          onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
+        />
       </TableShell>
+
+      <ConfirmDialog
+        open={takedownTarget !== null}
+        onClose={() => setTakedownTarget(null)}
+        title="Gỡ story?"
+        description="Story bị gỡ khỏi feed, nội dung vẫn giữ trong DB. Người xem không còn thấy story này."
+        confirmLabel="Gỡ story"
+        busy={busy}
+        onConfirm={confirmTakedown}
+      />
     </div>
   );
 }
