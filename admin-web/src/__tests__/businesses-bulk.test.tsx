@@ -203,13 +203,13 @@ describe('BusinessesPage quản lý doanh nghiệp', () => {
     expect(await screen.findByText('Đã từ chối 2 doanh nghiệp.')).toBeTruthy();
   });
 
-  it('nút Xem mở modal chi tiết giữa màn hình', async () => {
+  it('nút Xem điều hướng sang route chi tiết, không mở modal', async () => {
     renderPage();
     expect(await screen.findByText('Công ty Alpha')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Xem Công ty Alpha' }));
-    // modal giữa màn hình, backdrop mờ (role dialog)
-    expect(await screen.findByRole('heading', { name: 'Hồ sơ doanh nghiệp' })).toBeTruthy();
+    // §3B: trang chi tiết là route — có nút quay lại danh sách, không phải dialog
+    expect(await screen.findByRole('button', { name: 'Quay lại danh sách' })).toBeTruthy();
     await waitFor(() =>
       expect(mockedGet).toHaveBeenCalledWith(
         '/admin/businesses/b1',

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Check, X, Ban, RotateCcw, Copy, AlertTriangle, Plus, PauseCircle } from 'lucide-react';
 import apiClient from '../apiClient';
-import Dialog from './Dialog';
 import { useToast } from './Toast';
 import { VerificationBadge, StatusBadge } from './StatusBadge';
 import { MaskedPII } from './MaskedPII';
@@ -227,7 +226,6 @@ export function BusinessDetailDrawer({
   onReject,
   onSuspend,
   onBan,
-  embedded,
 }: {
   businessId: string | null;
   onClose: () => void;
@@ -236,8 +234,6 @@ export function BusinessDetailDrawer({
   onSuspend?: (id: string, displayName: string, suspend: boolean) => void;
   /** Cấm/gỡ cấm tài khoản — khác tạm ngưng bán (ban khoá login + thu hồi phiên). */
   onBan?: (id: string, displayName: string, ban: boolean) => void;
-  /** true = render nội dung trực tiếp (route share URL), không bọc Dialog modal */
-  embedded?: boolean;
 }) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
@@ -605,8 +601,8 @@ export function BusinessDetailDrawer({
 
   const changedCount = editAll ? Object.keys(pendingChanges()).length : 0;
 
-  // Header dùng chung cho modal và route: danh tính hồ sơ nằm ở đây, thân form
-  // không lặp lại tên doanh nghiệp nữa.
+  // Header dùng chung: danh tính hồ sơ nằm ở đây, thân form không lặp lại
+  // tên doanh nghiệp nữa.
   const header = (
     <div className="detail-header">
       {data ? (
@@ -732,27 +728,13 @@ export function BusinessDetailDrawer({
     </div>
   ) : null;
 
-  if (embedded) {
-    return (
-      <section className="table-shell detail-card" aria-label={isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}>
-        {header}
-        <div className="detail-card-body">
-          {body}
-        </div>
-        {bottomBar}
-      </section>
-    );
-  }
-
   return (
-    <Dialog open={businessId !== null} onClose={onClose} labelId="business-drawer-title" variant="dialog">
-      <div className="dialog dialog--wide">
-        {header}
-        <div className="dialog-body">
-          {body}
-        </div>
-        {bottomBar}
+    <section className="table-shell detail-card" aria-label={isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}>
+      {header}
+      <div className="detail-card-body">
+        {body}
       </div>
-    </Dialog>
+      {bottomBar}
+    </section>
   );
 }

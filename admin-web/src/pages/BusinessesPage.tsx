@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Eye, Plus, Trash2, X, RotateCcw, PauseCircle } from 'lucide-react';
 import apiClient from '../apiClient';
@@ -19,11 +20,9 @@ import Dialog from '../components/Dialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BulkBar } from '../components/BulkBar';
 import { useToast } from '../components/Toast';
-import { BusinessDetailDrawer } from '../components/BusinessDetailDrawer';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
 import { useBusinessDecision, REJECT_TEMPLATES, appendReason } from '../hooks/useBusinessDecision';
-import { BanDialog } from '../components/UserModeration';
 import { useAuth } from '../useAuth';
 
 interface Business {
@@ -96,6 +95,8 @@ export default function BusinessesPage() {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
   const { identity } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { values, set, reset } = useUrlFilters({
     tab: 'pending', search: '', category: '', province: '', mine: '', page: '1', pageSize: '20', sort: '', sla: '', relationship: '', banned: '', suspended: '',
   });
@@ -148,8 +149,10 @@ export default function BusinessesPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const goDetail = (id: string) => setDetailId(id);
+  // Chi tiết luôn là route (/businesses/:id), không mở drawer/modal — §3B.
+  // `state.from` giữ bộ lọc + trang để nút Quay lại về đúng chỗ vừa làm việc.
+  const goDetail = (id: string) =>
+    navigate(`/businesses/${id}`, { state: { from: `${location.pathname}${location.search}` } });
   // ponytail: index-only highlight, no scroll management until list outgrows viewport
   // -1 = chưa chọn dòng nào; nếu mặc định 0 thì dòng đầu trông như "đang chọn" khi vừa mở trang
   const [highlight, setHighlight] = useState(-1);
@@ -163,7 +166,6 @@ export default function BusinessesPage() {
   const [busy, setBusy] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Một nguồn sự thật cho duyệt/từ chối/vô hiệu hóa — dùng chung với route chi tiết.
@@ -179,8 +181,6 @@ export default function BusinessesPage() {
       const next = businesses[idx + 1] ?? businesses[idx - 1];
       return next && next._id !== id ? { id: next._id, displayName: next.displayName } : undefined;
     },
-    // Duyệt liên tiếp: nhảy sang hồ sơ kế tiếp nếu đang mở drawer
-    onAdvance: (next) => setDetailId((cur) => (cur ? next.id : cur)),
   });
 
   // Đổi bộ lọc/trang thì bỏ chọn + bỏ con trỏ bàn phím
@@ -382,17 +382,20 @@ export default function BusinessesPage() {
     }
   }
 
-  // Keyboard: J/K di chuyển, Enter mở drawer, A duyệt, R từ chối (pending), ? trợ giúp
+  // Keyboard: J/K di chuyển, Enter mở chi tiết, A duyệt, R từ chối (pending), ? trợ giúp
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-      if (detailId || bulkApproveOpen || bulkRejectOpen || deleteTarget || exportConfirmOpen || helpOpen) return;
+      if (bulkApproveOpen || bulkRejectOpen || deleteTarget || exportConfirmOpen || helpOpen) return;
       if (e.key === 'j' || e.key === 'J') setHighlight((h) => Math.min(h + 1, businesses.length - 1));
       else if (e.key === 'k' || e.key === 'K') setHighlight((h) => Math.max(h - 1, -1));
       else if (e.key === 'Enter') {
+        // Dòng/nút đang focus tự xử lý Enter — tránh mở chi tiết lần hai
+        // (và tránh mở nhầm dòng theo `highlight` thay vì dòng đang focus).
+        if (t.closest('button, a, tr[tabindex="0"]')) return;
         const b = businesses[highlight];
-        if (b) goDetail(b._id);
+        if (b) navigate(`/businesses/${b._id}`, { state: { from: `${location.pathname}${location.search}` } });
       } else if ((e.key === 'a' || e.key === 'A') && tab === 'pending') {
         const b = businesses[highlight];
         if (b) decision.requestApprove({ id: b._id, displayName: b.displayName });
@@ -403,7 +406,7 @@ export default function BusinessesPage() {
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [businesses, highlight, detailId, bulkApproveOpen, bulkRejectOpen, deleteTarget, exportConfirmOpen, helpOpen, tab]);
+  }, [businesses, highlight, bulkApproveOpen, bulkRejectOpen, deleteTarget, exportConfirmOpen, helpOpen, tab, navigate, location.pathname, location.search]);
 
   const showCheckbox = tab === 'pending';
   const loadError = axios.isAxiosError(error)
@@ -415,7 +418,7 @@ export default function BusinessesPage() {
       <ListHeader
         title="Danh sách doanh nghiệp"
         count={total}
-        actions={<><ExportButton onExport={() => setExportConfirmOpen(true)} /><button className="btn btn-primary btn-sm" onClick={() => setDetailId('new')} type="button"><Plus size={14} aria-hidden /> Thêm</button></>}
+        actions={<><ExportButton onExport={() => setExportConfirmOpen(true)} /><button className="btn btn-primary btn-sm" onClick={() => navigate('/businesses/new')} type="button"><Plus size={14} aria-hidden /> Thêm</button></>}
       >
         <input
           className="input filter-search" type="search" value={searchInput}
@@ -545,7 +548,7 @@ export default function BusinessesPage() {
                     sort={effectiveSort}
                     onSort={toggleSort}
                   />
-                  <ColumnHeader label="Liên hệ" />
+                  <ColumnHeader label="Liên hệ" className="col-hide-xs" />
                   <ColumnHeader
                     label="Loại"
                     className="col-hide-mobile"
@@ -591,6 +594,7 @@ export default function BusinessesPage() {
                         : tab === 'archived' ? 'Xoá lúc'
                           : tab === 'pending' ? 'Chờ từ' : 'Đăng ký'
                     }
+                    className="col-hide-xs"
                     sortField={tab === 'expiring' ? 'licenseExpiresAt' : tab === 'archived' ? 'deletedAt' : 'createdAt'}
                     sort={effectiveSort}
                     onSort={toggleSort}
@@ -621,6 +625,17 @@ export default function BusinessesPage() {
                   <tr
                     key={b._id}
                     className={i === highlight ? 'row-highlight' : undefined}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      // Chỉ mở khi chính dòng đang focus — Enter/Space trên nút con
+                      // không được biến thành "mở chi tiết" sau khi nút đã xử lý.
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        goDetail(b._id);
+                      }
+                    }}
+                    aria-label={`Xem chi tiết ${b.displayName}`}
                     onClick={(e) => {
                       const t = e.target as HTMLElement;
                       if (t.closest('button,input,select,a')) return;
@@ -642,8 +657,30 @@ export default function BusinessesPage() {
                             để biết hồ sơ đã có người nhận hay còn trong hàng đợi chung. */}
                         {b.assignee && <span> · {b.assignee}</span>}
                       </div>
+                      {/* ≤1099px cột "Liên hệ" bị ẩn, ≤560px thêm cột ngày + trạng
+                          thái — dồn hết xuống dòng meta để không mất dữ liệu. */}
+                      <div className="cell-meta show-under-1100">
+                        {tab === 'expiring'
+                          ? (b.licenseExpiresAt ? `Hết hạn ${formatDateTime(b.licenseExpiresAt)}` : 'Chưa có hạn giấy phép')
+                          : tab === 'archived'
+                            ? `Xoá lúc ${formatDateTime(b.deletedAt)}`
+                            : tab === 'pending'
+                              ? ageLabel(b.createdAt)
+                              : formatDateTime(b.createdAt)}
+                        {(tab === 'all' || tab === 'expiring' || tab === 'archived') && (
+                          <> · <VerificationBadge status={b.verificationStatus} /></>
+                        )}
+                        {(b.contactPhone || b.contactEmail || b.email) && (
+                          <>
+                            {' · '}
+                            {b.contactPhone
+                              ? <MaskedPII value={b.contactPhone} kind="phone" />
+                              : <MaskedPII value={b.contactEmail ?? b.email ?? ''} kind="email" />}
+                          </>
+                        )}
+                      </div>
                     </td>
-                    <td>
+                    <td className="col-hide-xs">
                       <div>{b.contactPhone ? <MaskedPII value={b.contactPhone} kind="phone" /> : '—'}</div>
                       <div className="cell-meta">{(b.contactEmail ?? b.email) ? <MaskedPII value={b.contactEmail ?? b.email ?? ''} kind="email" /> : '—'}</div>
                     </td>
@@ -656,7 +693,7 @@ export default function BusinessesPage() {
                     <td className="col-hide-mobile">
                       <div className="cell-title">{b.province ?? '—'}</div>
                     </td>
-                    <td>
+                    <td className="col-hide-xs">
                       <span className="cell-date" title={tab === 'expiring' ? 'Giấy phép hết hạn' : formatDateTime(b.createdAt)}>
                         {/* Tab chờ duyệt: tuổi là tín hiệu ưu tiên (badge màu).
                             Tab giấy phép: ngày hết hạn mới là thứ cần đọc.
@@ -713,34 +750,6 @@ export default function BusinessesPage() {
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
-
-      <BusinessDetailDrawer
-        businessId={detailId}
-        onClose={() => setDetailId(null)}
-        onApprove={(id) => {
-          const b = businesses.find((x) => x._id === id);
-          decision.requestApprove({ id, displayName: b?.displayName ?? '' });
-        }}
-        onReject={(id) => {
-          const b = businesses.find((x) => x._id === id);
-          decision.requestReject({ id, displayName: b?.displayName ?? '' });
-        }}
-        onSuspend={(_id, displayName, suspend) => {
-          decision.requestSuspend({ id: _id, displayName, suspend });
-        }}
-        onBan={(id, displayName, ban) => {
-          setBanTarget({ id, name: displayName, action: ban ? 'ban' : 'unban' });
-        }}
-      />
-
-      <BanDialog
-        target={banTarget}
-        onClose={() => setBanTarget(null)}
-        onDone={() => {
-          setBanTarget(null);
-          refresh();
-        }}
-      />
 
       {/* Confirm duyệt / từ chối / vô hiệu hóa dùng chung với route chi tiết */}
       {decision.dialogs}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { BusinessDetailDrawer } from '../components/BusinessDetailDrawer';
@@ -7,17 +7,20 @@ import { BanDialog } from '../components/UserModeration';
 import { useBusinessDecision } from '../hooks/useBusinessDecision';
 
 /**
- * Route share URL (/businesses/:id, /businesses/new): form chi tiết giữa
- * màn hình, dùng chung logic với modal list (BusinessDetailDrawer embedded).
- * Quyết định duyệt/từ chối/vô hiệu hóa đi qua useBusinessDecision — cùng copy,
- * cùng confirm, cùng toast với trang danh sách.
+ * Route chi tiết (/businesses/:id, /businesses/new): form chi tiết giữa màn
+ * hình — §3B, không dùng drawer/modal.
+ *
+ * `state.from` giữ filter + trang của list để "Quay lại danh sách" đưa về đúng
+ * chỗ vừa làm việc; mở link trực tiếp (không có state) thì về list trơn.
  */
 export default function BusinessDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
-  const back = () => navigate('/businesses');
+  const backTo = (location.state as { from?: string } | null)?.from ?? '/businesses';
+  const back = () => navigate(backTo);
 
   const decision = useBusinessDecision({
     onChanged: () => {
@@ -42,7 +45,6 @@ export default function BusinessDetailPage() {
         onBan={(bid, displayName, ban) =>
           setBanTarget({ id: bid, name: displayName, action: ban ? 'ban' : 'unban' })
         }
-        embedded
       />
 
       {decision.dialogs}
