@@ -233,9 +233,7 @@ describe('MessagesService — clear cutoff and mute push', () => {
 
     // Flush the fire-and-forget push.
     await new Promise((r) => setImmediate(r));
-    expect(
-      mockNotificationsService.sendPushNotification,
-    ).toHaveBeenCalledWith(
+    expect(mockNotificationsService.sendPushNotification).toHaveBeenCalledWith(
       expect.objectContaining({ recipientIds: ['user-3'] }),
     );
   });
@@ -259,9 +257,7 @@ describe('MessagesService — clear cutoff and mute push', () => {
     );
 
     await new Promise((r) => setImmediate(r));
-    expect(
-      mockNotificationsService.sendPushNotification,
-    ).toHaveBeenCalledWith(
+    expect(mockNotificationsService.sendPushNotification).toHaveBeenCalledWith(
       expect.objectContaining({ recipientIds: [otherId] }),
     );
   });

@@ -56,16 +56,36 @@ class FakeJwtGuard implements CanActivate {
 describe('Orders HTTP boundary', () => {
   let app: INestApplication<App>;
   const orders = {
-    placeOrder: jest.fn().mockResolvedValue({ order: { id: ORDER_ID }, conversationId: 'c1' }),
-    listMine: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, hasMore: false }),
-    listSeller: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, hasMore: false }),
+    placeOrder: jest
+      .fn()
+      .mockResolvedValue({ order: { id: ORDER_ID }, conversationId: 'c1' }),
+    listMine: jest.fn().mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      hasMore: false,
+    }),
+    listSeller: jest.fn().mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      hasMore: false,
+    }),
     getById: jest.fn().mockResolvedValue({ order: { id: ORDER_ID } }),
     confirmOrder: jest.fn().mockResolvedValue({ id: ORDER_ID }),
     rejectOrder: jest.fn().mockResolvedValue({ id: ORDER_ID }),
     shipOrder: jest.fn().mockResolvedValue({ id: ORDER_ID }),
     receiveOrder: jest.fn().mockResolvedValue({ id: ORDER_ID }),
     cancelOrder: jest.fn().mockResolvedValue({ id: ORDER_ID }),
-    listAdmin: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, hasMore: false }),
+    listAdmin: jest.fn().mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      hasMore: false,
+    }),
     getAdminById: jest.fn().mockResolvedValue({ order: { id: ORDER_ID } }),
   };
   const commerce = {
@@ -154,7 +174,15 @@ describe('Orders HTTP boundary', () => {
 
     it.each([
       ['empty items', { items: [] }],
-      ['51 items', { items: Array.from({ length: 51 }, () => ({ productId: SELLER_ID, qty: 1 })) }],
+      [
+        '51 items',
+        {
+          items: Array.from({ length: 51 }, () => ({
+            productId: SELLER_ID,
+            qty: 1,
+          })),
+        },
+      ],
       ['qty 0', { qtyZero: true }],
       ['bad payment', { payment: 'momo' }],
       ['bad uuid', { idempotencyKey: 'not-a-uuid' }],
@@ -230,7 +258,10 @@ describe('Orders HTTP boundary', () => {
       await request(app.getHttpServer())
         .patch(`/commerce/orders/${ORDER_ID}/confirm`)
         .set('x-test-actor', SELLER_ID)
-        .send({ shippingFee: 20000, expectedDeliveryDate: new Date().toISOString() })
+        .send({
+          shippingFee: 20000,
+          expectedDeliveryDate: new Date().toISOString(),
+        })
         .expect(200);
       expect(orders.confirmOrder).toHaveBeenCalled();
       await request(app.getHttpServer())

@@ -259,8 +259,67 @@ export class NotificationsService {
     }
   }
 
-  // ─── Order Update Push (commerce-orders D4) ─────────────────────────────────
+  // ─── Post Comment Push ────────────────────────────────────────────────────
 
+  /**
+   * Notify the post author of a new comment (unless author == commenter).
+   * Same eligibility gates as mentions: disabled / online / no-token / dedup.
+   */
+  async sendCommentPush(params: {
+    postId: string;
+    authorId: string;
+    commenterId: string;
+    commenterName?: string;
+  }): Promise<void> {
+    const { postId, authorId, commenterId, commenterName } = params;
+    if (authorId === commenterId) return;
+    const user = await this.usersService.findById(authorId);
+    if (!user) return;
+    if ((user as any).settings?.notificationsEnabled === false) return;
+    if ((user as any).isOnline) return;
+    const tokens = ((user as any).fcmTokens ?? []).map((t: any) => t.token);
+    if (!tokens || tokens.length === 0) return;
+    const dedupKey = `notif:comment:${authorId}:${postId}:${commenterId}`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+    const payload: FirebaseMessagingPayload = {
+      notification: {
+        title: commenterName ?? 'Khoảnh khắc',
+        body: 'Đã bình luận về bài viết của bạn',
+      },
+      data: {
+        type: 'post_comment',
+        postId,
+        deepLink: `koola://moments/post/${postId}`,
+        accountId: authorId,
+        accountType: ((user as any).accountType as string) ?? 'personal',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+    try {
+      await this.sendMulticast(authorId, tokens, payload);
+    } catch (err) {
+      this.logger.error(
+        `[Notifications] Failed to send comment push to ${authorId}:`,
+        err,
+      );
+    }
+  }
+
+  // ─── Order Update Push (commerce-orders D4) ─────────────────────────────────
   /** Dedup TTL for order pushes: one push per (user, order, status). */
   private static readonly ORDER_PUSH_DEDUP_TTL_SECONDS = 24 * 60 * 60;
 
@@ -278,7 +337,8 @@ export class NotificationsService {
     status: string;
     conversationId: string;
   }): Promise<void> {
-    const { recipientUserId, title, body, orderId, status, conversationId } = params;
+    const { recipientUserId, title, body, orderId, status, conversationId } =
+      params;
 
     const user = await this.usersService.findById(recipientUserId);
     if (!user) return;

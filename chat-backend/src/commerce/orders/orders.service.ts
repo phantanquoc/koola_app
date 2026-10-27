@@ -156,15 +156,24 @@ export class OrdersService {
           note: dto.buyerInfo.note?.trim() ? dto.buyerInfo.note : null,
         },
         payment: dto.payment,
-        shipping: { fee: null, carrier: null, trackingCode: null, expectedDeliveryDate: null },
+        shipping: {
+          fee: null,
+          carrier: null,
+          trackingCode: null,
+          expectedDeliveryDate: null,
+        },
         status: 'PENDING',
-        statusHistory: [{ status: 'PENDING', at: now, by: buyerId, note: null }],
+        statusHistory: [
+          { status: 'PENDING', at: now, by: buyerId, note: null },
+        ],
         conversationId: '',
         idempotencyKey: dto.idempotencyKey,
         lastReminderAt: null,
         soldCountApplied: false,
       });
-      order = created.toObject ? (created.toObject() as LeanOrder) : (created as unknown as LeanOrder);
+      order = created.toObject
+        ? (created.toObject() as LeanOrder)
+        : (created as unknown as LeanOrder);
     } catch (err: unknown) {
       const existing = await this.findByIdempotencyKey(dto.idempotencyKey);
       if (!existing) throw err;
@@ -175,7 +184,10 @@ export class OrdersService {
     // Idempotent retry: the order already exists — its conversation/card were
     // (or are being) posted. Return it without creating anything new.
     if (alreadyExisted) {
-      return { order: this.toPublic(order), conversationId: order.conversationId };
+      return {
+        order: this.toPublic(order),
+        conversationId: order.conversationId,
+      };
     }
 
     // (4) Find-or-create the buyer↔seller direct conversation, then persist it
@@ -469,8 +481,7 @@ export class OrdersService {
     order: LeanOrder,
     names?: Map<string, string>,
   ): Record<string, unknown> {
-    const total =
-      order.subtotal + (order.shipping?.fee ?? 0);
+    const total = order.subtotal + (order.shipping?.fee ?? 0);
     return {
       id: String(order._id),
       orderCode: order.orderCode,
@@ -557,13 +568,17 @@ export class OrdersService {
     if (!isObjectIdString(orderId)) {
       throw new NotFoundException('Order not found');
     }
-    const order = await this.orderModel.findById(orderId).lean<LeanOrder | null>();
+    const order = await this.orderModel
+      .findById(orderId)
+      .lean<LeanOrder | null>();
     if (!order) throw new NotFoundException('Order not found');
     return order;
   }
 
   private async findByIdempotencyKey(key: string): Promise<LeanOrder | null> {
-    return this.orderModel.findOne({ idempotencyKey: key }).lean<LeanOrder | null>();
+    return this.orderModel
+      .findOne({ idempotencyKey: key })
+      .lean<LeanOrder | null>();
   }
 
   private requireSeller(caller: OrderCaller, order: LeanOrder): void {
@@ -606,7 +621,12 @@ export class OrdersService {
         {
           $set,
           $push: {
-            statusHistory: { status: patch.status, at: now, by: patch.by, note: patch.note },
+            statusHistory: {
+              status: patch.status,
+              at: now,
+              by: patch.by,
+              note: patch.note,
+            },
           },
         },
         { returnDocument: 'after' },
@@ -677,12 +697,13 @@ export class OrdersService {
     order: LeanOrder,
     senderId: string,
   ): Promise<void> {
-    const exists =
-      await this.messagesService.findOrderCard(order.conversationId, String(order._id));
+    const exists = await this.messagesService.findOrderCard(
+      order.conversationId,
+      String(order._id),
+    );
     if (exists) return;
     const itemCount = order.items.reduce((n, i) => n + i.qty, 0);
-    const content =
-      `Đơn #${order.orderCode} · ${itemCount} sản phẩm · ${formatVnd(order.subtotal)}`;
+    const content = `Đơn #${order.orderCode} · ${itemCount} sản phẩm · ${formatVnd(order.subtotal)}`;
     await this.messagesService.sendMessageWithOrderCard(
       order.conversationId,
       senderId,
@@ -720,7 +741,10 @@ export class OrdersService {
   }
 
   /** Seller push on placement (D4). Push failures never fail placement. */
-  private async notifySeller(sellerId: string, order: LeanOrder): Promise<void> {
+  private async notifySeller(
+    sellerId: string,
+    order: LeanOrder,
+  ): Promise<void> {
     try {
       const itemCount = order.items.reduce((n, i) => n + i.qty, 0);
       await this.notificationsService.sendOrderPush({

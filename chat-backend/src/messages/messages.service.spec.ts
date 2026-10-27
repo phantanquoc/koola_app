@@ -803,7 +803,7 @@ describe('MessagesService — searchMessages enrichment', () => {
 
     // Message.senderId is a plain String (no ref) — populating was a bogus
     // query; guard that the fixed path never calls populate again.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
     const chain = mockMessageModel.find.mock.results[0].value as {
       populate: jest.Mock;
     };

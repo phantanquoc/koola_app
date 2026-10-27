@@ -52,10 +52,7 @@ export class OrdersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Throttle(ORDER_WRITE_THROTTLE)
-  place(
-    @CurrentUser() user: OrderCaller,
-    @Body() dto: PlaceOrderDto,
-  ) {
+  place(@CurrentUser() user: OrderCaller, @Body() dto: PlaceOrderDto) {
     return this.orders.placeOrder(user.sub, dto);
   }
 
@@ -63,10 +60,7 @@ export class OrdersController {
 
   @Get('mine')
   @Throttle(ORDER_READ_THROTTLE)
-  listMine(
-    @CurrentUser() user: OrderCaller,
-    @Query() dto: ListOrdersQueryDto,
-  ) {
+  listMine(@CurrentUser() user: OrderCaller, @Query() dto: ListOrdersQueryDto) {
     return this.orders.listMine(user.sub, dto);
   }
 

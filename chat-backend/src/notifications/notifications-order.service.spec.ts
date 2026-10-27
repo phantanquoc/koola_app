@@ -40,7 +40,12 @@ describe('NotificationsService — sendOrderPush (commerce-orders 3.3)', () => {
 
     service = mod.get(NotificationsService);
     multicastSpy = jest
-      .spyOn(service as unknown as { sendMulticast: (...a: unknown[]) => Promise<void> }, 'sendMulticast')
+      .spyOn(
+        service as unknown as {
+          sendMulticast: (...a: unknown[]) => Promise<void>;
+        },
+        'sendMulticast',
+      )
       .mockResolvedValue(undefined as unknown as void);
   });
 
@@ -58,7 +63,9 @@ describe('NotificationsService — sendOrderPush (commerce-orders 3.3)', () => {
   });
 
   it('pushes once with deepLink koola://orders/<id> and account context', async () => {
-    users.findById.mockResolvedValue(freshUser({ _id: 'user-1', accountType: 'business' }));
+    users.findById.mockResolvedValue(
+      freshUser({ _id: 'user-1', accountType: 'business' }),
+    );
     redis.setNXEX.mockResolvedValue(true);
 
     await service.sendOrderPush({
@@ -71,7 +78,11 @@ describe('NotificationsService — sendOrderPush (commerce-orders 3.3)', () => {
     });
 
     expect(multicastSpy).toHaveBeenCalledTimes(1);
-    const [, , payload] = multicastSpy.mock.calls[0] as [string, string[], Record<string, unknown>];
+    const [, , payload] = multicastSpy.mock.calls[0] as [
+      string,
+      string[],
+      Record<string, unknown>,
+    ];
     const data = payload.data as Record<string, string>;
     expect(data.type).toBe('order_update');
     expect(data.orderId).toBe('order-42');

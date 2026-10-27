@@ -38,7 +38,9 @@ describe('OrdersCronService (commerce-orders 3.4)', () => {
       updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
     };
     ordersService = { receiveOrder: jest.fn().mockResolvedValue({}) };
-    notificationsService = { sendOrderPush: jest.fn().mockResolvedValue(undefined) };
+    notificationsService = {
+      sendOrderPush: jest.fn().mockResolvedValue(undefined),
+    };
     redis = { tryAcquireLock: jest.fn().mockResolvedValue(true) };
 
     const mod = await Test.createTestingModule({
@@ -71,7 +73,9 @@ describe('OrdersCronService (commerce-orders 3.4)', () => {
     const oid = '507f1f77bcf86cd799439021';
     orderModel.find
       // Phase 1: one PENDING stale row.
-      .mockReturnValueOnce(chain([{ _id: oid, orderCode: 'KO-A', sellerId: 's1', buyerId: 'b1' }]))
+      .mockReturnValueOnce(
+        chain([{ _id: oid, orderCode: 'KO-A', sellerId: 's1', buyerId: 'b1' }]),
+      )
       // Phase 2: no SHIPPING rows.
       .mockReturnValueOnce(chain([]));
 
@@ -121,7 +125,9 @@ describe('OrdersCronService (commerce-orders 3.4)', () => {
   it('404/409 on stale SHIPPING rows is swallowed — the tick never throws', async () => {
     orderModel.find
       .mockReturnValueOnce(chain([]))
-      .mockReturnValueOnce(chain([{ _id: '507f1f77bcf86cd799439100', orderCode: 'KO-C' }]));
+      .mockReturnValueOnce(
+        chain([{ _id: '507f1f77bcf86cd799439100', orderCode: 'KO-C' }]),
+      );
     ordersService.receiveOrder.mockRejectedValue(new Error('Not in SHIPPING'));
 
     await expect(service.handleOrdersTick()).resolves.toBeUndefined();

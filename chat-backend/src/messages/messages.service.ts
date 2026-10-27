@@ -406,8 +406,10 @@ export class MessagesService {
 
     // A caller who cleared the conversation only sees messages created after
     // their clear point; other members see the full history.
-    const clearedAt =
-      await this.conversationsService.getClearedAt(conversationId, userId);
+    const clearedAt = await this.conversationsService.getClearedAt(
+      conversationId,
+      userId,
+    );
 
     const createdAtCond: Record<string, unknown> = {};
     if (cursor) {
@@ -492,8 +494,10 @@ export class MessagesService {
     // The caller's clear point hides everything at or before it: a target in
     // the cleared range reads as gone (same 404 as a deleted-for-me message),
     // and the before/after windows stop at the boundary.
-    const clearedAt =
-      await this.conversationsService.getClearedAt(conversationId, userId);
+    const clearedAt = await this.conversationsService.getClearedAt(
+      conversationId,
+      userId,
+    );
     if (clearedAt && (target as any).createdAt <= clearedAt) {
       throw new NotFoundException(
         'Target message not found in this conversation',
@@ -934,8 +938,7 @@ export class MessagesService {
     // Conversations the caller cleared contribute a per-conversation clause
     // (createdAt > clearedAt) so pre-clear history — including late edits or
     // reactions of pre-clear messages — never syncs to the clearer.
-    const clearedMap =
-      await this.conversationsService.getClearedMap(userId);
+    const clearedMap = await this.conversationsService.getClearedMap(userId);
     const hasCleared = [...clearedMap.keys()].some((id) =>
       conversationIds.includes(id),
     );
@@ -969,9 +972,7 @@ export class MessagesService {
       // (createdAt > clearedAt) so pre-clear history — including late edits or
       // reactions of pre-clear messages — never syncs to the clearer. The
       // updatedAt / cursor conditions are preserved as an outer $and.
-      const unclearedIds = conversationIds.filter(
-        (id) => !clearedMap.has(id),
-      );
+      const unclearedIds = conversationIds.filter((id) => !clearedMap.has(id));
       const convClauses: Record<string, unknown>[] = [];
       if (unclearedIds.length > 0) {
         convClauses.push({ conversationId: { $in: unclearedIds } });
@@ -989,7 +990,9 @@ export class MessagesService {
       const timeConds: Record<string, unknown>[] = [
         { updatedAt: { $gt: sinceDate } },
       ];
-      const cursorCond = (query.$and as Record<string, unknown>[] | undefined)?.[1];
+      const cursorCond = (
+        query.$and as Record<string, unknown>[] | undefined
+      )?.[1];
       if (cursorCond) timeConds.push(cursorCond);
       query = { $and: [convFilter, ...timeConds] };
     }
@@ -1130,19 +1133,26 @@ export class MessagesService {
       'metadata.order.orderId': orderId,
     });
     if (!msg) return;
-    const cur = (msg as unknown as { metadata?: { order?: Record<string, unknown> } }).metadata
-      ?.order;
+    const cur = (
+      msg as unknown as { metadata?: { order?: Record<string, unknown> } }
+    ).metadata?.order;
     if (!cur) return;
-    (msg as unknown as { metadata: { order: Record<string, unknown> } }).metadata.order = {
+    (
+      msg as unknown as { metadata: { order: Record<string, unknown> } }
+    ).metadata.order = {
       ...cur,
       orderId,
       code,
       status,
     };
     await (msg as unknown as { save: () => Promise<void> }).save();
-    this.messageUpdatedEmitCallback?.(conversationId, String((msg as unknown as { _id: unknown })._id), {
-      order: { orderId, code, status },
-    });
+    this.messageUpdatedEmitCallback?.(
+      conversationId,
+      String((msg as unknown as { _id: unknown })._id),
+      {
+        order: { orderId, code, status },
+      },
+    );
   }
 
   private messageUpdatedEmitCallback?: (
@@ -1152,7 +1162,11 @@ export class MessagesService {
   ) => void;
 
   setMessageUpdatedEmitCallback(
-    cb: (conversationId: string, messageId: string, metadata: Record<string, unknown>) => void,
+    cb: (
+      conversationId: string,
+      messageId: string,
+      metadata: Record<string, unknown>,
+    ) => void,
   ): void {
     this.messageUpdatedEmitCallback = cb;
   }
