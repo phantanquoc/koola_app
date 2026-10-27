@@ -217,6 +217,72 @@ describe('UserDetailPage', () => {
     expect(screen.getByRole('link', { name: /Mở hồ sơ doanh nghiệp/ }).getAttribute('href')).toBe('/businesses/u2');
   });
 
+  // Doanh nghiệp do admin tạo tay không có ownerUserId — UI phải nói thẳng thay
+  // vì để trống một dòng "Chủ sở hữu".
+  it('doanh nghiệp không có chủ: ghi rõ do admin tạo trực tiếp', async () => {
+    renderAt('/users/u2');
+    await screen.findByRole('heading', { name: 'Trần Thị B' });
+
+    expect(screen.getByText('Hồ sơ do admin tạo trực tiếp')).toBeTruthy();
+  });
+
+  it('tài khoản cá nhân liệt kê doanh nghiệp sở hữu, mỗi dòng link tới hồ sơ', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1')
+        return Promise.resolve({
+          data: {
+            ...user,
+            ownedBusinesses: [
+              { _id: 'b1', displayName: 'Công ty Alpha', verificationStatus: 'verified' },
+              { _id: 'b2', displayName: 'Công ty Beta', verificationStatus: 'pending', isBanned: true },
+              { _id: 'b3', displayName: 'Công ty Gamma', verificationStatus: 'verified', suspended: true },
+            ],
+          },
+        });
+      return Promise.resolve({ data: { data: [], total: 0, page: 1, limit: 20 } });
+    });
+
+    renderAt('/users/u1');
+    await screen.findByRole('heading', { name: 'Nguyễn Văn A' });
+
+    const section = screen.getByRole('region', { name: 'Doanh nghiệp sở hữu' });
+    expect(section.textContent).toContain('Doanh nghiệp sở hữu (3)');
+    expect(screen.getByRole('link', { name: 'Công ty Alpha' }).getAttribute('href')).toBe('/businesses/b1');
+    expect(screen.getByRole('link', { name: 'Công ty Beta' }).getAttribute('href')).toBe('/businesses/b2');
+    // Trạng thái khác nhau phải đọc được, không chỉ dựa vào màu badge.
+    expect(section.textContent).toContain('Bị cấm');
+    expect(section.textContent).toContain('Tạm ngưng bán');
+  });
+
+  it('tài khoản cá nhân không sở hữu doanh nghiệp nào: giải thích thay vì khối rỗng', async () => {
+    renderAt('/users/u1');
+    await screen.findByRole('heading', { name: 'Nguyễn Văn A' });
+
+    const section = screen.getByRole('region', { name: 'Doanh nghiệp sở hữu' });
+    expect(section.textContent).toContain('Doanh nghiệp sở hữu (0)');
+    expect(section.textContent).toContain('chưa sở hữu doanh nghiệp nào');
+  });
+
+  it('tài khoản doanh nghiệp hiện chủ sở hữu dạng tên, link về hồ sơ cá nhân', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u2')
+        return Promise.resolve({
+          data: {
+            ...bannedUser,
+            owner: { _id: 'owner-1', displayName: 'Chủ Sở Hữu', email: 'owner@example.com' },
+          },
+        });
+      return Promise.resolve({ data: { data: [], total: 0, page: 1, limit: 20 } });
+    });
+
+    renderAt('/users/u2');
+    await screen.findByRole('heading', { name: 'Trần Thị B' });
+
+    const link = screen.getByRole('link', { name: 'Chủ Sở Hữu' });
+    expect(link.getAttribute('href')).toBe('/users/owner-1');
+    expect(screen.queryByText('Hồ sơ do admin tạo trực tiếp')).toBeNull();
+  });
+
   it('lịch sử vi phạm lọc ở server theo targetType + targetId', async () => {
     mockedGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
       if (url === '/admin/audit-logs') {

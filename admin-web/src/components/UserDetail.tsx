@@ -15,6 +15,16 @@ import { BanDialog } from './UserModeration';
 import { useViolationHistory } from '../hooks/useViolationHistory';
 import { accountTypeLabel, banBadge } from './user-labels';
 
+/** Doanh nghiệp do một tài khoản cá nhân sở hữu (ownerUserId trỏ tới họ). */
+export interface OwnedBusiness {
+  _id: string;
+  displayName: string;
+  verificationStatus?: string;
+  isBanned?: boolean;
+  suspended?: boolean;
+  deletedAt?: string | null;
+}
+
 /** Tài khoản như GET /admin/users trả về (SAFE_PROJECTION, không password/fcm). */
 export interface AdminUser {
   _id: string;
@@ -31,6 +41,10 @@ export interface AdminUser {
   isPlatformAdmin?: boolean;
   verificationStatus?: string;
   ownerUserId?: string;
+  /** Chủ sở hữu đã resolve tên — chỉ có ở tài khoản doanh nghiệp. */
+  owner?: { _id: string; displayName: string; email?: string } | null;
+  /** Doanh nghiệp tài khoản này sở hữu — chỉ có ở tài khoản cá nhân. */
+  ownedBusinesses?: OwnedBusiness[];
   internalNote?: string;
   deletedAt?: string | null;
   createdAt?: string;
@@ -207,6 +221,7 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
 
   const isBusiness = data.accountType === 'business';
   const isDeleted = Boolean(data.deletedAt);
+  const owned = data.ownedBusinesses ?? [];
   const entries = history.data ?? [];
   // Hồ sơ đã xoá mềm: backend chặn PATCH + mutation (list/update đều lọc
   // deletedAt), nên UI chỉ để đọc + nút Khôi phục.
@@ -300,8 +315,57 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
                 </dd>
               </div>
             )}
+            {isBusiness && data.owner && (
+              <div className="inline-field">
+                <dt className="cell-meta">Chủ sở hữu</dt>
+                <dd>
+                  <Link className="cell-link" to={`/users/${data.owner._id}`}>{data.owner.displayName}</Link>
+                  {data.owner.email && <span className="cell-meta"> · {data.owner.email}</span>}
+                </dd>
+              </div>
+            )}
+            {isBusiness && !data.owner && (
+              <div className="inline-field">
+                <dt className="cell-meta">Chủ sở hữu</dt>
+                <dd className="cell-meta">Hồ sơ do admin tạo trực tiếp</dd>
+              </div>
+            )}
           </dl>
         </section>
+
+        {/* Chiều xuôi của quan hệ sở hữu: mở hồ sơ một người phải thấy ngay họ
+            đang sở hữu doanh nghiệp nào. Trước đây chỉ chiều ngược tồn tại
+            (drawer doanh nghiệp ghi "sở hữu N doanh nghiệp") và bấm vào không
+            xem tiếp được. */}
+        {!isBusiness && (
+          <section className="detail-section" aria-label="Doanh nghiệp sở hữu">
+            <h3 className="detail-section-title">
+              Doanh nghiệp sở hữu ({owned.length})
+            </h3>
+            {owned.length === 0 ? (
+              <p className="cell-meta">Tài khoản này chưa sở hữu doanh nghiệp nào.</p>
+            ) : (
+              <ul className="confirm-list">
+                {owned.map((b) => (
+                  <li key={b._id}>
+                    <Link className="cell-link" to={`/businesses/${b._id}`}>{b.displayName}</Link>
+                    <span className="cell-meta">
+                      {' · '}
+                      {b.deletedAt
+                        ? <StatusBadge tone="muted" label="Đã xoá" />
+                        : b.isBanned
+                          ? <StatusBadge tone="danger" label="Bị cấm" />
+                          : <VerificationBadge status={b.verificationStatus} />}
+                    </span>
+                    {b.suspended && !b.isBanned && !b.deletedAt && (
+                      <span className="cell-meta"> · Tạm ngưng bán</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <section
           className={`detail-section${readOnly ? '' : ' fields-editable'}`}

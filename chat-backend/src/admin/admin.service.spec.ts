@@ -286,6 +286,20 @@ describe('AdminService', () => {
       expect(idBranch._id.toString()).toBe(oid);
     });
 
+    // Link "doanh nghiệp sở hữu" ở hồ sơ người dùng dán id của chủ vào ô tìm
+    // kiếm; chỉ match _id thì owner không bao giờ ra kết quả.
+    it('search with ObjectId cũng khớp chủ sở hữu (ownerUserId)', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+      const ownerId = '507f1f77bcf86cd799439012';
+
+      await service.listPendingBusinesses({ page: 1, limit: 20, search: ownerId, status: 'all' });
+
+      const findFilter = mockUserModel.find.mock.calls[0][0];
+      const ownerBranch = findFilter.$or.find((b: object) => 'ownerUserId' in b);
+      expect(ownerBranch.ownerUserId.toString()).toBe(ownerId);
+    });
+
     it('sla over72 filters createdAt older than 72h', async () => {
       mockUserModel.find.mockReturnValue(makeLeanQuery([]));
       mockUserModel.countDocuments.mockResolvedValue(0);
@@ -628,6 +642,17 @@ describe('AdminService', () => {
 
   describe('getUserById', () => {
     const uid = '507f1f77bcf86cd799439011';
+    const ownerId = '507f1f77bcf86cd799439012';
+
+    // getUserById giờ enrich 2 quan hệ; mock mặc định trả rỗng cho cả hai để
+    // các test cũ không phải quan tâm.
+    function mockOwned(rows: unknown[]) {
+      mockUserModel.find.mockReturnValue(makeLeanQuery(rows));
+    }
+
+    beforeEach(() => {
+      mockOwned([]);
+    });
 
     it('returns a user with safe projection', async () => {
       mockUserModel.findById.mockReturnValue(makeLeanQuery({ _id: uid }));
@@ -646,6 +671,59 @@ describe('AdminService', () => {
     it('throws 404 for a malformed id without hitting the DB', async () => {
       await expect(service.getUserById('ghost')).rejects.toThrow(NotFoundException);
       expect(mockUserModel.findById).not.toHaveBeenCalled();
+    });
+
+    it('trả danh sách doanh nghiệp sở hữu của tài khoản cá nhân', async () => {
+      mockUserModel.findById
+        .mockReturnValueOnce(makeLeanQuery({ _id: uid, accountType: 'personal' }))
+        .mockReturnValue(makeLeanQuery(null));
+      mockOwned([
+        { _id: 'b1', displayName: 'Công ty A', verificationStatus: 'verified' },
+        { _id: 'b2', displayName: 'Công ty B', verificationStatus: 'pending', isBanned: true },
+      ]);
+
+      const res = await service.getUserById(uid);
+
+      expect(res.ownedBusinesses).toHaveLength(2);
+      expect(res.ownedBusinesses[1]).toMatchObject({ _id: 'b2', isBanned: true });
+      // Lọc đúng chủ sở hữu + chỉ tài khoản doanh nghiệp.
+      const query = mockUserModel.find.mock.calls[0][0] as Record<string, unknown>;
+      expect(query.accountType).toBe('business');
+      expect(String(query.ownerUserId)).toBe(uid);
+    });
+
+    it('resolve chủ sở hữu thành tên thay vì trả ObjectId thô', async () => {
+      const bizId = '507f1f77bcf86cd799439013';
+      mockUserModel.findById
+        .mockReturnValueOnce(
+          makeLeanQuery({ _id: bizId, accountType: 'business', ownerUserId: ownerId }),
+        )
+        .mockReturnValueOnce(
+          makeLeanQuery({ _id: ownerId, displayName: 'Chủ Sở Hữu', email: 'owner@example.com' }),
+        );
+      mockOwned([]);
+
+      const res = await service.getUserById(bizId);
+
+      expect(res.owner).toEqual({
+        _id: ownerId,
+        displayName: 'Chủ Sở Hữu',
+        email: 'owner@example.com',
+      });
+    });
+
+    it('owner = null khi hồ sơ doanh nghiệp do admin tạo tay', async () => {
+      const bizId = '507f1f77bcf86cd799439014';
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: bizId, accountType: 'business' }),
+      );
+      mockOwned([]);
+
+      const res = await service.getUserById(bizId);
+
+      expect(res.owner).toBeNull();
+      // Không có ownerUserId thì không được query thêm lần nào.
+      expect(mockUserModel.findById).toHaveBeenCalledTimes(1);
     });
   });
 

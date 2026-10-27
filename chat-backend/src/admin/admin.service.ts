@@ -29,6 +29,16 @@ import { escapeRegExp } from '../common/utils/escape-regexp';
  */
 const SAFE_PROJECTION = '-passwordHash -fcmTokens' as const;
 
+/** Tóm tắt business sở hữu bởi một tài khoản cá nhân (GET /admin/users/:id). */
+export interface OwnedBusinessSummary {
+  _id: string;
+  displayName: string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected';
+  isBanned?: boolean;
+  suspended?: boolean;
+  deletedAt?: Date | null;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -255,7 +265,12 @@ export class AdminService {
         // gõ MST vào ô tìm kiếm không ra gì.
         { taxCode: regex },
       ];
-      if (Types.ObjectId.isValid(q)) or.push({ _id: new Types.ObjectId(q) });
+      // Link từ hồ sơ người dùng ("doanh nghiệp sở hữu") và từ báo cáo đều dán
+      // một id vào ô tìm kiếm — không match `_id`/`ownerUserId` thì link chết.
+      if (Types.ObjectId.isValid(q)) {
+        const oid = new Types.ObjectId(q);
+        or.push({ _id: oid }, { ownerUserId: oid });
+      }
       (filter as Record<string, unknown>).$or = or;
     }
 
@@ -604,7 +619,20 @@ export class AdminService {
 
   // ─── GET /admin/users/:id ───────────────────────────────────────────────────
 
-  async getUserById(id: string): Promise<UserDocument> {
+  /**
+   * Chi tiết một tài khoản + quan hệ sở hữu hai chiều.
+   *
+   * Tài khoản cá nhân là chủ của các tài khoản doanh nghiệp (`ownerUserId`), nên
+   * moderator mở hồ sơ một người cần thấy ngay họ đang sở hữu doanh nghiệp nào —
+   * trước đây thông tin đó chỉ tồn tại ở chiều ngược (drawer doanh nghiệp hiện
+   * "sở hữu N doanh nghiệp") và không có đường xem tiếp.
+   */
+  async getUserById(id: string): Promise<
+    UserDocument & {
+      ownedBusinesses: OwnedBusinessSummary[];
+      owner: { _id: string; displayName: string; email?: string } | null;
+    }
+  > {
     // Id sai định dạng → Mongoose CastError → 500 lộ stack. UI chỉ cần 404.
     if (!Types.ObjectId.isValid(id)) throw new NotFoundException('User not found');
     // Cố tình không lọc `deletedAt`: tab Lưu trữ mở được chi tiết tài khoản đã
@@ -616,7 +644,38 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return user as UserDocument;
+
+    const [ownedBusinesses, owner] = await Promise.all([
+      // Danh sách business cùng chủ. Giữ cả hồ sơ đã xoá mềm — câu hỏi "người
+      // này sở hữu những gì" không được trả lời thiếu, nhưng UI phải đánh dấu.
+      this.userModel
+        .find({ ownerUserId: new Types.ObjectId(id), accountType: 'business' })
+        .select('displayName verificationStatus isBanned suspended deletedAt')
+        .sort({ createdAt: 1 })
+        .lean<OwnedBusinessSummary[]>(),
+      // Chiều ngược: business do user tạo qua app có chủ sở hữu. Trả tên thay vì
+      // chỉ id để UI link thẳng, không bắt moderator dán ObjectId đi tra.
+      user.ownerUserId
+        ? this.userModel
+            .findById(user.ownerUserId)
+            .select('displayName email')
+            .lean()
+            .then((doc) =>
+              doc
+                ? {
+                    _id: String(doc._id),
+                    displayName: doc.displayName,
+                    ...(doc.email ? { email: doc.email } : {}),
+                  }
+                : null,
+            )
+        : Promise.resolve(null),
+    ]);
+
+    return { ...user, ownedBusinesses, owner } as unknown as UserDocument & {
+      ownedBusinesses: OwnedBusinessSummary[];
+      owner: { _id: string; displayName: string; email?: string } | null;
+    };
   }
 
   // ─── PATCH /admin/users/:id ─────────────────────────────────────────────────
