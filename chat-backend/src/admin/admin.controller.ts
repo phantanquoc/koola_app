@@ -35,6 +35,8 @@ import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { ExportBusinessesDto } from './dto/export-businesses.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { ExportUsersDto } from './dto/export-users.dto';
 import { AdminAuditService } from './admin-audit.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { Request } from 'express';
@@ -387,6 +389,12 @@ export class AdminController {
     return this.adminService.listUsers(dto);
   }
 
+  @Get('users/export')
+  @ApiOperation({ summary: 'Export users (max 500 rows, same filters as list)' })
+  async exportUsers(@Query() dto: ExportUsersDto) {
+    return this.adminService.exportUsers(dto);
+  }
+
   @Get('users/:id')
   async getUserById(@Param('id') id: string) {
     return this.adminService.getUserById(id);
@@ -433,6 +441,96 @@ export class AdminController {
       action: 'unban_user',
       targetType: res.accountType === 'business' ? 'business' : 'user',
       targetId: id,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Patch('users/:id')
+  @ApiOperation({ summary: 'Update whitelisted user profile fields' })
+  async updateUser(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const res = await this.adminService.updateUser(id, dto);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'update_user',
+      // Business dùng chung collection nhưng timeline của hồ sơ doanh nghiệp
+      // lọc targetType='business' — ghi 'user' là thao tác biến mất khỏi đó.
+      targetType: res.accountType === 'business' ? 'business' : 'user',
+      targetId: id,
+      payload: dto as unknown as Record<string, unknown>,
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Delete('users/:id')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 10, ttl: 60000 },
+    long: { limit: 60, ttl: 60000 },
+  })
+  async deleteUser(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const target = await this.adminService.getUserById(id);
+    const res = await this.adminService.softDeleteUser(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'delete_user',
+      targetType: target.accountType === 'business' ? 'business' : 'user',
+      targetId: id,
+      payload: { displayName: target.displayName, accountType: target.accountType },
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('users/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  async restoreUser(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const target = await this.adminService.getUserById(id);
+    const res = await this.adminService.restoreUser(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'restore_user',
+      targetType: target.accountType === 'business' ? 'business' : 'user',
+      targetId: id,
+      payload: { displayName: target.displayName },
+      ip: req.ip ?? null,
+    });
+    return res;
+  }
+
+  @Post('users/:id/revoke-sessions')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 20, ttl: 60000 },
+    long: { limit: 100, ttl: 60000 },
+  })
+  async revokeSessions(
+    @Param('id') id: string,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const target = await this.adminService.getUserById(id);
+    const res = await this.adminService.revokeSessions(id);
+    await this.auditService.log({
+      actorId: user.actorId,
+      action: 'revoke_sessions',
+      targetType: target.accountType === 'business' ? 'business' : 'user',
+      targetId: id,
+      payload: { revoked: res.revoked },
       ip: req.ip ?? null,
     });
     return res;

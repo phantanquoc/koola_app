@@ -117,6 +117,8 @@ describe('AdminService', () => {
         .mockResolvedValueOnce(12) // verifiedBusinesses
         .mockResolvedValueOnce(3) // rejectedBusinesses
         .mockResolvedValueOnce(2) // bannedUsers
+        .mockResolvedValueOnce(3) // platformAdmins
+        .mockResolvedValueOnce(7) // archivedUsers
         .mockResolvedValueOnce(1) // slaOver72
         .mockResolvedValueOnce(2) // slaDay1_3
         .mockResolvedValueOnce(2) // slaFresh
@@ -131,6 +133,8 @@ describe('AdminService', () => {
         verifiedBusinesses: 12,
         rejectedBusinesses: 3,
         bannedUsers: 2,
+        platformAdmins: 3,
+        archivedUsers: 7,
         slaOver72: 1,
         slaDay1_3: 2,
         slaFresh: 2,
@@ -148,6 +152,14 @@ describe('AdminService', () => {
       expect(calls[2]).toMatchObject({ verificationStatus: 'pending', deletedAt: null });
       expect(calls[3]).toMatchObject({ verificationStatus: 'verified', deletedAt: null });
       expect(calls[4]).toMatchObject({ verificationStatus: 'rejected', deletedAt: null });
+      // Tab "Bị cấm" của trang Người dùng lọc deletedAt: null → count cũng phải vậy
+      expect(calls[5]).toMatchObject({ isBanned: true, deletedAt: null });
+      // Tab "Quản trị viên"
+      expect(calls[6]).toMatchObject({ isPlatformAdmin: true, deletedAt: null });
+      // Tab "Lưu trữ" của trang Người dùng — đếm đúng tập mà list sẽ trả
+      expect(calls[7]).toMatchObject({ deletedAt: { $ne: null } });
+      // Tổng cá nhân cũng không được tính tài khoản đã xoá mềm
+      expect(calls[0]).toMatchObject({ accountType: 'personal', deletedAt: null });
     });
   });
 
@@ -528,22 +540,243 @@ describe('AdminService', () => {
       const findFilter = mockUserModel.find.mock.calls[0][0];
       expect(findFilter.accountType).toBe('business');
     });
+
+    // Tab trạng thái trên UI: mỗi tab phải thành đúng điều kiện, không phải lọc client.
+    it('maps status=banned and status=admin to server filters', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listUsers({ status: 'banned', page: 1, limit: 20 });
+      expect(mockUserModel.find.mock.calls[0][0]).toMatchObject({ isBanned: true });
+
+      await service.listUsers({ status: 'admin', page: 1, limit: 20 });
+      expect(mockUserModel.find.mock.calls[1][0]).toMatchObject({ isPlatformAdmin: true });
+
+      // all / không truyền → không thêm điều kiện trạng thái nào
+      await service.listUsers({ status: 'all', page: 1, limit: 20 });
+      const allFilter = mockUserModel.find.mock.calls[2][0];
+      expect(allFilter.isBanned).toBeUndefined();
+      expect(allFilter.isPlatformAdmin).toBeUndefined();
+    });
+
+    // Tài khoản doanh nghiệp để liên hệ ở contactEmail/contactPhone — tra trên
+    // bảng Người dùng phải ra, nếu không moderator phải sang trang Doanh nghiệp.
+    it('searches contact email/phone/username as well', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listUsers({ search: 'alpha', page: 1, limit: 20 });
+
+      const or = mockUserModel.find.mock.calls[0][0].$or as Record<string, unknown>[];
+      const keys = or.flatMap((branch) => Object.keys(branch));
+      expect(keys).toEqual(expect.arrayContaining(['contactEmail', 'contactPhone', 'username']));
+    });
+
+    it('excludes soft-deleted accounts from list and count', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listUsers({ page: 1, limit: 20 });
+
+      expect(mockUserModel.find.mock.calls[0][0]).toMatchObject({ deletedAt: null });
+      expect(mockUserModel.countDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({ deletedAt: null }),
+      );
+    });
+
+    it('whitelists sort fields — field lạ bị bỏ qua', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.listUsers({ page: 1, limit: 20, sort: 'displayName:asc' });
+      expect(mockUserModel.find.mock.results[0].value.sort).toHaveBeenCalledWith({ displayName: 1 });
+
+      await service.listUsers({ page: 1, limit: 20, sort: 'passwordHash:desc' });
+      expect(mockUserModel.find.mock.results[1].value.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    });
+
+    // Export phải dùng CÙNG filter với list — lệch là CSV chứa tập khác với
+    // những gì moderator đang nhìn thấy trên màn hình.
+    it('exportUsers dùng chung filter/bộ lọc với list', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([]));
+      mockUserModel.countDocuments.mockResolvedValue(0);
+
+      await service.exportUsers({ status: 'banned', accountType: 'business', search: 'alpha' });
+
+      const listFilter = mockUserModel.find.mock.calls[0][0];
+      expect(listFilter).toMatchObject({
+        deletedAt: null,
+        isBanned: true,
+        accountType: 'business',
+      });
+      expect(listFilter.$or).toBeDefined();
+    });
+
+    it('exportUsers caps at 500 và báo truncated khi còn dòng chưa xuất', async () => {
+      mockUserModel.find.mockReturnValue(makeLeanQuery([{ _id: 'u1' }]));
+      mockUserModel.countDocuments.mockResolvedValue(900);
+
+      const res = await service.exportUsers({});
+
+      expect(res.limit).toBe(500);
+      expect(res.truncated).toBe(true);
+      expect(mockUserModel.find.mock.results[0].value.limit).toHaveBeenCalledWith(500);
+    });
   });
 
   // ─── getUserById ─────────────────────────────────────────────────────────
 
   describe('getUserById', () => {
+    const uid = '507f1f77bcf86cd799439011';
+
     it('returns a user with safe projection', async () => {
-      mockUserModel.findById.mockReturnValue(makeLeanQuery({ _id: 'u1' }));
-      const result = await service.getUserById('u1');
+      mockUserModel.findById.mockReturnValue(makeLeanQuery({ _id: uid }));
+      const result = await service.getUserById(uid);
       expect(result).toBeDefined();
     });
 
     it('throws 404 when user not found', async () => {
       mockUserModel.findById.mockReturnValue(makeLeanQuery(null));
-      await expect(service.getUserById('ghost')).rejects.toThrow(
+      await expect(service.getUserById(uid)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // Id sai định dạng phải là 404, không phải CastError 500 lộ stack ra UI.
+    it('throws 404 for a malformed id without hitting the DB', async () => {
+      await expect(service.getUserById('ghost')).rejects.toThrow(NotFoundException);
+      expect(mockUserModel.findById).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── updateUser ──────────────────────────────────────────────────────────
+
+  describe('updateUser', () => {
+    const uid = '507f1f77bcf86cd799439011';
+
+    it('sets whitelisted fields, lowercases email/username, and reports conflicts', async () => {
+      mockUserModel.findOne.mockReturnValue(
+        makeLeanQuery({ _id: uid, email: 'old@example.com', username: 'old', phone: '0901111111' }),
+      );
+      mockUserModel.exists.mockResolvedValue(null);
+      mockUserModel.findOneAndUpdate.mockReturnValue(
+        makeLeanQuery({ _id: uid, displayName: 'Tên Mới', email: 'new@example.com' }),
+      );
+      mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 1 });
+
+      const res = await service.updateUser(uid, {
+        displayName: '  Tên Mới  ',
+        email: 'New@Example.com',
+        username: 'NewName',
+      });
+
+      expect(res.displayName).toBe('Tên Mới');
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set.displayName).toBe('Tên Mới');
+      // Email/username phải lowercase: schema unique + lowercase, gửi bản có hoa
+      // là hai bản ghi khác nhau với index.
+      expect(update.$set.email).toBe('new@example.com');
+      expect(update.$set.username).toBe('newname');
+      // Đổi email = đổi danh tính đăng nhập → thu hồi phiên cũ.
+      expect(mockRefreshTokenModel.updateMany).toHaveBeenCalled();
+    });
+
+    it('unsets cleared username instead of writing an empty string into a unique index', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery({ _id: uid, username: 'old' }));
+      mockUserModel.findOneAndUpdate.mockReturnValue(makeLeanQuery({ _id: uid }));
+
+      await service.updateUser(uid, { username: '' });
+
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$unset).toEqual({ username: '' });
+      expect(update.$set).toBeUndefined();
+    });
+
+    it('throws 409 when the new email belongs to another account', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery({ _id: uid }));
+      mockUserModel.exists.mockResolvedValue({ _id: 'other' });
+
+      await expect(
+        service.updateUser(uid, { email: 'taken@example.com' }),
+      ).rejects.toThrow(ConflictException);
+      expect(mockUserModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an empty patch so a save with no changes is a no-op error', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery({ _id: uid }));
+      await expect(service.updateUser(uid, {})).rejects.toThrow(BadRequestException);
+    });
+
+    // Hồ sơ đã xoá mềm chỉ đọc: phải khôi phục trước rồi mới sửa.
+    it('throws 404 for a deleted account so soft-deleted records stay read-only', async () => {
+      mockUserModel.findOne.mockReturnValue(makeLeanQuery(null));
+      await expect(service.updateUser(uid, { displayName: 'X' })).rejects.toThrow(NotFoundException);
+      expect(mockUserModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── softDeleteUser / restoreUser / revokeSessions ───────────────────────
+
+  describe('softDeleteUser', () => {
+    const uid = '507f1f77bcf86cd799439011';
+
+    it('marks deletedAt, revokes sessions and hides the seller', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: uid, accountType: 'business' }) }),
+      });
+      mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 3 });
+
+      await service.softDeleteUser(uid);
+
+      const update = mockUserModel.findOneAndUpdate.mock.calls[0][1];
+      expect(update.$set.deletedAt).toBeInstanceOf(Date);
+      expect(mockRefreshTokenModel.updateMany).toHaveBeenCalledWith(
+        { userId: uid, revokedAt: null },
+        { $set: { revokedAt: expect.any(Date) } },
+      );
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith([uid]);
+    });
+
+    it('throws 404 when already deleted', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+      });
+      mockUserModel.exists.mockResolvedValue({ _id: uid });
+
+      await expect(service.softDeleteUser(uid)).rejects.toThrow('đã bị xoá trước đó');
+    });
+
+    it('restore clears deletedAt and re-syncs seller visibility', async () => {
+      mockUserModel.findOneAndUpdate.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: uid, accountType: 'business' }) }),
+      });
+
+      await service.restoreUser(uid);
+
+      expect(mockUserModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $set: { deletedAt: null } });
+      expect(mockSellerVisibility.syncSellers).toHaveBeenCalledWith([uid]);
+    });
+  });
+
+  describe('revokeSessions', () => {
+    const uid = '507f1f77bcf86cd799439011';
+
+    it('returns the number of revoked tokens', async () => {
+      mockUserModel.exists.mockResolvedValue({ _id: uid });
+      mockRefreshTokenModel.updateMany.mockResolvedValue({ modifiedCount: 4 });
+
+      const res = await service.revokeSessions(uid);
+
+      expect(res).toEqual({ revoked: 4 });
+      expect(mockRefreshTokenModel.updateMany).toHaveBeenCalledWith(
+        { userId: uid, revokedAt: null },
+        { $set: { revokedAt: expect.any(Date) } },
+      );
+    });
+
+    it('throws 404 for an unknown user', async () => {
+      mockUserModel.exists.mockResolvedValue(null);
+      await expect(service.revokeSessions(uid)).rejects.toThrow(NotFoundException);
     });
   });
 

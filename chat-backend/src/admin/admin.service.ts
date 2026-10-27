@@ -18,6 +18,8 @@ import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { ExportBusinessesDto } from './dto/export-businesses.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { ExportUsersDto } from './dto/export-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 
@@ -61,6 +63,8 @@ export class AdminService {
     verifiedBusinesses: number;
     rejectedBusinesses: number;
     bannedUsers: number;
+    platformAdmins: number;
+    archivedUsers: number;
     slaOver72: number;
     slaDay1_3: number;
     slaFresh: number;
@@ -81,18 +85,25 @@ export class AdminService {
       verifiedBusinesses,
       rejectedBusinesses,
       bannedUsers,
+      platformAdmins,
+      archivedUsers,
       slaOver72,
       slaDay1_3,
       slaFresh,
       expiringSoon,
       archivedBusinesses,
     ] = await Promise.all([
-      this.userModel.countDocuments({ accountType: 'personal' }),
+      this.userModel.countDocuments({ accountType: 'personal', deletedAt: null }),
       this.userModel.countDocuments(liveBase),
       this.userModel.countDocuments({ ...liveBase, verificationStatus: 'pending' }),
       this.userModel.countDocuments({ ...liveBase, verificationStatus: 'verified' }),
       this.userModel.countDocuments({ ...liveBase, verificationStatus: 'rejected' }),
-      this.userModel.countDocuments({ isBanned: true }),
+      // Bị cấm nhưng không còn trong hệ thống (doanh nghiệp đã xoá mềm) không
+      // tính — tab "Bị cấm" của trang Người dùng lọc deletedAt: null.
+      this.userModel.countDocuments({ isBanned: true, deletedAt: null }),
+      this.userModel.countDocuments({ isPlatformAdmin: true, deletedAt: null }),
+      // Tab Lưu trữ của trang Người dùng: tài khoản bị xoá mềm, khôi phục được.
+      this.userModel.countDocuments({ deletedAt: { $ne: null } }),
       this.userModel.countDocuments({ ...pendingBase, createdAt: { $lt: h72 } }),
       this.userModel.countDocuments({
         ...pendingBase,
@@ -119,6 +130,8 @@ export class AdminService {
       verifiedBusinesses,
       rejectedBusinesses,
       bannedUsers,
+      platformAdmins,
+      archivedUsers,
       slaOver72,
       slaDay1_3,
       slaFresh,
@@ -480,11 +493,77 @@ export class AdminService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
+    const filter = this.buildUsersFilter(dto);
 
-    const filterParts: Record<string, unknown> = {};
+    const [docs, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .select(SAFE_PROJECTION)
+        .sort(this.buildUsersSort(dto.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.userModel.countDocuments(filter),
+    ]);
+
+    return { data: docs as UserDocument[], total, page, limit };
+  }
+
+  /**
+   * GET /admin/users/export — cùng bộ lọc với list, cap 500.
+   *
+   * Dùng CHUNG `buildUsersFilter` với list: nếu export tự dựng filter riêng thì
+   * filter mới thêm cho list (banned/archived/verificationStatus) sẽ lặng lẽ
+   * không áp dụng cho file CSV — moderator tưởng đã xuất đúng tập.
+   */
+  async exportUsers(dto: ExportUsersDto): Promise<{
+    data: UserDocument[];
+    total: number;
+    limit: number;
+    truncated: boolean;
+  }> {
+    const limit = 500;
+    const filter = this.buildUsersFilter(dto);
+    const [docs, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .select(SAFE_PROJECTION)
+        .sort(this.buildUsersSort(dto.sort))
+        .limit(limit)
+        .lean(),
+      this.userModel.countDocuments(filter),
+    ]);
+    return {
+      data: docs as UserDocument[],
+      total,
+      limit,
+      truncated: total > docs.length,
+    };
+  }
+
+  /** Filter dùng chung cho list + export (tránh lệch giữa hai đường). */
+  private buildUsersFilter(
+    dto: ListUsersDto | ExportUsersDto,
+  ): QueryFilter<UserDocument> {
+    const archived = dto.status === 'archived';
+    const filterParts: Record<string, unknown> = {
+      // Tab Lưu trữ hiện hồ sơ đã xoá mềm; mọi tab khác chỉ hiện bản ghi sống.
+      deletedAt: archived ? { $ne: null } : null,
+    };
 
     if (dto.accountType) {
       filterParts.accountType = dto.accountType;
+    }
+
+    if (dto.verificationStatus) {
+      filterParts.verificationStatus = dto.verificationStatus;
+    }
+
+    // Tab trạng thái. `all`/`live` = không thêm điều kiện.
+    if (dto.status === 'banned') {
+      filterParts.isBanned = true;
+    } else if (dto.status === 'admin') {
+      filterParts.isPlatformAdmin = true;
     }
 
     if (dto.search && dto.search.trim().length > 0) {
@@ -495,32 +574,41 @@ export class AdminService {
         { displayName: regex },
         { email: regex },
         { phone: regex },
+        { username: regex },
+        // Tài khoản doanh nghiệp để liên hệ ở contactEmail/contactPhone chứ
+        // không phải email/phone gốc — tra bằng thông tin trên giấy phép không ra.
+        { contactEmail: regex },
+        { contactPhone: regex },
       ];
-      // Link /users?search=<id> (từ ReportDrawer, owner của business) chỉ hoạt
-      // động khi search match _id — trước đây thiếu nhánh này.
+      // Link /users?search=<id> (từ báo cáo, chủ sở hữu doanh nghiệp) chỉ hoạt
+      // động khi search match _id.
       if (Types.ObjectId.isValid(q)) or.push({ _id: new Types.ObjectId(q) });
       filterParts.$or = or;
     }
 
-    const filter = filterParts as QueryFilter<UserDocument>;
+    return filterParts as QueryFilter<UserDocument>;
+  }
 
-    const [docs, total] = await Promise.all([
-      this.userModel
-        .find(filter)
-        .select(SAFE_PROJECTION)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      this.userModel.countDocuments(filter),
-    ]);
-
-    return { data: docs as UserDocument[], total, page, limit };
+  /**
+   * Whitelist sort — chặn injection và chỉ cho field UI thật sự hiển thị
+   * (mỗi cột sort được phải có nút trên header).
+   */
+  private buildUsersSort(raw?: string): Record<string, 1 | -1> {
+    const ALLOWED_SORT = new Set(['createdAt', 'displayName', 'deletedAt']);
+    if (raw) {
+      const [field, dir] = raw.split(':');
+      if (ALLOWED_SORT.has(field)) return { [field]: dir === 'desc' ? -1 : 1 };
+    }
+    return { createdAt: -1 };
   }
 
   // ─── GET /admin/users/:id ───────────────────────────────────────────────────
 
   async getUserById(id: string): Promise<UserDocument> {
+    // Id sai định dạng → Mongoose CastError → 500 lộ stack. UI chỉ cần 404.
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('User not found');
+    // Cố tình không lọc `deletedAt`: tab Lưu trữ mở được chi tiết tài khoản đã
+    // xoá mềm để đối soát trước khi khôi phục.
     const user = await this.userModel
       .findById(id)
       .select(SAFE_PROJECTION)
@@ -529,6 +617,164 @@ export class AdminService {
       throw new NotFoundException('User not found');
     }
     return user as UserDocument;
+  }
+
+  // ─── PATCH /admin/users/:id ─────────────────────────────────────────────────
+
+  /**
+   * Whitelist field admin được sửa trên tài khoản.
+   *
+   * Không có `accountType` (đổi loại tài khoản gãy toàn bộ dữ liệu liên quan),
+   * `isBanned`/`isPlatformAdmin`/`suspended` (mỗi cái có endpoint + audit +
+   * side-effect riêng), `passwordHash` (admin không được đặt mật khẩu người khác).
+   */
+  static readonly USER_PATCH_KEYS = [
+    'displayName',
+    'username',
+    'email',
+    'phone',
+    'bio',
+    'internalNote',
+  ] as const;
+
+  async updateUser(id: string, patch: UpdateUserDto): Promise<UserDocument> {
+    // Hồ sơ đã xoá mềm chỉ đọc (khôi phục trước rồi sửa) — đồng bộ với
+    // updateBusiness. Nếu không, sửa một bản ghi "không tồn tại" là thao tác
+    // vô hình với mọi trang khác.
+    const existing = await this.userModel
+      .findOne({ _id: id, deletedAt: null })
+      .select('email username phone accountType')
+      .lean();
+    if (!existing) throw new NotFoundException('Không tìm thấy tài khoản đang hoạt động');
+
+    const set: Record<string, unknown> = {};
+    const unset: Record<string, ''> = {};
+    for (const k of AdminService.USER_PATCH_KEYS) {
+      const raw = (patch as Record<string, unknown>)[k];
+      if (raw === undefined) continue;
+      const value = typeof raw === 'string' ? raw.trim() : raw;
+      // Chuỗi rỗng trên field unique = gửi null vào index unique → E11000.
+      // `$unset` mới đúng nghĩa "xoá khỏi hồ sơ".
+      if (value === '' && (k === 'username' || k === 'phone' || k === 'email' || k === 'bio')) {
+        unset[k] = '';
+        continue;
+      }
+      set[k] = k === 'username' || k === 'email' ? String(value).toLowerCase() : value;
+    }
+
+    if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
+      throw new BadRequestException('No updatable fields provided');
+    }
+
+    // Unique của schema là `email`/`phone`/`username` — kiểm tay để trả 409 đọc
+    // được thay vì E11000 lộ ra dưới dạng 500.
+    for (const field of ['email', 'phone', 'username'] as const) {
+      const v = set[field];
+      if (typeof v !== 'string' || !v) continue;
+      const taken = await this.userModel.exists({
+        _id: { $ne: id },
+        [field]: v,
+      });
+      if (taken) {
+        const label = field === 'email' ? 'Email' : field === 'phone' ? 'Số điện thoại' : 'Tên đăng nhập';
+        throw new ConflictException(`${label} này đã được dùng cho tài khoản khác`);
+      }
+    }
+
+    const update: Record<string, unknown> = {};
+    if (Object.keys(set).length > 0) update.$set = set;
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+
+    // Lọc deletedAt: null ở câu ghi luôn — hồ sơ có thể vừa bị xoá giữa lúc đọc
+    // và lúc ghi (2 moderator cùng mở).
+    const user = await this.userModel
+      .findOneAndUpdate({ _id: id, deletedAt: null }, update, { new: true })
+      .select(SAFE_PROJECTION)
+      .lean();
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản đang hoạt động');
+
+    // Đổi email = đổi danh tính đăng nhập. Thu hồi phiên để lần refresh sau
+    // không mang email cũ trong JWT (token chứa email claim).
+    if (set.email && set.email !== existing.email) {
+      await this.revokeAllSessions(id);
+    }
+
+    return user as UserDocument;
+  }
+
+  // ─── DELETE /admin/users/:id (xoá mềm) ──────────────────────────────────────
+
+  /**
+   * Xoá mềm: set `deletedAt`, thu hồi mọi phiên, ẩn sản phẩm nếu là doanh nghiệp.
+   * Không xoá cứng — đối soát/hoàn tác vẫn cần bản ghi, và report/audit trỏ vào id.
+   */
+  async softDeleteUser(id: string): Promise<{ message: string }> {
+    const user = await this.userModel
+      .findOneAndUpdate(
+        { _id: id, deletedAt: null },
+        { $set: { deletedAt: new Date(), isOnline: false } },
+        { new: true },
+      )
+      .select('_id accountType')
+      .lean();
+    // Id sai định dạng → CastError 500; id đúng nhưng đã xoá → 404 (idempotent
+    // theo nghĩa "không còn gì để xoá", UI hiện thông báo thay vì lỗi hệ thống).
+    if (!user) {
+      if (!Types.ObjectId.isValid(id)) throw new NotFoundException('User not found');
+      const exists = await this.userModel.exists({ _id: id });
+      throw new NotFoundException(exists ? 'Tài khoản đã bị xoá trước đó' : 'User not found');
+    }
+
+    await this.revokeAllSessions(id);
+    if (user.accountType === 'business') {
+      await this.sellerVisibility.syncSellers([id]);
+    }
+    return { message: 'User soft-deleted, sessions revoked' };
+  }
+
+  // ─── POST /admin/users/:id/restore ──────────────────────────────────────────
+
+  async restoreUser(id: string): Promise<{ message: string }> {
+    const user = await this.userModel
+      .findOneAndUpdate(
+        { _id: id, deletedAt: { $ne: null } },
+        { $set: { deletedAt: null } },
+        { new: true },
+      )
+      .select('_id accountType')
+      .lean();
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản đã xoá để khôi phục');
+    }
+    // Đã bỏ cấm lúc xoá? Không — khôi phục trả về đúng trạng thái trước khi xoá,
+    // kể cả isBanned. Người vận hành gỡ cấm riêng nếu cần.
+    if (user.accountType === 'business') {
+      await this.sellerVisibility.syncSellers([id]);
+    }
+    return { message: 'User restored' };
+  }
+
+  // ─── POST /admin/users/:id/revoke-sessions ──────────────────────────────────
+
+  /**
+   * Thu hồi toàn bộ refresh token — "đăng xuất mọi thiết bị".
+   *
+   * Dùng khi tài khoản bị chiếm đoạt nhưng chưa đủ căn cứ cấm, hoặc sau khi đổi
+   * email/SĐT. Access token sống tối đa 1h nên không thu hồi được — UI phải nói
+   * rõ điều đó thay vì hứa "đăng xuất ngay".
+   */
+  async revokeSessions(id: string): Promise<{ revoked: number }> {
+    const user = await this.userModel.exists({ _id: id });
+    if (!user) throw new NotFoundException('User not found');
+    return { revoked: await this.revokeAllSessions(id) };
+  }
+
+  private async revokeAllSessions(userId: string): Promise<number> {
+    const res = await this.refreshTokenModel.updateMany(
+      { userId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    return res.modifiedCount ?? 0;
   }
 
   // ─── POST /admin/users/:id/ban ──────────────────────────────────────────────
