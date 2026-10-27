@@ -39,6 +39,7 @@ import { AudienceList } from '../moments/schemas/audience-list.schema';
 import { Report } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { ModerationMediaService } from './moderation-media.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChatGateway } from '../gateway/chat.gateway';
 import type { Request } from 'express';
@@ -68,6 +69,7 @@ export class AdminModerationController {
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
     private readonly reportService: AdminReportService,
+  private readonly moderationMedia: ModerationMediaService,
   ) {}
 
   private displayNameFor(conv: any, members: any[]): string {
@@ -298,6 +300,47 @@ export class AdminModerationController {
     }));
   }
 
+  /**
+   * Gắn bản URL đã ký cho media của message. `mediaUrl` là MinIO key (mobile tự
+   * ký), nên admin-web cần thêm field *Signed; không ghi đè key gốc.
+   */
+  private async withSignedMedia(data: any[]) {
+    if (data.length === 0) return data;
+    const keyOf = (v: unknown) =>
+      typeof v === 'string' && v.trim() ? v.trim() : undefined;
+    const keys = data.flatMap((m: any) => [
+      keyOf(m.mediaUrl),
+      keyOf(m.metadata?.storyReply?.mediaKeyPreview),
+    ]);
+    const signed = await this.moderationMedia.presignMany(keys);
+    return data.map((m: any) => {
+      const mediaKey = keyOf(m.mediaUrl);
+      const previewKey = keyOf(m.metadata?.storyReply?.mediaKeyPreview);
+      const out: any = { ...m };
+      if (mediaKey) out.mediaUrlSigned = signed.get(mediaKey) ?? null;
+      if (previewKey) {
+        out.mediaKeyPreviewSigned = signed.get(previewKey) ?? null;
+      }
+      return out;
+    });
+  }
+
+  /** Ký mediaKey/thumbnailKey để admin-web hiển thị story; key gốc giữ nguyên. */
+  private async withStoryMedia(data: any[]) {
+    if (data.length === 0) return data;
+    const signed = await this.moderationMedia.presignMany(
+      data.flatMap((s: any) => [s.mediaKey, s.thumbnailKey]),
+    );
+    return data.map((s: any) => ({
+      ...s,
+      mediaUrlSigned: s.mediaKey ? (signed.get(s.mediaKey) ?? null) : null,
+      thumbnailUrlSigned: s.thumbnailKey
+        ? (signed.get(s.thumbnailKey) ?? null)
+        : null,
+    }));
+  }
+
+
   @Get('conversations/:id')
   async getConversation(
     @Param('id') id: string,
@@ -318,6 +361,9 @@ export class AdminModerationController {
     const hasMore = fetched.length > msgLimit;
     const recentMessages = hasMore ? fetched.slice(0, msgLimit) : fetched;
     // Reported-message badge signal: pending message-report counts for shown msgs.
+    // mediaUrl/metadata.storyReply.mediaKeyPreview là MinIO key; admin-web cần
+    // URL đọc được nên ký thêm bản *Signed, giữ nguyên key cho consumer khác.
+    const signedMessages = await this.withSignedMedia(recentMessages as any[]);
     const shownIds = recentMessages.map((m: any) => String(m._id));
     const msgCounts = shownIds.length
       ? await this.reportModel.aggregate([
@@ -334,7 +380,7 @@ export class AdminModerationController {
     return {
       conversation: { ...(conv as any), displayName: this.displayNameFor(conv, members) },
       members,
-      recentMessages,
+      recentMessages: signedMessages,
       hasMore,
       reportedMessageCounts: Object.fromEntries(
         msgCounts.map((r: any) => [String(r._id), r.n]),

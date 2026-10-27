@@ -4,6 +4,7 @@ import { AdminModerationController } from './admin-moderation.controller';
 import { AdminOpsController } from './admin-ops.controller';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { ModerationMediaService } from './moderation-media.service';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { ConversationDoc } from '../conversations/conversation.schema';
 import { User } from '../users/user.schema';
@@ -54,6 +55,10 @@ describe('AdminModerationController — enrich + filter', () => {
         { provide: getModelToken(AudienceList.name), useValue: audienceListModel },
         { provide: AdminAuditService, useValue: audit },
         { provide: AdminReportService, useValue: {} },
+        {
+          provide: ModerationMediaService,
+          useValue: { presignMany: jest.fn().mockResolvedValue(new Map()) },
+        },
         { provide: ChatGateway, useValue: chatGateway },
       ],
     }).compile();

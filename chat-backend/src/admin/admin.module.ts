@@ -20,6 +20,7 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { ModerationMediaService } from './moderation-media.service';
 import {
   ConversationDoc,
   ConversationDocSchema,
@@ -57,7 +58,14 @@ import {
     HealthModule,
   ],
   controllers: [AdminController, AdminModerationController, AdminOpsController],
-  providers: [AdminService, AdminGuard, AdminAuditService, AdminReportService, CoturnHealthService],
+  providers: [
+    AdminService,
+    AdminGuard,
+    AdminAuditService,
+    AdminReportService,
+    CoturnHealthService,
+    ModerationMediaService,
+  ],
   exports: [AdminAuditService],
 })
 export class AdminModule {}
