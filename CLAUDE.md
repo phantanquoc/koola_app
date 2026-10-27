@@ -268,7 +268,7 @@ mcp__codebase-retrieval__codebase-retrieval({
 
 Self-check before ANY `Grep`/`Glob`/`Read`/`Explore subagent` for codebase questions: "Đã call `codebase-retrieval` cho câu hỏi NÀY chưa? Chưa → call ngay."
 
-Legacy `scripts/context-engine-bridge.py` / `ce("...")` is deprecated — do NOT use it. If the MCP call fails with connection error, tell the user to start/restart Context Engine (tray icon → `127.0.0.1:6699` listening).
+If the MCP call fails with connection error, call Context Engine directly: `powershell -ExecutionPolicy Bypass -File scripts/ce-direct.ps1 "<question>"`. If that also fails, tell the user to start/restart Context Engine (tray icon → `127.0.0.1:6699` listening).
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

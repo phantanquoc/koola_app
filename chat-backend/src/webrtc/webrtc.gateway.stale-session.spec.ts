@@ -80,12 +80,7 @@ function buildCallSessionMock(opts: {
     targetUserId: opts.targetUserId,
     conversationId: 'conv-stale-1',
     callType: CallType.AUDIO,
-    state: 'active' as
-      | 'initiated'
-      | 'active'
-      | 'ended'
-      | 'declined'
-      | 'missed',
+    state: 'active' as 'initiated' | 'active' | 'ended' | 'declined' | 'missed',
     createdAt: new Date().toISOString(),
     participantCount: opts.participants.length,
   };
@@ -232,7 +227,9 @@ describe('WebrtcGateway — stale-session signaling surfaces error 410', () => {
 
       await gateway.handleCallOffer(
         { sessionId: SESSION_ID, sdp: fakeOfferSdp },
-        senderSocket as unknown as Parameters<typeof gateway.handleCallOffer>[1],
+        senderSocket as unknown as Parameters<
+          typeof gateway.handleCallOffer
+        >[1],
       );
 
       expect(senderSocket.emit).toHaveBeenCalledWith('error', STALE_ERROR);
@@ -295,7 +292,9 @@ describe('WebrtcGateway — stale-session signaling surfaces error 410', () => {
 
       await gateway.handleCallOffer(
         { sessionId: SESSION_ID, sdp: fakeOfferSdp },
-        senderSocket as unknown as Parameters<typeof gateway.handleCallOffer>[1],
+        senderSocket as unknown as Parameters<
+          typeof gateway.handleCallOffer
+        >[1],
       );
 
       expect(senderSocket.emit).toHaveBeenCalledWith('error', STALE_ERROR);
@@ -358,7 +357,9 @@ describe('WebrtcGateway — stale-session signaling surfaces error 410', () => {
 
       await gateway.handleCallOffer(
         { sessionId: SESSION_ID, sdp: fakeOfferSdp },
-        senderSocket as unknown as Parameters<typeof gateway.handleCallOffer>[1],
+        senderSocket as unknown as Parameters<
+          typeof gateway.handleCallOffer
+        >[1],
       );
 
       expect(senderSocket.emit).not.toHaveBeenCalled();

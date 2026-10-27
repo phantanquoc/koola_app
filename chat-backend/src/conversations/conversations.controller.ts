@@ -202,7 +202,8 @@ export class ConversationsController {
   @Patch(':id/prefs')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Update the caller’s private prefs (pin / mute) for a conversation',
+    summary:
+      'Update the caller’s private prefs (pin / mute) for a conversation',
   })
   @ApiResponse({
     status: 200,

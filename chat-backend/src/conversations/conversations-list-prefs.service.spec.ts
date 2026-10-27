@@ -17,7 +17,10 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
   const pinnedAt = new Date('2026-10-05T00:00:00.000Z');
   const mutedUntil = new Date('2026-10-06T00:00:00.000Z');
 
-  function ucRow(convId: Types.ObjectId, overrides: Record<string, unknown> = {}) {
+  function ucRow(
+    convId: Types.ObjectId,
+    overrides: Record<string, unknown> = {},
+  ) {
     return {
       conversationId: convId,
       unreadCount: 0,
@@ -84,7 +87,7 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
       if (
         filter.pinnedAt &&
         typeof filter.pinnedAt === 'object' &&
-        '$gt' in (filter.pinnedAt as object)
+        '$gt' in filter.pinnedAt
       ) {
         return ucChain([ucRow(pinnedConvId, { pinnedAt, mutedUntil })]);
       }
@@ -95,7 +98,7 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
         if (
           filter.pinnedAt &&
           typeof filter.pinnedAt === 'object' &&
-          '$gt' in (filter.pinnedAt as object)
+          '$gt' in filter.pinnedAt
         ) {
           return Promise.resolve(1);
         }
@@ -111,11 +114,7 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
   });
 
   it('page 1 starts with pinned conversations and carries prefs fields', async () => {
-    const res = await service.getConversationList(
-      userId.toString(),
-      1,
-      20,
-    );
+    const res = await service.getConversationList(userId.toString(), 1, 20);
 
     expect(res.conversations).toHaveLength(2);
     // Pinned first even though its lastMessageAt is older.
@@ -139,7 +138,7 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
       if (
         filter.pinnedAt &&
         typeof filter.pinnedAt === 'object' &&
-        '$gt' in (filter.pinnedAt as object)
+        '$gt' in filter.pinnedAt
       ) {
         // Page 2 must not query the pinned group at all.
         throw new Error('pinned group must not be read on page 2');
@@ -148,11 +147,7 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
     });
     mockConvModel.find.mockReturnValue(convChain([]));
 
-    const res = await service.getConversationList(
-      userId.toString(),
-      2,
-      20,
-    );
+    const res = await service.getConversationList(userId.toString(), 2, 20);
 
     expect(res.conversations).toHaveLength(0);
   });
@@ -181,27 +176,23 @@ describe('ConversationsService — list honours pin/hide prefs', () => {
     mockUC.find.mockImplementation(() => ucChain([]));
     mockUC.countDocuments.mockResolvedValue(0);
     mockConvModel.find.mockReturnValue(convChain([]));
-    const hidden = await service.getConversationList(
-      userId.toString(),
-      1,
-      20,
-    );
+    const hidden = await service.getConversationList(userId.toString(), 1, 20);
     expect(hidden.total).toBe(0);
 
     // After incrementUnreadCount clears hiddenAt the row is visible again.
     const mockConvForUnread = { findById: jest.fn().mockResolvedValue(null) };
     const mockUCForUnread = { updateMany: jest.fn().mockResolvedValue({}) };
-    const unread = new UnreadService(mockConvForUnread as any, mockUCForUnread as any);
+    const unread = new UnreadService(
+      mockConvForUnread as any,
+      mockUCForUnread as any,
+    );
     const convIdStr = new Types.ObjectId().toString();
     const convWithMembers = {
       members: [{ userId: new Types.ObjectId(convIdStr) }],
     };
     mockConvForUnread.findById.mockResolvedValue(convWithMembers);
 
-    await unread.incrementUnreadCount(
-      new Types.ObjectId().toString(),
-      [],
-    );
+    await unread.incrementUnreadCount(new Types.ObjectId().toString(), []);
     expect(mockUCForUnread.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ hiddenAt: { $gt: new Date(0) } }),
       { $set: { hiddenAt: null } },

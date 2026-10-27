@@ -40,9 +40,7 @@ export class TurnService {
     const rawCoturnIp = this.configService.get<string>('COTURN_IP');
     const rawPublicHost = this.configService.get<string>('COTURN_PUBLIC_HOST');
     this.coturnPublicHost =
-      rawPublicHost?.trim() ||
-      rawCoturnIp?.trim() ||
-      'localhost';
+      rawPublicHost?.trim() || rawCoturnIp?.trim() || 'localhost';
     this.coturnSecret = this.configService.get<string>(
       'TURN_STATIC_SECRET',
       '',

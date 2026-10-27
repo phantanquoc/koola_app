@@ -16,10 +16,7 @@ export class MembershipService {
    * does not exist OR if the user is not a member — both cases return 404 to
    * mask membership (non-members must not learn the conversation exists).
    */
-  async verifyMember(
-    userId: string,
-    conversationId: string,
-  ): Promise<void> {
+  async verifyMember(userId: string, conversationId: string): Promise<void> {
     const conv = await this.conversationModel
       .findById(conversationId)
       .select('members')

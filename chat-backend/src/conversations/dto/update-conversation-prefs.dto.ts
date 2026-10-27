@@ -9,7 +9,10 @@ export type MuteDuration = (typeof MUTE_DURATIONS)[number];
  * enforced in ConversationsService.updatePrefs (400 when both are absent).
  */
 export class UpdateConversationPrefsDto {
-  @ApiPropertyOptional({ example: true, description: 'Pin (true) or unpin (false)' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Pin (true) or unpin (false)',
+  })
   @IsOptional()
   @IsBoolean()
   pinned?: boolean;

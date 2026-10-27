@@ -11,6 +11,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import UserAvatar from './UserAvatar';
 import { conversationsApi, usersApi } from '../services/api/apiService';
 import { koolaConfirm } from '../ui/KoolaConfirmHost';
@@ -19,11 +20,11 @@ import {
   KoolaButton,
   KoolaText,
   KoolaTextInput,
-  koolaColors,
   koolaRadii,
-  koolaShadows,
   koolaSpacing,
+  useTheme,
 } from '../ui';
+import type { SemanticTokens } from '../ui/tokens/semantic';
 import {
   koolaDurations,
   koolaEasing,
@@ -44,13 +45,6 @@ interface Props {
 
 const SEARCH_MIN_LENGTH = 2;
 
-/**
- * Fallback travel distance for the panel slide-in until the panel's real
- * height is measured. Sits beyond any tall panel (`maxHeight: '92%'`) so the
- * form always starts off-screen instead of clipping a percentage.
- */
-const PANEL_SLIDE_FALLBACK = 720;
-
 function getErrorMessage(err: unknown, fallback: string): string {
   const error = err as { response?: { data?: { message?: string } }; message?: string };
   // Log diagnostic detail in dev; always show VN fallback to user
@@ -61,6 +55,9 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, requestCloseRef }) => {
+  const { tokens } = useTheme();
+  const semantic = tokens.semantic;
+  const styles = useMemo(() => makeStyles(semantic), [semantic]);
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
@@ -114,14 +111,13 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
     wasVisibleRef.current = visible;
   }, [visible, resetState]);
 
-  // ─── Entrance (scrim fade + panel slide-up) ────────────────────────────────
-  // Native driver: both animated properties are opacity / transform only, so
-  // the two short one-shot timings run on the UI thread. Exit is instant (app
-  // dialog standard): every close path hands straight off to another surface.
+  // ─── Entrance (native driver: opacity + transform only, one-shot timings) ──
+  // Verbatim from ChatStartPopup: backdrop fades, panel fades + lifts + scales
+  // in (decelerate, koolaDurations.normal, native driver). Exit is instant
+  // (app dialog standard): every close path hands straight off to another
+  // surface. Skipped under reduce-motion.
   const [backdropProgress] = useState(() => new Animated.Value(0));
   const [panelProgress] = useState(() => new Animated.Value(0));
-  // Initial value only — onLayout measures the real panel.
-  const [panelHeight, setPanelHeight] = useState(PANEL_SLIDE_FALLBACK);
 
   useEffect(() => {
     if (!visible) return;
@@ -132,22 +128,16 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
     }
     backdropProgress.setValue(0);
     panelProgress.setValue(0);
-    const decelerate = Easing.bezier(...koolaEasing.decelerate);
+    const easing = Easing.bezier(...koolaEasing.decelerate);
+    const config = {
+      toValue: 1,
+      duration: koolaDurations.normal,
+      easing,
+      useNativeDriver: true,
+    };
     Animated.parallel([
-      Animated.timing(backdropProgress, {
-        toValue: 1,
-        duration: koolaDurations.normal,
-        easing: decelerate,
-        useNativeDriver: true,
-      }),
-      // The panel is near-full-height, so a 0.94 scale would read as a jitter
-      // rather than a deliberate zoom — it slides instead.
-      Animated.timing(panelProgress, {
-        toValue: 1,
-        duration: koolaDurations.slow,
-        easing: decelerate,
-        useNativeDriver: true,
-      }),
+      Animated.timing(backdropProgress, config),
+      Animated.timing(panelProgress, config),
     ]).start();
   }, [visible, backdropProgress, panelProgress]);
 
@@ -155,21 +145,12 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
     () => ({
       opacity: panelProgress,
       transform: [
-        {
-          translateY: panelProgress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [panelHeight, 0],
-          }),
-        },
+        { scale: panelProgress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+        { translateY: panelProgress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
       ],
     }),
-    [panelProgress, panelHeight],
+    [panelProgress],
   );
-
-  const handlePanelLayout = useCallback((height: number) => {
-    // Ignore degenerate measurements (0 before layout / during teardown).
-    if (height > 1) setPanelHeight(height);
-  }, []);
 
   // ─── Guarded close (backdrop, ✕, hardware Back) ────────────────────────────
   // While a create is in flight closing asks first instead of being disabled,
@@ -373,7 +354,7 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
     if (searchLoading) {
       return (
         <View style={styles.centerState}>
-          <ActivityIndicator color={koolaColors.primary} />
+          <ActivityIndicator color={semantic.action.primary} />
           <KoolaText variant="caption" tone="muted" style={styles.centerStateText}>
             Đang tìm thành viên...
           </KoolaText>
@@ -411,7 +392,7 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
               accessibilityRole="button"
               accessibilityLabel={`${selected ? 'Bỏ chọn' : 'Chọn'} ${user.displayName}`}
               accessibilityState={{ selected }}
-              android_ripple={{ color: koolaColors.primarySoft }}
+              android_ripple={{ color: semantic.action.primarySoft }}
               onPress={() => toggleUser(user)}
               style={({ pressed }) => [
                 styles.userRow,
@@ -487,33 +468,27 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}>
         <Pressable style={styles.sheetPressGuard} onPress={() => undefined}>
-          <Animated.View
-            style={[styles.sheet, panelTransform]}
-            onLayout={(e) => handlePanelLayout(e.nativeEvent.layout.height)}>
-            <View style={styles.handle} />
-            <View style={styles.header}>
-              <View style={styles.headerCopy}>
-                <KoolaText variant="heading" weight="800">
-                  Tạo nhóm mới
-                </KoolaText>
-                <KoolaText variant="caption" tone="muted" style={styles.subtitle}>
-                  Tìm và chọn thành viên, không cần nhập ID thủ công.
-                </KoolaText>
-              </View>
+          <Animated.View style={[styles.panel, panelTransform]}>
+            <View style={styles.titleRow}>
+              <KoolaText
+                variant="heading"
+                weight="800"
+                numberOfLines={1}
+                style={styles.title}>
+                Tạo nhóm mới
+              </KoolaText>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Đóng tạo nhóm"
-                android_ripple={{ color: koolaColors.line, borderless: true }}
+                android_ripple={{ color: semantic.action.primarySoft }}
                 onPress={requestClose}
-                style={({ pressed }) => [
-                  styles.closeButton,
-                  pressed ? styles.pressed : null,
-                ]}>
-                <KoolaText variant="heading" tone="muted" weight="700">
-                  ×
-                </KoolaText>
+                style={styles.closeButton}>
+                <Icon name="close" size={22} color={semantic.text.muted} />
               </Pressable>
             </View>
+            <KoolaText variant="caption" tone="muted" style={styles.subtitle}>
+              Tìm và chọn thành viên, không cần nhập ID thủ công.
+            </KoolaText>
 
             <ScrollView
               keyboardShouldPersistTaps="handled"
@@ -618,187 +593,198 @@ const GroupCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, reques
   );
 };
 
-const styles = StyleSheet.create({
-  overlayHost: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
-    elevation: 1000,
-  },
-  backdropLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(16, 24, 40, 0.46)',
-  },
-  backdropPressed: {
-    opacity: 0.94,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  sheetPressGuard: {
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    maxHeight: '92%',
-    backgroundColor: koolaColors.surface,
-    borderTopLeftRadius: koolaRadii.lg,
-    borderTopRightRadius: koolaRadii.lg,
-    paddingTop: koolaSpacing.sm,
-    ...koolaShadows.soft,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 5,
-    borderRadius: koolaRadii.pill,
-    backgroundColor: koolaColors.line,
-    marginBottom: koolaSpacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingHorizontal: koolaSpacing.xl,
-    paddingBottom: koolaSpacing.lg,
-  },
-  headerCopy: {
-    flex: 1,
-    paddingRight: koolaSpacing.md,
-  },
-  subtitle: {
-    marginTop: koolaSpacing.xs,
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: koolaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: koolaColors.canvas,
-  },
-  content: {
-    paddingHorizontal: koolaSpacing.xl,
-    paddingBottom: koolaSpacing.lg,
-  },
-  section: {
-    marginTop: koolaSpacing.lg,
-  },
-  helperText: {
-    marginTop: koolaSpacing.sm,
-  },
-  centerState: {
-    minHeight: 84,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.canvas,
-    marginTop: koolaSpacing.sm,
-  },
-  centerStateText: {
-    marginTop: koolaSpacing.sm,
-  },
-  messageCard: {
-    borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.canvas,
-    padding: koolaSpacing.md,
-    marginTop: koolaSpacing.sm,
-  },
-  resultsList: {
-    marginTop: koolaSpacing.sm,
-    borderRadius: koolaRadii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    overflow: 'hidden',
-  },
-  userRow: {
-    minHeight: 66,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: koolaSpacing.md,
-    paddingVertical: koolaSpacing.sm,
-    backgroundColor: koolaColors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: koolaColors.line,
-  },
-  userRowSelected: {
-    backgroundColor: koolaColors.primarySoft,
-  },
-  userInfo: {
-    flex: 1,
-    marginLeft: koolaSpacing.md,
-    marginRight: koolaSpacing.sm,
-  },
-  statusWrap: {
-    minWidth: 70,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: koolaSpacing.xs,
-  },
-  onlineDot: {
-    backgroundColor: koolaColors.success,
-  },
-  offlineDot: {
-    backgroundColor: koolaColors.faint,
-  },
-  loadMoreButton: {
-    margin: koolaSpacing.md,
-  },
-  selectedWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: koolaSpacing.sm,
-  },
-  selectedChip: {
-    maxWidth: '100%',
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: koolaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: koolaColors.line,
-    backgroundColor: koolaColors.canvas,
-    paddingLeft: koolaSpacing.xs,
-    paddingRight: koolaSpacing.sm,
-    marginRight: koolaSpacing.sm,
-    marginBottom: koolaSpacing.sm,
-  },
-  selectedName: {
-    maxWidth: 180,
-    marginLeft: koolaSpacing.sm,
-    marginRight: koolaSpacing.xs,
-  },
-  removeButton: {
-    width: 28,
-    height: 28,
-    borderRadius: koolaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorBox: {
-    borderRadius: koolaRadii.md,
-    backgroundColor: koolaColors.dangerSoft,
-    padding: koolaSpacing.md,
-    marginTop: koolaSpacing.md,
-  },
-  footer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: koolaColors.line,
-    paddingHorizontal: koolaSpacing.xl,
-    paddingTop: koolaSpacing.md,
-    paddingBottom: Platform.OS === 'ios' ? koolaSpacing.xl : koolaSpacing.lg,
-  },
-  pressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.99 }],
-  },
-});
+function makeStyles(semantic: SemanticTokens) {
+  return StyleSheet.create({
+    overlayHost: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
+    },
+    backdropLayer: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: semantic.surface.overlay,
+    },
+    backdropPressed: {
+      opacity: 0.94,
+    },
+    overlay: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.lg,
+    },
+    sheetPressGuard: {
+      flex: 1,
+      width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    panel: {
+      // level1 matches ChatStartPopup / KoolaConfirmHost / KoolaDialog /
+      // ConversationActionSheet so every centered dialog reads as one surface.
+      backgroundColor: semantic.surface.level1,
+      borderRadius: koolaRadii.lg,
+      flex: 1,
+      width: '100%',
+      maxWidth: 480,
+      maxHeight: '92%',
+      // Clips inner ripples to the rounded corners.
+      overflow: 'hidden',
+      elevation: 8,
+      shadowColor: semantic.text.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.18,
+      shadowRadius: 16,
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: koolaSpacing.xs,
+      paddingBottom: koolaSpacing.xs,
+      paddingRight: koolaSpacing.sm,
+    },
+    title: {
+      flex: 1,
+      paddingLeft: koolaSpacing.lg,
+      paddingVertical: koolaSpacing.sm,
+      color: semantic.text.primary,
+    },
+    closeButton: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    subtitle: {
+      paddingHorizontal: koolaSpacing.lg,
+      paddingBottom: koolaSpacing.sm,
+    },
+    content: {
+      paddingHorizontal: koolaSpacing.xl,
+      paddingBottom: koolaSpacing.lg,
+    },
+    section: {
+      marginTop: koolaSpacing.lg,
+    },
+    helperText: {
+      marginTop: koolaSpacing.sm,
+    },
+    centerState: {
+      minHeight: 84,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: koolaRadii.md,
+      backgroundColor: semantic.surface.level0,
+      marginTop: koolaSpacing.sm,
+    },
+    centerStateText: {
+      marginTop: koolaSpacing.sm,
+    },
+    messageCard: {
+      borderRadius: koolaRadii.md,
+      backgroundColor: semantic.surface.level0,
+      padding: koolaSpacing.md,
+      marginTop: koolaSpacing.sm,
+    },
+    resultsList: {
+      marginTop: koolaSpacing.sm,
+      borderRadius: koolaRadii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
+      overflow: 'hidden',
+    },
+    userRow: {
+      minHeight: 66,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: koolaSpacing.md,
+      paddingVertical: koolaSpacing.sm,
+      backgroundColor: semantic.surface.level1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: semantic.border.subtle,
+    },
+    userRowSelected: {
+      backgroundColor: semantic.action.primarySoft,
+    },
+    userInfo: {
+      flex: 1,
+      marginLeft: koolaSpacing.md,
+      marginRight: koolaSpacing.sm,
+    },
+    statusWrap: {
+      minWidth: 70,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+    },
+    statusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: koolaSpacing.xs,
+    },
+    onlineDot: {
+      backgroundColor: semantic.status.success,
+    },
+    offlineDot: {
+      backgroundColor: semantic.text.faint,
+    },
+    loadMoreButton: {
+      margin: koolaSpacing.md,
+    },
+    selectedWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginTop: koolaSpacing.sm,
+    },
+    selectedChip: {
+      maxWidth: '100%',
+      minHeight: 38,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: koolaRadii.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: semantic.border.subtle,
+      backgroundColor: semantic.surface.level0,
+      paddingLeft: koolaSpacing.xs,
+      paddingRight: koolaSpacing.sm,
+      marginRight: koolaSpacing.sm,
+      marginBottom: koolaSpacing.sm,
+    },
+    selectedName: {
+      maxWidth: 180,
+      marginLeft: koolaSpacing.sm,
+      marginRight: koolaSpacing.xs,
+    },
+    removeButton: {
+      width: 28,
+      height: 28,
+      borderRadius: koolaRadii.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    errorBox: {
+      borderRadius: koolaRadii.md,
+      backgroundColor: semantic.status.dangerSoft,
+      padding: koolaSpacing.md,
+      marginTop: koolaSpacing.md,
+    },
+    footer: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: semantic.border.subtle,
+      paddingHorizontal: koolaSpacing.xl,
+      paddingTop: koolaSpacing.md,
+      paddingBottom: Platform.OS === 'ios' ? koolaSpacing.xl : koolaSpacing.lg,
+    },
+    pressed: {
+      opacity: 0.78,
+      transform: [{ scale: 0.99 }],
+    },
+  });
+}
 
 export default GroupCreateModal;

@@ -419,9 +419,7 @@ export class ConversationsService {
           mutedUntil: uc.mutedUntil
             ? new Date(uc.mutedUntil).toISOString()
             : null,
-          clearedAt: uc.clearedAt
-            ? new Date(uc.clearedAt).toISOString()
-            : null,
+          clearedAt: uc.clearedAt ? new Date(uc.clearedAt).toISOString() : null,
         },
       ]),
     );
@@ -429,10 +427,7 @@ export class ConversationsService {
     const conversations = await this.conversationModel
       .find({ _id: { $in: convIds } })
       .sort({ lastMessageAt: -1 })
-      .populate(
-        'members.userId',
-        '_id phone email displayName avatar isOnline',
-      )
+      .populate('members.userId', '_id phone email displayName avatar isOnline')
       .lean();
 
     const convById = new Map(
@@ -468,7 +463,11 @@ export class ConversationsService {
     const total = pinnedCount + unpinnedCount;
     // Pinned rows live on page 1 only, so hasMore is driven by the unpinned
     // window alone — pinned rows must never repeat on later pages.
-    return { conversations: result, hasMore: skip + limit < unpinnedCount, total };
+    return {
+      conversations: result,
+      hasMore: skip + limit < unpinnedCount,
+      total,
+    };
   }
 
   async getConversationDetails(

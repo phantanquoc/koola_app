@@ -207,20 +207,18 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
   it('prefs change emits conversation_prefs_updated to the caller’s user room only', async () => {
     const prefsUser = '507f1f77bcf86cd799439012';
     const prefsConv = '507f1f77bcf86cd799439013';
-    (userConversationModel as any).findOne = jest.fn().mockResolvedValue({
+    userConversationModel.findOne = jest.fn().mockResolvedValue({
       _id: 'prefs-uc',
       pinnedAt: null,
     });
-    (userConversationModel as any).findOneAndUpdate = jest
-      .fn()
-      .mockReturnValue({
-        lean: () =>
-          Promise.resolve({
-            pinnedAt: null,
-            mutedUntil: new Date('2026-10-06T00:00:00.000Z'),
-            clearedAt: null,
-          }),
-      });
+    userConversationModel.findOneAndUpdate = jest.fn().mockReturnValue({
+      lean: () =>
+        Promise.resolve({
+          pinnedAt: null,
+          mutedUntil: new Date('2026-10-06T00:00:00.000Z'),
+          clearedAt: null,
+        }),
+    });
 
     await conversationsService.updatePrefs(prefsConv, prefsUser, {
       muteDuration: '8h',
@@ -232,8 +230,6 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
     );
     expect(mockIo.to).toHaveBeenCalledWith(`user:${prefsUser}`);
     // No conversation-room fanout for private prefs.
-    expect(mockIo.to).not.toHaveBeenCalledWith(
-      `conversation:${prefsConv}`,
-    );
+    expect(mockIo.to).not.toHaveBeenCalledWith(`conversation:${prefsConv}`);
   });
 });
