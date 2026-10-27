@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { formatVnPhone, maskVnPhone } from "./input-masks";
 
 const REVEAL_MS = 30_000;
 
@@ -26,8 +27,10 @@ export function MaskedPII({ value, kind }: { value: string; kind: "phone" | "ema
     });
   };
 
+  // SĐT: giữ đầu số để moderator nhận ra loại số (di động/cố định) mà vẫn che
+  // thân số. Email chỉ giữ ký tự đầu + domain.
   const masked = kind === "phone"
-    ? value.length > 4 ? `${value.slice(0, 2)}•• ••• •${value.slice(-2)}` : "•••"
+    ? maskVnPhone(value)
     : value.replace(/^(.).*(@.*)$/, "$1••$2");
   const fieldLabel = kind === "phone" ? "số điện thoại" : "email";
 
@@ -40,7 +43,7 @@ export function MaskedPII({ value, kind }: { value: string; kind: "phone" | "ema
       aria-label={revealed ? `Ẩn ${fieldLabel}` : `Hiện ${fieldLabel}`}
       title={revealed ? `Đang hiện — tự ẩn sau 30 giây` : `Bấm để hiện ${fieldLabel}`}
     >
-      <span>{revealed ? value : masked}</span>
+      <span>{revealed ? (kind === "phone" ? formatVnPhone(value) : value) : masked}</span>
       {revealed ? <EyeOff size={12} aria-hidden /> : <Eye size={12} aria-hidden />}
     </button>
   );

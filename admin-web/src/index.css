@@ -1128,6 +1128,22 @@ code,
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--koola-danger) 12%, transparent);
 }
 
+/* Ô nhập có định dạng (StructuredInput.tsx). Dấu phân cách thêm vào làm giá trị
+   dài hơn → font mono + canh trái để cột số không nhảy khi gõ. Riêng tiền canh
+   phải như mọi cột số trong bảng. */
+.money-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.phone-input,
+.integer-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
 /* Form 2 cột cho hồ sơ tạo mới; field dài chiếm cả hàng */
 .form-grid {
   display: grid;
