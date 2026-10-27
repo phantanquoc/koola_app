@@ -95,12 +95,6 @@ const RootNavigator: React.FC = () => {
           statusBarTranslucent: true,
           statusBarStyle: isDark ? 'light' : 'dark',
           navigationBarTranslucent: true,
-          // Fabric fix (parity with ChatTabStack): native-stack detaches the
-          // previous screen off-tree to save memory; swapping the whole auth
-          // group while a screen is detached desyncs Fabric's ViewGroup child
-          // count → "Cannot remove child at index N … childCount may be
-          // incorrect" on logout. Keep previous screens mounted.
-          ...( { detachPreviousScreen: false } as object),
         }}>
         {isAuthenticated ? (
           <>

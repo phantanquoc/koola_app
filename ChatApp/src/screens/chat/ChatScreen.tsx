@@ -194,26 +194,32 @@ const ChatScreen: React.FC = () => {
   const composerRef = useRef<ChatComposerHandle>(null);
   const suppressTabDock = useTabDockSuppression();
 
-  // While Chat is on screen, the main tab dock stays hidden. On back, hide the
-  // composer first and return the dock after the tuned handoff delay; this avoids
-  // the heavy overlap of an immediate release without waiting for full pop end.
+  // While Chat is on screen, the main tab dock stays hidden. The dock must not
+  // return before the pop has actually finished — it would paint over the
+  // shrinking card and cover the composer — so the release is armed from
+  // `beforeRemove` (the committed pop) and fired by the pop's own
+  // `transitionEnd` (`closing: true`), which native-stack emits from the
+  // native screen's `onDisappear` on the frame the 200ms close tween ends.
+  // `beforeRemove` still starts the composer exit immediately.
   useEffect(() => {
     const releaseSuppression = suppressTabDock();
     let released = false;
     let isRemoving = false;
-    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubscribeTransitionEnd: (() => void) | null = null;
 
     const release = () => {
       if (released) return;
       released = true;
-      if (releaseTimer) clearTimeout(releaseTimer);
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if (unsubscribeTransitionEnd) {
+        unsubscribeTransitionEnd();
+        unsubscribeTransitionEnd = null;
+      }
       releaseSuppression();
-    };
-
-    const scheduleComposerExitRelease = () => {
-      if (released) return;
-      if (releaseTimer) clearTimeout(releaseTimer);
-      releaseTimer = setTimeout(release, 280);
     };
 
     const unsubscribeRemove = navigation.addListener('beforeRemove', () => {
@@ -221,15 +227,40 @@ const ChatScreen: React.FC = () => {
       notifyNativePopping();
       isRemoving = true;
       setIsComposerExiting(true);
-      scheduleComposerExitRelease();
+      if (released || unsubscribeTransitionEnd) return;
+      // Arm both signals only now, after the pop is committed: the push-in
+      // `transitionEnd` (`closing: false`) fires while this screen is being
+      // entered, so subscribing earlier would release the dock mid-push.
+      // `transitionEnd` is a native-stack event; the base NavigationProp type
+      // does not list it, hence the same narrow cast used by
+      // `src/hooks/useAfterTransition.ts`.
+      const addListener = navigation.addListener as unknown as (
+        type: 'transitionEnd',
+        listener: (e: { data?: { closing?: boolean } }) => void,
+      ) => () => void;
+      unsubscribeTransitionEnd = addListener('transitionEnd', (e) => {
+        // Belt and braces: only the closing transition ends the pop. Gesture
+        // cancels are known to skip this event entirely — the fallback covers
+        // them, and an interrupted pop must never leave the dock hidden.
+        if (e?.data?.closing === true) release();
+      });
+      // Fallback for the case the event never arrives (gesture-cancel paths,
+      // an interrupted transition, or a screen removed without an animation).
+      // 350ms bounds the worst case: dock slightly late, never permanently
+      // hidden. Whichever fires first wins; `release()` cancels the other.
+      fallbackTimer = setTimeout(release, 350);
     });
 
     return () => {
       unsubscribeRemove();
-      if (isRemoving) {
-        scheduleComposerExitRelease();
-        return;
-      }
+      // native-stack removes the route from JS state as soon as the pop is
+      // dispatched, so this cleanup runs at pop START — before the native
+      // 200ms close tween has finished. Once the pop is committed the release
+      // must therefore stay armed past unmount: `transitionEnd` lands at pop
+      // end (that is the whole point — it is the frame the card stops moving)
+      // and the fallback covers a dropped event. Both remove themselves on the
+      // first release, so nothing outlives the pop by more than 350ms.
+      if (isRemoving && !released) return;
       release();
     };
   }, [navigation, suppressTabDock]);

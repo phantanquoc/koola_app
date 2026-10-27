@@ -53,11 +53,6 @@ const ConnectTabStack: React.FC = () => {
             navigationBarTranslucent: true,
             statusBarStyle: isDark ? 'light' : 'dark',
             contentStyle: { backgroundColor: 'transparent' } as never,
-            // @ts-expect-error cardStyle is valid for native-stack but types lag
-            cardStyle: { backgroundColor: 'transparent' },
-            // Fabric fix (parity with ChatTabStack): keep previous screen
-            // mounted so logout reset can't desync Fabric's ViewGroup count.
-            ...( { detachPreviousScreen: false } as object),
           }}>
           <Stack.Screen name="ConnectHome" component={ConnectHomeScreen} />
           <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} />

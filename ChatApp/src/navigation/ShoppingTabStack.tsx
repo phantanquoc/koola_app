@@ -177,13 +177,6 @@ const ShoppingTabStack: React.FC = () => {
             navigationBarTranslucent: true,
             statusBarStyle: isDark ? 'light' : 'dark',
             contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-            // Fabric fix: native-stack detaches the previous screen off-tree to save
-            // memory; popping Storefront while ProductDetail is detached desyncs
-            // Fabric's ViewGroup child count → "Cannot remove child at index 1"
-            // crash (MountItemDispatcher). Keep previous screen mounted.
-            // Navigator-level flag alone is not sufficient on some
-            // react-native-screens versions — per-screen override required.
-            ...( { detachPreviousScreen: false } as object),
           }}>
           <Stack.Screen
             name="ShoppingHome"
@@ -191,7 +184,6 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -202,7 +194,6 @@ const ShoppingTabStack: React.FC = () => {
               gestureEnabled: true,
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -213,7 +204,6 @@ const ShoppingTabStack: React.FC = () => {
               gestureEnabled: true,
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -222,7 +212,6 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -231,7 +220,6 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -240,7 +228,6 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
           <Stack.Screen
@@ -249,7 +236,6 @@ const ShoppingTabStack: React.FC = () => {
             options={{
               freezeOnBlur: false,
               contentStyle: { backgroundColor: tokens.semantic.bg.canvas } as never,
-              ...( { detachPreviousScreen: false } as object),
             }}
           />
         </Stack.Navigator>
