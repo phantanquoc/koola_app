@@ -85,6 +85,20 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
     setDraft('');
   }, [id]);
 
+  // Đang gõ dở mà F5/đóng tab là mất trắng, không có undo. Trình duyệt chỉ cho
+  // hộp thoại xác nhận qua beforeunload; điều hướng nội bộ SPA vẫn được nhắc
+  // bằng dòng chữ cạnh nút Lưu/Huỷ (repo dùng BrowserRouter nên useBlocker
+  // không dùng được — nó đòi data router).
+  useEffect(() => {
+    if (editingKey === null) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [editingKey]);
+
   function invalidate() {
     void queryClient.invalidateQueries({ queryKey: ['user', id] });
     void queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -474,6 +488,9 @@ function EditableRow({
           {/* Đổi email = đổi danh tính đăng nhập, backend thu hồi mọi phiên.
               Phải nói trước khi bấm Lưu, không phải sau bằng toast. */}
           {fieldKey === 'email' && <span className="cell-meta inline-edit-hint">Lưu sẽ đăng xuất mọi thiết bị.</span>}
+          <span className="cell-meta inline-edit-hint" role="status">
+            Đang sửa — lưu hoặc huỷ trước khi rời trang.
+          </span>
           <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={onSave}>
             {busy ? '...' : <><Check size={13} aria-hidden /> Lưu</>}
           </button>

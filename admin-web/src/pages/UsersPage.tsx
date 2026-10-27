@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Eye, RotateCcw, Search, ShieldAlert, ShieldOff, X } from 'lucide-react';
+import { Eye, Search, ShieldAlert, ShieldOff, X } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../apiClient';
 import { ListHeader } from '../components/ListHeader';
@@ -357,8 +357,19 @@ export default function UsersPage() {
                 {rows.map((u) => (
                   <tr
                     key={u._id}
+                    tabIndex={0}
+                    aria-label={`Xem chi tiết ${u.displayName}`}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('a,button,input')) return;
+                      openDetail(u._id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      // Enter/Space trên nút bên trong hàng là của nút đó, không
+                      // phải mở chi tiết — nếu không, bấm Cấm bằng bàn phím vừa
+                      // mở dialog vừa điều hướng.
+                      if ((e.target as HTMLElement).closest('a,button,input,textarea,select')) return;
+                      e.preventDefault();
                       openDetail(u._id);
                     }}
                   >
@@ -371,13 +382,26 @@ export default function UsersPage() {
                             {u.isBanned && <span className="badge badge-danger cell-badge">Bị cấm</span>}
                             {u.isPlatformAdmin && <span className="badge badge-primary cell-badge">Quản trị</span>}
                           </div>
-                          {/* Cột "Loại" đã nói loại tài khoản ở desktop — lặp lại
-                              trong dòng meta là hai chỗ cùng một thông tin. Ở
-                              ≤560px cả "Loại" lẫn "Tham gia" đều bị ẩn, nên hai
-                              giá trị đó xuống đây thay vì biến mất. */}
+                          {/* Cột bị ẩn theo bề ngang thì dữ liệu xuống dòng meta:
+                              ≤1099px "Liên hệ" + "Tham gia"; ≤860px thêm "Loại" +
+                              "Xác minh". Mỗi lớp có mốc ẩn riêng nên phải tách. */}
                           {u.username && <div className="cell-meta">@{u.username}</div>}
-                          <div className="cell-meta show-xs">
-                            {accountTypeLabel(u.accountType)} · {formatDateTime(u.createdAt)}
+                          <div className="cell-meta show-under-1100">
+                            {formatDateTime(tab === 'archived' ? u.deletedAt : u.createdAt)}
+                            {(u.phone || u.email) && (
+                              <>
+                                {' · '}
+                                {u.phone
+                                  ? <MaskedPII value={u.phone} kind="phone" />
+                                  : <MaskedPII value={u.email ?? ''} kind="email" />}
+                              </>
+                            )}
+                          </div>
+                          <div className="cell-meta show-under-860">
+                            {accountTypeLabel(u.accountType)}
+                            {u.accountType === 'business' && (
+                              <> · <VerificationBadge status={u.verificationStatus} /></>
+                            )}
                           </div>
                         </div>
                       </div>

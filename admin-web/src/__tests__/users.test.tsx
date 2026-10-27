@@ -155,6 +155,19 @@ describe('UsersPage — list pattern', () => {
     expect(screen.getByRole('link', { name: /Về danh sách/ })).toBeTruthy();
   });
 
+  it('Enter/Space trên hàng mở chi tiết bằng bàn phím', async () => {
+    renderAt();
+    await screen.findByText('Nguyễn Văn A');
+
+    const row = screen.getByText('Nguyễn Văn A').closest('tr') as HTMLElement;
+    expect(row.tabIndex).toBe(0);
+    expect(row.getAttribute('aria-label')).toBe('Xem chi tiết Nguyễn Văn A');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+
+    expect(await screen.findByRole('heading', { name: 'Nguyễn Văn A' })).toBeTruthy();
+  });
+
   it('ban gửi reason + durationDays, nút disabled khi thiếu reason', async () => {
     mockedPost.mockResolvedValue({ data: {} });
     renderAt();
@@ -271,6 +284,27 @@ describe('UserDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
 
     await waitFor(() => expect(apiClient.patch).not.toHaveBeenCalled());
+  });
+
+  it('đang sửa: hiện nhắc lưu/huỷ và chặn rời trang, Esc thì huỷ', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1') return Promise.resolve({ data: user });
+      return Promise.resolve({ data: { data: [] } });
+    });
+    renderAt('/users/u1');
+    await screen.findByRole('heading', { name: 'Nguyễn Văn A' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa Tên hiển thị' }));
+    expect(screen.getByText(/lưu hoặc huỷ trước khi rời trang/)).toBeTruthy();
+
+    // beforeunload phải bị chặn khi còn draft
+    const evt = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(evt);
+    expect(evt.defaultPrevented).toBe(true);
+
+    fireEvent.keyDown(screen.getByLabelText('Tên hiển thị'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByLabelText('Tên hiển thị')).toBeNull());
+    expect(screen.queryByText(/lưu hoặc huỷ trước khi rời trang/)).toBeNull();
   });
 
   it('xoá tài khoản đòi gõ XACNHAN rồi gửi DELETE', async () => {
