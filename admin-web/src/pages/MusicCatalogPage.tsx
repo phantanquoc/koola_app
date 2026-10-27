@@ -5,6 +5,7 @@ import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import Dialog from '../components/Dialog';
 import { useToast } from '../components/Toast';
 
 type Track = {
@@ -153,11 +154,11 @@ export default function MusicCatalogPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tiêu đề</th>
-                  <th>Nghệ sĩ</th>
-                  <th>Thời lượng</th>
-                  <th>License</th>
-                  <th style={{ width: 160 }}>Hành động</th>
+                  <th scope="col">Tiêu đề</th>
+                  <th scope="col">Nghệ sĩ</th>
+                  <th scope="col">Thời lượng</th>
+                  <th scope="col">License</th>
+                  <th scope="col" style={{ width: 160 }}>Hành động</th>
                 </tr>
               </thead>
               <tbody>
@@ -182,32 +183,60 @@ export default function MusicCatalogPage() {
         <Pagination page={page} totalPages={Math.ceil(total / 20) || 1} total={total} onPageChange={(p) => { setPage(p); load(p); }} />
       </TableShell>
 
-      {showCreate && (
-        <div className="dialog-backdrop" onClick={() => setShowCreate(false)}>
-          <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <h3>{editTrack ? 'Sửa track' : 'Tạo track mới'}</h3>
-            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              <input className="input" placeholder="Tiêu đề" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} aria-label="Tiêu đề" />
-              <input className="input" placeholder="Nghệ sĩ" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} aria-label="Nghệ sĩ" />
-              <input className="input" placeholder="Audio key (MinIO)" value={form.audioKey} onChange={(e) => setForm({ ...form, audioKey: e.target.value })} aria-label="Audio key" />
-              <input className="input" placeholder="Preview key" value={form.previewKey} onChange={(e) => setForm({ ...form, previewKey: e.target.value })} aria-label="Preview key" />
-              <input className="input" type="number" placeholder="Duration ms" value={form.durationMs} onChange={(e) => setForm({ ...form, durationMs: Number(e.target.value) })} aria-label="Duration" />
-              <select className="input" value={form.licenseType} onChange={(e) => setForm({ ...form, licenseType: e.target.value })} aria-label="License">
+      <Dialog open={showCreate} onClose={() => setShowCreate(false)} labelId="music-form-title" variant="wide">
+        <div className="dialog dialog--wide">
+          <div className="dialog-header">
+            <div>
+              <h2 id="music-form-title" className="panel-title">{editTrack ? 'Sửa track' : 'Tạo track mới'}</h2>
+              <p className="panel-subtitle">Track hiển thị trong thư viện nhạc của Moments.</p>
+            </div>
+          </div>
+          <div className="dialog-body page-stack">
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-title">Tiêu đề <span className="form-required">*</span></label>
+              <input id="music-title" className="input" placeholder="Tiêu đề" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-artist">Nghệ sĩ <span className="form-required">*</span></label>
+              <input id="music-artist" className="input" placeholder="Nghệ sĩ" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-audio">Audio key (MinIO) <span className="form-required">*</span></label>
+              <input id="music-audio" className="input" placeholder="Audio key (MinIO)" value={form.audioKey} onChange={(e) => setForm({ ...form, audioKey: e.target.value })} />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-preview">Preview key</label>
+              <input id="music-preview" className="input" placeholder="Preview key" value={form.previewKey} onChange={(e) => setForm({ ...form, previewKey: e.target.value })} />
+              <span className="form-hint">Để trống sẽ dùng audio key chính.</span>
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-duration">Thời lượng (ms)</label>
+              <input id="music-duration" className="input" type="number" placeholder="Duration ms" value={form.durationMs} onChange={(e) => setForm({ ...form, durationMs: Number(e.target.value) })} />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-license">License</label>
+              <select id="music-license" className="input" value={form.licenseType} onChange={(e) => setForm({ ...form, licenseType: e.target.value })}>
                 <option value="cc0">CC0</option>
                 <option value="cc-by">CC-BY</option>
                 <option value="epidemic-sound">Epidemic Sound</option>
                 <option value="owned-by-koola">Owned by Koola</option>
               </select>
-              <input className="input" placeholder="License URL" value={form.licenseUrl} onChange={(e) => setForm({ ...form, licenseUrl: e.target.value })} aria-label="License URL" />
-              <input className="input" placeholder="Source URL" value={form.sourceUrl} onChange={(e) => setForm({ ...form, sourceUrl: e.target.value })} aria-label="Source URL" />
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button className="btn" onClick={() => setShowCreate(false)} type="button">Hủy</button>
-              <button className="btn btn-primary" onClick={submit} type="button">{editTrack ? 'Lưu' : 'Tạo'}</button>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-license-url">License URL</label>
+              <input id="music-license-url" className="input" placeholder="License URL" value={form.licenseUrl} onChange={(e) => setForm({ ...form, licenseUrl: e.target.value })} />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="music-source-url">Source URL</label>
+              <input id="music-source-url" className="input" placeholder="Source URL" value={form.sourceUrl} onChange={(e) => setForm({ ...form, sourceUrl: e.target.value })} />
             </div>
           </div>
+          <div className="detail-bottombar" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary" onClick={() => setShowCreate(false)} type="button">Hủy</button>
+            <button className="btn btn-primary" onClick={submit} type="button">{editTrack ? 'Lưu' : 'Tạo'}</button>
+          </div>
         </div>
-      )}
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteId}
