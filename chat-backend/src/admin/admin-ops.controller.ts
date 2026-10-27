@@ -162,6 +162,13 @@ export class AdminOpsController {
       body: dto.body,
       at: new Date().toISOString(),
     };
+    // Đếm socket đang kết nối trước khi emit để UI báo được độ phủ thật.
+    // Gateway khai báo namespace '/chat' nên Nest inject một Namespace (không
+    // phải Server) — `.sockets` ở đây là Map, dù type gateway khai là Server.
+    const io = this.chatGateway.io as unknown as
+      | { sockets?: Map<string, unknown> }
+      | undefined;
+    const recipients = io?.sockets?.size ?? 0;
     try {
       this.chatGateway.io?.emit('system_broadcast', payload);
     } catch {}
@@ -173,7 +180,7 @@ export class AdminOpsController {
       payload: payload as any,
       ip: req.ip ?? null,
     });
-    return { message: 'broadcast sent', payload };
+    return { message: 'broadcast sent', payload, recipients };
   }
 
   // Music admin CRUD is handled by AdminModerationController (GET/POST/PATCH/DELETE /admin/music-tracks).

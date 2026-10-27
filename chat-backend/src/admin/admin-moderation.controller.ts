@@ -17,12 +17,14 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Throttle } from '@nestjs/throttler';
+import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { PaginationDto } from './dto/pagination.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ConversationDetailDto } from './dto/conversation-detail.dto';
 import { SearchMessagesDto } from './dto/search-messages.dto';
+import { ListStoriesDto } from './dto/list-stories.dto';
 import {
   CreateMusicTrackDto,
   UpdateMusicTrackDto,
@@ -40,6 +42,14 @@ import { AdminReportService } from './admin-report.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChatGateway } from '../gateway/chat.gateway';
 import type { Request } from 'express';
+
+/**
+ * `includeDeleted` phải nằm trong DTO: ValidationPipe dùng
+ * forbidNonWhitelisted nên query param không khai báo sẽ bị 400.
+ */
+class SearchMessagesQueryDto extends SearchMessagesDto {
+  @IsOptional() @IsString() includeDeleted?: string;
+}
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
@@ -333,7 +343,7 @@ export class AdminModerationController {
   }
 
   @Get('messages/search')
-  async searchMessages(@Query() dto: SearchMessagesDto) {
+  async searchMessages(@Query() dto: SearchMessagesQueryDto) {
     const q = dto.q?.trim() ?? '';
     if (!q) throw new BadRequestException('q is required');
     const page = dto.page ?? 1;
@@ -343,6 +353,9 @@ export class AdminModerationController {
     const regex = new RegExp(escaped, 'i');
     const filter: Record<string, unknown> = { content: regex };
     if (dto.conversationId) filter['conversationId'] = dto.conversationId;
+    // Bảng kiểm duyệt mặc định ẩn nội dung đã gỡ (deleted=true);
+    // includeDeleted=true để xem lại lịch sử. $ne:true bắt cả doc thiếu field.
+    if (dto.includeDeleted !== 'true') filter['deleted'] = { $ne: true };
     const [data, total] = await Promise.all([
       this.msgModel
         .find(filter)
@@ -352,7 +365,54 @@ export class AdminModerationController {
         .lean(),
       this.msgModel.countDocuments(filter),
     ]);
-    return { data, total, page, limit };
+    return { data: await this.withMessageNames(data as any[]), total, page, limit };
+  }
+
+  /**
+   * Gắn senderName + conversationName cho trang kết quả tìm kiếm — resolve lúc
+   * đọc, không denormalize. Ba query cho cả trang (sender, conversation, member
+   * của hội thoại direct), không N+1 theo từng message.
+   */
+  private async withMessageNames(data: any[]) {
+    if (data.length === 0) return data;
+    const senderIds = [
+      ...new Set(
+        data
+          .map((m: any) => String(m.senderId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const convIds = [
+      ...new Set(
+        data
+          .map((m: any) => String(m.conversationId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const [senders, convs] = await Promise.all([
+      senderIds.length
+        ? this.userModel.find({ _id: { $in: senderIds } }).select('displayName').lean()
+        : Promise.resolve([]),
+      convIds.length
+        ? this.convModel
+            .find({ _id: { $in: convIds } })
+            .select('name type members')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+    const senderNameById = new Map(
+      (senders as any[]).map((u: any) => [String(u._id), u.displayName]),
+    );
+    // withDisplayNames đã gom batch member displayName cho hội thoại direct.
+    const convsWithName = (await this.withDisplayNames(convs as any[])) as any[];
+    const convNameById = new Map(
+      convsWithName.map((c: any) => [String(c._id), c.displayName]),
+    );
+    return data.map((m: any) => ({
+      ...m,
+      senderName: senderNameById.get(String(m.senderId)) ?? null,
+      conversationName: convNameById.get(String(m.conversationId)) ?? null,
+    }));
   }
 
   @Post('messages/:id/soft-delete')
@@ -387,12 +447,15 @@ export class AdminModerationController {
   }
 
   @Get('stories')
-  async listStories(@Query() dto: PaginationDto & { authorId?: string }) {
+  async listStories(@Query() dto: ListStoriesDto) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
-    if ((dto as any).authorId) filter['authorId'] = (dto as any).authorId;
+    if (dto.authorId) filter['authorId'] = dto.authorId;
+    if (dto.active === 'true' || dto.active === 'false') {
+      filter['isActive'] = dto.active === 'true';
+    }
     const [data, total] = await Promise.all([
       this.storyModel
         .find(filter)
@@ -402,7 +465,33 @@ export class AdminModerationController {
         .lean(),
       this.storyModel.countDocuments(filter),
     ]);
-    return { data, total, page, limit };
+    return { data: await this.withAuthorNames(data as any[]), total, page, limit };
+  }
+
+  /** Gắn authorName/authorAvatar lúc đọc — 1 query cho cả trang. */
+  private async withAuthorNames(data: any[]) {
+    const authorIds = [
+      ...new Set(
+        data
+          .map((s: any) => String(s.authorId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const authors = authorIds.length
+      ? await this.userModel
+          .find({ _id: { $in: authorIds } })
+          .select('displayName avatar')
+          .lean()
+      : [];
+    const byId = new Map((authors as any[]).map((u: any) => [String(u._id), u]));
+    return data.map((s: any) => {
+      const author = byId.get(String(s.authorId));
+      return {
+        ...s,
+        authorName: author?.displayName ?? null,
+        authorAvatar: author?.avatar ?? null,
+      };
+    });
   }
 
   @Post('stories/:id/takedown')
