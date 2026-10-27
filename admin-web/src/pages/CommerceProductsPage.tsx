@@ -334,13 +334,13 @@ export default function CommerceProductsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tên</th>
-                  <th>Người bán</th>
-                  <th>Phân loại</th>
-                  <th>Giá</th>
-                  <th>Trạng thái</th>
-                  <th>Hiển thị</th>
-                  <th style={{ width: 150 }}>Hành động</th>
+                  <th scope="col">Tên</th>
+                  <th scope="col">Người bán</th>
+                  <th scope="col">Phân loại</th>
+                  <th scope="col">Giá</th>
+                  <th scope="col">Trạng thái</th>
+                  <th scope="col">Hiển thị</th>
+                  <th scope="col" style={{ width: 150 }}>Hành động</th>
                 </tr>
               </thead>
               <tbody>

@@ -209,13 +209,13 @@ export default function CommerceOrdersPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Mã đơn</th>
-                  <th>Trạng thái</th>
-                  <th>Người bán</th>
-                  <th>Người mua</th>
-                  <th>Số món</th>
-                  <th>Tổng tiền</th>
-                  <th>Ngày tạo</th>
+                  <th scope="col">Mã đơn</th>
+                  <th scope="col">Trạng thái</th>
+                  <th scope="col">Người bán</th>
+                  <th scope="col">Người mua</th>
+                  <th scope="col">Số món</th>
+                  <th scope="col">Tổng tiền</th>
+                  <th scope="col">Ngày tạo</th>
                 </tr>
               </thead>
               <tbody>

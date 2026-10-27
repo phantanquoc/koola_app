@@ -276,9 +276,9 @@ export default function AuditLogPage() {
                     >
                       <td>
                         <span className="cell-date k-mono">{formatDateTime(a.createdAt)}</span>
-                        {/* ≤560px cột Người thao tác bị ẩn — đưa tên xuống đây để
+                        {/* Cột "Người thao tác" ẩn từ ≤1099px — tên xuống đây để
                             vẫn đọc được ai làm, không phải vuốt ngang. */}
-                        <div className="cell-meta show-xs">{a.actorName ?? 'Không xác định'}</div>
+                        <div className="cell-meta show-under-1100">{a.actorName ?? 'Không xác định'}</div>
                       </td>
                       <td className="col-hide-xs">
                         <div className="cell-title">{a.actorName ?? 'Không xác định'}</div>

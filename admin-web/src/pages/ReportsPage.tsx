@@ -118,8 +118,8 @@ export default function ReportsPage() {
                   <th scope="col">Đối tượng bị báo cáo</th>
                   <th scope="col">Lý do</th>
                   <th scope="col" className="col-hide-mobile">Người báo cáo</th>
-                  <th scope="col">Trạng thái</th>
-                  <th scope="col" className="col-hide-mobile">Thời gian</th>
+                  <th scope="col" className="col-hide-xxs">Trạng thái</th>
+                  <th scope="col" className="col-hide-xs">Thời gian</th>
                   <th scope="col" className="th-center col-sticky">Chi tiết</th>
                 </tr>
               </thead>
@@ -150,16 +150,22 @@ export default function ReportsPage() {
                         {reportTargetLabel(r.targetType)}
                         {r.targetDetail && <span> · {r.targetDetail}</span>}
                       </div>
+                      {/* Cột "Thời gian" ẩn từ ≤1099px, "Trạng thái" ẩn từ ≤560px
+                          — dồn cả hai xuống dòng meta để không mất dữ liệu. */}
+                      <div className="cell-meta show-under-1100">{formatDateTime(r.createdAt)}</div>
+                      <div className="cell-meta show-xs">
+                        <StatusBadge tone={reportStatusTone(r.status)} label={reportStatusLabel(r.status)} />
+                      </div>
                     </td>
                     <td><span className="cell-title">{r.reason}</span></td>
                     <td className="col-hide-mobile">{r.reporterName ?? <span className="cell-meta">Không xác định</span>}</td>
-                    <td>
+                    <td className="col-hide-xxs">
                       <StatusBadge tone={reportStatusTone(r.status)} label={reportStatusLabel(r.status)} />
                       {r.status !== 'pending' && r.resolvedByName && (
                         <div className="cell-meta">bởi {r.resolvedByName}</div>
                       )}
                     </td>
-                    <td className="col-hide-mobile">
+                    <td className="col-hide-xs">
                       <span className="cell-date k-mono">{formatDateTime(r.createdAt)}</span>
                     </td>
                     <td className="col-sticky">

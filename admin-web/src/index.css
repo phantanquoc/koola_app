@@ -3054,11 +3054,24 @@ th.sortable:hover {
 
 /* ─── Bảng: 3 mức ẩn cột theo bề ngang ─────────────────────────────────────────
    .col-hide-mobile  ≤860px  giấu cột phụ (IP, đối tượng…)
-   .col-hide-xs      ≤560px  giấu thêm cột thứ cấp (Người thao tác)
+   .col-hide-xs      ≤1099px giấu cột thứ cấp (Liên hệ, Ngày, Người thao tác)
+   .col-hide-xxs     ≤560px  giấu cột còn đọc được qua dòng meta
    .show-xs          chỉ hiện ≤560px (khi cột bị ẩn thì đưa dữ liệu vào dòng meta)
    Trước đây mobile còn tràn ngang vì bảng min-width 760px mà chỉ ẩn 1 cột. */
-.col-hide-xs {
+.col-hide-xs,
+.col-hide-xxs {
   display: table-cell;
+}
+
+/* Dữ liệu của cột bị `.col-hide-xs` ẩn ở 861–1099px: hiện ở dòng meta thay vì
+   biến mất. Tách khỏi `.show-xs` vì mốc ẩn khác nhau (1099 vs 560). */
+.show-under-1100 {
+  display: none;
+}
+
+/* Dữ liệu của cột bị `.col-hide-mobile` ẩn ở ≤860px. */
+.show-under-860 {
+  display: none;
 }
 
 .show-xs {
@@ -3073,10 +3086,24 @@ th.sortable:hover {
   .col-hide-xs {
     display: none;
   }
+
+  .show-under-1100 {
+    display: block;
+  }
+
+  /* Cột hành động sticky chỉ có nghĩa khi bảng cuộn ngang. Từ 1099px trở
+     xuống khung bảng đã bỏ overflow ngang (xem `.data-table { min-width: 0 }`),
+     nên sticky không còn tác dụng mà lại kéo cột đè lên cột dữ liệu cuối. */
+  .data-table th.col-sticky,
+  .data-table td.col-sticky {
+    position: static;
+    box-shadow: none;
+  }
 }
 
 @media (max-width: 560px) {
-  .col-hide-xs {
+  .col-hide-xs,
+  .col-hide-xxs {
     display: none;
   }
 
@@ -3101,11 +3128,29 @@ th.sortable:hover {
   .data-table {
     min-width: 520px;
   }
+
+  .show-under-860 {
+    display: block;
+  }
 }
 
 @media (max-width: 560px) {
   .data-table {
     min-width: 0;
+  }
+
+  /* 390px: 3 cột còn lại (Thời gian 145 + Hành động 172 + Chi tiết 79) vẫn hơn
+     khung 358px. Padding 16px mỗi bên là 96px trong tổng đó — siết lại là đủ. */
+  .data-table th,
+  .data-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  /* Nhãn hành động dài ("Cập nhật tài khoản") một dòng = 160px, đẩy cột Hành
+     động rộng hơn cả cột Thời gian. Cho phép xuống dòng trong bảng ở mobile. */
+  .data-table .badge {
+    white-space: normal;
   }
 
   /* Detail: nhãn 150px + giá trị không còn chỗ ở 390px → email bị bẻ đôi giữa
