@@ -144,6 +144,33 @@ code,
   min-height: 100vh;
 }
 
+/* Skip link: ẩn khỏi mắt nhưng vẫn tab được; hiện khi focus (WCAG 2.4.1).
+   fixed để không bị .admin-shell{overflow:hidden} cắt và không chiếm layout. */
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-4);
+  z-index: 1300;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border-radius: var(--radius-sm);
+  background: var(--koola-ink);
+  color: var(--koola-surface);
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  padding: var(--space-2) var(--space-4);
+}
+
 /* Shell */
 .env-banner {
   display: flex;
@@ -433,17 +460,24 @@ code,
 
 .admin-breadcrumb {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: var(--space-2);
+  overflow: hidden;
   color: var(--koola-muted);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
+/* Route title dài (vd "Doanh nghiệp chờ duyệt") — cắt ellipsis thay vì đè
+   lên cụm action khi topbar hẹp (861–1100px, mobile). */
 .admin-breadcrumb [aria-current='page'] {
+  min-width: 0;
+  overflow: hidden;
   color: var(--koola-ink);
   font-weight: 800;
+  text-overflow: ellipsis;
 }
 
 /* Legacy: route title lived in the topbar (double-header). Pages now own
@@ -459,6 +493,14 @@ code,
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* Badge cảnh báo sức khỏe trên topbar (chỉ render khi status != ok). */
+.admin-health-badge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
 }
 
 .admin-identity-chip {
@@ -509,6 +551,15 @@ code,
   width: min(100%, 1440px);
   margin: 0 auto;
   padding: var(--space-6);
+}
+
+/* Tablet (861–1100px): sidebar 264px + topbar actions (ô tìm 280 + chip 210)
+   chiếm gần hết bề ngang → breadcrumb từng tràn/đè. Co chip về avatar sớm hơn
+   breakpoint mobile để breadcrumb còn chỗ đọc. */
+@media (max-width: 1100px) {
+  .admin-identity-text {
+    display: none;
+  }
 }
 
 /* Laptop thấp (≤820px cao — 1366×768, 1440×900 đã trừ browser chrome): giữ
@@ -2053,11 +2104,60 @@ th.sortable:hover {
   }
 
   .admin-topbar {
+    gap: var(--space-2);
     padding: 0 var(--space-4);
   }
 
+  /* 390px: bug report đo .admin-topbar scrollWidth 473 vs clientWidth 390 —
+     hint placeholder dài + breadcrumb nowrap + identity text. Giờ: icon vuông
+     44px thay ô search, identity chỉ còn avatar, breadcrumb co/ellipsis.
+     Kiểm chứng lại bằng headless Chrome: scrollWidth === clientWidth === 390
+     (320/560/860 cũng khớp), chip phải right=374 < 390. */
+  .admin-topbar-left {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
   .admin-topbar-actions {
+    flex-shrink: 0;
+    min-width: 0;
     gap: var(--space-2);
+  }
+
+  .admin-palette-trigger,
+  .admin-identity-chip {
+    flex-shrink: 0;
+  }
+
+  .admin-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Mobile: chỉ giữ tiêu đề trang — "Koola /" chiếm chỗ và bị cắt cụt giữa
+     chữ khi co. Ngữ cảnh "đang ở admin" đã có logo/sidebar. */
+  .admin-breadcrumb > span:not([aria-current='page']) {
+    display: none;
+  }
+
+  .admin-palette-hint {
+    display: none;
+  }
+
+  .admin-palette-trigger {
+    width: 44px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .admin-palette-trigger .admin-search-icon {
+    position: static;
+  }
+
+  .admin-health-badge {
+    max-width: 120px;
+    font-size: 11px;
   }
 
   .admin-identity-text,
@@ -2120,6 +2220,7 @@ th.sortable:hover {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 /* Non-interactive command info (replaces the old interactive-looking command affordance) */

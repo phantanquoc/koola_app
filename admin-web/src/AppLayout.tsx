@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
   Briefcase,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { config } from './config';
+import apiClient from './apiClient';
 import { initials } from './components/formatters';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -110,6 +111,47 @@ function breadcrumbTitle(pathname: string): string {
   return parent ? routeTitles[parent] : 'Koola Admin';
 }
 
+/**
+ * Health badge state cho topbar: poll 60s, chỉ hiện khi hệ thống != ok.
+ * Không dùng TanStack Query vì AppLayout còn được render ngoài provider trong
+ * test shell; effect + AbortController theo style của HealthPage.
+ */
+function useHealthStatus(): string | null {
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    let stopped = false;
+
+    async function poll() {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const res = await apiClient.get<{ status?: string }>('/admin/health', {
+          signal: controller.signal,
+        });
+        if (stopped) return;
+        // 'ok' (hoặc payload lạ) → không render gì; degraded/error → badge.
+        const s = res.data?.status;
+        setStatus(s && s !== 'ok' ? s : null);
+      } catch {
+        // Lỗi mạng/401/429: giữ trạng thái cũ — badge không phải kênh báo lỗi.
+      }
+    }
+
+    void poll();
+    // ponytail: 60s đủ cho tín hiệu vận hành; realtime là việc của /health page.
+    const id = window.setInterval(() => void poll(), 60_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+      controller?.abort();
+    };
+  }, []);
+
+  return status;
+}
+
 export default function AppLayout() {
   const { logout, identity, identityLoading } = useAuth();
   const location = useLocation();
@@ -137,11 +179,15 @@ export default function AppLayout() {
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
   const isProd = config.appEnv === 'production';
+  const healthStatus = useHealthStatus();
   // Drawer mobile luôn render full — collapsed rail chỉ áp dụng desktop.
   const effectiveCollapsed = sidebarCollapsed && !mobileNavOpen;
 
   return (
     <div className="admin-shell">
+      <a href="#admin-content" className="skip-link">
+        Bỏ qua tới nội dung
+      </a>
       <div className={`env-banner ${isProd ? 'env-banner--prod' : 'env-banner--dev'}`} role="status">
         {isProd ? 'PROD · Koola Admin' : 'DEV · Koola Admin'}
       </div>
@@ -240,6 +286,11 @@ export default function AppLayout() {
             </nav>
           </div>
           <div className="admin-topbar-actions">
+            {healthStatus && (
+              <Link to="/health" className="badge badge-danger admin-health-badge">
+                Hệ thống: {healthStatus}
+              </Link>
+            )}
             <CommandPalette commands={paletteCommands} />
             <span className="admin-topbar-divider" aria-hidden="true" />
             <div className="admin-identity-chip">
@@ -257,7 +308,7 @@ export default function AppLayout() {
         </header>
 
         <div className="admin-content-scroll">
-          <main className="admin-content">
+          <main className="admin-content" id="admin-content" tabIndex={-1}>
             <Outlet />
           </main>
         </div>

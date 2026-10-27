@@ -34,6 +34,11 @@ vi.mock('../useAuth', () => ({
   }),
 }));
 
+// Topbar poll sức khỏe — trả 'ok' để badge không render, test không chạm mạng.
+vi.mock('../apiClient', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) },
+}));
+
 function renderShell(initialPath = '/') {
   return render(
     createElement(
@@ -133,7 +138,9 @@ describe('AppLayout sidebar + identity', () => {
 
   it('renders lucide svg icons for every nav link, none decorative chars', () => {
     const { container } = renderShell('/users');
-    const links = screen.getAllByRole('link');
+    // Skip link là <a> đầu shell (không icon) — đếm riêng link trong sidebar.
+    expect(screen.getByRole('link', { name: 'Bỏ qua tới nội dung' })).toBeTruthy();
+    const links = Array.from(container.querySelectorAll('.admin-nav a'));
     expect(links.length).toBe(15);
     for (const link of links) {
       expect(link.querySelector('svg')).toBeTruthy();

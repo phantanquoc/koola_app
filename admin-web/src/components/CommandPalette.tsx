@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, type LucideIcon } from 'lucide-react';
+import { Building2, Search, type LucideIcon } from 'lucide-react';
 
 export interface PaletteCommand {
   to: string;
@@ -49,6 +49,12 @@ function dataTarget(query: string): PaletteCommand[] {
       icon: Search,
     });
   }
+  out.push({
+    to: `/businesses?search=${encodeURIComponent(q)}`,
+    label: `Tìm doanh nghiệp: ${q}`,
+    group: 'Dữ liệu',
+    icon: Building2,
+  });
   out.push({
     to: `/messages?q=${encodeURIComponent(q)}`,
     label: `Tìm tin nhắn: ${q}`,
