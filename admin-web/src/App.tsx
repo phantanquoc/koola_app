@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import BusinessesPage from './pages/BusinessesPage';
 import BusinessDetailPage from './pages/BusinessDetailPage';
 import UsersPage from './pages/UsersPage';
+import UserDetailPage from './pages/UserDetailPage';
 import ConversationsPage from './pages/ConversationsPage';
 import MessageSearchPage from './pages/MessageSearchPage';
 import ReportsPage from './pages/ReportsPage';
@@ -49,6 +50,7 @@ export default function App() {
                 <Route path="businesses/new" element={<BusinessDetailPage />} />
                 <Route path="businesses/:id" element={<BusinessDetailPage />} />
                 <Route path="users" element={<UsersPage />} />
+                <Route path="users/:id" element={<UserDetailPage />} />
                 <Route path="conversations" element={<ConversationsPage />} />
                 <Route path="messages" element={<MessageSearchPage />} />
                 <Route path="moments" element={<MomentsModerationPage />} />

@@ -2490,16 +2490,38 @@ th.sortable:hover {
   display: none;
 }
 
+/* Hồ sơ người dùng sửa TỪNG field (không có chế độ "sửa tất cả" như hồ sơ
+   doanh nghiệp) → bút sửa phải hiện, chỉ mờ tới khi hover cho đỡ rối mắt. */
+.fields-editable .inline-edit-btn {
+  display: inline-flex;
+  opacity: 0.45;
+  transition: opacity 160ms ease;
+}
+
+.fields-editable .inline-field:hover .inline-edit-btn,
+.fields-editable .inline-edit-btn:focus-visible {
+  opacity: 1;
+}
+
 .inline-edit {
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 1;
+  /* Hint (email → thu hồi phiên) xuống dòng riêng thay vì bóp input. */
+  flex-wrap: wrap;
 }
 
 .inline-edit .input,
 .inline-edit .textarea {
   flex: 1;
+}
+
+/* Ghi chú cạnh ô sửa (VD: "Lưu sẽ đăng xuất mọi thiết bị") — không được đẩy
+   input co lại, nên chiếm trọn một dòng dưới. */
+.inline-edit-hint {
+  flex: 1 0 100%;
+  order: 3;
 }
 
 /* Detail page: form giữa, max 760px */
@@ -2640,6 +2662,13 @@ th.sortable:hover {
   border-top: 1px solid var(--koola-line);
   background: var(--koola-surface-soft);
   padding: var(--space-3) var(--space-5);
+  /* Ở 390px nhãn nút bị bẻ đôi ("Về danh / sách") vì không còn chỗ — cho
+     xuống dòng cả cụm thay vì bẻ giữa nhãn. */
+  flex-wrap: wrap;
+}
+
+.detail-bottombar .btn {
+  white-space: nowrap;
 }
 
 .detail-bottombar-sep {
@@ -2924,5 +2953,16 @@ th.sortable:hover {
 @media (max-width: 560px) {
   .data-table {
     min-width: 0;
+  }
+
+  /* Detail: nhãn 150px + giá trị không còn chỗ ở 390px → email bị bẻ đôi giữa
+     chữ. Xếp nhãn lên trên, giá trị xuống dưới. */
+  .detail-section .inline-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .detail-section .inline-field dt {
+    padding-top: 0;
   }
 }

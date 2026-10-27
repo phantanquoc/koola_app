@@ -1,223 +1,444 @@
-import { useState } from 'react';
-import { PageHeader } from '../components/PageHeader';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Eye, RotateCcw, Search, ShieldAlert, ShieldOff, X } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import apiClient from '../apiClient';
+import { ListHeader } from '../components/ListHeader';
+import { StatusTabs } from '../components/StatusTabs';
 import { TableShell } from '../components/TableShell';
+import { ColumnHeader } from '../components/ColumnHeader';
+import { FilterPopover } from '../components/FilterPopover';
 import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { VerificationBadge } from '../components/StatusBadge';
-import { initials, banStatusLabel } from '../components/formatters';
-import Dialog from '../components/Dialog';
-import { useToast } from '../components/Toast';
-import { useAdminList } from '../hooks/useAdminList';
+import { MaskedPII } from '../components/MaskedPII';
+import { formatDateTime, initials, apiErrorMessage } from '../components/formatters';
+import { accountTypeLabel } from '../components/user-labels';
 import { useUrlFilters } from '../hooks/useUrlFilters';
-import { BanDialog, useViolationHistory } from '../components/UserModeration';
-import apiClient from '../apiClient';
+import { useAdminList } from '../hooks/useAdminList';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ExportButton } from '../components/ExportButton';
+import { BanDialog } from '../components/UserModeration';
+import { useToast } from '../components/Toast';
+import type { AdminUser } from '../components/UserDetail';
 
-interface User {
-  _id: string;
-  displayName: string;
-  email?: string;
-  phone?: string;
-  accountType: string;
-  isBanned: boolean;
-  banReason?: string | null;
-  bannedUntil?: string | null;
-  verificationStatus?: string;
-  rejectionReason?: string;
-  ownerUserId?: string;
-}
+const PAGE_SIZES = [20, 50, 100];
 
-const LIMIT = 20;
+const TAB_KEYS = ['all', 'banned', 'archived', 'admin'] as const;
+type TabKey = (typeof TAB_KEYS)[number];
 
-function accountTypeLabel(type: string) {
-  return type === 'business' ? 'Doanh nghiệp' : 'Cá nhân';
-}
+const VERIFICATION_TABS = [
+  { value: '', label: 'Mọi trạng thái' },
+  { value: 'pending', label: 'Chờ duyệt' },
+  { value: 'verified', label: 'Đã xác minh' },
+  { value: 'rejected', label: 'Bị từ chối' },
+];
 
-function banStatus(u: User): string {
-  return banStatusLabel(u);
-}
+const FILTER_DEFAULTS = {
+  tab: 'all', search: '', accountType: '', verification: '', sort: '', page: '1', pageSize: '20',
+};
 
+/**
+ * Trang Người dùng — archetype list §3A.
+ *
+ * Trước đây: `PageHeader` + form submit tay + không có tab trạng thái, không
+ * sort, không phân trang theo cỡ trang, và chi tiết là drawer trượt (trái §3B).
+ * Bốn trục trạng thái của một tài khoản (loại, xác minh, bị cấm, quản trị) giờ
+ * đều hiện trên bảng, lọc được ở server và đảo ngược được.
+ */
 export default function UsersPage() {
   const { addToast } = useToast();
-  const { values, set } = useUrlFilters({ search: '', accountType: '', page: '1' });
+  const { values, set, reset } = useUrlFilters(FILTER_DEFAULTS);
   const page = Math.max(1, Number(values.page) || 1);
+  const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  const tab = (TAB_KEYS as readonly string[]).includes(values.tab) ? (values.tab as TabKey) : 'all';
+  // Tab Lưu trữ: cột hiển thị ngày xoá → sort theo ngày xoá mới nhất trước
+  // (vừa xoá lên đầu, đó là hồ sơ có thể phải cứu ngay).
+  const sort = values.sort || (tab === 'archived' ? 'deletedAt:desc' : 'createdAt:desc');
 
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [detailUser, setDetailUser] = useState<User | null>(null);
-  const [confirmBan, setConfirmBan] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
+  const params = useMemo(() => ({
+    page,
+    limit: pageSize,
+    search: values.search || undefined,
+    // `all` = không gửi status: DTO mặc định coi như không lọc.
+    status: tab === 'all' ? undefined : tab,
+    accountType: values.accountType || undefined,
+    verificationStatus: values.verification || undefined,
+    sort,
+  }), [page, pageSize, values.search, tab, values.accountType, values.verification, sort]);
 
-  const { rows, total, isLoading, isError, refetch } = useAdminList<User>(
-    ['users', values.search, values.accountType, page],
+  const { rows, total, isLoading, isError, error, refetch } = useAdminList<AdminUser>(
+    ['users', values.search, tab, values.accountType, values.verification, sort, page, pageSize],
     '/admin/users',
-    {
-      page,
-      limit: LIMIT,
-      search: values.search || undefined,
-      accountType: values.accountType || undefined,
-    },
+    params,
   );
 
-  const hasActiveFilters = Boolean(values.search || values.accountType);
+  // Số trên tab lấy từ server — đếm ở client thì luôn lệch với trang thật.
+  const { data: stats } = useQuery({
+    queryKey: ['admin-stats'],
+    queryFn: async () => (await apiClient.get<{
+      totalPersonal: number;
+      totalBusiness: number;
+      bannedUsers: number;
+      platformAdmins: number;
+      archivedUsers: number;
+    }>('/admin/stats')).data,
+    staleTime: 60_000,
+  });
 
-  async function openDetail(id: string) {
-    setDetailId(id);
-    try {
-      const res = await apiClient.get<User>(`/admin/users/${id}`);
-      setDetailUser(res.data);
-    } catch {
-      addToast('error', 'Không thể tải thông tin người dùng.');
-      setDetailId(null);
-    }
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<{ id: string; name: string } | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Ô tìm kiếm chính: debounce 350ms + Enter chốt ngay, không bắt bấm nút.
+  const [searchInput, setSearchInput] = useState(values.search);
+  useEffect(() => setSearchInput(values.search), [values.search]);
+  useEffect(() => {
+    if (searchInput.trim() === values.search) return;
+    const t = setTimeout(() => set({ search: searchInput.trim(), page: '1' }), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  function openDetail(id: string) {
+    navigate(`/users/${id}`, { state: { from: `${location.pathname}${location.search}` } });
   }
 
   function afterBanAction(action: 'ban' | 'unban') {
-    addToast('success', action === 'ban' ? 'Đã cấm tài khoản.' : 'Đã bỏ cấm tài khoản.');
-    refetch();
-    if (detailId) openDetail(detailId);
+    addToast('success', action === 'ban' ? 'Đã cấm tài khoản và thu hồi phiên đăng nhập.' : 'Đã bỏ cấm tài khoản.');
+    void queryClient.invalidateQueries({ queryKey: ['users'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
   }
 
-  const totalPages = Math.ceil(total / LIMIT);
+  async function confirmRestore() {
+    if (!restoreTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/admin/users/${restoreTarget.id}/restore`);
+      addToast('success', `Đã khôi phục ${restoreTarget.name}.`);
+      setRestoreTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Khôi phục thất bại. Vui lòng thử lại.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toCsvCell(v: unknown) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  /** Xuất đúng tập đang xem — cùng tham số filter/sort với list. */
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await apiClient.get<{ data: AdminUser[]; total: number; truncated: boolean }>(
+        '/admin/users/export',
+        { params },
+      );
+      if (res.data.truncated) {
+        addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
+      }
+      const header = [
+        'ID', 'Tên hiển thị', 'Tên đăng nhập', 'Email', 'Số điện thoại', 'Loại tài khoản',
+        'Xác minh', 'Bị cấm', 'Lý do cấm', 'Cấm tới', 'Quản trị', 'Xoá mềm lúc',
+        'Ngày tham gia', 'Hoạt động cuối', 'Ghi chú nội bộ',
+      ];
+      const lines = res.data.data.map((u) => [
+        u._id, u.displayName, u.username ?? '', u.email ?? '', u.phone ?? '',
+        accountTypeLabel(u.accountType), u.verificationStatus ?? '',
+        u.isBanned ? 'Có' : '', u.banReason ?? '', u.bannedUntil ?? '',
+        u.isPlatformAdmin ? 'Có' : '', u.deletedAt ?? '',
+        u.createdAt ?? '', u.lastSeen ?? '', u.internalNote ?? '',
+      ].map(toCsvCell).join(','));
+      // BOM để Excel đọc đúng tiếng Việt.
+      const blob = new Blob([`﻿${[header.join(','), ...lines].join('\n')}`], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `nguoi-dung-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('success', `Đã xuất ${lines.length} dòng CSV.`);
+      setExportOpen(false);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại. Vui lòng thử lại.'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function toggleSort(field: string) {
+    const [cur, dir] = sort.split(':');
+    set({ sort: cur === field && dir === 'asc' ? `${field}:desc` : `${field}:asc`, page: '1' });
+  }
+
+  const advancedCount = (values.accountType ? 1 : 0) + (values.verification ? 1 : 0);
+  // Tab KHÔNG phải bộ lọc: đang ở tab "Bị cấm" mà rỗng thì câu đúng là
+  // "không có ai bị cấm", không phải "bộ lọc không khớp".
+  const hasFilter = Boolean(values.search || advancedCount);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const loadError = apiErrorMessage(error, 'Không tải được danh sách người dùng.');
+
+  // Đang ở trang vượt quá tổng số trang (deep-link `?search=…&page=2` khi kết quả
+  // chỉ còn 1 trang): bảng rỗng trong khi footer vẫn báo "1 hồ sơ" → đọc thành
+  // "bộ lọc không khớp". Kẹp về trang cuối thay vì hiện empty-state sai.
+  useEffect(() => {
+    if (!isLoading && total > 0 && page > totalPages) set({ page: String(totalPages) });
+  }, [isLoading, total, page, totalPages, set]);
 
   return (
     <div className="page-stack">
-      <PageHeader title="Quản lý người dùng" description="Tìm kiếm tài khoản, kiểm tra trạng thái và xử lý ban/unban." />
-      <TableShell
-        title="Users"
-        actions={<span className="badge badge-muted">{total.toLocaleString('vi-VN')} records</span>}
-      >
-        <form
-          className="table-toolbar"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const input = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value;
-            const type = (e.currentTarget.elements.namedItem('type') as HTMLSelectElement).value;
-            set({ search: input.trim(), accountType: type, page: '1' });
-          }}
-          aria-label="Tìm kiếm và lọc người dùng"
-        >
-          <div className="table-toolbar-main">
-            <div className="form-field search-field">
-              <label className="form-label" htmlFor="user-search">
-                Tìm kiếm
-              </label>
-              <input
-                className="input"
-                id="user-search"
-                name="q"
-                type="search"
-                placeholder="Tên, email, số điện thoại..."
-                defaultValue={values.search}
-                key={values.search}
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="account-type-filter">
-                Loại tài khoản
-              </label>
-              <select
-                className="select"
-                id="account-type-filter"
-                name="type"
-                defaultValue={values.accountType}
-                key={values.accountType}
-                onChange={(e) => set({ accountType: e.target.value, page: '1' })}
-              >
-                <option value="">Tất cả loại</option>
-                <option value="personal">Cá nhân</option>
-                <option value="business">Doanh nghiệp</option>
-              </select>
-            </div>
-            <button className="btn btn-primary" type="submit">
-              Tìm
+      <ListHeader
+        title="Người dùng"
+        count={total}
+        actions={(
+          <>
+            <ExportButton onExport={() => setExportOpen(true)} />
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>
+              Làm mới
             </button>
-            {hasActiveFilters && (
-              <button className="btn btn-ghost" onClick={() => set({ search: '', accountType: '', page: '1' })} type="button">
-                Xóa lọc
-              </button>
-            )}
-          </div>
-        </form>
+          </>
+        )}
+      >
+        <div className="filter-search-wrap">
+          <Search size={15} className="filter-search-icon" aria-hidden />
+          <input
+            className="input filter-search filter-search--icon" type="search" value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') set({ search: searchInput.trim(), page: '1' }); }}
+            placeholder="Tên, email, SĐT hoặc mã tài khoản"
+            aria-label="Tìm người dùng theo tên, email, số điện thoại hoặc mã tài khoản"
+          />
+        </div>
 
+        <FilterPopover
+          activeCount={advancedCount}
+          onClear={() => set({ accountType: '', verification: '', page: '1' })}
+        >
+          <label className="form-field">
+            <span className="form-label">Loại tài khoản</span>
+            <select
+              className="select" value={values.accountType}
+              onChange={(e) => set({ accountType: e.target.value, page: '1' })}
+            >
+              <option value="">Mọi loại</option>
+              <option value="personal">Cá nhân</option>
+              <option value="business">Doanh nghiệp</option>
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Xác minh</span>
+            <select
+              className="select" value={values.verification}
+              onChange={(e) => set({ verification: e.target.value, page: '1' })}
+            >
+              {VERIFICATION_TABS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <span className="cell-meta">Chỉ áp dụng cho tài khoản doanh nghiệp.</span>
+          </label>
+        </FilterPopover>
+      </ListHeader>
+
+      <div className="filter-bar">
+        <StatusTabs
+          tabs={[
+            { key: 'all', label: 'Tất cả', count: stats ? stats.totalPersonal + stats.totalBusiness : undefined },
+            { key: 'banned', label: 'Bị cấm', count: stats?.bannedUsers },
+            { key: 'archived', label: 'Lưu trữ', count: stats?.archivedUsers },
+            { key: 'admin', label: 'Quản trị viên', count: stats?.platformAdmins },
+          ]}
+          active={tab}
+          onChange={(k) => set({ tab: k === 'all' ? '' : k, page: '1' })}
+        />
+        <span className="cell-meta">Nhấn dòng để xem chi tiết</span>
+      </div>
+
+      {hasFilter && (
+        <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
+          {values.search && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ search: '', page: '1' })}>
+              Từ khoá: {values.search} <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.accountType && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ accountType: '', page: '1' })}>
+              Loại: {accountTypeLabel(values.accountType)} <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.verification && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ verification: '', page: '1' })}>
+              Xác minh: {VERIFICATION_TABS.find((v) => v.value === values.verification)?.label} <X size={12} aria-hidden />
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setSearchInput(''); reset(); }}>Xoá bộ lọc</button>
+        </div>
+      )}
+
+      <TableShell>
         {isError && (
-          <p className="alert" role="alert" style={{ margin: 'var(--space-5)' }}>
-            Không thể tải danh sách người dùng.
-          </p>
+          <StateBlock variant="error" title="Không tải được danh sách" copy={loadError}>
+            <button className="btn btn-secondary btn-sm" onClick={() => refetch()} type="button">Thử lại</button>
+          </StateBlock>
         )}
         {isLoading && (
-          <StateBlock variant="loading" icon="⌁" title="Đang tải danh sách" copy="Koola đang lấy dữ liệu người dùng mới nhất." />
+          <StateBlock variant="loading" title="Đang tải danh sách" copy="Đang lấy dữ liệu người dùng mới nhất." />
         )}
-        {!isLoading && !isError && rows.length === 0 && (
-          <EmptyState title="Không tìm thấy người dùng" copy="Thử đổi từ khóa hoặc xóa bộ lọc." />
-        )}
-        {!isLoading && !isError && rows.length > 0 && (
-          <div className="table-scroll">
-            <table className="data-table" aria-label="Danh sách người dùng">
+        {!isLoading && !isError && (
+          <div className="table-scroll table-scroll--fit">
+            <table className="data-table data-table--compact" aria-label="Danh sách người dùng">
               <thead>
                 <tr>
-                  <th scope="col">Người dùng</th>
-                  <th scope="col">Liên hệ</th>
-                  <th scope="col">Loại</th>
-                  <th scope="col">Trạng thái</th>
-                  <th scope="col">Xác minh</th>
-                  <th scope="col" className="col-actions">
-                    Hành động
-                  </th>
+                  <ColumnHeader label="Người dùng" sortField="displayName" sort={sort} onSort={toggleSort} />
+                  <ColumnHeader label="Liên hệ" className="col-hide-xs" />
+                  <ColumnHeader
+                    label="Loại"
+                    className="col-hide-mobile"
+                    filter={{
+                      value: values.accountType,
+                      options: [
+                        { value: '', label: 'Mọi loại' },
+                        { value: 'personal', label: 'Cá nhân' },
+                        { value: 'business', label: 'Doanh nghiệp' },
+                      ],
+                      onChange: (v) => set({ accountType: v, page: '1' }),
+                    }}
+                  />
+                  <ColumnHeader
+                    label="Xác minh"
+                    className="col-hide-mobile"
+                    filter={{
+                      value: values.verification,
+                      options: VERIFICATION_TABS,
+                      onChange: (v) => set({ verification: v, page: '1' }),
+                    }}
+                  />
+                  <ColumnHeader
+                    label={tab === 'archived' ? 'Xoá lúc' : 'Tham gia'}
+                    className="col-hide-xs"
+                    sortField={tab === 'archived' ? 'deletedAt' : 'createdAt'}
+                    sort={sort}
+                    onSort={toggleSort}
+                  />
+                  <th scope="col" className="th-center col-sticky">Hành động</th>
                 </tr>
               </thead>
               <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        title={hasFilter ? 'Không khớp tài khoản nào' : tab === 'banned' ? 'Không có ai đang bị cấm' : tab === 'archived' ? 'Chưa có tài khoản nào bị xoá' : tab === 'admin' ? 'Chưa có quản trị viên nào' : 'Chưa có tài khoản nào'}
+                        copy={hasFilter
+                          ? 'Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm.'
+                          : tab === 'banned'
+                            ? 'Mọi tài khoản đang hoạt động bình thường.'
+                            : tab === 'archived'
+                              ? 'Tài khoản bị xoá mềm sẽ nằm ở đây và khôi phục được.'
+                              : tab === 'admin'
+                                ? 'Quyền quản trị nền tảng được cấp ngoài giao diện (script grant-admin).'
+                                : 'Tài khoản sẽ xuất hiện ở đây khi người dùng đăng ký.'}
+                        action={hasFilter
+                          ? <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setSearchInput(''); reset(); }}>Xoá bộ lọc</button>
+                          : undefined}
+                      />
+                    </td>
+                  </tr>
+                )}
                 {rows.map((u) => (
-                  <tr key={u._id}>
+                  <tr
+                    key={u._id}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('a,button,input')) return;
+                      openDetail(u._id);
+                    }}
+                  >
                     <td>
                       <div className="cell-primary">
-                        <div className="cell-avatar" aria-hidden="true">
-                          {initials(u.displayName, 'U')}
-                        </div>
+                        <div className="cell-avatar" aria-hidden="true">{initials(u.displayName, 'U')}</div>
                         <div>
-                          <button className="cell-link" onClick={() => openDetail(u._id)} type="button">
+                          <div className="cell-title">
                             {u.displayName}
-                          </button>
-                          <div className="cell-meta k-mono">{u._id}</div>
+                            {u.isBanned && <span className="badge badge-danger cell-badge">Bị cấm</span>}
+                            {u.isPlatformAdmin && <span className="badge badge-primary cell-badge">Quản trị</span>}
+                          </div>
+                          {/* Cột "Loại" đã nói loại tài khoản ở desktop — lặp lại
+                              trong dòng meta là hai chỗ cùng một thông tin. Ở
+                              ≤560px cả "Loại" lẫn "Tham gia" đều bị ẩn, nên hai
+                              giá trị đó xuống đây thay vì biến mất. */}
+                          {u.username && <div className="cell-meta">@{u.username}</div>}
+                          <div className="cell-meta show-xs">
+                            {accountTypeLabel(u.accountType)} · {formatDateTime(u.createdAt)}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <div className="cell-title">{u.email ?? u.phone ?? '—'}</div>
-                      <div className="cell-meta">Primary contact</div>
+                    <td className="col-hide-xs">
+                      <div>
+                        {u.phone
+                          ? <MaskedPII value={u.phone} kind="phone" />
+                          : <span className="cell-meta">—</span>}
+                      </div>
+                      <div className="cell-meta">
+                        {u.email
+                          ? <MaskedPII value={u.email} kind="email" />
+                          : u.username ? `@${u.username}` : '—'}
+                      </div>
                     </td>
-                    <td>
+                    <td className="col-hide-mobile">
                       <span className={u.accountType === 'business' ? 'badge badge-primary' : 'badge badge-muted'}>
                         {accountTypeLabel(u.accountType)}
                       </span>
                     </td>
-                    <td>
-                      <span className={u.isBanned ? 'badge badge-danger' : 'badge badge-success'}>
-                        {u.isBanned ? 'Đã cấm' : 'Hoạt động'}
-                      </span>
-                      {u.isBanned && u.banReason && <div className="cell-meta">{u.banReason}</div>}
+                    <td className="col-hide-mobile">
+                      {u.accountType === 'business'
+                        ? <VerificationBadge status={u.verificationStatus} />
+                        : <span className="cell-meta">—</span>}
                     </td>
-                    <td>
-                      <VerificationBadge status={u.verificationStatus} />
+                    <td className="col-hide-xs">
+                      <span className="cell-date">
+                        {tab === 'archived' ? formatDateTime(u.deletedAt) : formatDateTime(u.createdAt)}                      </span>
                     </td>
-                    <td className="col-actions">
-                      <div className="table-actions">
-                        <button className="btn btn-secondary btn-sm" onClick={() => openDetail(u._id)} type="button">
-                          Chi tiết
+                    <td className="col-sticky">
+                      <div className="table-actions table-actions--end">
+                        <button
+                          className="btn btn-ghost btn-icon" type="button"
+                          onClick={(e) => { e.stopPropagation(); openDetail(u._id); }}
+                          aria-label={`Xem ${u.displayName}`} title="Chi tiết"
+                        >
+                          <Eye size={16} aria-hidden />
                         </button>
-                        {u.isBanned ? (
+                        {tab === 'archived' ? (
                           <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => setConfirmBan({ id: u._id, name: u.displayName, action: 'unban' })}
-                            type="button"
+                            className="btn btn-secondary btn-sm" type="button" disabled={busy}
+                            onClick={(e) => { e.stopPropagation(); setRestoreTarget({ id: u._id, name: u.displayName }); }}
                           >
-                            Bỏ cấm
+                            Khôi phục
+                          </button>
+                        ) : u.isBanned ? (
+                          <button
+                            className="btn btn-ghost btn-icon" type="button"
+                            onClick={(e) => { e.stopPropagation(); setBanTarget({ id: u._id, name: u.displayName, action: 'unban' }); }}
+                            aria-label={`Bỏ cấm ${u.displayName}`} title="Bỏ cấm"
+                          >
+                            <ShieldOff size={16} aria-hidden />
                           </button>
                         ) : (
                           <button
-                            className="btn btn-danger-ghost btn-sm"
-                            onClick={() => setConfirmBan({ id: u._id, name: u.displayName, action: 'ban' })}
-                            type="button"
+                            className="btn btn-danger-ghost btn-icon" type="button"
+                            onClick={(e) => { e.stopPropagation(); setBanTarget({ id: u._id, name: u.displayName, action: 'ban' }); }}
+                            aria-label={`Cấm ${u.displayName}`} title="Cấm tài khoản"
                           >
-                            Cấm
+                            <ShieldAlert size={16} aria-hidden />
                           </button>
                         )}
                       </div>
@@ -228,119 +449,38 @@ export default function UsersPage() {
             </table>
           </div>
         )}
+
         <Pagination
-          page={page}
-          totalPages={totalPages}
-          total={total}
+          page={page} totalPages={totalPages} total={total}
           onPageChange={(p) => set({ page: String(p) })}
+          showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
+          onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
 
-      <UserDetailDrawer
-        user={detailUser}
-        onClose={() => {
-          setDetailUser(null);
-          setDetailId(null);
-        }}
-        onBan={(u) => setConfirmBan({ id: u._id, name: u.displayName, action: u.isBanned ? 'unban' : 'ban' })}
+      <BanDialog target={banTarget} onClose={() => setBanTarget(null)} onDone={afterBanAction} />
+
+      <ConfirmDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`Xuất ${total.toLocaleString('vi-VN')} tài khoản ra CSV?`}
+        description="File chứa email/SĐT KHÔNG che và ghi chú nội bộ. Tối đa 500 dòng — thu hẹp bộ lọc nếu cần đủ. Chỉ lưu ở máy được phép xử lý dữ liệu cá nhân."
+        confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
+        variant="primary"
+        busy={exporting}
+        onConfirm={handleExport}
       />
-      <BanDialog target={confirmBan} onClose={() => setConfirmBan(null)} onDone={afterBanAction} />
+
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        onClose={() => setRestoreTarget(null)}
+        title={`Khôi phục tài khoản "${restoreTarget?.name ?? ''}"?`}
+        description="Tài khoản hoạt động lại như trước khi xoá. Trạng thái cấm (nếu có) giữ nguyên — gỡ riêng nếu cần."
+        confirmLabel="Khôi phục"
+        variant="primary"
+        busy={busy}
+        onConfirm={confirmRestore}
+      />
     </div>
-  );
-}
-
-function UserDetailDrawer({
-  user,
-  onClose,
-  onBan,
-}: {
-  user: User | null;
-  onClose: () => void;
-  onBan: (u: User) => void;
-}) {
-  const [tab, setTab] = useState<'info' | 'history'>('info');
-  const { entries, loading } = useViolationHistory(user?._id ?? null);
-
-  return (
-    <Dialog open={user !== null} onClose={onClose} labelId="user-detail-title" variant="drawer">
-      {user && (
-        <aside className="drawer">
-          <div className="drawer-header">
-            <div>
-              <div className="page-eyebrow">User profile</div>
-              <h2 id="user-detail-title" className="panel-title">
-                {user.displayName}
-              </h2>
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={onClose} type="button">
-              Đóng
-            </button>
-          </div>
-          <div className="drawer-body page-stack">
-            <div className="tabs" role="tablist" aria-label="Thông tin người dùng">
-              <button role="tab" aria-selected={tab === 'info'} onClick={() => setTab('info')} type="button">
-                Thông tin
-              </button>
-              <button role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')} type="button">
-                Lịch sử vi phạm
-              </button>
-            </div>
-
-            {tab === 'info' && (
-              <>
-                <dl className="description-list">
-                  <dt>Email</dt>
-                  <dd>{user.email ?? '—'}</dd>
-                  <dt>Điện thoại</dt>
-                  <dd>{user.phone ?? '—'}</dd>
-                  <dt>Loại tài khoản</dt>
-                  <dd>{accountTypeLabel(user.accountType)}</dd>
-                  <dt>Trạng thái</dt>
-                  <dd>{banStatus(user)}</dd>
-                  {user.banReason && (
-                    <>
-                      <dt>Lý do cấm</dt>
-                      <dd>{user.banReason}</dd>
-                    </>
-                  )}
-                </dl>
-                <button
-                  className={user.isBanned ? 'btn btn-secondary' : 'btn btn-danger'}
-                  onClick={() => onBan(user)}
-                  type="button"
-                >
-                  {user.isBanned ? 'Bỏ cấm' : 'Cấm người dùng'}
-                </button>
-              </>
-            )}
-
-            {tab === 'history' && (
-              <section className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">Lịch sử vi phạm ({entries.length})</div>
-                </div>
-                <div className="panel-body">
-                  {loading && <div className="skeleton-card" aria-label="Đang tải lịch sử" />}
-                  {!loading && entries.length === 0 && (
-                    <p className="cell-meta">Chưa có vi phạm nào được ghi nhận.</p>
-                  )}
-                  {entries.map((e, i) => (
-                    <div className="queue-item" key={i}>
-                      <div>
-                        <strong>{e.title}</strong>
-                        <span>
-                          {e.status ? `${e.status} · ` : ''}
-                          {e.at ?? ''}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        </aside>
-      )}
-    </Dialog>
   );
 }

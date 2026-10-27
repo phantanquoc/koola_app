@@ -118,11 +118,20 @@ cột "Trạng thái":
 
 Mỗi trục phải đủ bộ ba: hiện badge trên hàng → lọc được ở server → có hành động đảo ngược.
 
+**Field sửa được của một tài khoản** (`PATCH /admin/users/:id`) — chỉ những gì
+moderator cần khi hỗ trợ người dùng: `displayName`, `username`, `email`, `phone`,
+`bio`, `internalNote`. Cấm PATCH `accountType`, `isBanned`, `isPlatformAdmin`,
+`passwordHash` — ba cái đầu có endpoint riêng (audit + side effect riêng), mật
+khẩu admin không được đặt hộ. Đổi `email`/`phone` phải kiểm trùng trước (409 đọc
+được, không để E11000 thành 500); đổi `email` phải thu hồi mọi phiên vì JWT mang
+email claim.
+
 Thang mức độ hành động — chọn đúng bậc, không nhảy cóc:
 
 | Bậc | Ví dụ | Confirm | requireText |
 |---|---|---|---|
 | Đảo ngược, hẹp | duyệt, khôi phục, gỡ cấm | ConfirmDialog thường | — |
+| Thu hồi phiên (không đảo ngược) | đăng xuất mọi thiết bị | ConfirmDialog thường + nêu rõ access token sống tới 1h | — |
 | Ẩn tạm | tạm ngưng bán | ConfirmDialog + nêu rõ khác ban | `XACNHAN` |
 | Phá huỷ hẹp | xoá mềm 1 hồ sơ | ConfirmDialog danger + nêu khôi phục được | `XACNHAN` |
 | Diện rộng | bulk duyệt/từ chối | preview ≤10 dòng + "và N nữa" | `XACNHAN` |
@@ -217,6 +226,8 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `ConfirmDialog` | focus-trap; destructive + reason bắt buộc; thứ tự nút **confirm trước, Hủy sau**; slot `preview` tóm tắt; `requireText` theo §3A2 |
 | `StateBlock` | loading/error có nút Thử lại; `EmptyState` cho rỗng, có `action` khi đang lọc |
 | `AuditLogDetail` | chi tiết audit inline: header + `description-list` + payload đã dịch + `details` "Chi tiết kỹ thuật". Route `/audit-logs/:id`, không overlay |
+| `UserDetail` | chi tiết người dùng inline ở route `/users/:id`: header (avatar/tên/badge cấm/quản trị) → banner vi phạm/xoá mềm → `detail-section` sửa từng field → ghi chú nội bộ → lịch sử vi phạm → bottombar (thu hồi phiên / cấm / xoá mềm). Dùng `useViolationHistory` + `.fields-editable` để hiện bút sửa |
+| `user-labels.tsx` | `accountTypeLabel()`, `banBadge()` — nhãn loại tài khoản + trạng thái cấm dùng chung bảng và chi tiết |
 | `audit-labels.ts` | một nguồn nhãn: action, target, field payload (`AUDIT_FIELD_LABELS`), `auditPayloadRows()` dịch giá trị (slug→tiếng Việt, mảng→số lượng, ngày→dd/mm), `isInternalIp()` |
 | `detail-card` + `detail-header`/`detail-card-body`/`detail-bottombar` | khung chi tiết inline dùng chung cho route `/:id` — header (avatar/tên/badge) → body → bottombar |
 | `LicensePreview` | preview + lightbox 720px trước khi duyệt/gỡ — gỡ mù là cấm. Prop `label` cho ảnh không phải giấy phép |
@@ -229,6 +240,7 @@ Hook dùng chung (đừng viết lại):
 | `useUrlFilters(defaults)` | `{ values, set, reset }` — mọi filter/sort/page đi qua đây |
 | `useAdminList(key, url, params)` | `{ rows, total, isLoading, isError, refetch }`; key phải chứa mọi filter |
 | `useBusinessDecision(...)` | mẫu cho "một nguồn sự thật" của quyết định: list + route detail dùng chung confirm/toast/copy |
+| `useViolationHistory(userId, accountType)` | báo cáo + audit của một tài khoản; lọc ở server theo `targetType`/`targetId`. Doanh nghiệp thì tra `targetType: 'business'` (lệnh cấm ghi ở đó), không phải `user` |
 
 Button: `.btn` + variant primary/secondary/ghost/danger/danger-ghost, `btn-sm` trong bảng,
 `btn-icon` cho action icon-only (bắt buộc `aria-label` + `title`).
@@ -320,7 +332,7 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 
 Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
 
-- `UsersPage`, `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`
+- `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`
   vẫn dùng `PageHeader` + filter `useState`/`fetch tay` → lệch §3A.
 - `CommerceOrdersPage` đặt filter ngoài `TableShell`, dùng inline style, `sellerId`/`buyerId`
   thô thay vì ô tìm kiếm chung.
@@ -332,9 +344,9 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
 - Chưa có guard chống ghi đè: hai moderator sửa cùng hồ sơ, người sau thắng im lặng
   (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409
   nếu lệch, trang chi tiết hiện "Hồ sơ vừa được người khác sửa".
-- **3 trang còn dùng drawer** (`variant="drawer"`) trái quyết định §3B — chuyển sang
-  route/component chi tiết: `UsersPage` (UserDetailDrawer), `ConversationsPage` (hội thoại).
-  Làm ở PR riêng vì mỗi trang cần route + endpoint detail.
+- **1 trang còn dùng drawer** (`variant="drawer"`) trái quyết định §3B — chuyển sang
+  route/component chi tiết: `ConversationsPage` (hội thoại). `UsersPage` đã chuyển sang
+  `/users/:id` + `UserDetail`.
 - **Trang Hội thoại & Tin nhắn chưa đọc param `focus`**: `ReportTargetLink` cũ trỏ tới
   `/conversations?focus=<id>` và `/messages?focus=<id>` nhưng hai trang bỏ qua param →
   moderator bấm vào thấy trang trống. Đã bỏ link chết (`reportTargetHref` trả null);

@@ -26,6 +26,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   // Người dùng
   ban_user: 'Cấm tài khoản',
   unban_user: 'Gỡ cấm',
+  update_user: 'Cập nhật tài khoản',
+  delete_user: 'Xoá tài khoản',
+  restore_user: 'Khôi phục tài khoản',
+  revoke_sessions: 'Thu hồi phiên đăng nhập',
   // Nội dung
   soft_delete_message: 'Gỡ tin nhắn',
   takedown_story: 'Gỡ story',
@@ -71,11 +75,13 @@ type Tone = 'success' | 'warning' | 'danger' | 'muted' | 'primary';
 const DANGER_ACTIONS = new Set([
   'delete_business', 'delete_product', 'delete_service', 'delete_store',
   'delete_music_track', 'soft_delete_message', 'takedown_story', 'ban_user',
+  'delete_user', 'revoke_sessions',
 ]);
 const WARNING_ACTIONS = new Set(['reject_business', 'bulk_reject_business', 'suspend_business']);
 const SUCCESS_ACTIONS = new Set([
   'approve_business', 'bulk_approve_business', 'restore_business', 'unban_user',
   'unsuspend_business', 'reopen_business', 'resolve_report', 'dismiss_report',
+  'restore_user',
 ]);
 
 export function auditActionTone(action: string): Tone {
