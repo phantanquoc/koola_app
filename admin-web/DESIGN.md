@@ -251,7 +251,19 @@ Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi �
 - Transition 160ms ease; toast 200ms; sidebar 200ms. Không animation trang trí
   trên trang data. Tôn trọng `prefers-reduced-motion` (đã global).
 - Breakpoint 1180px (grid co) / 860px (drawer nav, toolbar/footer xếp dọc, grid 1 cột).
-  Test 1440 + 860 + 390; bảng luôn có `.table-scroll`, không tràn ngang.
+  Test 1440 + 1024 + 860 + 390; bảng luôn có `.table-scroll`, không tràn ngang.
+- **Một scroller duy nhất:** `.admin-content-scroll`. Topbar + sidebar nằm ngoài
+  vùng đó nên đứng yên khi cuộn. Cấm đặt `max-height`/`overflow-y` cho khung bảng
+  trên trang list (`.table-scroll--fit` chỉ `overflow: visible`) — trước đây
+  `max-height: calc(100vh - 470px)` làm laptop 768px chỉ hiện 4 dòng trong một ô
+  cuộn nhỏ giữa trang, và `.table-shell { overflow: hidden }` biến chính khung
+  bảng thành scroll container khiến thead `sticky` trôi mất. Nay `.table-shell`
+  dùng `overflow: clip` (giữ bo góc, không tạo scroll container).
+- ≤1099px ẩn `.col-hide-xs` và hạ `.data-table { min-width: 0 }`: nội dung chỉ
+  còn ~700px sau sidebar, nhưng nếu để bảng tràn thì phải bật `overflow-x`, mà
+  `overflow-x: auto` kéo theo `overflow-y: auto` → thead hết sticky.
+- ≤820px cao (1366×768, 1440×900 trừ browser chrome): nén `.admin-content` padding
+  xuống `16px 24px`, `.page-stack` gap 24px để bảng còn thêm ~2 dòng.
 - Icon-button trong bảng tối thiểu 44px; focus visible outline primary 2px offset 2px.
 - Trạng thái không truyền bằng màu đơn thuần — luôn kèm text/icon.
 

@@ -168,7 +168,10 @@ code,
 
 .admin-shell {
   display: flex;
+  /* dvh: trên mobile, 100vh tính cả vùng thanh địa chỉ trình duyệt → đáy shell
+     nằm dưới màn hình và footer bị cắt. dvh theo chiều cao thật. */
   height: 100vh;
+  height: 100dvh;
   flex-direction: column;
   overflow: hidden;
   color: var(--koola-ink);
@@ -506,6 +509,23 @@ code,
   width: min(100%, 1440px);
   margin: 0 auto;
   padding: var(--space-6);
+}
+
+/* Laptop thấp (≤820px cao — 1366×768, 1440×900 đã trừ browser chrome): giữ
+   topbar/sidebar nguyên, chỉ nén khoảng đệm nội dung để bảng còn thêm ~2 dòng.
+   Chỉ áp khi đủ rộng; mobile cần đệm thoáng hơn cho ngón tay. */
+@media (max-height: 820px) and (min-width: 861px) {
+  .admin-content {
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .page-stack {
+    gap: var(--space-4);
+  }
+
+  .list-header {
+    gap: var(--space-2);
+  }
 }
 
 .admin-topbar-search {
@@ -1165,8 +1185,13 @@ code,
 }
 
 /* Data table */
+/* `clip` thay `hidden`: giữ bo góc nhưng KHÔNG tạo scroll container — nhờ vậy
+   thead sticky bám được vào .admin-content-scroll (scroller duy nhất của trang)
+   thay vì bám vào chính cái card và trôi mất.
+   `hidden` giữ làm fallback cho Safari < 16 (chưa hỗ trợ clip). */
 .table-shell {
   overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--koola-line);
   border-radius: var(--radius-lg);
   background: var(--koola-surface);
@@ -1282,12 +1307,14 @@ code,
   overflow: auto;
 }
 
-/* Bảng dài tự cuộn trong khung để thead sticky thật sự dính.
-   Chỉ áp cho trang list cao cố định — ConversationsPage tự quản scroll riêng.
-   Trừ cả chiều cao footer phân trang (~70px) để footer không bị đẩy khỏi màn hình. */
+/* Trang list: KHÔNG tự cuộn trong khung nữa.
+   Trước đây `.table-scroll--fit` đặt max-height: calc(100vh - 470px) → ở laptop
+   768px chỉ còn 298px, hiện được 4 dòng, và người dùng phải cuộn một ô nhỏ ở
+   giữa trang. Giờ cả vùng nội dung (.admin-content-scroll) là scroller duy nhất;
+   topbar/sidebar đứng yên vì chúng nằm ngoài vùng đó, và thead sticky bám mép
+   dưới topbar. */
 .table-scroll--fit {
-  max-height: calc(100vh - 470px);
-  max-height: calc(100dvh - 470px);
+  overflow: visible;
   min-height: 180px;
 }
 
@@ -1636,6 +1663,13 @@ th.sortable:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* Footer xếp dọc ở ≤860px nhưng hàng nút vẫn cứng một dòng → "Đi tới"
+     tràn khỏi thẻ ở 390px. Cho phép xuống dòng thay vì cắt mất nút. */
+  flex-wrap: wrap;
+}
+
+.pagination-controls .btn {
+  white-space: nowrap;
 }
 
 .empty-state,
@@ -1979,10 +2013,10 @@ th.sortable:hover {
 }
 
 @media (max-width: 860px) {
-  .admin-shell {
-    display: block;
-  }
-
+  /* KHÔNG đổi .admin-shell sang display:block: sidebar đã position:fixed nên
+     tự ra khỏi flow, còn display:block làm mất chuỗi flex (shell → body →
+     main) → `.admin-content-scroll` không còn là scroller, cả trang cao
+     2000px+ và topbar trôi theo. Giữ flex để chỉ vùng nội dung cuộn. */
   .admin-sidebar {
     position: fixed;
     top: 0;
@@ -2930,6 +2964,16 @@ th.sortable:hover {
   display: none;
 }
 
+/* 861–1099px: vùng nội dung chỉ còn ~700–760px (sidebar 264 + padding 64), hẹp
+   hơn bảng 6 cột. Ẩn cột phụ sớm hơn để bảng vừa khung — nếu để tràn thì phải
+   bật overflow-x, mà `overflow-x:auto` kéo theo `overflow-y:auto` (spec), biến
+   khung bảng thành scroller thứ hai và thead sticky bám sai chỗ. */
+@media (max-width: 1099px) {
+  .col-hide-xs {
+    display: none;
+  }
+}
+
 @media (max-width: 560px) {
   .col-hide-xs {
     display: none;
@@ -2943,7 +2987,15 @@ th.sortable:hover {
 /* Bảng rộng 760px là đúng ở desktop, nhưng ở mobile chỉ còn 2–3 cột hiển thị —
    giữ min-width đó là bắt người dùng vuốt ngang để đọc một cột duy nhất.
    §6 yêu cầu "bảng luôn có .table-scroll, không tràn ngang": hạ min-width theo
-   số cột còn lại thay vì để thanh cuộn ngang xuất hiện. */
+   số cột còn lại thay vì để thanh cuộn ngang xuất hiện.
+   861–1099px cũng cần hạ: nội dung chỉ còn ~700px sau sidebar, đã ẩn cột Liên hệ
+   nên 5 cột còn lại vừa khung. */
+@media (max-width: 1099px) {
+  .data-table {
+    min-width: 0;
+  }
+}
+
 @media (max-width: 860px) {
   .data-table {
     min-width: 520px;
