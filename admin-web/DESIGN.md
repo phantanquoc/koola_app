@@ -246,6 +246,47 @@ Button: `.btn` + variant primary/secondary/ghost/danger/danger-ghost, `btn-sm` t
 `btn-icon` cho action icon-only (bắt buộc `aria-label` + `title`).
 Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi ý phím.
 
+### 5.1 Ô nhập có cấu trúc — cấm `<input>` trần cho dữ liệu có định dạng
+
+**Nguyên tắc: hiển thị có định dạng, lưu trữ không đổi.** Giá trị gửi lên API giữ
+nguyên shape cũ (`number` VND, chuỗi SĐT `0…`, chuỗi ngày ISO); chỉ lớp hiển thị
+đổi. Không migration, không đổi DTO.
+
+| Loại dữ liệu | Component | Hiển thị khi gõ | Gửi lên API |
+|---|---|---|---|
+| Tiền VND | `<MoneyInput>` | `1.234.567` (dấu chấm hàng nghìn) | `parseVnd(v)` → số nguyên |
+| SĐT Việt Nam | `<PhoneInput>` | `091 234 5678`, cố định `028 3773 1122`, quốc tế `+84 912 345 678` | `normalizeVnPhone(v)` → `0…` hoặc `+84…` |
+| Số nguyên (MST, thời lượng) | `<IntegerInput maxLength>` | chỉ chữ số, cắt theo maxLength | chuỗi số |
+| Ngày | `<input type="date">` | date picker của trình duyệt | `YYYY-MM-DD` |
+| Email / URL | `type="email"` / `type="url"` | bàn phím đúng, không autocorrect | chuỗi |
+
+Helper nguồn: `src/components/input-masks.ts` (`VN_PHONE`, `normalizeVnPhone`,
+`formatVnPhone`, `maskVnPhone`, `formatVndInput`, `parseVnd`, `formatVnd`,
+`formatIntegerInput`). Component: `src/components/StructuredInput.tsx`.
+
+Quy tắc bắt buộc:
+
+- **Không dùng `type="number"`.** Cho phép gõ `e`, `+`, `-`; mất số 0 đầu
+  (`0912…` → `912…`); hiện spinner. Dùng `type="text"` + `inputMode="numeric"`
+  (`type="tel"` cho SĐT) để mở đúng bàn phím mà vẫn kiểm soát ký tự.
+- **Con trỏ theo số chữ số, không theo index ký tự.** Chèn dấu phân cách làm
+  index lệch → dòng caret nhảy về cuối mỗi lần gõ. `StructuredInput` đã xử lý;
+  nếu tự viết input có format thì phải làm tương tự.
+- **Rỗng phải ở lại rỗng.** Xoá hết tiền là `''`, không phải `'0'`.
+- **SĐT lưu dạng chuẩn hoá, hiển thị có nhóm.** Backend validate trên giá trị đã
+  chuẩn hoá (`NormalizeVnPhone()` + `@IsVnPhone()`) nên gõ `028 3773 1122` vẫn
+  lưu được — regex cũ chỉ nhận di động 10 số, hồ sơ số cố định không PATCH được.
+- **Ngày luôn là `type="date"`**, không nhập chuỗi tự do: `31/02` hay "hết tháng
+  sau" trước đây chỉ lỗi sau round-trip.
+- **Che PII vẫn phải cho thấy đầu số.** `MaskedPII kind="phone"` dùng
+  `maskVnPhone()` → `091 ••• 78` (đủ nhận ra di động/cố định); bấm hiện thì
+  `formatVnPhone()` ra dạng có nhóm, không phải chuỗi thô `0912345678`.
+- Placeholder minh hoạ đúng định dạng đã format (`89.000`, `091 234 4567`), không
+  phải `89000` — người dùng gõ theo cái họ thấy.
+
+Ngoại lệ hợp lệ: ô tìm kiếm/`type="search"` (chuỗi tự do), `type="checkbox"`,
+textarea văn bản dài. Mọi field còn lại có cấu trúc thì phải dùng component trên.
+
 ## 6. Motion & responsive
 
 - Transition 160ms ease; toast 200ms; sidebar 200ms. Không animation trang trí
@@ -306,6 +347,7 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 - [ ] Trạng thái dùng `StatusBadge`/`VerificationBadge`, không tự map màu
 - [ ] Cột ngày/số dùng `formatDateTime`/`formatNumber`; id dùng `.k-mono` rút gọn
 - [ ] `Pagination` luôn render khi có dữ liệu, có page-size
+- [ ] Ô nhập có cấu trúc dùng `MoneyInput`/`PhoneInput`/`IntegerInput`/`type="date"` (§5.1); không có `type="number"` cho tiền/SĐT/ngày
 
 **Hành động**
 - [ ] Bậc xác nhận đúng bảng §3A2 (đảo ngược / ẩn tạm / phá huỷ / diện rộng / không hoàn tác)
