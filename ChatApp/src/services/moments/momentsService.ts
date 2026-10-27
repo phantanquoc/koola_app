@@ -37,8 +37,21 @@ import {
   type PostCommentView,
 } from './postsApi';
 import type { FeedPost } from '../../components/moments/PostCard';
+
+/**
+ * Single source of truth for a post id. Reads `id` first, falls back to `_id`.
+ * Lives here (not in postsApi) so the narrow re-export/import path used by the
+ * socket router never widens. An id that resolves to null breaks
+ * like/comment/share and collides as a FlatList key.
+ */
+function resolvePost(props: { _id?: unknown; id?: unknown }): string | null {
+  const id = props.id ?? props._id;
+  return id != null && id !== '' ? String(id) : null;
+}
+
 import { generateClientId } from '../../utils/clientId';
 import * as outboxRepository from '../db/outboxRepository';
+import type { CreatePostPayloadV1 } from '../db/outboxRepository';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +86,17 @@ export type MomentsEvent =
   | { type: 'post.new'; postId: string; authorId: string; createdAt: string }
   | { type: 'post.deleted'; postId: string; authorId: string }
   | { type: 'post.reaction'; postId: string; likeCount: number; actorId: string; liked: boolean; viewerId?: string; likedByMe?: boolean }
-  | { type: 'post.comment'; postId: string; authorId: string; commentId: string; commentCount: number };
+  | {
+      type: 'post.comment';
+      postId: string;
+      authorId: string;
+      commentId: string;
+      comment?: PostCommentView | null;
+      commentCount: number;
+      postUpdated?: { likeCount?: number; commentCount?: number; shareCount?: number } | null;
+      /** Set when the comment is a reply: patch the parent, not a top-level row. */
+      parentId?: string | null;
+    };
 
 type Listener = (state: MomentsState) => void;
 
@@ -82,6 +105,13 @@ type Listener = (state: MomentsState) => void;
 class MomentsService {
   private listeners: Set<Listener> = new Set();
   private currentUserId: string | null = null;
+
+  // Posts whose card count came from a THREAD read (patchCommentCount /
+  // syncCommentCount) rather than the card field `commentCount`. The owner
+  // thread filter excludes soft-deleted rows, so the raw field would show
+  // "3 bình luận" over a thread with one visible comment. The thread-derived
+  // number lives in this overlay and wins over every raw-field write.
+  private commentCountOverlay = new Map<string, number>();
 
   private state: MomentsState = {
     feedRing: [],
@@ -109,7 +139,36 @@ class MomentsService {
   }
 
   getState(): MomentsState {
-    return this.state;
+    // `postsById` is exposed as the UI view (overlay applied, fresh identity
+    // for only the overridden posts) so the memoized PostCard still skips
+    // untouched rows.
+    if (this.commentCountOverlay.size === 0) return this.state;
+    const postsById = new Map(
+      [...this.state.postsById].map(([id, post]): [string, PostView] => {
+        const active = this.commentCountOverlay.get(id);
+        return active !== undefined && active !== post.commentCount
+          ? [id, { ...post, commentCount: active }]
+          : [id, post];
+      }),
+    );
+    return { ...this.state, postsById };
+  }
+
+  /**
+   * Bump a post's comment count by `delta` and drop its pinned count: this
+   * device's own write is the new baseline, so a later thread read re-pins
+   * it and a socket replay of the same write cannot double-apply.
+   */
+  private incrementCommentCount(postId: string, delta: 1 | -1): void {
+    this.commentCountOverlay.delete(postId);
+    const post = this.state.postsById.get(postId);
+    if (!post) return;
+    const postsById = new Map(this.state.postsById);
+    postsById.set(postId, {
+      ...post,
+      commentCount: Math.max(0, post.commentCount + delta),
+    });
+    this.setState({ postsById });
   }
 
   private setState(partial: Partial<MomentsState>): void {
@@ -482,10 +541,17 @@ class MomentsService {
 
   // ─── Posts ───────────────────────────────────────────────────────────────────
 
-  /** Map a backend PostView to the presentational FeedPost (PostCard contract). */
-  mapPostToFeedPost(post: PostView): FeedPost {
+  /**
+   * Map a backend PostView to the presentational FeedPost (PostCard contract).
+   * Returns null when the post carries no resolvable id — such a row cannot be
+   * liked, commented on, or keyed, so `refreshPosts` drops it and flags a
+   * contract error instead of rendering a dead card.
+   */
+  mapPostToFeedPost(post: PostView): FeedPost | null {
+    const postId = resolvePost(post);
+    if (!postId) return null;
     return {
-      id: post._id,
+      id: postId,
       authorId: post.authorId,
       authorDisplayName: post.authorDisplayName || 'Người dùng',
       authorAvatar: post.authorAvatar ?? undefined,
@@ -502,9 +568,13 @@ class MomentsService {
       commentCount: post.commentCount,
       shareCount: post.shareCount,
       likedByMe: post.likedByMe,
+      // A soft-deleted row is NOT dropped here: it keeps its slot as a
+      // tombstone so the preview matches the sheet (which does the same).
       comments: (post.comments ?? []).map((c) => ({
         id: c._id,
-        authorDisplayName: c.authorDisplayName || 'Người dùng',
+        authorDisplayName: c.isActive
+          ? c.authorDisplayName || 'Người dùng'
+          : '',
         authorAvatar: c.authorAvatar ?? undefined,
         content: c.isActive ? c.content : '[đã xóa]',
         timeLabel: formatPostTime(c.createdAt),
@@ -513,10 +583,14 @@ class MomentsService {
   }
 
   getFeedPosts(): FeedPost[] {
-    return this.state.feedIds
-      .map((id) => this.state.postsById.get(id))
+    // Reads through getState() so a thread-derived comment count is what the
+    // card renders (patchCommentCount), not the stale raw field.
+    const { feedIds, postsById } = this.getState();
+    return feedIds
+      .map((id) => postsById.get(id))
       .filter((p): p is PostView => !!p)
-      .map((p) => this.mapPostToFeedPost(p));
+      .map((p) => this.mapPostToFeedPost(p))
+      .filter((p): p is FeedPost => p !== null);
   }
 
   async refreshPosts(): Promise<void> {
@@ -530,15 +604,30 @@ class MomentsService {
       const response = await postsApi.getFeed({ limit: 20 });
       const postsById = new Map<string, PostView>();
       const feedIds: string[] = [];
+      let malformed = 0;
       for (const item of response.items) {
-        postsById.set(item._id, item);
-        feedIds.push(item._id);
+        // Key by the SAME id the UI uses (resolvePost), so every downstream
+        // lookup — like, comment, media viewer, menu — hits the same entry.
+        const id = resolvePost(item);
+        if (!id) {
+          malformed++;
+          continue;
+        }
+        postsById.set(id, item);
+        feedIds.push(id);
       }
+      // A page of id-less posts would render as an empty feed that looks like
+      // "no posts" — surface it as a real error instead.
+      const postsError =
+        malformed > 0
+          ? 'Dữ liệu bài viết không hợp lệ — vui lòng thử lại'
+          : null;
       this.setState({
         postsById,
         feedIds,
         postsCursor: response.nextCursor,
         isLoadingPosts: false,
+        postsError,
       });
     } catch (err: unknown) {
       this.setState({
@@ -560,19 +649,29 @@ class MomentsService {
       const postsById = new Map(this.state.postsById);
       const feedIds = [...this.state.feedIds];
       for (const item of response.items) {
-        if (!postsById.has(item._id)) feedIds.push(item._id);
-        postsById.set(item._id, item);
+        // Same id normalization as refreshPosts.
+        const id = resolvePost(item);
+        if (!id) continue;
+        if (!postsById.has(id)) feedIds.push(id);
+        postsById.set(id, { ...item, id });
       }
       this.setState({
         postsById,
         feedIds,
         postsCursor: response.nextCursor,
         isLoadingPosts: false,
+        // A page that failed earlier must not stay on screen as a banner
+        // after a successful one.
+        postsError: null,
       });
     } catch (err: unknown) {
       this.setState({
         isLoadingPosts: false,
         postsError: err instanceof Error ? err.message : 'Không thể tải thêm bài viết',
+        // Clear the cursor so the list's onEndReached cannot loop on a
+        // failing page (the existing posts stay). Retry = refresh, which
+        // clears postsError and reloads the first page.
+        postsCursor: null,
       });
     }
   }
@@ -588,26 +687,24 @@ class MomentsService {
     const clientPostId = body.clientPostId ?? generateClientId();
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
-      // Text-only posts are durable: enqueue for replay with the same
-      // clientPostId (server dedupes on replay). Posts WITH media keep the
-      // inline-retry behavior — media upload requires connectivity and is not
-      // representable in the outbox payload.
-      if (!body.media || body.media.length === 0) {
-        outboxRepository.enqueue('create_post', {
-          caption: body.caption,
-          audienceScope: body.audienceScope,
-          audienceListId: body.audienceListId,
-          mentions: body.mentions as Array<{ userId: string; displayName?: string }> | undefined,
-          clientPostId,
-        });
-        throw Object.assign(new Error('QUEUED'), {
-          code: 'QUEUED',
-          message: 'Sẽ đăng khi có mạng',
-        });
-      }
-      throw Object.assign(new Error('OFFLINE'), {
-        code: 'OFFLINE',
-        message: 'Không có kết nối mạng. Vui lòng thử lại sau.',
+      const mediaAssets = (body.media ?? []).map((m) => ({
+        localUri: (m as unknown as { localUri?: string }).localUri ?? m.mediaKey,
+        mediaType: String(m.mediaType),
+        duration: m.duration ?? undefined,
+        width: (m as unknown as { width?: number }).width,
+        height: (m as unknown as { height?: number }).height,
+      }));
+      outboxRepository.enqueue('create_post', {
+        caption: body.caption,
+        audienceScope: body.audienceScope,
+        audienceListId: body.audienceListId,
+        mentions: body.mentions as CreatePostPayloadV1['mentions'],
+        media: mediaAssets,
+        clientPostId,
+      });
+      throw Object.assign(new Error('QUEUED'), {
+        code: 'QUEUED',
+        message: 'Sẽ đăng khi có mạng',
       });
     }
 
@@ -616,13 +713,34 @@ class MomentsService {
       clientPostId,
     });
     // Prepend reconciled by ID (no duplicate on post.new replay)
+    const postId = resolvePost(post);
+    if (!postId) {
+      throw new Error('Bài viết vừa tạo thiếu mã định danh');
+    }
+    const normalized: PostView = { ...post, id: postId };
     const postsById = new Map(this.state.postsById);
-    postsById.set(post._id, post);
-    const feedIds = this.state.feedIds.includes(post._id)
+    postsById.set(postId, normalized);
+    const feedIds = this.state.feedIds.includes(postId)
       ? this.state.feedIds
-      : [post._id, ...this.state.feedIds];
+      : [postId, ...this.state.feedIds];
     this.setState({ postsById, feedIds });
-    return post;
+    return normalized;
+  }
+
+  /**
+   * Upsert a single post the app fetched out-of-band (e.g. a shared link
+   * resolved in MomentViewer) so the feed shows it without a refetch.
+   */
+  cachePost(post: PostView): string | null {
+    const id = resolvePost(post);
+    if (!id) return null;
+    const postsById = new Map(this.state.postsById);
+    postsById.set(id, { ...post, id });
+    const feedIds = this.state.feedIds.includes(id)
+      ? this.state.feedIds
+      : [id, ...this.state.feedIds];
+    this.setState({ postsById, feedIds });
+    return id;
   }
 
   async toggleLike(postId: string): Promise<void> {
@@ -666,22 +784,159 @@ class MomentsService {
     parentId?: string,
   ): Promise<PostCommentView> {
     const comment = await postsApi.commentOnPost(postId, { content, parentId });
-    // Patch commentCount + preview in place; full list loads on sheet open
     const post = this.state.postsById.get(postId);
     if (post) {
+      this.incrementCommentCount(postId, 1);
       const postsById = new Map(this.state.postsById);
-      postsById.set(postId, {
-        ...post,
-        commentCount: post.commentCount + 1,
-      });
+      if (!parentId) {
+        // Keep the card's 2-comment preview in step with the API: drop the
+        // oldest previewed comment so the newest one (just posted) is visible
+        // without waiting for a refresh.
+        const preview = [...(post.comments ?? []), comment]
+          .filter((c) => c.isActive || c._id === comment._id)
+          .slice(-2);
+        postsById.set(postId, { ...postsById.get(postId)!, comments: preview });
+      } else {
+        // Reply: bump the parent's reply count inside the preview.
+        const comments = (post.comments ?? []).map((c) =>
+          c._id === parentId
+            ? { ...c, replyCount: (c.replyCount ?? 0) + 1 }
+            : c,
+        );
+        postsById.set(postId, { ...postsById.get(postId)!, comments });
+      }
       this.setState({ postsById });
     }
     return comment;
   }
 
-  async sharePost(postId: string): Promise<{ shareCount: number; deepLink: string }> {
-    const result = await postsApi.sharePost(postId);
+  /**
+   * Active top-level comment count from a loaded thread. `post.commentCount`
+   * includes soft-deleted rows, so the card must show this instead. The value
+   * is pinned in the overlay: a later refreshPosts (raw field) or a
+   * `post.comment` replay (possibly a delayed delete) must not overwrite it.
+   */
+  patchCommentCount(postId: string, activeCommentCount: number): void {
     const post = this.state.postsById.get(postId);
+    if (!post) return;
+    this.commentCountOverlay.set(postId, activeCommentCount);
+    if (post.commentCount === activeCommentCount) return;
+    const postsById = new Map(this.state.postsById);
+    postsById.set(postId, { ...post, commentCount: activeCommentCount });
+    this.setState({ postsById });
+  }
+
+  /**
+   * Re-read the server's active comment count after this device soft-deleted
+   * `deletedCommentId`, then pin it. The card must show the server's number,
+   * not `previous - 1` (see MomentsScreen.handleDeleteComment). The id is sent
+   * so read-your-writes staleness cannot count the just-deleted row again.
+   * A failed request keeps the current value.
+   */
+  async syncCommentCount(
+    postId: string,
+    deletedCommentId?: string,
+    // The thread as the sheet shows it (tombstones flagged, ids unknown to
+    // the card included). Used when the count request fails.
+    thread?: PostCommentView[],
+  ): Promise<void> {
+    try {
+      const { activeCommentCount } = await postsApi.getActiveCommentCount(
+        postId,
+        deletedCommentId,
+      );
+      if (activeCommentCount !== null) {
+        this.patchCommentCount(postId, activeCommentCount);
+      } else {
+        // The server could not count (null). Never leave the card at
+        // `previous - 1` over a thread the user is looking at.
+        this.recountFromThread(postId, thread);
+      }
+    } catch {
+      this.recountFromThread(postId, thread);
+    }
+  }
+
+  /**
+   * Fallback for a failed count request: active top-level rows of the thread
+   * the sheet is showing. Without a thread there is nothing to count from,
+   * so the pin and the `previous - 1` the caller applied stay.
+   */
+  private recountFromThread(postId: string, thread?: PostCommentView[]): void {
+    if (!thread) return;
+    const active = thread.filter((c) => !c.parentId && c.isActive !== false).length;
+    this.patchCommentCount(postId, active);
+  }
+
+  /**
+   * Insert a comment this device just wrote into the card's 2-comment preview
+   * (top-level only). Kept OUT of the comment sheet's own array so the thread
+   * and the preview never share state. A no-op when addComment already
+   * applied the same write.
+   */
+  registerComment(postId: string, comment: PostCommentView): void {
+    const post = this.state.postsById.get(postId);
+    if (!post) return;
+    const comments = post.comments ?? [];
+    if (comment.parentId) return;
+    if (comments.some((c) => c._id === comment._id)) return;
+    const preview = [...comments, comment]
+      .filter((c) => c.isActive || c._id === comment._id)
+      .slice(-2);
+    const postsById = new Map(this.state.postsById);
+    postsById.set(postId, { ...post, comments: preview });
+    this.setState({ postsById });
+  }
+
+  async deleteComment(commentId: string): Promise<void> {
+    await postsApi.deleteComment(commentId);
+    // Mark the row, don't drop it: the backend soft-deletes, keeping the
+    // slot and the replies under a top-level row. Card and thread agree on
+    // the tombstone; the count is re-read from the server by the caller
+    // (syncCommentCount) instead of being guessed here.
+    const postsById = new Map(this.state.postsById);
+    let changed = false;
+    for (const [id, post] of postsById) {
+      const comments = post.comments ?? [];
+      const isTopLevel = comments.some((c) => c._id === commentId);
+      if (isTopLevel) {
+        changed = true;
+        postsById.set(id, {
+          ...post,
+          comments: comments.map((c) =>
+            c._id === commentId ? { ...c, isActive: false } : c,
+          ),
+        });
+        continue;
+      }
+      // A reply is never a top-level entry — mark it inside its parent and
+      // lower that parent's replyCount.
+      let touched = false;
+      const nextComments = comments.map((c) => {
+        if (!(c.replies ?? []).some((r) => r._id === commentId)) return c;
+        touched = true;
+        return {
+          ...c,
+          replies: (c.replies ?? []).map((r) =>
+            r._id === commentId ? { ...r, isActive: false } : r,
+          ),
+          replyCount: Math.max(0, (c.replyCount ?? 0) - 1),
+        };
+      });
+      if (!touched) continue;
+      changed = true;
+      this.incrementCommentCount(id, -1);
+      postsById.set(id, { ...postsById.get(id)!, comments: nextComments });
+    }
+    if (changed) this.setState({ postsById });
+  }
+
+  async sharePost(
+    postId: string,
+  ): Promise<{ shareCount: number; deepLink: string; appLink: string }> {
+    const result = await postsApi.sharePost(postId);
+    // View (overlay applied) so a spread write can't drop the pinned count.
+    const post = this.getState().postsById.get(postId);
     if (post) {
       const postsById = new Map(this.state.postsById);
       postsById.set(postId, { ...post, shareCount: result.shareCount });
@@ -695,10 +950,12 @@ class MomentsService {
     body: { caption?: string; audienceScope?: PostView['audienceScope']; audienceListId?: string },
   ): Promise<PostView> {
     const updated = await postsApi.updatePost(postId, body);
+    const id = resolvePost(updated) ?? postId;
+    const normalized: PostView = { ...updated, id };
     const postsById = new Map(this.state.postsById);
-    postsById.set(postId, updated);
+    postsById.set(id, normalized);
     this.setState({ postsById });
-    return updated;
+    return normalized;
   }
 
   async deletePost(postId: string): Promise<void> {
@@ -726,11 +983,13 @@ class MomentsService {
           if (this.state.postsById.has(event.postId)) return; // no duplicate on replay
           try {
             const post = await postsApi.getPostById(event.postId);
+            const id = resolvePost(post);
+            if (!id) return;
             const postsById = new Map(this.state.postsById);
-            postsById.set(post._id, post);
+            postsById.set(id, { ...post, id });
             this.setState({
               postsById,
-              feedIds: [post._id, ...this.state.feedIds],
+              feedIds: [id, ...this.state.feedIds],
             });
           } catch {
             // Post may be out of scope — refresh silently to stay consistent
@@ -748,7 +1007,7 @@ class MomentsService {
           break;
         }
         case 'post.reaction': {
-          const post = this.state.postsById.get(event.postId);
+          const post = this.getState().postsById.get(event.postId);
           if (post) {
             // Always patch the count; only touch likedByMe when the event's
             // actor is this device's user (e.g. own like from another device).
@@ -764,8 +1023,11 @@ class MomentsService {
               ? (event.liked ?? event.likedByMe ?? post.likedByMe)
               : post.likedByMe;
             const postsById = new Map(this.state.postsById);
+            // Write the STORED object (the view copy carries a count the raw
+            // field may not), patched with the event. `id` is kept: socket
+            // events arrive after the fetch that keyed this entry.
             postsById.set(event.postId, {
-              ...post,
+              ...this.state.postsById.get(event.postId)!,
               likeCount: event.likeCount,
               reactionCount: event.likeCount,
               likedByMe: nextLikedByMe,
@@ -775,14 +1037,45 @@ class MomentsService {
           break;
         }
         case 'post.comment': {
-          const post = this.state.postsById.get(event.postId);
+          const post = this.getState().postsById.get(event.postId);
           if (post) {
-            const postsById = new Map(this.state.postsById);
-            postsById.set(event.postId, {
-              ...post,
-              commentCount: event.commentCount,
-            });
-            this.setState({ postsById });
+            const stored = this.state.postsById.get(event.postId);
+            if (!stored) break;
+            // Enriched payload: merge the comment view + post counts in one
+            // write; the thread-derived overlay still wins at read time.
+            const next: PostView = { ...stored };
+            const incoming = event.postUpdated;
+            const nextCount =
+              incoming?.commentCount ?? event.commentCount;
+            if (nextCount > stored.commentCount) {
+              next.commentCount = nextCount;
+            }
+            if (incoming?.likeCount !== undefined) {
+              next.likeCount = incoming.likeCount;
+              next.reactionCount = incoming.likeCount;
+            }
+            if (incoming?.shareCount !== undefined) {
+              next.shareCount = incoming.shareCount;
+            }
+            const view = (event as { comment?: PostCommentView | null }).comment;
+            if (view && view._id && !view.parentId) {
+              const comments = [...(next.comments ?? [])];
+              if (!comments.some((c) => c._id === view._id)) {
+                comments.push(view);
+                next.comments = comments.slice(-2);
+              }
+            }
+            // Only write when something changed (count or preview merge).
+            if (
+              next.commentCount !== stored.commentCount ||
+              next.likeCount !== stored.likeCount ||
+              next.shareCount !== stored.shareCount ||
+              next.comments !== stored.comments
+            ) {
+              const postsById = new Map(this.state.postsById);
+              postsById.set(event.postId, next);
+              this.setState({ postsById });
+            }
           }
           break;
         }
@@ -795,6 +1088,7 @@ class MomentsService {
   // ─── Reset on logout ─────────────────────────────────────────────────────────
 
   reset(): void {
+    this.commentCountOverlay.clear();
     this.state = {
       feedRing: [],
       storiesByAuthor: new Map(),

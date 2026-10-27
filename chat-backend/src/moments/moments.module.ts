@@ -12,10 +12,9 @@ import {
 } from './schemas/audience-list.schema';
 import { MusicTrack, MusicTrackSchema } from './schemas/music-track.schema';
 import { Post, PostSchema } from './schemas/post.schema';
-import {
-  PostComment,
-  PostCommentSchema,
-} from './schemas/post-comment.schema';
+import { PostComment, PostCommentSchema } from './schemas/post-comment.schema';
+import { PostLike, PostLikeSchema } from './schemas/post-like.schema';
+import { CommentLike, CommentLikeSchema } from './schemas/comment-like.schema';
 import { Report, ReportSchema } from '../admin/schemas/report.schema';
 import { RedisModule } from '../common/redis/redis.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -35,6 +34,8 @@ import { ChatGateway } from '../gateway/chat.gateway';
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: Post.name, schema: PostSchema },
       { name: PostComment.name, schema: PostCommentSchema },
+      { name: PostLike.name, schema: PostLikeSchema },
+      { name: CommentLike.name, schema: CommentLikeSchema },
       { name: Report.name, schema: ReportSchema },
     ]),
     RedisModule,

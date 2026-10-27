@@ -15,6 +15,8 @@ import { AudienceList } from './schemas/audience-list.schema';
 import { MusicTrack } from './schemas/music-track.schema';
 import { Post } from './schemas/post.schema';
 import { PostComment } from './schemas/post-comment.schema';
+import { PostLike } from './schemas/post-like.schema';
+import { CommentLike } from './schemas/comment-like.schema';
 import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -65,6 +67,7 @@ const redisMock = {
   get: jest.fn().mockResolvedValue(null),
   del: jest.fn().mockResolvedValue(undefined),
   setEX: jest.fn().mockResolvedValue(undefined),
+  setNXEX: jest.fn().mockResolvedValue(true),
   scanKeys: jest.fn().mockResolvedValue([]),
   tryAcquireLock: jest.fn().mockResolvedValue(true),
 };
@@ -88,6 +91,7 @@ describe('MomentsService', () => {
       sendPushNotification: jest.fn(),
       sendMentionPush: jest.fn().mockResolvedValue(undefined),
       sendPostMentionPush: jest.fn().mockResolvedValue(undefined),
+      sendCommentPush: jest.fn().mockResolvedValue(undefined),
     };
     conversationsMock = {
       createDirect: jest.fn().mockResolvedValue({
@@ -121,6 +125,11 @@ describe('MomentsService', () => {
         { provide: getModelToken(Post.name), useValue: makeModelMock() },
         {
           provide: getModelToken(PostComment.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
         },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },

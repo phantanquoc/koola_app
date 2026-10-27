@@ -3,7 +3,12 @@ import { Document } from 'mongoose';
 
 export type ReportDocument = Report & Document;
 
-export type ReportTargetType = 'message' | 'story' | 'user' | 'conversation';
+export type ReportTargetType =
+  | 'message'
+  | 'story'
+  | 'user'
+  | 'conversation'
+  | 'post';
 export type ReportStatus = 'pending' | 'resolved' | 'dismissed';
 
 @Schema({ timestamps: true })
@@ -11,7 +16,10 @@ export class Report {
   @Prop({ required: true, type: String })
   reporterId: string;
 
-  @Prop({ required: true, enum: ['message', 'story', 'user', 'conversation'] })
+  @Prop({
+    required: true,
+    enum: ['message', 'story', 'user', 'conversation', 'post'],
+  })
   targetType: ReportTargetType;
 
   @Prop({ required: true, type: String })
@@ -38,3 +46,7 @@ export const ReportSchema = SchemaFactory.createForClass(Report);
 ReportSchema.index({ status: 1, createdAt: -1 });
 ReportSchema.index({ targetType: 1, status: 1 });
 ReportSchema.index({ reporterId: 1 });
+ReportSchema.index(
+  { reporterId: 1, targetType: 1, targetId: 1 },
+  { unique: true, partialFilterExpression: { targetType: 'post' } },
+);

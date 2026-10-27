@@ -83,13 +83,19 @@ function formatCount(n: number): string {
   return `${k.toFixed(k < 10 ? 1 : 0).replace('.', ',')}K`;
 }
 
-const ActionButton: React.FC<{
+const ActionButton = React.memo(function ActionButton({
+  icon,
+  label,
+  active,
+  onPress,
+  semantic,
+}: {
   icon: string;
   label: string;
   active?: boolean;
   onPress?: () => void;
   semantic: SemanticTokens;
-}> = ({ icon, label, active, onPress, semantic }) => {
+}) {
   const styles = useMemo(() => makeStyles(semantic), [semantic]);
   return (
     // Sizing box (flex/minHeight/radius/overflow) lives on this plain View. On
@@ -126,7 +132,7 @@ const ActionButton: React.FC<{
       </Pressable>
     </View>
   );
-};
+});
 
 const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
@@ -491,38 +497,49 @@ const PostCard: React.FC<Props> = ({
       </View>
 
       {/* ── Comment preview ──────────────────────────────────────────────── */}
-      {post.comments.length > 0 && (
+      {(post.comments.length > 0 || post.commentCount > 0) && (
         <View style={styles.commentsWrap}>
-          {post.comments.map((c) => (
-            <View key={c.id} style={styles.commentRow}>
-              <UserAvatar
-                displayName={c.authorDisplayName}
-                avatar={c.authorAvatar}
-                size={28}
-              />
-              <View style={styles.commentBody}>
-                <View style={styles.commentBubble}>
-                  <KoolaText variant="caption" weight="700" numberOfLines={1}>
-                    {c.authorDisplayName}
-                  </KoolaText>
-                  <KoolaText variant="body" style={styles.commentText}>
-                    {c.content}
+          {post.comments.map((c) => {
+            // Tombstone: a soft-deleted comment keeps its slot (its replies
+            // stay under it) but shows no author and no actions.
+            if (!c.authorDisplayName) {
+              return (
+                <View key={c.id} style={styles.commentRow}>
+                  <KoolaText variant="caption" tone="faint">
+                    Bình luận này đã bị xóa
                   </KoolaText>
                 </View>
-                <View style={styles.commentMetaRow}>
-                  <KoolaText variant="caption" tone="muted" weight="600">
-                    Thích
-                  </KoolaText>
-                  <KoolaText variant="caption" tone="muted" weight="600" style={styles.commentMetaItem}>
-                    Trả lời
-                  </KoolaText>
-                  <KoolaText variant="caption" tone="faint" style={styles.commentMetaItem}>
-                    {c.timeLabel}
-                  </KoolaText>
+              );
+            }
+            return (
+              <View key={c.id} style={styles.commentRow}>
+                <UserAvatar
+                  displayName={c.authorDisplayName}
+                  avatar={c.authorAvatar}
+                  size={28}
+                />
+                <View style={styles.commentBody}>
+                  <View style={styles.commentBubble}>
+                    <KoolaText variant="caption" weight="700" numberOfLines={1}>
+                      {c.authorDisplayName}
+                    </KoolaText>
+                    <KoolaText variant="body" style={styles.commentText}>
+                      {c.content}
+                    </KoolaText>
+                  </View>
+                  {/* Static labels only — a non-pressable "Thích"/"Trả lời" reads
+                      as a broken button. Actions live in the comment sheet. */}
+                  {c.timeLabel ? (
+                    <View style={styles.commentMetaRow}>
+                      <KoolaText variant="caption" tone="faint">
+                        {c.timeLabel}
+                      </KoolaText>
+                    </View>
+                  ) : null}
                 </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           {post.commentCount > post.comments.length && (
             <Pressable
@@ -541,6 +558,6 @@ const PostCard: React.FC<Props> = ({
   );
 };
 
-export default PostCard;
+export default React.memo(PostCard);
 
 

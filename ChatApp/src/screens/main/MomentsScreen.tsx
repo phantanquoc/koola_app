@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionSheetIOS,
   Alert,
+  BackHandler,
   FlatList,
   Modal,
   Platform,
@@ -23,12 +24,14 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, {
   Easing,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import type { ChatTabStackParamList } from '../../navigation/types';
 import { momentsService, type FeedRingItem, type MomentsState } from '../../services/moments/momentsService';
-import type { PostCommentView } from '../../services/moments/postsApi';
+import { postsApi, type PostCommentView } from '../../services/moments/postsApi';
 import type { PostMediaItem } from '../../components/moments/PostMediaGrid';
 import { useAuth } from '../../contexts/AuthContext';
 import MomentsFeedHeader, { type FeedHeaderRing } from '../../components/moments/MomentsFeedHeader';
@@ -43,6 +46,7 @@ import {
 } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { acquireBackIntercept } from '../../services/nativeBack';
 import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 import { resolveMomentsStoryRegion } from './momentsView';
@@ -61,6 +65,25 @@ const MomentsScreen: React.FC = () => {
   const scrollDirection = useSharedValue(0);
   const directionTravel = useSharedValue(0);
   const styles = useMemo(() => makeStyles(tokens.semantic), [tokens.semantic]);
+  // Comment-sheet keyboard shift (Android only). The window is edge-to-edge
+  // (MainActivity clears decorFitsSystemWindows), so manifest adjustResize is
+  // a no-op and the keyboard arrives only as a window inset — the same root
+  // cause ChatScreen.tsx compensates for with useReanimatedKeyboardAnimation.
+  // The whole sheet container travels (input row + reply banner + list, which
+  // is why empty/loading states shift too), on the UI thread with no JS
+  // re-render per keyboard frame. Deliberately NOT KeyboardAvoidingView: it is
+  // a documented no-op on Android under edge-to-edge (see AuthFormShell).
+  // Platform is read on the JS thread (style array composition), never inside
+  // the worklet; iOS pageSheet already avoids the keyboard natively, so
+  // shifting there too would double-move the sheet.
+  // No Keyboard.addListener fallback: keyboard-controller's listener is global
+  // (window inset, not view-hierarchy), so it fires while the Modal sheet is
+  // open; a second JS-driven translate would double-shift and re-render the
+  // FlatList per keyboard frame.
+  const keyboard = useReanimatedKeyboardAnimation();
+  const sheetShiftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboard.height.value }],
+  }));
   const { notify, toast } = useComingSoonToast();
   const initialState = momentsService.getState();
   const [state, setState] = useState<MomentsState>(initialState);
@@ -69,7 +92,81 @@ const MomentsScreen: React.FC = () => {
   const [commentText, setCommentText] = useState('');
   const [commentReplyTo, setCommentReplyTo] = useState<PostCommentView | null>(null);
   const [postComments, setPostComments] = useState<PostCommentView[]>([]);
+  /**
+   * Soft-deleted top-level rows in the loaded thread. The API still returns
+   * them (chronological page + cursor) but they must never be counted — that
+   * is how "1 comment" showed as "3 bình luận".
+   */
+  const [deletedCommentIds, setDeletedCommentIds] = useState<string[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  // Mirrors postComments (the sheet's rows) for callbacks that must not re-create
+  // on every thread update (delete → count sync needs the rows after the
+  // tombstone edit).
+  const threadRef = useRef<PostCommentView[]>([]);
+  useEffect(() => {
+    threadRef.current = postComments;
+  }, [postComments]);
+  // Guards double-tap on "Gửi": a second press while the first request is in
+  // flight would post the same text twice. The ref is checked synchronously
+  // (state is not readable inside the same tick).
+  const [sendingComment, setSendingComment] = useState(false);
+  const sendingCommentRef = useRef(false);
+  // RN 0.76 (Fabric) + `presentationStyle="pageSheet"`: the sheet's own window
+  // stays "focused" after it closes, so no touch ever reaches the feed again —
+  // every tap, tab switch included, is swallowed. Remounting the native modal
+  // with a fresh `key` forces a new window; all sheet state must be reset at
+  // the same time or it leaks into the next open.
+  const [sheetEpoch, setSheetEpoch] = useState(0);
+  // Mirrors commentPostId so closeComments (a stable useCallback([])) can
+  // tell a real close from a duplicate fire without re-creating.
+  const sheetOpenRef = useRef(false);
+  const closeComments = useCallback(() => {
+    // Idempotent: Android delivers BOTH Modal.onRequestClose AND the JS
+    // hardwareBackPress listener for a single system-Back press. The second
+    // fire must be a no-op — a second sheetEpoch bump would remount the Modal
+    // window twice and re-open the leaked-window race (see the `key` comment
+    // above). Same-tick double-taps on "Đóng" are absorbed here too.
+    if (!sheetOpenRef.current) return;
+    sheetOpenRef.current = false;
+    setCommentPostId(null);
+    setCommentText('');
+    setCommentReplyTo(null);
+    setPostComments([]);
+    setDeletedCommentIds([]);
+    setCommentsLoading(false);
+    setSendingComment(false);
+    sendingCommentRef.current = false;
+    setSheetEpoch((n) => n + 1);
+  }, []);
+  // Hardware Back while the comment sheet is open (Android). Follows the
+  // QrScannerModal / KoolaConfirmHost contract exactly: hold a JS
+  // hardwareBackPress listener AND an acquireBackIntercept() lease for the
+  // whole open window, releasing both in cleanup. Without the lease, native
+  // runs the card shrink/nav-pop flow while the Modal dialog window is open;
+  // the leaked window keeps focus and swallows every touch afterwards — the
+  // freeze. The effect cleanup also runs on unmount-with-sheet-open, so
+  // native never delegates Back to a dead JS side.
+  // Keyboard ordering: one press closes the sheet outright (same as
+  // QrScannerModal and the other overlay owners — none dismiss keyboard
+  // first) instead of dismissing the keyboard first. The keyboard belongs to
+  // the sheet's window, so closing the sheet dismisses it as a side effect.
+  // (If the framework ever swallows a press for keyboard-dismiss only, the
+  // next press still closes the sheet; either way there is no freeze.)
+  // Deliberately outside the keyboard-shift mechanism above — this effect
+  // owns Back only and never touches sheetShiftStyle.
+  useEffect(() => {
+    if (commentPostId === null) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeComments();
+      return true;
+    });
+    // JS consumes Back while open → native skips any card shrink.
+    const releaseIntercept = acquireBackIntercept();
+    return () => {
+      sub.remove();
+      releaseIntercept();
+    };
+  }, [commentPostId, closeComments]);
   // State khởi tạo của momentsService là { isLoading: false, feedRing: [] }, nên
   // ở frame đầu tiên (trước khi useFocusEffect kịp gọi refreshFeed) resolver sẽ
   // ra "empty" rồi nháy sang "skeleton". hasAttemptedLoad đánh dấu đã kích hoạt
@@ -241,17 +338,27 @@ const MomentsScreen: React.FC = () => {
     void momentsService.toggleLike(postId);
   }, []);
 
-  const openComments = useCallback(async (postId: string, replyTo?: PostCommentView) => {
+  const openComments = useCallback(async (postId: string) => {
+    sheetOpenRef.current = true;
     setCommentPostId(postId);
     setCommentText('');
-    setCommentReplyTo(replyTo ?? null);
+    setCommentReplyTo(null);
     setCommentsLoading(true);
     try {
-      // The sheet posts via momentsService; the full comment list loads here
+      // The sheet posts via momentsService; the full comment list loads here.
+      // Opening a post always starts a fresh thread — replying is a separate
+      // action (startReply) so it never reloads the list or clears the draft.
       setPostComments([]);
-      const { postsApi } = await import('../../services/moments/postsApi');
+      setDeletedCommentIds([]);
       const result = await postsApi.listComments(postId, { limit: 20 });
       setPostComments(result.comments);
+      setDeletedCommentIds(result.deletedIds ?? []);
+      // The stored count still includes soft-deleted rows (it is only
+      // decremented by a live delete, so edits made elsewhere — or before this
+      // thread loaded — keep it stale). The visible thread is the truth.
+      if (typeof result.activeCommentCount === 'number') {
+        momentsService.patchCommentCount(postId, result.activeCommentCount);
+      }
     } catch {
       // Preview stays empty — the sheet still allows posting
       setPostComments([]);
@@ -260,9 +367,87 @@ const MomentsScreen: React.FC = () => {
     }
   }, []);
 
+  /** Reply to a comment WITHOUT reloading the thread or clearing the draft. */
+  const startReply = useCallback((comment: PostCommentView) => {
+    setCommentReplyTo(comment);
+  }, []);
+
+  /**
+   * After a delete the card must show the server's active count, never
+   * `previous - 1` (the card may already hold a corrected count, and the raw
+   * field includes soft-deleted rows). The sheet's own rows are the fallback
+   * when the count request fails.
+   */
+  const syncCommentCount = useCallback(async (postId: string, deletedId: string) => {
+    await momentsService.syncCommentCount(postId, deletedId, threadRef.current);
+  }, []);
+
+  /** Comment author OR the post author may delete (mirrors the backend rule). */
+  const canDeleteComment = useCallback((comment: PostCommentView) => {
+    if (!user) return false;
+    if (comment.authorId === user._id) return true;
+    if (!commentPostId) return false;
+    return momentsService.getState().postsById.get(commentPostId)?.authorId === user._id;
+  }, [commentPostId, user]);
+
+  const handleDeleteComment = useCallback(async (comment: PostCommentView) => {
+    Alert.alert('Xóa bình luận?', undefined, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: () => {
+          void momentsService
+            .deleteComment(comment._id)
+            .then(async () => {
+              // Mirrors momentsService.deleteComment: the backend keeps the
+              // deleted row (and its replies) in place. A top-level comment
+              // becomes a tombstone; a deleted reply becomes one inside its
+              // parent, keeping the slot and the "đã xóa" label.
+              let removedTopLevel = false;
+              setPostComments((current) =>
+                current.map((c) => {
+                  if (c._id === comment._id && !c.parentId) {
+                    removedTopLevel = true;
+                    return { ...c, isActive: false, replies: c.replies ?? [] };
+                  }
+                  if (!(c.replies ?? []).some((r) => r._id === comment._id)) {
+                    return c;
+                  }
+                  return {
+                    ...c,
+                    replies: (c.replies ?? []).map((r) =>
+                      r._id === comment._id ? { ...r, isActive: false } : r,
+                    ),
+                  };
+                }),
+              );
+              if (removedTopLevel) {
+                setDeletedCommentIds((ids) => [...ids, comment._id]);
+              }
+              // The count the card must show is the ACTIVE one returned by the
+              // server, never `previous - 1`: the card may already hold the
+              // corrected (active) count, which would lose a comment, and it
+              // includes soft-deleted rows, which the delete only lowers by one.
+              if (commentPostId) {
+                await syncCommentCount(commentPostId, comment._id);
+              }
+              if (commentReplyTo?._id === comment._id) setCommentReplyTo(null);
+            })
+            .catch(() => notify('Xóa bình luận thất bại — thử lại'));
+        },
+      },
+    ]);
+  }, [commentPostId, commentReplyTo?._id, notify, syncCommentCount]);
+
   const handleSendComment = useCallback(async () => {
-    if (!commentPostId || !commentText.trim()) return;
+    // The ref, not the state: two presses in the same tick both read the state
+    // from the previous render, so `sendingComment` alone let the second tap
+    // through and posted the same text twice.
+    if (!commentPostId || !commentText.trim() || sendingCommentRef.current) return;
     const text = commentText.trim();
+    sendingCommentRef.current = true;
+    setSendingComment(true);
     setCommentText('');
     try {
       const comment = await momentsService.addComment(
@@ -270,11 +455,42 @@ const MomentsScreen: React.FC = () => {
         text,
         commentReplyTo?._id,
       );
-      setPostComments((current) => [...current, comment]);
+      // The server resolves replyCount/replies for top-level comments and
+      // returns [] for a reply (no replies under a reply). Only fill what the
+      // API omits so the row matches a later refetch.
+      const row: PostCommentView = {
+        ...comment,
+        replies: comment.replies ?? [],
+        replyCount: comment.replyCount ?? 0,
+      };
+      setPostComments((current) => {
+        if (row.parentId) {
+          // Reply: nest it under its parent (and bump replyCount) so the new
+          // row shows the author resolved by the backend, not an empty name.
+          return current.map((c) =>
+            c._id === row.parentId
+              ? {
+                  ...c,
+                  replies: [...(c.replies ?? []), row],
+                  replyCount: (c.replyCount ?? 0) + 1,
+                }
+              : c,
+          );
+        }
+        return [...current, row];
+      });
+      // The card's preview stays server state (latest 2 top-level comments).
+      // Hand this row to the service instead of writing the thread back:
+      // addComment already applied it, so this is a no-op unless the sheet and
+      // the card disagree.
+      momentsService.registerComment(commentPostId, row);
       setCommentReplyTo(null);
     } catch {
       notify('Gửi bình luận thất bại — thử lại');
       setCommentText(text);
+    } finally {
+      sendingCommentRef.current = false;
+      setSendingComment(false);
     }
   }, [commentPostId, commentText, commentReplyTo, notify]);
 
@@ -282,8 +498,14 @@ const MomentsScreen: React.FC = () => {
     try {
       const result = await momentsService.sharePost(postId);
       const post = momentsService.getState().postsById.get(postId);
+      const caption = post?.caption?.trim() ?? '';
+      // Share the ROUTABLE link (`appLink`), not `deepLink`: a bare URI in a
+      // chat is unreadable, so it gets a sentence around it. `deepLink` stays
+      // reserved for a future web fallback once a share domain exists.
       await Share.share({
-        message: `${post?.caption ?? ''}\n${result.deepLink}`,
+        message: caption
+          ? `${caption}\n\nXem bài viết trên Koola: ${result.appLink}`
+          : `Xem bài viết trên Koola: ${result.appLink}`,
       });
     } catch {
       notify('Chia sẻ thất bại — thử lại');
@@ -304,40 +526,10 @@ const MomentsScreen: React.FC = () => {
     const showAction = (index: number) => {
       if (isOwn) {
         if (index === 0) {
-          // Edit caption inline via prompt-style alert
-          Alert.prompt?.(
-            'Sửa bài viết',
-            undefined,
-            [
-              { text: 'Hủy', style: 'cancel' },
-              {
-                text: 'Lưu',
-                onPress: (text?: string) => {
-                  if (text == null) return;
-                  void momentsService.editPost(postId, { caption: text }).catch(() => {
-                    notify('Sửa bài viết thất bại — thử lại');
-                  });
-                },
-              },
-            ],
-            'plain-text',
-            post.caption,
-          );
-          // Android has no Alert.prompt — fall back to composer-style edit
-          if (Platform.OS === 'android') {
-            Alert.alert('Sửa bài viết', undefined, [
-              { text: 'Hủy', style: 'cancel' },
-              {
-                text: 'Xóa bài viết',
-                style: 'destructive',
-                onPress: () => {
-                  void momentsService.deletePost(postId).catch(() => {
-                    notify('Xóa bài viết thất bại — thử lại');
-                  });
-                },
-              },
-            ]);
-          }
+          // Editing is a screen, not an alert: Alert.prompt does not exist on
+          // Android, and the old fallback showed a DELETE dialog under the
+          // "Sửa bài viết" action — a destructive misfire.
+          navigation.navigate('PostComposer', { postId });
         } else if (index === 1) {
           Alert.alert('Xóa bài viết?', 'Bài viết sẽ biến mất khỏi bảng tin.', [
             { text: 'Hủy', style: 'cancel' },
@@ -490,16 +682,22 @@ const MomentsScreen: React.FC = () => {
         onPressAddStory={handleAddPress}
       />
       {storyRegionBanner}
+      {/* Banner, not a replacement: `posts` still holds the posts already
+          loaded (a feed failure keeps them). Swapping the list for a
+          full-area error state would make a failed load-more erase the
+          feed the user is reading. */}
       {state.postsError ? (
-        <KoolaErrorState
-          style={styles.regionState}
-          title="Không thể tải bài viết"
-          message={state.postsError}
-          onRetry={requestFeed}
-        />
+        <View style={styles.postsErrorBanner}>
+          <KoolaErrorState
+            style={styles.regionState}
+            title="Không thể tải bài viết"
+            message={state.postsError}
+            onRetry={requestFeed}
+          />
+        </View>
       ) : null}
     </View>
-  ), [handleAddPress, handleComposerPress, handleQuickAction, handleOwnLongPress, handleRingPress, railLoading, rings, storyRegionBanner, state.postsError, requestFeed, user?.avatar, user?.displayName]);
+  ), [handleAddPress, handleComposerPress, handleQuickAction, handleOwnLongPress, handleRingPress, railLoading, rings, storyRegionBanner, state.postsError, requestFeed, user?.avatar, user?.displayName, styles]);
 
   return (
     <View style={styles.container} accessibilityLabel="Danh sách khoảnh khắc" accessibilityRole="list">
@@ -560,16 +758,17 @@ const MomentsScreen: React.FC = () => {
         }
       />
       {toast}
-      {/* Comment bottom-sheet */}
+      {/* Comment bottom-sheet. `key` is load-bearing — see `sheetEpoch`. */}
       <Modal
+        key={sheetEpoch}
         visible={commentPostId !== null}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setCommentPostId(null)}>
-        <View style={styles.sheet}>
+        onRequestClose={closeComments}>
+        <Animated.View style={[styles.sheet, Platform.OS === 'android' && sheetShiftStyle]}>
           <View style={styles.sheetHeader}>
             <TouchableOpacity
-              onPress={() => setCommentPostId(null)}
+              onPress={closeComments}
               accessibilityRole="button"
               accessibilityLabel="Đóng bình luận">
               <KoolaText tone="primary">Đóng</KoolaText>
@@ -583,30 +782,64 @@ const MomentsScreen: React.FC = () => {
             removeClippedSubviews={false}
             data={postComments}
             keyExtractor={(item) => item._id}
-            renderItem={({ item }) => (
+            renderItem={({ item }) => {
+              // A soft-deleted row keeps its slot (and its replies are still
+              // visible) but is a tombstone: no author, no actions, no reply
+              // target, and never counted in "N bình luận".
+              const isDeleted =
+                deletedCommentIds.includes(item._id) || !item.isActive;
+              if (isDeleted) {
+                return (
+                  <View style={styles.commentRow} accessibilityLabel="Bình luận đã xóa">
+                    <KoolaText tone="faint" variant="caption">
+                      Bình luận này đã bị xóa
+                    </KoolaText>
+                    {item.replies?.map((reply) => (
+                      <View key={reply._id} style={styles.replyRow}>
+                        <KoolaText variant="label" weight="700">
+                          {reply.authorDisplayName || 'Người dùng'}
+                        </KoolaText>
+                        <KoolaText>{reply.isActive ? String(reply.content ?? '') : '[đã xóa]'}</KoolaText>
+                      </View>
+                    ))}
+                  </View>
+                );
+              }
+              return (
               <View style={styles.commentRow}>
                 <KoolaText variant="label" weight="700">
                   {item.authorDisplayName || 'Người dùng'}
                 </KoolaText>
-                <KoolaText>{item.isActive ? item.content : '[đã xóa]'}</KoolaText>
+                <KoolaText>{item.content}</KoolaText>
                 <TouchableOpacity
-                  onPress={() => openComments(commentPostId!, item)}
+                  onPress={() => startReply(item)}
                   accessibilityRole="button"
                   accessibilityLabel={`Trả lời ${item.authorDisplayName}`}>
                   <KoolaText variant="caption" tone="primary">
                     Trả lời
                   </KoolaText>
                 </TouchableOpacity>
+                {canDeleteComment(item) ? (
+                  <TouchableOpacity
+                    onPress={() => void handleDeleteComment(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Xóa bình luận của ${item.authorDisplayName}`}>
+                    <KoolaText variant="caption" tone="faint">
+                      Xóa
+                    </KoolaText>
+                  </TouchableOpacity>
+                ) : null}
                 {item.replies?.map((reply) => (
-                  <View key={reply._id} style={styles.replyRow}>
+                  <View key={reply._id ?? `${item._id}-reply`} style={styles.replyRow}>
                     <KoolaText variant="label" weight="700">
                       {reply.authorDisplayName || 'Người dùng'}
                     </KoolaText>
-                    <KoolaText>{reply.isActive ? reply.content : '[đã xóa]'}</KoolaText>
+                    <KoolaText>{reply.isActive ? String(reply.content ?? '') : '[đã xóa]'}</KoolaText>
                   </View>
                 ))}
               </View>
-            )}
+              );
+            }}
             ListEmptyComponent={
               commentsLoading ? (
                 <KoolaText tone="muted" align="center" style={styles.regionState}>
@@ -622,7 +855,7 @@ const MomentsScreen: React.FC = () => {
           {commentReplyTo ? (
             <View style={styles.replyBanner}>
               <KoolaText variant="caption" tone="muted">
-                Trả lời {commentReplyTo.authorDisplayName}
+                {`Trả lời ${commentReplyTo.authorDisplayName ?? ''}`}
               </KoolaText>
               <TouchableOpacity
                 onPress={() => setCommentReplyTo(null)}
@@ -645,14 +878,16 @@ const MomentsScreen: React.FC = () => {
             />
             <TouchableOpacity
               onPress={handleSendComment}
+              disabled={sendingComment || commentText.trim().length === 0}
               accessibilityRole="button"
-              accessibilityLabel="Gửi bình luận">
-              <KoolaText tone="primary" weight="700">
-                Gửi
+              accessibilityLabel="Gửi bình luận"
+              accessibilityState={{ disabled: sendingComment }}>
+              <KoolaText tone={sendingComment ? 'muted' : 'primary'} weight="700">
+                {sendingComment ? 'Đang gửi...' : 'Gửi'}
               </KoolaText>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -666,6 +901,7 @@ const makeStyles = (semantic: SemanticTokens) => StyleSheet.create({
   // Error cards sit inline in the feed flow, not centered on a blank screen, so
   // the composer, quick actions, own ring, and feed stay put.
   regionState: { paddingVertical: koolaSpacing.lg },
+  postsErrorBanner: { paddingHorizontal: koolaSpacing.lg },
   footer: { paddingTop: koolaSpacing.lg, paddingBottom: koolaSpacing.lg },
   emptyState: { paddingVertical: koolaSpacing.xl * 2, paddingHorizontal: koolaSpacing.lg, alignItems: 'center' },
   emptyHint: { marginTop: koolaSpacing.sm },

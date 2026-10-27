@@ -14,10 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import {
-  AudienceScope,
-  MediaType,
-} from '../schemas/story.schema';
+import { AudienceScope, MediaType } from '../schemas/story.schema';
 import { MentionEntryDto } from './create-story.dto';
 
 export class PostMediaItemDto {
@@ -37,6 +34,18 @@ export class PostMediaItemDto {
   @Min(0)
   @Max(60)
   duration?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(8192)
+  width?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(8192)
+  height?: number;
 }
 
 export class CreatePostDto {

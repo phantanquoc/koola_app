@@ -104,12 +104,33 @@ export interface MarkReadPayloadV1 {
   upToTimestamp: number;
 }
 
+export interface OutboxMediaAssetV1 {
+  localUri: string;
+  mediaType: string;
+  filename?: string;
+  mimeType?: string;
+  fileSize?: number;
+  duration?: number;
+  width?: number;
+  height?: number;
+}
+
 export interface CreatePostPayloadV1 {
   caption?: string;
   audienceScope: string;
   audienceListId?: string;
-  mentions?: Array<{ userId: string; displayName?: string }>;
+  // Full MentionEntry snapshot (username/offset/length included): the backend
+  // validates all four fields, so the replay must not have to invent them.
+  // displayName is the legacy shape — still accepted when reading old rows.
+  mentions?: Array<{
+    userId: string;
+    username?: string;
+    offset?: number;
+    length?: number;
+    displayName?: string;
+  }>;
   clientPostId: string;
+  media?: OutboxMediaAssetV1[];
 }
 
 export type OutboxPayload =

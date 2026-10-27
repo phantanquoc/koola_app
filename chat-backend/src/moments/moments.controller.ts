@@ -295,6 +295,45 @@ export class MomentsController {
     );
   }
 
+  @Get('posts/:id/comments/count')
+  async getActiveCommentCount(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Query('deletedCommentId') deletedCommentId?: string,
+  ) {
+    return this.momentsService.getActiveCommentCount(
+      postId,
+      userId,
+      deletedCommentId,
+    );
+  }
+
+  @Get('posts/:id/comments/:commentId/replies')
+  async listCommentReplies(
+    @CurrentUser('id') userId: string,
+    @Param('id') postId: string,
+    @Param('commentId') commentId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.momentsService.listCommentReplies(
+      postId,
+      commentId,
+      userId,
+      cursor,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Post('posts/comments/:commentId/like')
+  @HttpCode(HttpStatus.OK)
+  async toggleCommentLike(
+    @CurrentUser('id') userId: string,
+    @Param('commentId') commentId: string,
+  ) {
+    return this.momentsService.toggleCommentLike(commentId, userId);
+  }
+
   @Delete('posts/comments/:commentId')
   @HttpCode(HttpStatus.OK)
   async deletePostComment(

@@ -1,10 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import {
-  AudienceScope,
-  MediaType,
-  MentionEntry,
-} from './story.schema';
+import { AudienceScope, MediaType, MentionEntry } from './story.schema';
 
 export type PostDocument = Post & Document;
 
@@ -13,6 +9,8 @@ export interface PostMediaItem {
   mediaType: MediaType;
   thumbnailKey?: string | null;
   duration?: number | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface PostLikeEntry {
@@ -35,6 +33,8 @@ export class Post {
         mediaType: { type: String, enum: MediaType, required: true },
         thumbnailKey: { type: String, default: null },
         duration: { type: Number, default: null },
+        width: { type: Number, default: null },
+        height: { type: Number, default: null },
       },
     ],
     default: [],
@@ -54,7 +54,12 @@ export class Post {
   })
   mentions: MentionEntry[];
 
-  @Prop({ required: true, type: String, enum: AudienceScope, default: AudienceScope.PUBLIC })
+  @Prop({
+    required: true,
+    type: String,
+    enum: AudienceScope,
+    default: AudienceScope.PUBLIC,
+  })
   audienceScope: AudienceScope;
 
   @Prop({ type: String, default: null })
@@ -76,6 +81,9 @@ export class Post {
 
   @Prop({ type: Number, default: 0 })
   commentCount: number;
+
+  @Prop({ type: Number, default: 0 })
+  topLevelCommentCount: number;
 
   @Prop({ type: Number, default: 0 })
   shareCount: number;

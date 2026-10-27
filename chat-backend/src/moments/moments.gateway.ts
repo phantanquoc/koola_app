@@ -217,14 +217,38 @@ export class MomentsGateway {
 
   async emitPostComment(
     post: PostDocument,
-    commentId: string,
+    commentView: Record<string, unknown> | null,
     commentCount: number,
+    // Set when the deleted comment was a reply: clients patch the parent's
+    // replyCount locally instead of dropping a top-level row.
+    parentId: string | null = null,
+    // List of cascaded reply IDs when deleting a top-level comment
+    cascadedReplyIds: string[] = [],
   ): Promise<void> {
     if (!this.io) return;
 
     const postId = (post as any)._id.toString();
     const authorId = post.authorId;
-    const payload = { postId, authorId, commentId, commentCount };
+    const comment = commentView ?? null;
+    const commentId =
+      (comment as any)?._id != null ? String((comment as any)._id) : '';
+    const postDoc: any = post as any;
+    const postUpdated = {
+      postId,
+      likeCount: postDoc.likeCount ?? 0,
+      commentCount,
+      shareCount: postDoc.shareCount ?? 0,
+    };
+    const payload = {
+      postId,
+      authorId,
+      commentId,
+      comment,
+      commentCount,
+      parentId,
+      postUpdated,
+      cascadedReplyIds,
+    };
 
     const recipientIds = await this.resolvePostPermittedViewers(post);
     for (const viewerId of recipientIds) {

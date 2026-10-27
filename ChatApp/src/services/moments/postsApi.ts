@@ -19,6 +19,8 @@ export interface PostMediaInput {
   mediaType: MediaType;
   thumbnailKey?: string;
   duration?: number;
+  width?: number;
+  height?: number;
 }
 
 export interface PostMediaView {
@@ -26,6 +28,8 @@ export interface PostMediaView {
   mediaType: MediaType;
   thumbnailKey: string | null;
   duration: number | null;
+  width: number | null;
+  height: number | null;
   mediaUrl: string | null;
   thumbnailUrl: string | null;
 }
@@ -39,14 +43,22 @@ export interface PostCommentView {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  likeCount: number;
+  likedByMe: boolean;
   authorDisplayName: string;
   authorAvatar: string | null;
-  replies?: PostCommentView[];
-  replyCount?: number;
+  /** Always present: both the feed preview and the full list resolve replies. */
+  replies: PostCommentView[];
+  replyCount: number;
 }
 
 export interface PostView {
   _id: string;
+  /**
+   * Canonical id. The backend always sends `_id`; `id` is the alias the mobile
+   * app keys everything off (index keys, feedIds, action targets).
+   */
+  id: string;
   authorId: string;
   caption: string;
   media: PostMediaView[];
@@ -74,9 +86,26 @@ export interface PostsFeedResponse {
   total: number;
 }
 
+/**
+ * Active top-level comment count for the card. `deletedCommentId` is the row
+ * the caller just soft-deleted: the count query cannot see this client's own
+ * write under read-your-writes staleness, so the server subtracts it.
+ */
+export interface ActiveCommentCountResponse {
+  activeCommentCount: number | null;
+}
+
 export interface PostCommentsResponse {
   comments: PostCommentView[];
   nextCursor: string | null;
+  /**
+   * Ids of soft-deleted rows inside this page. They are still returned (they
+   * hold the page's chronological place and cursor) but are NOT counted — the
+   * sheet renders them as a tombstone, never as a comment.
+   */
+  deletedIds: string[];
+  /** Active top-level comments on the post; `null` if the count failed. */
+  activeCommentCount: number | null;
 }
 
 // ─── Posts ────────────────────────────────────────────────────────────────────
@@ -129,7 +158,19 @@ export const postsApi = {
     return data;
   },
 
-  async sharePost(postId: string): Promise<{ shareCount: number; deepLink: string }> {
+  async getActiveCommentCount(
+    postId: string,
+    deletedCommentId?: string,
+  ): Promise<ActiveCommentCountResponse> {
+    const { data } = await apiClient.get(`/moments/posts/${postId}/comments/count`, {
+      params: deletedCommentId ? { deletedCommentId } : undefined,
+    });
+    return data;
+  },
+
+  async sharePost(
+    postId: string,
+  ): Promise<{ shareCount: number; deepLink: string; appLink: string }> {
     const { data } = await apiClient.post(`/moments/posts/${postId}/share`);
     return data;
   },
@@ -152,6 +193,25 @@ export const postsApi = {
     params?: { cursor?: string; limit?: number },
   ): Promise<PostCommentsResponse> {
     const { data } = await apiClient.get(`/moments/posts/${postId}/comments`, { params });
+    return data;
+  },
+
+  async listReplies(
+    postId: string,
+    commentId: string,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<{ replies: PostCommentView[]; nextCursor: string | null }> {
+    const { data } = await apiClient.get(
+      `/moments/posts/${postId}/comments/${commentId}/replies`,
+      { params },
+    );
+    return data;
+  },
+
+  async toggleCommentLike(
+    commentId: string,
+  ): Promise<{ likedByMe: boolean; likeCount: number }> {
+    const { data } = await apiClient.post(`/moments/posts/comments/${commentId}/like`);
     return data;
   },
 

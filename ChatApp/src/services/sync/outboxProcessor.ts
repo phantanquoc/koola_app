@@ -200,19 +200,61 @@ registerHandler('mark_read', 1, async (payload) => {
   await messagesApi.markRead(p.conversationId, new Date(p.upToTimestamp).toISOString());
 });
 
-// create_post handler — text-only durable posts.
+// create_post handler — text + media durable posts.
 // Idempotent via clientPostId: server returns the existing post on replay,
-// so a retry after a lost response cannot create a duplicate.
+// so a retry after a lost response cannot create a duplicate. Media assets
+// queued as local URIs are uploaded first (presigned flow) in order.
 registerHandler('create_post', 1, async (payload) => {
   const p = payload as unknown as outboxRepository.CreatePostPayloadV1;
   // Deferred require breaks the momentsService <-> outboxProcessor cycle.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { postsApi } = require('../moments/postsApi');
+  const { postsApi } = require('../moments/postsApi') as typeof import('../moments/postsApi');
+  const { uploadMedia } = require('../media/mediaUploadService') as typeof import('../media/mediaUploadService');
+  // The queued payload is a plain, versioned snapshot (string scope, full
+  // MentionEntry). `create_post` is enqueued with version 1 only, whose scope
+  // is one of the three below.
+  type CreateBody = Parameters<typeof postsApi.createPost>[0];
+  // The backend validates userId/username/offset/length on every mention.
+  // Rows queued before the full snapshot existed carry only id + displayName;
+  // inventing offset/length for those would tag the wrong span, so they are
+  // dropped (the post still publishes) instead of sent half-formed.
+  const mentions = (p.mentions ?? []).flatMap(
+    (m): NonNullable<CreateBody['mentions']> => {
+      const username = m.username ?? m.displayName;
+      if (!username || typeof m.offset !== 'number' || typeof m.length !== 'number') {
+        console.warn(
+          `[outbox] create_post: dropping mention ${m.userId} — missing offset/length snapshot`,
+        );
+        return [];
+      }
+      return [{ userId: m.userId, username, offset: m.offset, length: m.length }];
+    },
+  );
+  let media: CreateBody['media'];
+  if (p.media && p.media.length > 0) {
+    media = [];
+    for (const asset of p.media) {
+      const { mediaKey } = await uploadMedia(
+        asset.localUri,
+        asset.filename ?? 'post',
+        asset.mimeType ?? (asset.mediaType === 'video' ? 'video/mp4' : 'image/jpeg'),
+        asset.fileSize ?? 0,
+        undefined,
+      );
+      media.push({
+        mediaKey,
+        mediaType: asset.mediaType as unknown as NonNullable<CreateBody['media']>[number]['mediaType'],
+        duration: asset.duration,
+        width: asset.width,
+        height: asset.height,
+      });
+    }
+  }
   await postsApi.createPost({
     caption: p.caption,
-    audienceScope: p.audienceScope as Parameters<typeof postsApi.createPost>[0]['audienceScope'],
+    audienceScope: p.audienceScope as CreateBody['audienceScope'],
     audienceListId: p.audienceListId,
-    mentions: p.mentions as Parameters<typeof postsApi.createPost>[0]['mentions'],
+    mentions,
+    media,
     clientPostId: p.clientPostId,
   });
 });

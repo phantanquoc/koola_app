@@ -29,6 +29,8 @@ import { AudienceList } from './schemas/audience-list.schema';
 import { MusicTrack } from './schemas/music-track.schema';
 import { Post } from './schemas/post.schema';
 import { PostComment } from './schemas/post-comment.schema';
+import { PostLike } from './schemas/post-like.schema';
+import { CommentLike } from './schemas/comment-like.schema';
 import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -110,6 +112,11 @@ describe('12.2 TTL behavior', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
@@ -117,6 +124,7 @@ describe('12.2 TTL behavior', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
             tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
@@ -126,6 +134,7 @@ describe('12.2 TTL behavior', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -254,6 +263,11 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
@@ -261,6 +275,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
             tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
@@ -270,6 +285,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -381,6 +397,11 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
@@ -388,6 +409,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
             tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
@@ -397,6 +419,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -516,6 +539,11 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
@@ -523,6 +551,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
             getClient: jest.fn().mockReturnValue(redisClient),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
             tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
@@ -532,6 +561,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -649,6 +679,11 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         { provide: RedisService, useValue: redisService },
         {
@@ -657,6 +692,7 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -780,6 +816,11 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
           provide: getModelToken(PostComment.name),
           useValue: makeModelMock(),
         },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(CommentLike.name),
+          useValue: makeModelMock(),
+        },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
           provide: RedisService,
@@ -787,6 +828,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
             getClient: jest.fn().mockReturnValue(makeRedisClientMock()),
             get: jest.fn().mockResolvedValue(null),
             del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
             tryAcquireLock: jest.fn().mockResolvedValue(true),
           },
         },
@@ -796,6 +838,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
             sendPushNotification: jest.fn(),
             sendMentionPush: jest.fn(),
             sendPostMentionPush: jest.fn(),
+            sendCommentPush: jest.fn(),
           },
         },
         {
@@ -928,5 +971,413 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
       }),
     );
     expect(result.conversationId).toBe('conv-between-viewer-author');
+  });
+});
+
+// ─── D1: Cascade Delete Count ─────────────────────────────────────────────────
+
+describe('D1: Cascade delete count', () => {
+  let service: MomentsService;
+  let postModel: any;
+  let postCommentModel: any;
+  let usersService: any;
+
+  beforeEach(async () => {
+    postModel = makeModelMock();
+    postCommentModel = makeModelMock();
+    usersService = {
+      findById: jest
+        .fn()
+        .mockResolvedValue({ _id: 'user-1', displayName: 'User One' }),
+      findByIds: jest
+        .fn()
+        .mockResolvedValue([{ _id: 'user-1', displayName: 'User One' }]),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MomentsService,
+        { provide: getModelToken(Story.name), useValue: makeModelMock() },
+        { provide: getModelToken(StoryView.name), useValue: makeModelMock() },
+        { provide: getModelToken(Highlight.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(AudienceList.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: postModel },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: postCommentModel,
+        },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue(makeRedisClientMock()),
+            get: jest.fn().mockResolvedValue(null),
+            del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendCommentPush: jest.fn(),
+          },
+        },
+        {
+          provide: ConversationsService,
+          useValue: {
+            createDirect: jest.fn().mockResolvedValue({
+              conversation: { _id: 'conv-1' },
+              isNew: false,
+            }),
+            getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: MessagesService,
+          useValue: { sendMessageWithStoryReply: jest.fn() },
+        },
+        { provide: UsersService, useValue: usersService },
+      ],
+    }).compile();
+
+    service = module.get<MomentsService>(MomentsService);
+  });
+
+  it('deleting top-level comment with 5 replies recounts commentCount and topLevelCommentCount correctly', async () => {
+    const postId = oid();
+    const commentId = oid();
+    const authorId = oid();
+
+    // Mock the top-level comment
+    const topLevelComment = {
+      _id: commentId,
+      postId,
+      parentId: null,
+      authorId,
+      content: 'Top-level comment',
+      isActive: true,
+      save: jest.fn().mockResolvedValue(true),
+      toObject: jest.fn().mockReturnValue({
+        _id: commentId,
+        postId,
+        parentId: null,
+        authorId,
+        content: 'Top-level comment',
+        isActive: false,
+      }),
+    };
+
+    // Mock 5 replies that will be cascaded
+    const replyIds = [oid(), oid(), oid(), oid(), oid()];
+    const replies = replyIds.map((id) => ({ _id: id }));
+
+    postCommentModel.findById = jest.fn().mockResolvedValue(topLevelComment);
+    postCommentModel.find = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(replies),
+    });
+    postCommentModel.updateMany = jest
+      .fn()
+      .mockResolvedValue({ modifiedCount: 5 });
+
+    // After cascade delete, 10 active comments remain (6 deleted: 1 top-level + 5 replies)
+    let countCallIndex = 0;
+    postCommentModel.countDocuments = jest.fn().mockImplementation((query) => {
+      countCallIndex++;
+      // First call: total active comments (was 16, now 10 after deleting 6)
+      if (countCallIndex === 1) return Promise.resolve(10);
+      // Second call: top-level comments (was 3, now 2 after deleting 1)
+      if (countCallIndex === 2) return Promise.resolve(2);
+      return Promise.resolve(0);
+    });
+
+    postModel.findById = jest.fn().mockResolvedValue({
+      _id: postId,
+      authorId,
+      commentCount: 16,
+      topLevelCommentCount: 3,
+      likeCount: 0,
+      shareCount: 0,
+      toObject: jest.fn().mockReturnValue({ _id: postId, authorId }),
+    });
+    postModel.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+
+    await service.deletePostComment(commentId, authorId);
+
+    // Verify recount happened with correct values
+    expect(postModel.updateOne).toHaveBeenCalledWith(
+      { _id: postId },
+      { $set: { commentCount: 10, topLevelCommentCount: 2 } },
+    );
+  });
+});
+
+// ─── D3: Gateway Cascade Metadata ─────────────────────────────────────────────
+
+describe('D3: Gateway cascade metadata', () => {
+  let gateway: any;
+  let momentsService: MomentsService;
+  let postModel: any;
+  let postCommentModel: any;
+
+  beforeEach(async () => {
+    postModel = makeModelMock();
+    postCommentModel = makeModelMock();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MomentsService,
+        { provide: getModelToken(Story.name), useValue: makeModelMock() },
+        { provide: getModelToken(StoryView.name), useValue: makeModelMock() },
+        { provide: getModelToken(Highlight.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(AudienceList.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: postModel },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: postCommentModel,
+        },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue(makeRedisClientMock()),
+            get: jest.fn().mockResolvedValue(null),
+            del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            sendPushNotification: jest.fn(),
+            sendCommentPush: jest.fn(),
+          },
+        },
+        {
+          provide: ConversationsService,
+          useValue: {
+            getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: MessagesService,
+          useValue: { sendMessageWithStoryReply: jest.fn() },
+        },
+        {
+          provide: UsersService,
+          useValue: {
+            findById: jest
+              .fn()
+              .mockResolvedValue({ _id: 'user-1', displayName: 'User' }),
+            findByIds: jest
+              .fn()
+              .mockResolvedValue([{ _id: 'user-1', displayName: 'User' }]),
+          },
+        },
+      ],
+    }).compile();
+
+    momentsService = module.get<MomentsService>(MomentsService);
+
+    // Mock gateway with spy
+    gateway = {
+      emitPostComment: jest.fn().mockResolvedValue(undefined),
+    };
+    (momentsService as any).gatewayRef = gateway;
+  });
+
+  it('emitPostComment payload includes cascadedReplyIds when deleting top-level comment', async () => {
+    const postId = oid();
+    const commentId = oid();
+    const authorId = oid();
+    const replyIds = [oid(), oid(), oid()];
+
+    const topLevelComment = {
+      _id: commentId,
+      postId,
+      parentId: null,
+      authorId,
+      content: 'Top comment',
+      isActive: true,
+      save: jest.fn().mockResolvedValue(true),
+      toObject: jest.fn().mockReturnValue({
+        _id: commentId,
+        postId,
+        parentId: null,
+        authorId,
+        content: 'Top comment',
+        isActive: false,
+      }),
+    };
+
+    postCommentModel.findById = jest.fn().mockResolvedValue(topLevelComment);
+    postCommentModel.find = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(replyIds.map((id) => ({ _id: id }))),
+    });
+    postCommentModel.updateMany = jest
+      .fn()
+      .mockResolvedValue({ modifiedCount: 3 });
+    postCommentModel.countDocuments = jest.fn().mockResolvedValue(5);
+
+    postModel.findById = jest.fn().mockResolvedValue({
+      _id: postId,
+      authorId,
+      commentCount: 10,
+      topLevelCommentCount: 3,
+      likeCount: 0,
+      shareCount: 0,
+      toObject: jest.fn().mockReturnValue({ _id: postId, authorId }),
+    });
+    postModel.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+
+    await momentsService.deletePostComment(commentId, authorId);
+
+    // Verify emitPostComment was called with cascadedReplyIds
+    expect(gateway.emitPostComment).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.any(Number),
+      null,
+      replyIds.map(String),
+    );
+  });
+});
+
+// ─── D4: Batch Query Optimization ────────────────────────────────────────────
+
+describe('D4: Batch query optimization', () => {
+  let service: MomentsService;
+  let postCommentModel: any;
+
+  beforeEach(async () => {
+    postCommentModel = makeModelMock();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MomentsService,
+        { provide: getModelToken(Story.name), useValue: makeModelMock() },
+        { provide: getModelToken(StoryView.name), useValue: makeModelMock() },
+        { provide: getModelToken(Highlight.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(AudienceList.name),
+          useValue: makeModelMock(),
+        },
+        { provide: getModelToken(MusicTrack.name), useValue: makeModelMock() },
+        { provide: getModelToken(Post.name), useValue: makeModelMock() },
+        {
+          provide: getModelToken(PostComment.name),
+          useValue: postCommentModel,
+        },
+        { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(Report.name), useValue: makeModelMock() },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue(makeRedisClientMock()),
+            get: jest.fn().mockResolvedValue(null),
+            del: jest.fn().mockResolvedValue(undefined),
+            setNXEX: jest.fn().mockResolvedValue(true),
+            tryAcquireLock: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: { sendPushNotification: jest.fn() },
+        },
+        {
+          provide: ConversationsService,
+          useValue: {
+            getSharedConversationIds: jest.fn().mockResolvedValue([]),
+            getConnectedUserIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: MessagesService,
+          useValue: { sendMessageWithStoryReply: jest.fn() },
+        },
+        {
+          provide: UsersService,
+          useValue: {
+            findById: jest
+              .fn()
+              .mockResolvedValue({ _id: 'user-1', displayName: 'User' }),
+            findByIds: jest
+              .fn()
+              .mockResolvedValue([{ _id: 'user-1', displayName: 'User' }]),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<MomentsService>(MomentsService);
+  });
+
+  it('comment with <20 replies queries only once (no countDocuments call)', async () => {
+    const commentId = oid();
+    const viewerId = oid();
+
+    // Mock 5 replies (less than 20)
+    const replies = Array.from({ length: 5 }, (_, i) => ({
+      _id: oid(),
+      parentId: commentId,
+      authorId: viewerId,
+      content: `Reply ${i + 1}`,
+      isActive: true,
+      createdAt: new Date(),
+    }));
+
+    const sortMock = jest.fn().mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(replies),
+      }),
+    });
+
+    postCommentModel.find = jest.fn().mockReturnValue({
+      sort: sortMock,
+    });
+    postCommentModel.countDocuments = jest.fn().mockResolvedValue(5);
+
+    const comment = {
+      _id: commentId,
+      postId: oid(),
+      parentId: null,
+      authorId: viewerId,
+      content: 'Test comment',
+      isActive: true,
+      likeCount: 0,
+    };
+
+    const result = await (service as any).resolvePostCommentView(
+      comment,
+      viewerId,
+      false,
+      true,
+    );
+
+    // Verify only find was called, countDocuments should NOT be called (since <20 replies)
+    expect(postCommentModel.find).toHaveBeenCalledWith({
+      parentId: commentId,
+      isActive: true,
+    });
+    expect(postCommentModel.countDocuments).not.toHaveBeenCalled();
+    expect(result.replyCount).toBe(5);
+    expect(result.replies).toHaveLength(3); // Preview is 3
   });
 });
