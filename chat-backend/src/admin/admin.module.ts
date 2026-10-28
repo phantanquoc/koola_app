@@ -20,6 +20,9 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { ImpersonationController } from './impersonation.controller';
+import { ImpersonationService } from './impersonation.service';
+import { AuthModule } from '../auth/auth.module';
 import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
 import { AppealController } from './appeal.controller';
 import { ModerationQueueController } from './moderation-queue.controller';
@@ -68,6 +71,8 @@ import {
     GatewayModule,
     RedisModule,
     HealthModule,
+    // ImpersonationService cần JwtService; AuthModule đã export JwtModule.
+    AuthModule,
   ],
   // AdminExportController PHẢI đứng trước AdminModerationController:
   // Express khớp theo thứ tự đăng ký nên nếu sau, GET /admin/reports/export
@@ -80,6 +85,7 @@ import {
     SessionController,
     AppealController,
     ModerationQueueController,
+    ImpersonationController,
   ],
   providers: [
     AdminService,
@@ -95,6 +101,7 @@ import {
     AppealService,
     ModerationQueueService,
     AdminExportService,
+    ImpersonationService,
   ],
   exports: [AdminAuditService],
 })
