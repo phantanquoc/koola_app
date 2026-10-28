@@ -289,11 +289,25 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Reject banned users — do not issue tokens
+    // Tài khoản bị cấm: KHÔNG cấp phiên (access + refresh), nhưng vẫn phải cho
+    // người ta một đường tự bảo vệ mình — nếu không, kháng nghị là tính năng vô
+    // dụng đúng với người cần nó nhất (họ không đăng nhập được để lấy token).
+    //
+    // `appealToken` là vé một-mục-đích: TTL 10 phút, claim `appeal: true`, và
+    // `JwtAuthGuard` chỉ cho nó đi qua route gắn `@AllowBanned()`. Không phải
+    // phiên đăng nhập: không refresh, không mở bất kỳ quyền đọc dữ liệu nào.
     if (user.isBanned) {
-      throw new ForbiddenException(
-        'Account has been banned. Contact support for assistance.',
-      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'account_banned',
+        message: 'Account has been banned. Contact support for assistance.',
+        banReason: user.banReason ?? null,
+        bannedUntil: user.bannedUntil ?? null,
+        appealToken: this.jwtService.sign(
+          { sub: String(user._id), appeal: true },
+          { expiresIn: '10m' },
+        ),
+      });
     }
 
     // 2FA: bắt buộc mã khi tài khoản đã bật. Recovery code tiêu thụ 1 lần.

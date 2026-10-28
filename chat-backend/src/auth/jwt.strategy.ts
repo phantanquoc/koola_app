@@ -16,6 +16,11 @@ export interface JwtPayload {
    */
   imp?: boolean;
   accountType?: 'personal' | 'business';
+  /**
+   * Vé nộp kháng nghị (TTL 10 phút) cấp cho tài khoản đang bị cấm. Không phải
+   * phiên đăng nhập: `JwtAuthGuard` chỉ cho đi qua route gắn `@AllowBanned()`.
+   */
+  appeal?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -40,10 +45,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     impersonatedBy?: string;
     /** Cờ cho JwtAuthGuard: request chỉ được đọc. */
     imp?: boolean;
+    /**
+     * Tài khoản đang bị cấm. `JwtAuthGuard` chặn mọi route trừ route gắn
+     * `@AllowBanned()`: ban phải có hiệu lực ngay, không đợi access token hết hạn.
+     */
+    isBanned?: boolean;
     /** id tài khoản trong token — trùng id/userId, giữ tên claim gốc cho rõ. */
     sub: string;
+    /** Token chỉ để nộp kháng nghị — không phải phiên đăng nhập. */
+    appealOnly?: boolean;
   }> {
-    const user = await this.userModel.findById(payload.sub).select('_id email');
+    const user = await this.userModel
+      .findById(payload.sub)
+      .select('_id email isBanned')
+      .lean();
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -64,6 +79,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         accountType: payload.accountType ?? 'personal',
         impersonatedBy: actorId,
         imp: true,
+        appealOnly: payload.appeal === true,
+        // Xem-thay do admin thực hiện để gỡ khiếu nại — chặn vì người bị xem
+        // đang bị cấm là khoá đúng lúc cần nhất. Quyền ghi đã bị imp chặn.
+        isBanned: user.isBanned === true,
       };
     }
 
@@ -74,6 +93,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       actorId,
       accountType: payload.accountType ?? 'personal',
+      isBanned: user.isBanned === true,
+      appealOnly: payload.appeal === true,
     };
   }
 }
