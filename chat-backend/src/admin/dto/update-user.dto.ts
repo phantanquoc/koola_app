@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   Matches,
@@ -63,4 +64,16 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(1000)
   internalNote?: string;
+
+  /**
+   * Vai trò trong khu admin. `null`/bỏ trống = super (admin cũ). Chỉ super
+   * được đổi — chặn ở controller để moderator không tự nâng quyền.
+   */
+  @ApiPropertyOptional({
+    enum: ['super', 'moderator', 'support'],
+    description: 'Chỉ super được đổi vai trò quản trị',
+  })
+  @IsOptional()
+  @IsIn(['super', 'moderator', 'support'])
+  adminRole?: 'super' | 'moderator' | 'support';
 }

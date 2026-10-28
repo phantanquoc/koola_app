@@ -12,6 +12,7 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +25,9 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { AdminService } from './admin.service';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
+import { RequireRole } from '../auth/decorators/require-role.decorator';
+import type { AdminRole } from '../users/user.schema';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RejectBusinessDto } from './dto/reject-business.dto';
 import { ListUsersDto } from './dto/list-users.dto';
@@ -43,7 +47,7 @@ import type { Request } from 'express';
 
 @ApiTags('admin')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard, AdminRoleGuard)
 @Throttle({
   short: { limit: 60, ttl: 60000 },
   long: { limit: 600, ttl: 60000 },
@@ -452,8 +456,13 @@ export class AdminController {
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
     @CurrentUser() user: { actorId: string },
-    @Req() req: Request,
+    @Req() req: Request & { adminRole?: AdminRole },
   ) {
+    // Đổi vai trò admin là nâng/hạ quyền — chỉ super được làm. Chặn ở đây
+    // thay vì cả route vì moderator vẫn cần sửa hồ sơ thường.
+    if (dto.adminRole !== undefined && req.adminRole !== 'super') {
+      throw new ForbiddenException('Chỉ super admin được đổi vai trò quản trị');
+    }
     const res = await this.adminService.updateUser(id, dto);
     await this.auditService.log({
       actorId: user.actorId,
@@ -470,6 +479,8 @@ export class AdminController {
 
   @Delete('users/:id')
   @HttpCode(HttpStatus.OK)
+  // Xoá tài khoản là thao tác không thể tự hoàn tác bằng người thao tác — chỉ super.
+  @RequireRole('super')
   @Throttle({
     short: { limit: 10, ttl: 60000 },
     long: { limit: 60, ttl: 60000 },
@@ -514,6 +525,8 @@ export class AdminController {
 
   @Post('users/:id/revoke-sessions')
   @HttpCode(HttpStatus.OK)
+  // Thu hồi mọi phiên = đăng xuất toàn bộ thiết bị; siết hơn moderator.
+  @RequireRole('super')
   @Throttle({
     short: { limit: 20, ttl: 60000 },
     long: { limit: 100, ttl: 60000 },

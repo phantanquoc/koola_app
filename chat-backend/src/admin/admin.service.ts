@@ -694,6 +694,7 @@ export class AdminService {
     'phone',
     'bio',
     'internalNote',
+    'adminRole',
   ] as const;
 
   async updateUser(id: string, patch: UpdateUserDto): Promise<UserDocument> {

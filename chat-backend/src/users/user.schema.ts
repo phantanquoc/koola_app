@@ -6,6 +6,7 @@ export type UserDocument = User & Document;
 export type AccountType = 'personal' | 'business';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 export type BusinessRelationshipType = 'partner' | 'supplier';
+export type AdminRole = 'super' | 'moderator' | 'support';
 
 @Schema({ timestamps: true })
 export class User {
@@ -146,6 +147,10 @@ export class User {
 
   @Prop({ type: Date, default: null })
   bannedUntil: Date | null;
+
+  /** Vai trò trong khu admin. null = super (tương thích admin cũ chưa có role). */
+  @Prop({ type: String, enum: ['super', 'moderator', 'support'], default: null })
+  adminRole?: AdminRole | null;
 
   /** Platform administration authority — set out-of-band only (see scripts/grant-admin.ts) */
   @Prop({ default: false })

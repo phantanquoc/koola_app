@@ -20,6 +20,7 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
 import { AppealController } from './appeal.controller';
 import { ModerationQueueController } from './moderation-queue.controller';
 import { AdminExportController } from './admin-export.controller';
@@ -83,6 +84,8 @@ import {
   providers: [
     AdminService,
     AdminGuard,
+    // @UseGuards(AdminRoleGuard) ở controller cần provider trong module này.
+    AdminRoleGuard,
     AdminAuditService,
     AdminReportService,
     CoturnHealthService,
