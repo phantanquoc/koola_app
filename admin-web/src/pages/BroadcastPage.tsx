@@ -245,10 +245,12 @@ export default function BroadcastPage() {
                 : `Ước tính ${estimateText}.`}
             </span>
             {(audience === 'personal' || audience === 'business') && (
-              // Server chưa có room theo loại tài khoản → emit toàn bộ. Nói thẳng
-              // thay vì để moderator tin là chỉ nhóm mình chọn nhận được.
-              <span className="form-error">
-                Lưu ý: server hiện chưa lọc theo loại tài khoản — nhóm này vẫn phát tới mọi người đang online.
+              // Gateway join room `account:<loại>` lúc handshake; BroadcastService
+              // emit đúng room đó. Chỉ người ĐANG ONLINE trong nhóm nhận được —
+              // nhóm này không có danh sách người nên không push cho offline.
+              <span className="form-hint">
+                Chỉ người đang mở app thuộc nhóm này nhận được. Muốn người offline cũng
+                nhận thì chọn “Chọn người dùng”.
               </span>
             )}
           </div>
@@ -346,7 +348,7 @@ export default function BroadcastPage() {
           page={page}
           totalPages={totalPages}
           total={history.total}
-          label={`${history.total.toLocaleString('vi-VN')} lần gửi`}
+          unit="lần gửi"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto
           pageSize={pageSize}

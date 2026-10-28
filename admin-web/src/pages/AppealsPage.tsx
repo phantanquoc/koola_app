@@ -285,8 +285,7 @@ export default function AppealsPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
-          label={totalPages <= 1 ? `${total.toLocaleString('vi-VN')} kháng nghị` : `Trang ${page} / ${totalPages} · ${total.toLocaleString('vi-VN')} kháng nghị`}
+          page={page} totalPages={totalPages} total={total} unit="kháng nghị"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}

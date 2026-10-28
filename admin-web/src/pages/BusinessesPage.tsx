@@ -748,7 +748,7 @@ export default function BusinessesPage() {
         )}
 
         <Pagination
-          page={pageNum} totalPages={totalPages} total={total}
+          page={pageNum} totalPages={totalPages} total={total} unit="doanh nghiệp"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}

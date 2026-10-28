@@ -529,7 +529,7 @@ export default function UsersPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
+          page={page} totalPages={totalPages} total={total} unit="người dùng"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}

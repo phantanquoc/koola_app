@@ -290,7 +290,7 @@ export default function MessageSearchPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
+          page={page} totalPages={totalPages} total={total} unit="tin nhắn"
           onPageChange={(p) => set({ page: String(p) })}
         />
       </TableShell>

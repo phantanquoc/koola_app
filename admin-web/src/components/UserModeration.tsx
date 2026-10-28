@@ -113,7 +113,7 @@ export function BanDialog({
                     <option value="forever">Vĩnh viễn</option>
                   </select>
                   <span className="cell-meta">
-                    Hạn cấm không tự hết — hết hạn vẫn phải bỏ cấm tay.
+                    Hết hạn sẽ tự gỡ trong vòng 15 phút (cron), hoặc bỏ cấm ngay ở đây.
                   </span>
                 </div>
               </>

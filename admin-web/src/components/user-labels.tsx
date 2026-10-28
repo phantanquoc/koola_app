@@ -11,8 +11,9 @@ export function accountTypeLabel(type?: string | null) {
 }
 
 /**
- * Trạng thái cấm → nhãn + tone. `bannedUntil` KHÔNG có cron tự gỡ — hết hạn vẫn
- * phải bỏ cấm tay, nên nhãn nói rõ "chờ gỡ" thay vì "đã hết hạn".
+ * Trạng thái cấm → nhãn + tone. `AdminUnbanCron` (15 phút/lần) gỡ khi hết hạn,
+ * nên đã hết hạn nhưng chưa gỡ là "chờ gỡ" — trễ tối đa một tick, không phải
+ * trạng thái cần xử lý tay.
  */
 export function banBadge(u: { isBanned?: boolean; bannedUntil?: string | null }) {
   if (!u.isBanned) return <StatusBadge tone="success" label="Hoạt động" />;

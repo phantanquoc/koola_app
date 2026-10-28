@@ -4,7 +4,12 @@ interface PaginationProps {
   page: number;
   totalPages: number;
   total: number;
-  label?: string;
+  /**
+   * Danh từ đếm được của trang ("người dùng", "đơn hàng", "lượt gửi").
+   * Bắt buộc để không trang nào thừa hưởng nhầm danh từ của trang khác —
+   * trước đây mặc định "hồ sơ" khiến 10 trang list hiện sai đơn vị.
+   */
+  unit: string;
   onPageChange: (p: number) => void;
   showGoto?: boolean;
   pageSize?: number;
@@ -18,19 +23,18 @@ interface PaginationProps {
  * Nút điều hướng tự disable khi chỉ có một trang.
  */
 export function Pagination({
-  page, totalPages, total, label, onPageChange, showGoto, pageSize, pageSizes, onPageSizeChange,
+  page, totalPages, total, unit, onPageChange, showGoto, pageSize, pageSizes, onPageSizeChange,
 }: PaginationProps) {
   const [goto, setGoto] = useState('');
   if (total === 0) return null;
 
   const singlePage = totalPages <= 1;
+  const count = `${total.toLocaleString('vi-VN')} ${unit}`;
 
   return (
     <div className="table-footer">
       <span className="pagination-info">
-        {label ?? (singlePage
-          ? `${total.toLocaleString('vi-VN')} hồ sơ`
-          : `Trang ${page} / ${totalPages} · ${total.toLocaleString('vi-VN')} hồ sơ`)}
+        {singlePage ? count : `Trang ${page} / ${totalPages} · ${count}`}
       </span>
       <div className="pagination-controls">
         {pageSize !== undefined && pageSizes && onPageSizeChange && (

@@ -64,7 +64,8 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
 /**
  * Nhãn trạng thái ban (dùng chung Users + Businesses):
  * "Cấm tới ngày X" / "Hết hạn cấm (chờ gỡ)" / "Cấm vĩnh viễn".
- * bannedUntil KHÔNG có cron auto-unban — hết hạn vẫn phải gỡ tay.
+ * bannedUntil được `AdminUnbanCron` (15 phút/lần) gỡ tự động — "chờ gỡ" là
+ * khoảng trễ tối đa 15 phút, không phải việc phải xử lý tay.
  */
 export function banStatusLabel(user: {
   isBanned?: boolean;
