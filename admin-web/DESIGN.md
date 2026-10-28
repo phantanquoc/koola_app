@@ -388,8 +388,13 @@ mềm/khôi phục, sửa cấu hình, gửi broadcast, quyết định kháng n
 - Lịch sử đọc qua `GET /admin/broadcast-history` (phân trang, trần 100/trang).
 - `recipientsOnline` là số socket khớp tại thời điểm emit, không phải số người nhận
   thật; copy UI phải nói "đang online". Lỗi gateway không được làm mất log.
-- Chưa có FCM fallback cho người offline và chưa có lịch gửi; `personal`/`business`
-  hiện fanout toàn bộ nhưng vẫn ghi audience để đối soát khi gửi lại đúng nhóm.
+- Gateway join `account:personal` / `account:business` lúc handshake (token mang
+  `accountType`, mặc định personal). `personal`/`business` emit **đúng room** —
+  trước đây emit cho mọi socket trong khi log ghi "gửi cho nhóm".
+- FCM cho người offline **chỉ có nghĩa với `audience='ids'`**: đó là audience duy nhất
+  có danh sách người nhận; các loại khác đếm theo socket nên không biết ai offline.
+  Response trả `pushSkipped: 'no_recipient_list'` thay vì im lặng.
+- Chưa có lịch gửi.
 
 #### 5.2.7 `@Prop({ type: Types.ObjectId })` là bug — phải dùng `SchemaTypes.ObjectId`
 
@@ -431,6 +436,76 @@ ban không đá được phiên, danh sách thiết bị luôn rỗng — trong 
   dung đã gỡ — đó chính là lúc cần nhất.
 - Chỉ trả link khi trang đích thật sự đọc param (DESIGN §0.7). Đóng khối/drawer focus
   thì xoá param để reload không bật lại.
+
+#### 5.2.10 Ban có hiệu lực ngay + vé nộp kháng nghị một-mục-đích
+
+- `JwtStrategy` trả `isBanned` (đọc DB mỗi request); `JwtAuthGuard` chặn mọi route của
+  tài khoản bị cấm. Trước đây ban chỉ revoke refresh token nên access token còn hạn (1h)
+  vẫn dùng được mọi API — ban trễ một giờ.
+- Người bị cấm không đăng nhập được, nên `POST /auth/login` trả 403
+  `code: 'account_banned'` **kèm `appealToken`** (JWT 10 phút, claim `appeal`). Vé này
+  chỉ đi được vào route gắn `@AllowBanned()` — không phải phiên đăng nhập, không refresh,
+  không mở quyền đọc.
+- `HttpExceptionFilter` **forward toàn bộ field phụ** của payload (trừ
+  `statusCode`/`message`/`error`). Nuốt chúng là client không phân biệt được 403 này với
+  403 khác và không có đường tự phục hồi.
+
+#### 5.2.11 Kháng nghị do người dùng nộp: quyền sở hữu + validate trước khi đếm
+
+- `POST /appeals` dùng `JwtAuthGuard` (không phải AdminGuard): người bị xử lý cần tự bảo
+  vệ mình, và đây là nguồn dữ liệu duy nhất cho hàng đợi `/admin/appeals`.
+- `userId` **luôn** lấy từ token, không từ body — nếu không, user A nộp hộ user B và hàng
+  đợi admin đầy đơn rác. Với `ban`, `targetId` phải trùng người gọi.
+- Chỉ nhận kháng nghị cho hình phạt **đang có hiệu lực** (đang bị cấm / story đang bị gỡ /
+  tin nhắn đang bị xoá). Nộp cho thứ chưa từng bị xử lý là vô nghĩa.
+- **Đếm rate limit sau khi validate.** Đếm trước thì 3 lần gõ nhầm là khoá một giờ, và
+  chính bước kiểm tra "tôi có đang bị cấm không" lại tự đốt quota của người gửi. Tần suất
+  thô đã có `@Throttle` ở controller.
+
+#### 5.2.12 Cấu hình công khai tách khỏi cấu hình admin
+
+- `GET /api/config/public` (`@Public()` + `@SkipThrottle()`) trả đúng 5 field client dùng:
+  maintenance, forceUpdate, announcement, featureFlags. **Không** trả `updatedBy`.
+- Không mở `/admin/config` thành public: nó dùng `PublicConfig` cùng shape nên rất dễ
+  tưởng "chỉ cần bỏ guard", nhưng route đó kèm dữ liệu nội bộ.
+- `@SkipThrottle()` vì app đọc lúc khởi động — bị 429 lúc mở app sẽ hiện màn hình lỗi
+  thay vì nội dung bảo trì. Endpoint chỉ đọc, dữ liệu công khai, service đã cache 30s.
+
+#### 5.2.13 Bắt buộc 2FA chặn ở tầng quyền, không ở tầng đăng nhập
+
+- Cờ `ADMIN_MFA_REQUIRED=true` (`.env`) → `AdminGuard` trả 403
+  `code: 'mfa_required'` cho admin chưa bật 2FA. Không chặn ở `AuthService.login`:
+  bật 2FA cần access token, từ chối đăng nhập là khoá luôn đường tự bật.
+- Route gắn `@MfaExempt()` được miễn — hiện chỉ `GET /admin/me`, vì client cần biết
+  trạng thái để hiện màn hình bật. `/auth/2fa/*` nằm ngoài `AdminGuard` nên tự an toàn.
+- **`code` phải có trong response**: `apiClient` đá mọi 403 sang `/forbidden`, nên nếu
+  thiếu mã thì admin chưa bật 2FA thấy màn hình "đã bị hạ quyền" và không có đường bật.
+  `HttpExceptionFilter` phải forward `code` từ payload object.
+- UI: `MfaRequiredWall` thay `<Outlet />` khi `mfaRequired && !twoFactorEnabled`; dùng
+  lại `TwoFactorPanel` (đã lo setup → QR → xác nhận → recovery code).
+- Bật cờ chỉ sau khi mọi admin đã bật 2FA — bật trước là tự khoá mình.
+
+#### 5.2.14 Lọc khoảng ngày dùng chung một helper
+
+- `common/utils/date-range.ts#applyCreatedAtRange` — list và export đi qua cùng một
+  filter builder, nên thêm `from`/`to` ở đó là cả hai đường có, không thể lệch.
+- Ba điều kiện ngầm: chỉ thêm key khi có giá trị (`$gte: undefined` có thể khớp 0
+  dòng), tính cả biên (`$lte`), và **merge** vào `createdAt` có sẵn (nhánh SLA) chứ
+  không gán đè.
+- UI: hai ô `<input type="date">` native (có bàn phím/lịch/đọc màn hình sẵn);
+  `components/date-range.ts` quy đổi ngày ↔ ISO, `from` = 00:00, `to` = 23:59:59.999
+  theo **giờ máy** — cùng quy ước với `/ops-logs`.
+
+#### 5.2.15 Trần gửi SMS đặt ở nơi duy nhất đi ra nhà mạng
+
+- `PlivoService.sendOtp` chặn 3 lượt/giờ/số + 10 lượt/giờ/IP trước khi gọi Plivo.
+- **Chuẩn hoá số về dạng nội địa trước khi đếm**: `normalizeVnPhone` giữ nguyên tiền tố
+  người dùng gõ (`+84…` vs `0…`), nên dùng thẳng nó làm khoá là hai bucket cho cùng một
+  số — đổi định dạng là lách được trần.
+- Đếm **lượt thử**, không phải lượt thành công: retry sau lỗi cũng tốn tiền SMS.
+- Giữ limit theo `${userId}:${phone}` ở caller (chặn bấm nút liên tục); trần toàn cục
+  là lớp khác, bổ sung chứ không thay thế.
+- IP không có (job nội bộ, test) → bỏ qua lớp IP, không chặn oan.
 
 ## 6. Motion & responsive
 
