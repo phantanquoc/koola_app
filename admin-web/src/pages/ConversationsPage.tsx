@@ -1,4 +1,5 @@
 import './ConversationsPage.css';
+import './moderation-media.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
@@ -44,7 +45,10 @@ interface DetailMessage {
   senderId: string;
   content?: string;
   type?: string;
+  /** MinIO key thô — không phát được trực tiếp trên web. */
   mediaUrl?: string;
+  /** URL đã ký; null nghĩa là presign thất bại (khác với field không tồn tại). */
+  mediaUrlSigned?: string | null;
   mediaMimeType?: string;
   mediaSize?: number;
   createdAt?: string;
@@ -155,11 +159,23 @@ function hi(text: string, q: string) {
   );
 }
 
-function MessageBody({ m, find }: { m: DetailMessage; find?: string }) {
+function MessageBody({
+  m,
+  find,
+  onRetry,
+}: {
+  m: DetailMessage;
+  find?: string;
+  onRetry?: () => void;
+}) {
   if (m.deleted) return <p className="conv-msg-text conv-msg-deleted">(Nội dung đã gỡ)</p>;
-  const url = m.mediaUrl || '';
+  // mediaUrl là MinIO key, chỉ mediaUrlSigned mở được trên web. Signed = null
+  // (khác undefined) là presign thất bại — báo lỗi thay vì render key hỏng.
+  const url = m.mediaUrlSigned ?? m.mediaUrl ?? '';
+  const presignFailed = Boolean(m.mediaUrl) && m.mediaUrlSigned === null;
   const kind = m.type ?? 'text';
   if (kind === 'image' && url) {
+    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" className="conv-msg-media">
         <img src={url} alt={m.content || 'Ảnh'} loading="lazy" className="conv-msg-img" />
@@ -167,7 +183,8 @@ function MessageBody({ m, find }: { m: DetailMessage; find?: string }) {
       </a>
     );
   }
-  if ((kind === 'voice' || kind === 'video') && url) {
+  if (kind === 'voice' && url) {
+    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
     return (
       <div className="conv-msg-media">
         {/* ponytail: native player, add custom waveform if moderators need scrubbing */}
@@ -176,7 +193,17 @@ function MessageBody({ m, find }: { m: DetailMessage; find?: string }) {
       </div>
     );
   }
+  if (kind === 'video' && url) {
+    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
+    return (
+      <div className="conv-msg-media">
+        <video controls preload="metadata" src={url} className="conv-msg-video" />
+        {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
+      </div>
+    );
+  }
   if (kind === 'file' && url) {
+    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" className="conv-msg-file">
         <span className="conv-msg-file-icon" aria-hidden="true"><FileText size={16} strokeWidth={2} /></span>
@@ -190,6 +217,32 @@ function MessageBody({ m, find }: { m: DetailMessage; find?: string }) {
     );
   }
   return <p className="conv-msg-text">{hi(m.content || '(tin nhắn trống)', find ?? '')}</p>;
+}
+
+/** Presign thất bại — cho moderator thử ký lại URL thay vì phải đóng/mở drawer. */
+function MediaUnavailable({
+  m,
+  find,
+  onRetry,
+}: {
+  m: DetailMessage;
+  find?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="conv-msg-media">
+      <div className="mod-media-error">
+        <span>Không tải được media</span>
+        {onRetry && (
+          <button className="btn btn-secondary btn-sm" type="button" onClick={onRetry}>
+            Thử lại
+          </button>
+        )}
+      </div>
+      {/* Vẫn giữ phần chữ để moderator đọc được ngữ cảnh khi media hỏng. */}
+      {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
+    </div>
+  );
 }
 
 export default function ConversationsPage() {
@@ -837,7 +890,11 @@ export default function ConversationsPage() {
                           <div className="conv-msg-line">
                             <span className="conv-msg-gutter" aria-hidden="true" />
                             <div className="conv-bubble">
-                              <MessageBody m={m} find={findQ} />
+                              <MessageBody
+                                m={m}
+                                find={findQ}
+                                onRetry={detailId ? () => void openDetail(detailId) : undefined}
+                              />
                               {showTime && (
                                 <div className="conv-bubble-foot">
                                   <span>{formatClock(m.createdAt) || formatTime(m.createdAt)}</span>

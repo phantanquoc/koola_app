@@ -1,3 +1,4 @@
+import './moderation-media.css';
 import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -25,11 +26,28 @@ interface MessageItem {
   /** Tên người gửi resolve lúc đọc; null khi tài khoản đã bị xoá. */
   senderName?: string | null;
   createdAt?: string;
+  type?: string;
+  /** MinIO key thô — web không mở trực tiếp được. */
+  mediaUrl?: string;
+  /** URL đã ký; null khi presign thất bại. */
+  mediaUrlSigned?: string | null;
 }
 
 /** Rút gọn định danh — không dán ObjectId đầy đủ lên UI. */
 function shortId(id: string) {
   return `${id.slice(0, 8)}…`;
+}
+
+/**
+ * Thumbnail nhỏ cạnh nội dung. Chỉ ảnh/video mới xem trước được; voice/file
+ * không có khung hình nên bỏ qua. Dùng URL đã ký, không dùng key MinIO.
+ */
+function MediaThumb({ type, url }: { type?: string; url?: string | null }) {
+  if (!url || (type !== 'image' && type !== 'video')) return null;
+  if (type === 'video') {
+    return <video className="mod-media-thumb" src={url} preload="metadata" muted aria-hidden />;
+  }
+  return <img className="mod-media-thumb" src={url} alt="Media đính kèm" loading="lazy" />;
 }
 
 /**
@@ -177,9 +195,16 @@ export default function MessageSearchPage() {
                   return (
                     <tr key={m._id}>
                       <td>
-                        {content
-                          ? <span title={content}>{content.length > 140 ? `${content.slice(0, 140)}…` : content}</span>
-                          : <span className="cell-meta">Không có nội dung văn bản</span>}
+                        <div className="mod-media-cell">
+                          <MediaThumb type={m.type} url={m.mediaUrlSigned} />
+                          {content
+                            ? <span title={content}>{content.length > 140 ? `${content.slice(0, 140)}…` : content}</span>
+                            : m.mediaUrl ? (
+                              <span className="cell-meta">
+                                {m.mediaUrlSigned === null ? 'Không tải được media' : 'Media đính kèm'}
+                              </span>
+                            ) : <span className="cell-meta">Không có nội dung văn bản</span>}
+                        </div>
                       </td>
                       <td className="col-hide-mobile">
                         {m.conversationName

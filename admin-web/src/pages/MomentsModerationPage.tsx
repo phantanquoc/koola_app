@@ -1,5 +1,7 @@
+import './moderation-media.css';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { Camera } from 'lucide-react';
 import apiClient from '../apiClient';
 import { ListHeader } from '../components/ListHeader';
 import { StatusTabs } from '../components/StatusTabs';
@@ -9,6 +11,7 @@ import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import Dialog from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { apiErrorMessage } from '../components/formatters';
 import { useUrlFilters } from '../hooks/useUrlFilters';
@@ -23,6 +26,10 @@ interface StoryItem {
   authorName?: string | null;
   caption?: string;
   isActive?: boolean;
+  mediaType?: 'image' | 'video';
+  /** URL đã ký; null khi presign thất bại. */
+  mediaUrlSigned?: string | null;
+  thumbnailUrlSigned?: string | null;
 }
 
 const ACTIVE_TABS = ['', 'true', 'false'] as const;
@@ -53,6 +60,7 @@ export default function MomentsModerationPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const [takedownTarget, setTakedownTarget] = useState<StoryItem | null>(null);
+  const [lightbox, setLightbox] = useState<StoryItem | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function confirmTakedown() {
@@ -110,6 +118,7 @@ export default function MomentsModerationPage() {
               <thead>
                 <tr>
                   <th scope="col">Tác giả</th>
+                  <th scope="col" className="col-hide-mobile">Media</th>
                   <th scope="col">Caption</th>
                   <th scope="col">Hoạt động</th>
                   <th scope="col" className="th-center col-sticky">Hành động</th>
@@ -118,7 +127,7 @@ export default function MomentsModerationPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       <EmptyState
                         title={active === 'true'
                           ? 'Không có story đang hiển thị'
@@ -136,11 +145,33 @@ export default function MomentsModerationPage() {
                 )}
                 {rows.map((s) => {
                   const caption = s.caption ?? '';
+                  // Video ưu tiên thumbnail; ảnh dùng chính media đã ký.
+                  const thumbUrl = s.mediaType === 'video'
+                    ? s.thumbnailUrlSigned ?? null
+                    : s.mediaUrlSigned ?? null;
                   return (
                     <tr key={s._id}>
                       <td>
                         {s.authorName
                           ?? <span className="cell-meta">Tài khoản đã xoá</span>}
+                      </td>
+                      <td className="col-hide-mobile">
+                        {thumbUrl
+                          ? (
+                            <button
+                              className="mod-thumb"
+                              type="button"
+                              onClick={() => setLightbox(s)}
+                              aria-label={s.authorName ? `Xem media của ${s.authorName}` : 'Xem media'}
+                            >
+                              <img src={thumbUrl} alt="" loading="lazy" />
+                            </button>
+                          )
+                          : (
+                            <span className="mod-thumb mod-thumb-empty" title="Không có ảnh xem trước">
+                              <Camera size={20} strokeWidth={2} aria-hidden />
+                            </span>
+                          )}
                       </td>
                       <td>
                         {caption
@@ -183,6 +214,47 @@ export default function MomentsModerationPage() {
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
+
+      <Dialog
+        open={lightbox !== null}
+        onClose={() => setLightbox(null)}
+        labelId="moment-lightbox-title"
+      >
+        <div className="dialog lightbox-dialog">
+          <div className="dialog-header">
+            <div>
+              <div className="page-eyebrow">Moment media</div>
+              <h2 id="moment-lightbox-title" className="panel-title">
+                {lightbox?.authorName ?? 'Tài khoản đã xoá'}
+              </h2>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setLightbox(null)} type="button">
+              Đóng
+            </button>
+          </div>
+          <div className="dialog-body lightbox-body">
+            {lightbox?.mediaUrlSigned ? (
+              <>
+                {lightbox.mediaType === 'video'
+                  ? <video controls src={lightbox.mediaUrlSigned} className="lightbox-image" />
+                  : <img className="lightbox-image" src={lightbox.mediaUrlSigned} alt="Media của story" />}
+                <div className="lightbox-actions">
+                  <a
+                    href={lightbox.mediaUrlSigned}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Mở link gốc
+                  </a>
+                </div>
+              </>
+            ) : (
+              <p className="alert" role="alert">Không tải được media. URL có thể đã hết hạn.</p>
+            )}
+          </div>
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         open={takedownTarget !== null}
