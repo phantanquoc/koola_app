@@ -141,7 +141,8 @@ describe('AppLayout sidebar + identity', () => {
     // Skip link là <a> đầu shell (không icon) — đếm riêng link trong sidebar.
     expect(screen.getByRole('link', { name: 'Bỏ qua tới nội dung' })).toBeTruthy();
     const links = Array.from(container.querySelectorAll('.admin-nav a'));
-    expect(links.length).toBe(15);
+    // 20 = tổng items trong navGroups; đổi nav thì cập nhật số này.
+    expect(links.length).toBe(20);
     for (const link of links) {
       expect(link.querySelector('svg')).toBeTruthy();
       expect(link.textContent).not.toMatch(/[◎◈◫✉⬢♫⚑▣◧⬣◌♥☄≡]/);

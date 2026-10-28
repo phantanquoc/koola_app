@@ -11,10 +11,11 @@ import { FilterPopover } from '../components/FilterPopover';
 import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
-import { VerificationBadge } from '../components/StatusBadge';
+import { StatusBadge, VerificationBadge } from '../components/StatusBadge';
 import { MaskedPII } from '../components/MaskedPII';
 import { formatDateTime, initials, apiErrorMessage } from '../components/formatters';
 import { accountTypeLabel } from '../components/user-labels';
+import { ADMIN_ROLE_LABELS, adminRoleTone, resolveAdminRole } from '../components/admin-role';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -38,6 +39,13 @@ const VERIFICATION_TABS = [
 const FILTER_DEFAULTS = {
   tab: 'all', search: '', accountType: '', verification: '', sort: '', page: '1', pageSize: '20',
 };
+
+/** Badge vai trò quản trị — "Có/Không" cũ không nói được admin này làm được gì. */
+function adminRoleBadge(u: AdminUser) {
+  const role = resolveAdminRole(u);
+  if (!role) return <span className="cell-meta">—</span>;
+  return <StatusBadge tone={adminRoleTone(role)} label={ADMIN_ROLE_LABELS[role]} />;
+}
 
 /**
  * Trang Người dùng — archetype list §3A.
@@ -149,18 +157,22 @@ export default function UsersPage() {
       }
       const header = [
         'ID', 'Tên hiển thị', 'Tên đăng nhập', 'Email', 'Số điện thoại', 'Loại tài khoản',
-        'Xác minh', 'Bị cấm', 'Lý do cấm', 'Cấm tới', 'Quản trị', 'Xoá mềm lúc',
-        'Ngày tham gia', 'Hoạt động cuối', 'Ghi chú nội bộ',
+        'Xác minh', 'Bị cấm', 'Lý do cấm', 'Cấm tới', 'Quản trị', 'Đăng nhập cuối',
+        'IP đăng nhập cuối', 'Xoá mềm lúc', 'Ngày tham gia', 'Hoạt động cuối',
+        'Ghi chú nội bộ',
       ];
-      const lines = res.data.data.map((u) => [
-        u._id, u.displayName, u.username ?? '', u.email ?? '', u.phone ?? '',
-        accountTypeLabel(u.accountType), u.verificationStatus ?? '',
-        u.isBanned ? 'Có' : '', u.banReason ?? '', u.bannedUntil ?? '',
-        u.isPlatformAdmin ? 'Có' : '', u.deletedAt ?? '',
-        u.createdAt ?? '', u.lastSeen ?? '', u.internalNote ?? '',
-      ].map(toCsvCell).join(','));
+      const lines = res.data.data.map((u) => {
+        const role = resolveAdminRole(u);
+        return [
+          u._id, u.displayName, u.username ?? '', u.email ?? '', u.phone ?? '',
+          accountTypeLabel(u.accountType), u.verificationStatus ?? '',
+          u.isBanned ? 'Có' : '', u.banReason ?? '', u.bannedUntil ?? '',
+          role ? ADMIN_ROLE_LABELS[role] : '', u.lastLoginAt ?? '', u.lastLoginIp ?? '',
+          u.deletedAt ?? '', u.createdAt ?? '', u.lastSeen ?? '', u.internalNote ?? '',
+        ].map(toCsvCell).join(',');
+      });
       // BOM để Excel đọc đúng tiếng Việt.
-      const blob = new Blob([`﻿${[header.join(','), ...lines].join('\n')}`], {
+      const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], {
         type: 'text/csv;charset=utf-8',
       });
       const a = document.createElement('a');
@@ -329,13 +341,21 @@ export default function UsersPage() {
                     sort={sort}
                     onSort={toggleSort}
                   />
+                  {/* Chỉ tab Quản trị viên mới cần hai cột này — mọi hàng khác đều
+                      trống, thêm vào làm bảng loãng. */}
+                  {tab === 'admin' && (
+                    <>
+                      <ColumnHeader label="Vai trò" className="col-hide-mobile" />
+                      <ColumnHeader label="Đăng nhập cuối" className="col-hide-xs" />
+                    </>
+                  )}
                   <th scope="col" className="th-center col-sticky">Hành động</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={tab === 'admin' ? 8 : 6}>
                       <EmptyState
                         title={hasFilter ? 'Không khớp tài khoản nào' : tab === 'banned' ? 'Không có ai đang bị cấm' : tab === 'archived' ? 'Chưa có tài khoản nào bị xoá' : tab === 'admin' ? 'Chưa có quản trị viên nào' : 'Chưa có tài khoản nào'}
                         copy={hasFilter
@@ -345,7 +365,7 @@ export default function UsersPage() {
                             : tab === 'archived'
                               ? 'Tài khoản bị xoá mềm sẽ nằm ở đây và khôi phục được.'
                               : tab === 'admin'
-                                ? 'Quyền quản trị nền tảng được cấp ngoài giao diện (script grant-admin).'
+                                ? 'Quyền quản trị nền tảng cấp ngoài giao diện (script grant-admin); vai trò đổi được trong hồ sơ.'
                                 : 'Tài khoản sẽ xuất hiện ở đây khi người dùng đăng ký.'}
                         action={hasFilter
                           ? <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setSearchInput(''); reset(); }}>Xoá bộ lọc</button>
@@ -354,7 +374,9 @@ export default function UsersPage() {
                     </td>
                   </tr>
                 )}
-                {rows.map((u) => (
+                {rows.map((u) => {
+                  const role = resolveAdminRole(u);
+                  return (
                   <tr
                     key={u._id}
                     tabIndex={0}
@@ -380,7 +402,14 @@ export default function UsersPage() {
                           <div className="cell-title">
                             {u.displayName}
                             {u.isBanned && <span className="badge badge-danger cell-badge">Bị cấm</span>}
-                            {u.isPlatformAdmin && <span className="badge badge-primary cell-badge">Quản trị</span>}
+                            {/* Badge "Quản trị" cũ chỉ nói Có/Không; nay hiện vai
+                                trò cụ thể. Tab Quản trị viên đã có cột Vai trò
+                                riêng nên khỏi lặp badge ở đây. */}
+                            {role && tab !== 'admin' && (
+                              <span className="cell-badge">
+                                <StatusBadge tone={adminRoleTone(role)} label={ADMIN_ROLE_LABELS[role]} />
+                              </span>
+                            )}
                           </div>
                           {/* Cột bị ẩn theo bề ngang thì dữ liệu xuống dòng meta:
                               ≤1099px "Liên hệ" + "Tham gia"; ≤860px thêm "Loại" +
@@ -432,6 +461,16 @@ export default function UsersPage() {
                       <span className="cell-date">
                         {tab === 'archived' ? formatDateTime(u.deletedAt) : formatDateTime(u.createdAt)}                      </span>
                     </td>
+                    {tab === 'admin' && (
+                      <>
+                        <td className="col-hide-mobile">
+                          {adminRoleBadge(u)}
+                        </td>
+                        <td className="col-hide-xs">
+                          <span className="cell-date">{formatDateTime(u.lastLoginAt)}</span>
+                        </td>
+                      </>
+                    )}
                     <td className="col-sticky">
                       <div className="table-actions table-actions--end">
                         <button
@@ -468,7 +507,8 @@ export default function UsersPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -488,7 +528,7 @@ export default function UsersPage() {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title={`Xuất ${total.toLocaleString('vi-VN')} tài khoản ra CSV?`}
-        description="File chứa email/SĐT KHÔNG che và ghi chú nội bộ. Tối đa 500 dòng — thu hẹp bộ lọc nếu cần đủ. Chỉ lưu ở máy được phép xử lý dữ liệu cá nhân."
+        description="File chứa email/SĐT/IP đăng nhập KHÔNG che và ghi chú nội bộ. Tối đa 500 dòng — thu hẹp bộ lọc nếu cần đủ. Chỉ lưu ở máy được phép xử lý dữ liệu cá nhân."
         confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
         variant="primary"
         busy={exporting}

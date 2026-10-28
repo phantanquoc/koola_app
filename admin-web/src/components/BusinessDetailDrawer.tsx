@@ -12,6 +12,7 @@ import LicensePreview from './LicensePreview';
 import { BusinessCreateForm } from './BusinessCreateForm';
 import { PhoneInput, IntegerInput } from './StructuredInput';
 import StateBlock from './StateBlock';
+import { useAdminRole } from '../useAuth';
 
 export interface BusinessDetail {
   _id: string;
@@ -35,6 +36,8 @@ export interface BusinessDetail {
   licenseExpiresAt?: string;
   internalNote?: string;
   assignee?: string;
+  /** 0..1 — hiển thị/nhập dạng %, lưu dạng tỉ lệ. */
+  commissionRate?: number | null;
   createdAt?: string;
   deletedAt?: string | null;
   relationshipType?: 'partner' | 'supplier';
@@ -96,20 +99,24 @@ const HISTORY_LABELS: Record<string, string> = {
 type EditableKey =
   | 'displayName' | 'businessCategory' | 'province' | 'address' | 'website'
   | 'tagline' | 'description' | 'contactEmail' | 'contactPhone' | 'taxCode'
-  | 'licenseExpiresAt' | 'internalNote' | 'assignee';
+  | 'licenseExpiresAt' | 'internalNote' | 'assignee' | 'commissionRate';
 
 const EDIT_LABELS: Record<EditableKey, string> = {
   displayName: 'Tên doanh nghiệp', businessCategory: 'Danh mục', province: 'Tỉnh/Thành',
   address: 'Địa chỉ', website: 'Website', tagline: 'Tagline', description: 'Mô tả',
   contactEmail: 'Email liên hệ', contactPhone: 'Điện thoại', taxCode: 'Mã số thuế',
   licenseExpiresAt: 'Giấy phép hết hạn', internalNote: 'Ghi chú nội bộ', assignee: 'Người phụ trách',
+  commissionRate: 'Hoa hồng nền tảng (%)',
 };
 
 const EDIT_ORDER: EditableKey[] = [
   'displayName', 'businessCategory', 'province', 'address', 'website',
   'tagline', 'description', 'contactEmail', 'contactPhone', 'taxCode',
-  'licenseExpiresAt', 'internalNote', 'assignee',
+  'licenseExpiresAt', 'internalNote', 'assignee', 'commissionRate',
 ];
+
+/** Hoa hồng là tiền — chỉ super được sửa (xem canEditCommission). */
+const SUPER_ONLY_KEYS: ReadonlySet<EditableKey> = new Set<EditableKey>(['commissionRate']);
 
 /** ID rút gọn cho header — đủ để đối chiếu, không chiếm cả dòng. */
 function shortId(id: string) {
@@ -125,8 +132,24 @@ const FIELD_GROUPS: Array<{ title: string; keys: EditableKey[]; stack?: boolean 
   { title: 'Vận hành', keys: ['internalNote', 'assignee'] },
 ];
 
+/** 0.125 → "12,5%" — người vận hành nghĩ theo %, DB lưu tỉ lệ. */
+function pctText(rate: number | null | undefined): string {
+  if (rate == null) return '0%';
+  const pct = Math.round(rate * 10000) / 100;
+  return `${String(pct).replace('.', ',')}%`;
+}
+
+/** "12,5" hoặc "12.5" → 0.125; rỗng → null (xoá = 0%). */
+function pctToRate(raw: string): number | null {
+  const s = raw.trim().replace(',', '.').replace(/%/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
 function displayValue(data: BusinessDetail, key: EditableKey): string {
   if (key === 'businessCategory') return data.businessCategory ? categoryVi(data.businessCategory) : '—';
+  if (key === 'commissionRate') return pctText(data.commissionRate);
   if (key === 'licenseExpiresAt') {
     return data.licenseExpiresAt ? formatDateTime(data.licenseExpiresAt) : '—';
   }
@@ -213,6 +236,16 @@ function InlineField({
                 if (e.key === 'Escape') onCancel();
               }}
             />
+          ) : fieldKey === 'commissionRate' ? (
+            <input
+              className="input input-sm" inputMode="decimal" value={draft} autoFocus
+              placeholder="VD: 10 cho 10%" aria-label={EDIT_LABELS[fieldKey]}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSave();
+                if (e.key === 'Escape') onCancel();
+              }}
+            />
           ) : fieldKey === 'contactEmail' ? (
             <input
               className="input input-sm" type="email" inputMode="email" autoComplete="off" spellCheck={false}
@@ -291,6 +324,8 @@ export function BusinessDetailDrawer({
 }) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
+  // Hoa hồng chỉ super sửa được (backend trả 403) — ẩn bút sửa cho moderator.
+  const isSuper = useAdminRole() === 'super';
   const isNew = businessId === 'new';
   const [editingKey, setEditingKey] = useState<EditableKey | null>(null);
   const [draft, setDraft] = useState('');
@@ -353,7 +388,11 @@ export function BusinessDetailDrawer({
     }
     setBusy(true);
     try {
-      await apiClient.patch(`/admin/businesses/${businessId}`, { [editingKey]: v });
+      // Hoa hồng nhập theo % nhưng backend nhận tỉ lệ 0..1.
+      const body = editingKey === 'commissionRate'
+        ? { commissionRate: pctToRate(v) ?? 0 }
+        : { [editingKey]: v };
+      await apiClient.patch(`/admin/businesses/${businessId}`, body);
       addToast('success', `Đã cập nhật ${EDIT_LABELS[editingKey]}.`);
       setEditingKey(null);
       setDraft('');
@@ -370,6 +409,13 @@ export function BusinessDetailDrawer({
     if (!data || busy) return;
     const f: Record<string, string> = {};
     for (const k of EDIT_ORDER) {
+      if (k === 'commissionRate') {
+        // Hiện dạng % trong form; payload đổi ngược lại ở pendingChanges().
+        f[k] = data.commissionRate == null
+          ? ''
+          : String(Math.round(data.commissionRate * 10000) / 100);
+        continue;
+      }
       const v = k === 'licenseExpiresAt' && data.licenseExpiresAt
         ? data.licenseExpiresAt.slice(0, 10)
         : (data[k] ?? '');
@@ -388,7 +434,10 @@ export function BusinessDetailDrawer({
       setEditAll(false);
       return;
     }
-    if (payload.displayName !== undefined && payload.displayName.length < 2) {
+    if (
+      typeof payload.displayName === 'string' &&
+      payload.displayName.length < 2
+    ) {
       addToast('error', 'Tên doanh nghiệp phải có ít nhất 2 ký tự.');
       return;
     }
@@ -407,10 +456,18 @@ export function BusinessDetailDrawer({
   }
 
   /** Field đã đổi so với data gốc (để hiện count + nút Lưu inline). */
-  function pendingChanges(): Record<string, string> {
-    const payload: Record<string, string> = {};
+  function pendingChanges(): Record<string, number | string> {
+    const payload: Record<string, number | string> = {};
     if (!data) return payload;
     for (const [k, v] of Object.entries(formAll)) {
+      if (k === 'commissionRate') {
+        // Ô nhập là %; so sánh với bản gốc cũng theo % để không gửi PATCH rỗng.
+        const origPct = data.commissionRate == null
+          ? ''
+          : String(Math.round(data.commissionRate * 10000) / 100);
+        if (v.trim() !== origPct) payload[k] = pctToRate(v) ?? 0;
+        continue;
+      }
       const orig = k === 'licenseExpiresAt' && data.licenseExpiresAt
         ? data.licenseExpiresAt.slice(0, 10)
         : String((data as unknown as Record<string, unknown>)[k] ?? '');
@@ -575,7 +632,10 @@ export function BusinessDetailDrawer({
                                 editingKey={editingKey}
                                 draft={draft}
                                 busy={busy}
-                                readOnly={Boolean(data.deletedAt)}
+                                readOnly={
+                                  Boolean(data.deletedAt) ||
+                                  (SUPER_ONLY_KEYS.has(k) && !isSuper)
+                                }
                                 onStart={startEdit}
                                 onDraft={setDraft}
                                 onSave={saveField}

@@ -30,15 +30,22 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   delete_user: 'Xoá tài khoản',
   restore_user: 'Khôi phục tài khoản',
   revoke_sessions: 'Thu hồi phiên đăng nhập',
+  revoke_session: 'Thu hồi một phiên đăng nhập',
+  impersonate_start: 'Bắt đầu xem thay người dùng',
+  admin_login: 'Đăng nhập quản trị',
   // Nội dung
   soft_delete_message: 'Gỡ tin nhắn',
   takedown_story: 'Gỡ story',
   resolve_report: 'Xử lý báo cáo',
   dismiss_report: 'Bỏ qua báo cáo',
+  decide_appeal: 'Quyết định kháng nghị',
   // Commerce
   create_product: 'Tạo sản phẩm',
   update_product: 'Cập nhật sản phẩm',
   delete_product: 'Xoá sản phẩm',
+  cancel_order: 'Huỷ đơn hàng',
+  refund_order: 'Hoàn tiền đơn hàng',
+  note_order: 'Ghi chú đơn hàng',
   create_service: 'Tạo dịch vụ',
   update_service: 'Cập nhật dịch vụ',
   delete_service: 'Xoá dịch vụ',
@@ -51,6 +58,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   delete_music_track: 'Xoá track',
   // Hệ thống
   broadcast: 'Gửi broadcast',
+  update_config: 'Cập nhật cấu hình',
 };
 
 export const AUDIT_TARGET_LABELS: Record<string, string> = {
@@ -64,6 +72,9 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
   store: 'Gian hàng',
   music_track: 'Track nhạc',
   broadcast: 'Broadcast',
+  order: 'Đơn hàng',
+  appeal: 'Kháng nghị',
+  config: 'Cấu hình',
 };
 
 type Tone = 'success' | 'warning' | 'danger' | 'muted' | 'primary';
@@ -75,9 +86,12 @@ type Tone = 'success' | 'warning' | 'danger' | 'muted' | 'primary';
 const DANGER_ACTIONS = new Set([
   'delete_business', 'delete_product', 'delete_service', 'delete_store',
   'delete_music_track', 'soft_delete_message', 'takedown_story', 'ban_user',
-  'delete_user', 'revoke_sessions',
+  'delete_user', 'revoke_sessions', 'revoke_session', 'cancel_order',
 ]);
-const WARNING_ACTIONS = new Set(['reject_business', 'bulk_reject_business', 'suspend_business']);
+const WARNING_ACTIONS = new Set([
+  'reject_business', 'bulk_reject_business', 'suspend_business', 'refund_order',
+  'decide_appeal', 'update_config', 'impersonate_start',
+]);
 const SUCCESS_ACTIONS = new Set([
   'approve_business', 'bulk_approve_business', 'restore_business', 'unban_user',
   'unsuspend_business', 'reopen_business', 'resolve_report', 'dismiss_report',
