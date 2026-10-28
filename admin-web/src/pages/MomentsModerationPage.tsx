@@ -91,7 +91,7 @@ export default function MomentsModerationPage() {
   return (
     <div className="page-stack">
       <ListHeader
-        title="Moments"
+        title="Khoảnh khắc"
         count={total}
         actions={(
           <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>

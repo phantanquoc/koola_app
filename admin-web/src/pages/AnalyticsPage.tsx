@@ -81,13 +81,13 @@ export default function AnalyticsPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Tổng quan" title="Analytics" description="Tăng trưởng người dùng và hoạt động." actions={<div className="tabs" role="tablist" aria-label="Chọn khoảng thời gian">{RANGES.map((r) => (<button key={r.value} role="tab" aria-selected={range === r.value} onClick={() => set({ range: r.value })} type="button">{r.label}</button>))}</div>} />
+      <PageHeader eyebrow="Tổng quan" title="Phân tích" description="Tăng trưởng người dùng và hoạt động." actions={<div className="tabs" role="tablist" aria-label="Chọn khoảng thời gian">{RANGES.map((r) => (<button key={r.value} role="tab" aria-selected={range === r.value} onClick={() => set({ range: r.value })} type="button">{r.label}</button>))}</div>} />
       {error ? (
         <StateBlock variant="error" title="Không tải được analytics" copy={error}>
           <button className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)} type="button">Thử lại</button>
         </StateBlock>
       ) : loading ? (
-        <StateBlock variant="loading" title="Đang tải analytics" copy="Đang lấy số liệu tăng trưởng và hoạt động." />
+        <StateBlock variant="loading" title="Đang tải số liệu phân tích" copy="Đang lấy số liệu tăng trưởng và hoạt động." />
       ) : (
         <>
           <section className="grid grid-2">

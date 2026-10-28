@@ -348,7 +348,27 @@ code,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 21 mục không lọt màn 768–900px; scrollbar mặc định 15px ăn mất chỗ của
+     nhãn nên thu về thanh mảnh. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--koola-line-strong) transparent;
+  /* Mục active cuộn vào thì dừng cách mép 8px — sát mép trông như bị cắt. */
+  scroll-padding-block: var(--space-2);
   padding-bottom: var(--space-2);
+}
+
+.admin-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-nav::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: var(--koola-line-strong);
+}
+
+.admin-nav::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .admin-nav-section {
@@ -405,6 +425,51 @@ code,
 
 .admin-nav-link.active .admin-nav-icon {
   background: var(--koola-primary-soft);
+}
+
+/* Nhãn co giãn + badge số bên phải. Nhãn phải có `min-width: 0` thì ellipsis
+   mới chạy khi badge chiếm chỗ (vd "Nhật ký thao tác" + badge). */
+.admin-nav-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge hàng đợi: số việc đang chờ. Chỉ hiện khi > 0 — badge "0" là nhiễu. */
+.admin-nav-badge {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--koola-warning-soft);
+  color: var(--koola-warning-dark);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+.admin-nav-link.active .admin-nav-badge {
+  background: var(--koola-surface);
+}
+
+/* Rail thu gọn: không có chỗ cho số → chấm góc trên phải của icon. */
+.admin-nav-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--koola-surface);
+  border-radius: var(--radius-pill);
+  background: var(--koola-warning);
+}
+
+.admin-sidebar--collapsed .admin-nav-link {
+  position: relative;
 }
 
 .admin-sidebar-footer {
@@ -522,11 +587,18 @@ code,
   gap: var(--space-2);
   min-height: 44px;
   border-radius: var(--radius-pill);
+  color: inherit;
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-1);
+  text-decoration: none;
 }
 
 .admin-identity-chip:hover {
   background: var(--koola-surface-soft);
+}
+
+.admin-identity-chip:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
 }
 
 .admin-identity-chip .admin-avatar {
@@ -2411,9 +2483,27 @@ th.sortable:hover {
     position: static;
   }
 
-  .admin-health-badge {
-    max-width: 120px;
-    font-size: 11px;
+  /* 390px: 2 badge (2FA 116px + sức khỏe 120px) + palette 44 + chip 36 vượt
+     bề ngang → badge tràn sang trái, đè lên nút hamburger khiến nó KHÔNG bấm
+     được (elementFromPoint tại tâm hamburger trả về badge). Mobile giữ badge
+     dạng icon 32px; nghĩa đầy đủ nằm ở aria-label + title. */
+  .admin-health-badge,
+  .admin-2fa-badge {
+    width: 32px;
+    min-height: 32px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* Chữ badge ẩn khỏi mắt nhưng vẫn nằm trong a11y tree — nếu `display: none`
+     thì link chỉ còn icon và mất tên đọc được. */
+  .admin-badge-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 
   .admin-identity-text,

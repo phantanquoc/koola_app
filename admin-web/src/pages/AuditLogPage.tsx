@@ -128,7 +128,7 @@ export default function AuditLogPage() {
   return (
     <div className="page-stack">
       <ListHeader
-        title="Audit log"
+        title="Nhật ký thao tác"
         count={total}
         actions={<button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>}
       >
@@ -222,7 +222,7 @@ export default function AuditLogPage() {
             <button className="btn btn-secondary btn-sm" onClick={() => refetch()} type="button">Thử lại</button>
           </StateBlock>
         )}
-        {isLoading && <StateBlock variant="loading" title="Đang tải audit log" copy="Đang lấy lịch sử thao tác quản trị." />}
+        {isLoading && <StateBlock variant="loading" title="Đang tải nhật ký thao tác" copy="Đang lấy lịch sử thao tác quản trị." />}
         {!isLoading && !isError && (
           <div className="table-scroll table-scroll--fit">
             <table className="data-table data-table--compact" aria-label="Lịch sử thao tác quản trị">

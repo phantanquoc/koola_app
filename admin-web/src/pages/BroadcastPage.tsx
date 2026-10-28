@@ -194,7 +194,7 @@ export default function BroadcastPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Broadcast"
+        title="Thông báo"
         description="Gửi thông báo hệ thống tới nhóm người dùng đã chọn."
       />
 
@@ -280,18 +280,18 @@ export default function BroadcastPage() {
         </div>
       </section>
 
-      <TableShell title="Đã gửi" subtitle="Lịch sử broadcast, mới nhất trước.">
+      <TableShell title="Đã gửi" subtitle="Lịch sử gửi thông báo, mới nhất trước.">
         {history.isError && (
           <StateBlock variant="error" title="Không tải được lịch sử" copy={loadError}>
             <button className="btn btn-secondary btn-sm" onClick={() => history.refetch()} type="button">Thử lại</button>
           </StateBlock>
         )}
         {history.isLoading && (
-          <StateBlock variant="loading" title="Đang tải lịch sử" copy="Đang lấy các broadcast đã gửi." />
+          <StateBlock variant="loading" title="Đang tải lịch sử" copy="Đang lấy lịch sử thông báo đã gửi." />
         )}
         {!history.isLoading && !history.isError && (
           <div className="table-scroll table-scroll--fit">
-            <table className="data-table data-table--compact" aria-label="Lịch sử broadcast">
+            <table className="data-table data-table--compact" aria-label="Lịch sử gửi thông báo">
               <thead>
                 <tr>
                   <th scope="col">Thời điểm</th>

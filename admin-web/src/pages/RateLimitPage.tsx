@@ -55,9 +55,9 @@ const ACTION_VI: Record<string, string> = {
   refresh: 'làm mới token',
   '2fa/setup': 'thiết lập 2FA',
   getHealth: 'kiểm tra sức khỏe',
-  ratelimitTop: 'xem rate limit',
+  ratelimitTop: 'xem giới hạn tần suất',
   getMe: 'đọc hồ sơ admin',
-  broadcast: 'gửi broadcast',
+  broadcast: 'gửi thông báo',
   impersonate: 'xem thay người dùng',
   requestPhoneOtp: 'gửi OTP đổi SĐT',
   registerInit: 'bắt đầu đăng ký',
@@ -130,7 +130,7 @@ export default function RateLimitPage() {
   return (
     <div className="page-stack">
       <ListHeader
-        title="Rate limit"
+        title="Giới hạn tần suất"
         count={rows.length}
         actions={
           <button
@@ -166,7 +166,7 @@ export default function RateLimitPage() {
         <StateBlock variant="loading" title="Đang đọc Redis" copy="Đang quét bucket throttler." />
       ) : (
         <>
-          <section className="rl-metrics" aria-label="Tóm tắt rate limit">
+          <section className="rl-metrics" aria-label="Tóm tắt giới hạn tần suất">
             <MetricCard
               icon="#"
               label="Lượt gọi trong cửa sổ"
@@ -214,7 +214,7 @@ export default function RateLimitPage() {
               />
             ) : (
               <div className="table-scroll table-scroll--fit">
-                <table className="data-table data-table--compact" aria-label="Bucket rate limit">
+                <table className="data-table data-table--compact" aria-label="Chi tiết giới hạn tần suất">
                   <thead>
                     <tr>
                       <th scope="col">Người gọi</th>
