@@ -1,3 +1,4 @@
+import '../pages/moderation-media.css';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +17,47 @@ import { ConfirmDialog } from './ConfirmDialog';
 import type { ReportItem } from '../pages/ReportsPage';
 
 type Action = 'resolve' | 'dismiss';
+
+/**
+ * Media của đối tượng bị báo. Trước đây trang chi tiết chỉ có chữ nên moderator
+ * phải quyết định "mù" với story hoặc tin nhắn ảnh — phải sang trang khác tra.
+ * URL do server ký sẵn (`targetMediaUrl`); null = không có media hoặc ký lỗi.
+ */
+function ReportTargetMedia({
+  mediaType,
+  url,
+  thumbnail,
+}: {
+  mediaType?: string | null;
+  url?: string | null;
+  thumbnail?: string | null;
+}) {
+  if (!url) return null;
+  if (mediaType === 'video') {
+    return (
+      <video
+        className="mod-report-media"
+        src={url}
+        controls
+        preload="metadata"
+        poster={thumbnail ?? undefined}
+      />
+    );
+  }
+  if (mediaType === 'image') {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="mod-report-media">
+        <img src={url} alt="Media của đối tượng bị báo cáo" loading="lazy" />
+      </a>
+    );
+  }
+  // voice/file: không xem trước được trong trang báo cáo — link tải là đủ.
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="cell-link">
+      Mở media đính kèm
+    </a>
+  );
+}
 
 /**
  * Chi tiết báo cáo — component inline ở route `/reports/:id`, KHÔNG phải drawer.
@@ -126,8 +168,12 @@ export function ReportDetail({ id, backTo }: { id: string; backTo: string }) {
         {isContentTarget && (
           <div className="form-field">
             <span className="form-label">Nội dung bị báo cáo</span>
+            <ReportTargetMedia
+              mediaType={data.targetMediaType}
+              url={data.targetMediaUrl}
+              thumbnail={data.targetThumbnailUrl}
+            />
             <div className="report-quote">{data.targetName ?? 'Không còn nội dung để hiện.'}</div>
-            {/* Chỉ hiện link khi trang đích thật sự đọc param — nếu không là link chết. */}
             {targetHref && (
               <Link className="cell-link" to={targetHref}>Mở {reportTargetLabel(data.targetType).toLowerCase()} trong trang quản lý</Link>
             )}

@@ -6,6 +6,7 @@ import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { ConversationDoc } from '../conversations/conversation.schema';
+import { ModerationMediaService } from './moderation-media.service';
 
 /** Report + ngữ cảnh đọc được, resolve lúc đọc (không denormalize). */
 export type ReportWithContext = ReportDocument & {
@@ -17,6 +18,12 @@ export type ReportWithContext = ReportDocument & {
   reporterName?: string;
   /** Tên admin đã xử lý (null khi còn pending). */
   resolvedByName?: string;
+  /** URL đã ký của media đối tượng bị báo (message/story); null khi không có. */
+  targetMediaUrl?: string | null;
+  /** Ảnh thu nhỏ cho story video; null khi không có. */
+  targetThumbnailUrl?: string | null;
+  /** 'image' | 'video' | … — UI chọn thẻ hiển thị theo loại. */
+  targetMediaType?: string | null;
 };
 
 @Injectable()
@@ -28,6 +35,7 @@ export class AdminReportService {
     @InjectModel(Story.name) private readonly storyModel: Model<Story>,
     @InjectModel(ConversationDoc.name)
     private readonly convModel: Model<ConversationDoc>,
+    private readonly moderationMedia: ModerationMediaService,
   ) {}
 
   async list(dto: {
@@ -102,10 +110,16 @@ export class AdminReportService {
 
     const [messages, stories, conversations] = await Promise.all([
       msgIds.length
-        ? this.msgModel.find({ _id: { $in: msgIds } }).select('senderId content type').lean()
+        ? this.msgModel
+            .find({ _id: { $in: msgIds } })
+            .select('senderId content type mediaUrl')
+            .lean()
         : [],
       storyIds.length
-        ? this.storyModel.find({ _id: { $in: storyIds } }).select('authorId caption').lean()
+        ? this.storyModel
+            .find({ _id: { $in: storyIds } })
+            .select('authorId caption mediaKey thumbnailKey mediaType')
+            .lean()
         : [],
       convIds.length
         ? this.convModel
@@ -113,6 +127,13 @@ export class AdminReportService {
             .select('name type members')
             .lean()
         : [],
+    ]);
+
+    // Ký media của đối tượng bị báo — trước đây moderator chỉ thấy tiêu đề text
+    // nên phải quyết định "mù" với story/tin nhắn ảnh. Một batch cho cả trang.
+    const signed = await this.moderationMedia.presignMany([
+      ...messages.map((m) => m.mediaUrl),
+      ...stories.flatMap((s) => [s.mediaKey, s.thumbnailKey]),
     ]);
 
     // Tin nhắn không có tên — cần tên người gửi, và tên thành viên cho hội thoại
@@ -151,6 +172,11 @@ export class AdminReportService {
                 : m.type === 'voice' ? '[Tin nhắn thoại]'
                   : m.type === 'file' ? '[Tệp đính kèm]' : '[Tin nhắn]';
           if (sender) out.targetDetail = `Tin nhắn của ${sender}`;
+          const key = typeof m.mediaUrl === 'string' ? m.mediaUrl.trim() : '';
+          if (key) {
+            out.targetMediaUrl = signed.get(key) ?? null;
+            out.targetMediaType = m.type;
+          }
         }
       } else if (r.targetType === 'story') {
         const s = storyById.get(tid);
@@ -158,6 +184,13 @@ export class AdminReportService {
           const author = nameById.get(String(s.authorId));
           out.targetName = s.caption?.trim() ? s.caption.trim().slice(0, 80) : '[Story]';
           if (author) out.targetDetail = `Story của ${author}`;
+          out.targetMediaUrl = s.mediaKey
+            ? (signed.get(s.mediaKey) ?? null)
+            : null;
+          out.targetThumbnailUrl = s.thumbnailKey
+            ? (signed.get(s.thumbnailKey) ?? null)
+            : null;
+          out.targetMediaType = s.mediaType;
         }
       } else if (r.targetType === 'user') {
         out.targetName = nameById.get(tid);

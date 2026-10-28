@@ -6,6 +6,7 @@ import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { ConversationDoc } from '../conversations/conversation.schema';
+import { ModerationMediaService } from './moderation-media.service';
 
 const ACTOR = '507f1f77bcf86cd799439001';
 const REPORTER = '507f1f77bcf86cd799439002';
@@ -33,6 +34,11 @@ const userModel = { find: jest.fn() };
 const msgModel = { find: jest.fn() };
 const storyModel = { find: jest.fn() };
 const convModel = { find: jest.fn() };
+const mockMedia = { presignMany: jest.fn() };
+
+function signedMap(entries: Record<string, string | null>) {
+  return new Map(Object.entries(entries));
+}
 
 describe('AdminReportService', () => {
   let service: AdminReportService;
@@ -43,6 +49,8 @@ describe('AdminReportService', () => {
     msgModel.find.mockReturnValue(leanQuery([]));
     storyModel.find.mockReturnValue(leanQuery([]));
     convModel.find.mockReturnValue(leanQuery([]));
+    // Mặc định: không ký được gì (map rỗng) để test cũ không phải khai báo.
+    mockMedia.presignMany.mockResolvedValue(new Map());
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminReportService,
@@ -51,6 +59,7 @@ describe('AdminReportService', () => {
         { provide: getModelToken(Message.name), useValue: msgModel },
         { provide: getModelToken(Story.name), useValue: storyModel },
         { provide: getModelToken(ConversationDoc.name), useValue: convModel },
+        { provide: ModerationMediaService, useValue: mockMedia },
       ],
     }).compile();
     service = module.get(AdminReportService);
@@ -92,6 +101,74 @@ describe('AdminReportService', () => {
 
     const res = await service.list({ page: 1, limit: 20 });
     expect(res.data[0].targetName).toBe('[Ảnh]');
+  });
+
+  // Trước đây moderator chỉ thấy tiêu đề text — phải quyết định "mù" với media.
+  it('ký media của tin nhắn bị báo để moderator xem trước khi gỡ', async () => {
+    mockMedia.presignMany.mockResolvedValue(
+      signedMap({ 'key/photo.jpg': 'https://signed/photo.jpg' }),
+    );
+    reportModel.find.mockReturnValue(
+      leanQuery([{ _id: 'r1', reporterId: REPORTER, targetType: 'message', targetId: MSG, status: 'pending', reason: 'x' }]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    msgModel.find.mockReturnValue(
+      leanQuery([
+        { _id: MSG, senderId: SELLER, content: '', type: 'image', mediaUrl: 'key/photo.jpg' },
+      ]),
+    );
+
+    const res = await service.list({ page: 1, limit: 20 });
+
+    expect(mockMedia.presignMany).toHaveBeenCalledWith(['key/photo.jpg']);
+    expect(res.data[0].targetMediaUrl).toBe('https://signed/photo.jpg');
+    expect(res.data[0].targetMediaType).toBe('image');
+  });
+
+  it('ký mediaKey + thumbnailKey của story bị báo', async () => {
+    mockMedia.presignMany.mockResolvedValue(
+      signedMap({
+        'story/v.mp4': 'https://signed/v.mp4',
+        'story/v-thumb.jpg': 'https://signed/v-thumb.jpg',
+      }),
+    );
+    const STORY = '507f1f77bcf86cd799439030';
+    reportModel.find.mockReturnValue(
+      leanQuery([{ _id: 'r1', reporterId: REPORTER, targetType: 'story', targetId: STORY, status: 'pending', reason: 'x' }]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    storyModel.find.mockReturnValue(
+      leanQuery([
+        {
+          _id: STORY,
+          authorId: SELLER,
+          caption: '',
+          mediaKey: 'story/v.mp4',
+          thumbnailKey: 'story/v-thumb.jpg',
+          mediaType: 'video',
+        },
+      ]),
+    );
+
+    const res = await service.list({ page: 1, limit: 20 });
+
+    expect(res.data[0].targetMediaUrl).toBe('https://signed/v.mp4');
+    expect(res.data[0].targetThumbnailUrl).toBe('https://signed/v-thumb.jpg');
+    expect(res.data[0].targetMediaType).toBe('video');
+  });
+
+  it('không có media thì để null, không ký gì', async () => {
+    mockMedia.presignMany.mockResolvedValue(new Map());
+    reportModel.find.mockReturnValue(
+      leanQuery([{ _id: 'r1', reporterId: REPORTER, targetType: 'message', targetId: MSG, status: 'pending', reason: 'x' }]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    msgModel.find.mockReturnValue(
+      leanQuery([{ _id: MSG, senderId: SELLER, content: 'chữ', type: 'text', mediaUrl: '' }]),
+    );
+
+    const res = await service.list({ page: 1, limit: 20 });
+    expect(res.data[0].targetMediaUrl).toBeUndefined();
   });
 
   it('hội thoại direct ghép tên thành viên khi không có tên nhóm', async () => {

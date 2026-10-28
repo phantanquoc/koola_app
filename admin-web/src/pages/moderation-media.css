@@ -75,3 +75,25 @@
   object-fit: cover;
   background: #000;
 }
+
+/* Media đối tượng bị báo trong trang chi tiết báo cáo. */
+.mod-report-media {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 260px;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: #000;
+}
+
+a.mod-report-media {
+  width: fit-content;
+}
+
+a.mod-report-media img {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 260px;
+  border-radius: var(--radius-sm);
+}

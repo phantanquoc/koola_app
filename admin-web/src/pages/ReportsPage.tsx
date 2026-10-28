@@ -31,6 +31,12 @@ export interface ReportItem {
   targetName?: string;
   /** Dòng phụ: người gửi tin nhắn, số thành viên… */
   targetDetail?: string;
+  /** URL đã ký của media đối tượng bị báo; null khi không có hoặc ký lỗi. */
+  targetMediaUrl?: string | null;
+  /** Ảnh thu nhỏ cho story video. */
+  targetThumbnailUrl?: string | null;
+  /** 'image' | 'video' | … — chọn thẻ hiển thị. */
+  targetMediaType?: string | null;
   reason: string;
   status: string;
   resolvedByName?: string;
