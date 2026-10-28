@@ -31,6 +31,7 @@ import OpsLogPage from './pages/OpsLogPage';
 import ModerationQueuePage from './pages/ModerationQueuePage';
 import AppealsPage from './pages/AppealsPage';
 import RevenuePage from './pages/RevenuePage';
+import RateLimitPage from './pages/RateLimitPage';
 
 export default function App() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
                 <Route path="config" element={<ConfigPage />} />
                 <Route path="ops-logs" element={<OpsLogPage />} />
                 <Route path="revenue" element={<RevenuePage />} />
+                <Route path="ratelimit" element={<RateLimitPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

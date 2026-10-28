@@ -4,6 +4,11 @@ import { RedisService } from '../common/redis/redis.service';
 export interface RatelimitBucket {
   /** Định danh người dùng/IP nếu tách được, ngược lại là nguyên key Redis. */
   key: string;
+  /**
+   * Phần route của key (`Class-Handler-throttler`). Không có nó thì mọi bucket
+   * của cùng một IP hiện thành các dòng giống nhau — không biết route nào bị gọi.
+   */
+  route: string | null;
   hits: number;
   ttlSeconds: number;
 }
@@ -41,11 +46,15 @@ export class RatelimitMonitorService {
 
     const values = await this.readCounters(scanned.map((s) => s.key));
     return scanned
-      .map((s, i) => ({
-        key: this.trackerView(s.key),
-        hits: values[i],
-        ttlSeconds: s.ttl,
-      }))
+      .map((s, i) => {
+        const { tracker, route } = this.trackerView(s.key);
+        return {
+          key: tracker,
+          route,
+          hits: values[i],
+          ttlSeconds: s.ttl,
+        };
+      })
       .sort((a, b) => b.hits - a.hits)
       .slice(0, capped);
   }
@@ -76,14 +85,16 @@ export class RatelimitMonitorService {
    * Định dạng kỳ vọng của storage (`throttler:<route>-<tracker>`) nằm ở
    * crossFileNeeds — Nest mặc định băm cả key nên tracker không còn đọc được.
    */
-  private trackerView(key: string): string {
+  private trackerView(key: string): { tracker: string; route: string | null } {
     const raw = key.startsWith(THROTTLER_PREFIX)
       ? key.slice(THROTTLER_PREFIX.length)
       : key;
-    if (!raw || HASHED_KEY_RE.test(raw)) return key;
+    // Key đã băm thì không đoán — trả nguyên key, route để null.
+    if (!raw || HASHED_KEY_RE.test(raw)) return { tracker: key, route: null };
     const segments = raw.split('-');
     // Tracker là segment cuối (IP hoặc userId); route phía trước có thể có '-'.
-    const tracker = segments[segments.length - 1];
-    return tracker || raw;
+    const tracker = segments.pop() || raw;
+    const route = segments.length > 0 ? segments.join('-') : null;
+    return { tracker, route };
   }
 }

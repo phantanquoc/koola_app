@@ -34,7 +34,7 @@ describe('RatelimitMonitorService', () => {
     service = module.get(RatelimitMonitorService);
   }
 
-  it('sắp xếp hits giảm dần và tách tracker khỏi key', async () => {
+  it('sắp xếp hits giảm dần và tách tracker + route khỏi key', async () => {
     redis = makeRedis(
       [
         { key: 'throttler:AuthController-login-short-1.2.3.4', ttl: 42 },
@@ -46,8 +46,18 @@ describe('RatelimitMonitorService', () => {
 
     const res = await service.top(20);
     expect(res).toEqual([
-      { key: '5.6.7.8', hits: 9, ttlSeconds: 10 },
-      { key: '1.2.3.4', hits: 3, ttlSeconds: 42 },
+      {
+        key: '5.6.7.8',
+        route: 'AuthController-login-short',
+        hits: 9,
+        ttlSeconds: 10,
+      },
+      {
+        key: '1.2.3.4',
+        route: 'AuthController-login-short',
+        hits: 3,
+        ttlSeconds: 42,
+      },
     ]);
   });
 
@@ -57,7 +67,7 @@ describe('RatelimitMonitorService', () => {
 
     const res = await service.top();
     expect(res).toEqual([
-      { key: `throttler:${HASHED}`, hits: 7, ttlSeconds: 5 },
+      { key: `throttler:${HASHED}`, route: null, hits: 7, ttlSeconds: 5 },
     ]);
   });
 

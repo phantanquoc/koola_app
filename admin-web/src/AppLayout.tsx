@@ -23,6 +23,7 @@ import {
   Package,
   ScrollText,
   Settings,
+  ShieldAlert,
   ShoppingCart,
   Users,
   X,
@@ -83,6 +84,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     label: 'Hệ thống',
     items: [
       { to: '/health', label: 'Health', icon: Activity },
+      { to: '/ratelimit', label: 'Rate limit', icon: ShieldAlert },
       { to: '/ops-logs', label: 'Nhật ký vận hành', icon: FileClock },
       { to: '/config', label: 'Cấu hình', icon: Settings },
       { to: '/broadcast', label: 'Broadcast', icon: Megaphone },
@@ -105,6 +107,7 @@ const routeTitles: Record<string, string> = {
   '/orders': 'Đơn hàng',
   '/services': 'Dịch vụ',
   '/health': 'Sức khỏe hệ thống',
+  '/ratelimit': 'Rate limit',
   '/broadcast': 'Broadcast',
   '/audit-logs': 'Audit log',
   '/moderation-queue': 'Hàng đợi kiểm duyệt',
