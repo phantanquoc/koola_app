@@ -283,7 +283,13 @@ describe('UsersService', () => {
       );
 
       expect(result).toEqual({ message: 'OTP sent', expiresIn: 300 });
-      expect(mockPlivoService.sendOtp).toHaveBeenCalledWith('+84901234567');
+      // purpose + ctx.ip đi kèm để PlivoService đếm đúng bucket (chống SMS
+      // pumping); không có IP thì ctx.ip = undefined.
+      expect(mockPlivoService.sendOtp).toHaveBeenCalledWith(
+        '+84901234567',
+        'phone_change',
+        { ip: undefined },
+      );
       expect(mockRedisClient.set).toHaveBeenCalledWith(
         'phone-change:user1:+84901234567',
         expect.any(String),

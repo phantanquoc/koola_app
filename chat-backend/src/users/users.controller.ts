@@ -7,8 +7,10 @@ import {
   Body,
   Param,
   Query,
+  Req,
   NotFoundException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { UsersService } from './users.service';
 import { SearchUsersDto } from './dto/search-users.dto';
 import { BatchPresenceDto } from './dto/batch-presence.dto';
@@ -73,8 +75,13 @@ export class UsersController {
   async requestPhoneOtp(
     @CurrentUser() user: { userId: string },
     @Body() body: RequestProfilePhoneOtpDto,
+    @Req() req: Request,
   ) {
-    return this.usersService.requestPhoneChangeOtp(user.userId, body.phone);
+    return this.usersService.requestPhoneChangeOtp(
+      user.userId,
+      body.phone,
+      req.ip,
+    );
   }
 
   @Post('me/phone/verify-otp')

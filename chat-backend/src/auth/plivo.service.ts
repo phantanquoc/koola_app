@@ -1,4 +1,6 @@
 import {
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   Optional,
@@ -7,6 +9,45 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as plivo from 'plivo';
 import { OpsLogService } from '../ops/ops-log.service';
+import { RedisService } from '../common/redis/redis.service';
+import { normalizeVnPhone } from '../common/utils/vn-phone';
+
+/**
+ * Trần gửi SMS theo cửa sổ 1 giờ.
+ *
+ * Vì sao đặt ở đây chứ không ở từng caller: trước đây chỉ có limit theo
+ * `${userId}:${phone}` ở UsersService — kẻ lạm dụng tạo 100 tài khoản là gửi
+ * được 300 SMS tới cùng một số (SMS pumping: mỗi tin chia hoa hồng cho đầu số).
+ * Chặn ở service là chặn ở chỗ duy nhất đi ra nhà mạng, nên mọi caller (hiện
+ * tại và sau này) đều được bảo vệ mà không phải nhớ gì.
+ *
+ * 3/giờ/số: một người đổi số cần tối đa 2 tin (gửi lại 1 lần) — 3 là dư.
+ * 10/giờ/IP: đủ cho văn phòng dùng chung NAT, đủ chặt để farm bị chặn.
+ */
+const SMS_PHONE_LIMIT_PER_HOUR = 3;
+const SMS_IP_LIMIT_PER_HOUR = 10;
+const SMS_WINDOW_SECONDS = 3_600;
+
+/** Bối cảnh gửi — chỉ để chặn theo IP, không bao giờ lưu IP vào log OTP. */
+export interface SendOtpContext {
+  ip?: string | null;
+}
+
+/**
+ * Khoá đếm theo SỐ phải là một dạng duy nhất cho mỗi số thật.
+ *
+ * `normalizeVnPhone` giữ nguyên tiền tố người dùng gõ (`+84912…` vs `0912…`),
+ * vì đó là dạng cần lưu/gửi đi. Nhưng dùng nó làm khoá đếm thì hai dạng là hai
+ * bucket → đổi định dạng là lách được trần. Quy hết về dạng nội địa `0…`.
+ */
+function smsQuotaKey(phone: string): string {
+  const digits = (normalizeVnPhone(phone) || phone).replace(/\D/g, '');
+  const local =
+    digits.startsWith('84') && digits.length >= 11
+      ? `0${digits.slice(2)}`
+      : digits;
+  return local || phone;
+}
 
 @Injectable()
 export class PlivoService {
@@ -16,6 +57,7 @@ export class PlivoService {
 
   constructor(
     private readonly configService: ConfigService,
+    private readonly redis: RedisService,
     // Optional để module cũ không cần wiring cũng boot được; log là quan sát.
     @Optional() private readonly opsLog?: OpsLogService,
   ) {
@@ -34,7 +76,55 @@ export class PlivoService {
     this.client = new plivo.Client(authId, authToken);
   }
 
-  async sendOtp(phone: string, purpose = 'otp'): Promise<string> {
+  /**
+   * Chặn trước khi gọi nhà mạng. Đếm **lượt thử**, không phải lượt thành công:
+   * kẻ lạm dụng retry sau khi lỗi cũng phải bị tính.
+   *
+   * Chuẩn hoá số trước khi đếm — nếu không `+84912…` và `0912…` là hai bucket
+   * riêng và chỉ cần đổi định dạng là lách được trần.
+   */
+  private async assertSmsQuota(phone: string, ip?: string | null): Promise<void> {
+    const quotaKey = smsQuotaKey(phone);
+
+    const phoneHits = await this.redis.incrementWithExpiry(
+      `sms:quota:phone:${quotaKey}`,
+      SMS_WINDOW_SECONDS,
+    );
+    if (phoneHits > SMS_PHONE_LIMIT_PER_HOUR) {
+      this.logger.warn(
+        `[Plivo] Chặn gửi SMS: số ${quotaKey} vượt ${SMS_PHONE_LIMIT_PER_HOUR}/giờ`,
+      );
+      throw new HttpException(
+        'Số điện thoại đã nhận quá nhiều mã. Vui lòng thử lại sau.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // IP có thể không có (job nội bộ, test) — bỏ qua lớp này thay vì chặn oan.
+    if (ip) {
+      const ipHits = await this.redis.incrementWithExpiry(
+        `sms:quota:ip:${ip}`,
+        SMS_WINDOW_SECONDS,
+      );
+      if (ipHits > SMS_IP_LIMIT_PER_HOUR) {
+        this.logger.warn(
+          `[Plivo] Chặn gửi SMS: IP ${ip} vượt ${SMS_IP_LIMIT_PER_HOUR}/giờ`,
+        );
+        throw new HttpException(
+          'Có quá nhiều yêu cầu gửi mã từ kết nối này. Vui lòng thử lại sau.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
+  }
+
+  async sendOtp(
+    phone: string,
+    purpose = 'otp',
+    ctx: SendOtpContext = {},
+  ): Promise<string> {
+    await this.assertSmsQuota(phone, ctx.ip);
+
     try {
       const response = await this.client.verify_session.create({
         recipient: phone,

@@ -234,6 +234,7 @@ export class UsersService {
   async requestPhoneChangeOtp(
     userId: string,
     phone: string,
+    ip?: string | null,
   ): Promise<{ message: string; expiresIn: number }> {
     // Check if phone matches caller's current phone
     const caller = await this.userModel.findById(userId).select('phone');
@@ -251,7 +252,8 @@ export class UsersService {
       throw new ConflictException('Số điện thoại đã được sử dụng');
     }
 
-    // Rate limit: max 3 OTP requests per phone per 10 minutes
+    // Rate limit theo user (chặn bấm nút liên tục). Trần toàn cục theo số/IP
+    // nằm trong PlivoService — đó mới là lớp chặn SMS pumping.
     const rateLimitKey = `phone-change:rate:${userId}:${phone}`;
     const count = await this.redisService.incrementWithExpiry(
       rateLimitKey,
@@ -267,8 +269,13 @@ export class UsersService {
     // Send OTP via Plivo
     let sessionUuid: string;
     try {
-      sessionUuid = await this.plivoService.sendOtp(phone);
+      sessionUuid = await this.plivoService.sendOtp(phone, 'phone_change', {
+        ip,
+      });
     } catch (error) {
+      // 429 từ trần SMS phải giữ nguyên mã + thông điệp: người dùng cần biết
+      // "chờ đã" chứ không phải "nhà mạng hỏng".
+      if (error instanceof HttpException) throw error;
       if (error instanceof ServiceUnavailableException) throw error;
       throw new ServiceUnavailableException(
         'Không thể gửi mã xác thực. Vui lòng thử lại.',
