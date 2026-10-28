@@ -272,6 +272,16 @@ export default function ConfigPage() {
     else if (new Set(keys).size !== keys.length) next.flags = 'Tên cờ bị trùng — mỗi cờ một dòng.';
     else if (keys.length > MAX_FLAGS) next.flags = `Tối đa ${MAX_FLAGS} cờ.`;
 
+    // Bật thông báo mà không có tiêu đề/nội dung thì client hiện banner rỗng —
+    // server không chặn nên phải chặn ở đây.
+    if (form.announcementActive) {
+      if (!form.announcementTitle.trim()) {
+        next.announcement = 'Bật thông báo thì phải có tiêu đề.';
+      } else if (!form.announcementBody.trim()) {
+        next.announcement = 'Bật thông báo thì phải có nội dung.';
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -575,29 +585,38 @@ export default function ConfigPage() {
             Đang bật thông báo
           </label>
           <div className="form-field">
-            <label className="form-label" htmlFor="cfg-announce-title">Tiêu đề</label>
+            <label className="form-label" htmlFor="cfg-announce-title">
+              Tiêu đề {form.announcementActive && <span className="form-required">*</span>}
+            </label>
             <input
               id="cfg-announce-title"
               className="input"
               type="text"
               maxLength={MAX_TITLE}
+              aria-required={form.announcementActive || undefined}
+              aria-invalid={Boolean(errors.announcement) || undefined}
               value={form.announcementTitle}
               onChange={(e) => patchForm({ announcementTitle: e.target.value })}
             />
             <span className="form-hint">{form.announcementTitle.length}/{MAX_TITLE} ký tự</span>
           </div>
           <div className="form-field">
-            <label className="form-label" htmlFor="cfg-announce-body">Nội dung</label>
+            <label className="form-label" htmlFor="cfg-announce-body">
+              Nội dung {form.announcementActive && <span className="form-required">*</span>}
+            </label>
             <textarea
               id="cfg-announce-body"
               className="textarea"
               maxLength={MAX_BODY}
               rows={4}
+              aria-required={form.announcementActive || undefined}
+              aria-invalid={Boolean(errors.announcement) || undefined}
               value={form.announcementBody}
               onChange={(e) => patchForm({ announcementBody: e.target.value })}
             />
             <span className="form-hint">{form.announcementBody.length}/{MAX_BODY} ký tự</span>
           </div>
+          {errors.announcement && <span className="form-error" role="alert">{errors.announcement}</span>}
         </div>
       </section>
 

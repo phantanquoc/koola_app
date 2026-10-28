@@ -16,6 +16,7 @@ import { BanDialog } from './UserModeration';
 import { useViolationHistory } from '../hooks/useViolationHistory';
 import { accountTypeLabel, banBadge } from './user-labels';
 import { PhoneInput } from './StructuredInput';
+import { isValidVnPhone, normalizeVnPhone } from './input-masks';
 import { UserDevices } from './UserDevices';
 import { TwoFactorPanel } from './TwoFactorPanel';
 import {
@@ -147,14 +148,28 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
   async function saveField() {
     if (!data || !editingKey || busy) return;
     const value = draft.trim();
-    // Rỗng hợp lệ với field "xoá được"; tên hiển thị thì không.
+    // Kiểm tại chỗ theo đúng luật của UpdateUserDto — sai định dạng thì báo
+    // ngay, không để round-trip 400 rồi hiện message tiếng Anh của server.
     if (editingKey === 'displayName' && !value) {
       addToast('warning', 'Tên hiển thị không được để trống.');
       return;
     }
+    if (editingKey === 'username' && value && !/^[a-zA-Z0-9_]{3,30}$/.test(value)) {
+      addToast('error', 'Tên đăng nhập 3–30 ký tự, chỉ chữ, số và gạch dưới.');
+      return;
+    }
+    if (editingKey === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      addToast('error', 'Email không hợp lệ.');
+      return;
+    }
+    if (editingKey === 'phone' && value && !isValidVnPhone(value)) {
+      addToast('error', 'SĐT phải là di động 10 số hoặc số cố định 11 số.');
+      return;
+    }
+    const payload = editingKey === 'phone' ? normalizeVnPhone(value) : value;
     setBusy(true);
     try {
-      const res = await apiClient.patch<AdminUser>(`/admin/users/${data._id}`, { [editingKey]: value });
+      const res = await apiClient.patch<AdminUser>(`/admin/users/${data._id}`, { [editingKey]: payload });
       queryClient.setQueryData(['user', id], res.data);
       addToast('success', `Đã cập nhật ${FIELD_LABELS[editingKey].toLowerCase()}.`);
       setEditingKey(null);
@@ -337,7 +352,7 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
               <strong>{banStatusLabel(data)}</strong>
               {data.banReason && <p className="cell-meta">Lý do: {data.banReason}</p>}
               <p className="cell-meta">
-                Hạn cấm không tự hết — hết hạn vẫn phải bỏ cấm tay.
+                Hết hạn sẽ tự gỡ trong vòng 15 phút (cron), hoặc bỏ cấm ngay bên dưới.
               </p>
             </div>
           </div>
