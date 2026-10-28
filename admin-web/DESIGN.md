@@ -51,7 +51,7 @@ Quy tắc: cấm hex/px cứng ngoài `index.css`; auditor grep `#[0-9a-fA-F]` n
   PROD = danger-soft/danger-dark + prefix "PROD".
 - Sidebar 264px / rail 76px icon-only, nav item 44px, active = primary-soft +
   primary-dark; icon item thường nền trong suốt (primary chỉ cho active);
-  section label 11px uppercase; brand gọn (mark 32px + tên, collapsed chỉ mark);
+  section label 11.5px đậm (KHÔNG uppercase — nhãn tiếng Việt, xem §4); brand gọn (mark 32px + tên, collapsed chỉ mark);
   nút thu gọn = tab floating (22×56px, radius-sm) ôm mép phải sidebar giữa chiều
   cao; collapse lưu localStorage; logout ghost + confirm preview identity;
   mobile ≤860px thành drawer + backdrop (giấu edge-toggle).
@@ -199,9 +199,12 @@ Nguyên tắc: **mỗi dòng trên màn hình phải trả lời được "ngư�
 
 Mặc định mọi bảng quản lý dùng variant **compact**:
 
-- Font 13.5–14px, padding ô 10–12px ngang 12–16px; header 12px uppercase muted, sticky.
+- Font 13.5–14px, padding ô 10–12px ngang 12–16px; header 12px/800 màu muted,
+  sticky, **chữ thường** — tiếng Việt viết hoa ở 12px làm dấu thanh (Ấ/Ộ/Ỹ) mất
+  nét; phân cấp bằng weight + nền `surface-soft`, không bằng `text-transform`.
 - Cột id/user/target: dòng 1 = title/link (700), dòng 2 = meta muted 12px (id mono).
-- Cột số/ngày/tuổi: mono, canh phải cho số.
+- Cột số/ngày/tuổi: mono, canh phải cho số — dùng class `.col-num`
+  (`text-align:right` + `font-variant-numeric: tabular-nums`).
 - Hàng có checkbox khi bulk được; hàng selected = nền primary-soft nhạt;
   hàng cảnh báo (quá SLA, banned) = viền trái 3px tone tương ứng, không tô cả hàng.
 - Cột actions sticky phải, nút `btn-sm`; hành động phá hủy = danger-ghost.
@@ -706,3 +709,26 @@ Cấm:
 - Dùng cùng một từ cho hai khái niệm khác nhau. Ba khái niệm tách biệt, copy phải nói rõ:
   **Vô hiệu hoá = tạm ngưng bán** · **Cấm = khoá đăng nhập + thu hồi phiên** ·
   **Xoá = khỏi danh sách, khôi phục được**.
+
+### 10.1 Typography tiếng Việt — luật riêng so với tiếng Anh
+
+Tiếng Việt chồng hai tầng dấu (`ễ` = ê + ~, `ộ` = ô + .), nên vài thói quen
+typography kiểu phương Tây không áp dụng được. Luật dưới đây đã kiểm bằng
+`canvas.measureText` trên chính Inter đã tải trong app:
+
+| Thói quen | Với tiếng Anh | Với tiếng Việt |
+|---|---|---|
+| `text-transform: uppercase` cho nhãn nhỏ | tốt | **cấm** ở cỡ < 14px — chữ hoa mang dấu (Ấ/Ộ/Ỹ) mất nét phân biệt. Chỉ giữ cho chuỗi ASCII (`env-banner` "DEV · Koola Admin") |
+| `letter-spacing` âm trên heading | −0.02em đến −0.04em | tối đa **−0.01em** — tracking âm làm dấu hai ký tự liền kề chạm nhau |
+| `line-height: 1.05` cho hero lớn | được | tối thiểu **1.15** — ở 42px, chuỗi có dấu tầng hai cho ink height 49.4px > line-box 44.1px, hai dòng chồng lên nhau |
+| Cỡ chữ tối thiểu cho nhãn có dấu | 10px | **11px** (`ế` ở 10px chỉ còn ~1px nét dấu) |
+| `font-synthesis` / fake bold | tránh | tránh hơn nữa — dấu giả bold bị bết thành khối |
+
+Font đang dùng: **Inter** (có subset `vietnamese`, `U+1EA0-1EF9`) và
+**JetBrains Mono** (cũng có subset `vietnamese`, monospace đúng cho `ếộỹ`).
+Kiểm lại khi đổi font: `document.fonts.check('700 12px Inter', 'ễ ộ ạ Đ')` phải
+trả `true`, và đo `measureText('ếộỹ')` phải rộng bằng `measureText('abc')` nếu
+là mono.
+
+`<html lang="vi">` là bắt buộc — sai `lang` làm screen reader đọc tiếng Việt
+bằng giọng tiếng Anh, và `text-transform` chạy sai locale.

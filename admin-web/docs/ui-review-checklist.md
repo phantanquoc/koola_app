@@ -258,6 +258,25 @@ làm gì** chưa. Thiếu một phần → thêm block, không thêm tab.
 - `prefers-reduced-motion` (đã có 2 block) — animation mới phải nằm trong block đó.
 - Không có `dangerouslySetInnerHTML` với dữ liệu người dùng.
 - URL người dùng nhập không được render thẳng vào `href` mà thiếu kiểm scheme.
+- `<html lang="vi">` và `<title>` đúng ngôn ngữ — sai `lang` là screen reader đọc
+  tiếng Việt bằng giọng tiếng Anh.
+
+### F2. Typography tiếng Việt (luật riêng, xem DESIGN §10.1)
+
+- **Không `text-transform: uppercase`** cho chuỗi tiếng Việt ở cỡ < 14px. Chữ hoa
+  mang dấu (Ấ/Ộ/Ỹ) mất nét phân biệt. Chỉ giữ cho chuỗi ASCII thuần.
+- `letter-spacing` âm tối đa **−0.01em** trên heading.
+- `line-height` ≥ **1.15** cho heading lớn (hero 42px). 1.05 làm dấu hai tầng
+  chồng lên dòng dưới.
+- Cỡ chữ nhỏ nhất cho nhãn có dấu: **11px**.
+- Font phải có subset `vietnamese`: kiểm `document.fonts.check('700 12px Inter', 'ễ ộ ạ Đ')`.
+
+```bash
+# F2. Uppercase trên nội dung tiếng Việt
+grep -rn "text-transform: uppercase" src/ | grep -v node_modules
+# Mỗi kết quả phải là chuỗi ASCII (env-banner "DEV · Koola Admin"), không phải nhãn tiếng Việt
+grep -rn 'lang="' index.html
+```
 
 ---
 
