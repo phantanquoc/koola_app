@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../apiClient';
-import { PageHeader } from '../components/PageHeader';
+import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
@@ -17,8 +17,46 @@ type Track = {
   audioKey: string;
   previewKey: string;
   licenseType: string;
+  licenseUrl: string;
+  sourceUrl: string;
   isActive: boolean;
 };
+
+/** `licenseUrl`/`sourceUrl` bắt buộc ở schema; form phải nhập thật, không prefill giả. */
+const EMPTY_FORM = {
+  title: '',
+  artist: '',
+  durationMs: 180000,
+  audioKey: '',
+  previewKey: '',
+  licenseType: 'cc0' as string,
+  licenseUrl: '',
+  sourceUrl: '',
+};
+
+function isHttpUrl(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Slug enum → nhãn đọc được (§3B2: không hiện nguyên slug lên bảng). */
+const LICENSE_LABEL: Record<string, string> = {
+  cc0: 'CC0',
+  'cc-by': 'CC-BY',
+  'epidemic-sound': 'Epidemic Sound',
+  'owned-by-koola': 'Nội bộ Koola',
+};
+
+/** 180000 → "3:00" — người nghe nghĩ theo phút:giây, không theo mili giây. */
+function durationLabel(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
 
 export default function MusicCatalogPage() {
   const { addToast } = useToast();
@@ -29,16 +67,7 @@ export default function MusicCatalogPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editTrack, setEditTrack] = useState<Track | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    title: '',
-    artist: '',
-    durationMs: 180000,
-    audioKey: '',
-    previewKey: '',
-    licenseType: 'cc0' as string,
-    licenseUrl: 'https://example.com/license',
-    sourceUrl: 'https://example.com/source',
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   async function load(p = page) {
     setLoading(true);
@@ -58,21 +87,14 @@ export default function MusicCatalogPage() {
   }, []);
 
   function openCreate() {
-    setForm({
-      title: '',
-      artist: '',
-      durationMs: 180000,
-      audioKey: '',
-      previewKey: '',
-      licenseType: 'cc0',
-      licenseUrl: 'https://example.com/license',
-      sourceUrl: 'https://example.com/source',
-    });
+    setForm(EMPTY_FORM);
     setEditTrack(null);
     setShowCreate(true);
   }
 
   function openEdit(t: Track) {
+    // Sửa track phải giữ URL giấy phép/nguồn đã lưu. Trước đây hai field này bị
+    // ghi đè bằng URL mẫu → mỗi lần Sửa là xoá dữ liệu pháp lý thật.
     setForm({
       title: t.title,
       artist: t.artist,
@@ -80,8 +102,8 @@ export default function MusicCatalogPage() {
       audioKey: t.audioKey,
       previewKey: t.previewKey,
       licenseType: t.licenseType,
-      licenseUrl: 'https://example.com/license',
-      sourceUrl: 'https://example.com/source',
+      licenseUrl: t.licenseUrl ?? '',
+      sourceUrl: t.sourceUrl ?? '',
     });
     setEditTrack(t);
     setShowCreate(true);
@@ -90,6 +112,19 @@ export default function MusicCatalogPage() {
   async function submit() {
     if (!form.title.trim() || !form.artist.trim() || !form.audioKey.trim()) {
       addToast('error', 'Tiêu đề, nghệ sĩ và audioKey là bắt buộc');
+      return;
+    }
+    // Server yêu cầu licenseUrl/sourceUrl khác rỗng và durationMs ≥ 1.
+    if (!isHttpUrl(form.licenseUrl.trim())) {
+      addToast('error', 'URL giấy phép phải là http(s):// đầy đủ.');
+      return;
+    }
+    if (!isHttpUrl(form.sourceUrl.trim())) {
+      addToast('error', 'URL nguồn phải là http(s):// đầy đủ.');
+      return;
+    }
+    if (!(form.durationMs > 0)) {
+      addToast('error', 'Thời lượng phải lớn hơn 0.');
       return;
     }
     try {
@@ -139,12 +174,13 @@ export default function MusicCatalogPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="Kiểm duyệt"
+      <ListHeader
         title="Nhạc"
-        description="Quản lý catalog nhạc cho Moments."
-        actions={<button className="btn btn-primary" onClick={openCreate} type="button">Tạo track</button>}
-      />
+        count={total}
+        actions={<button className="btn btn-primary btn-sm" onClick={openCreate} type="button">Tạo track</button>}
+      >
+        <span className="cell-meta">Track trong thư viện nhạc của Moments, mới nhất trước.</span>
+      </ListHeader>
       <TableShell title="Music tracks">
         {loading ? (
           <div className="skeleton" style={{ height: 120 }} />
@@ -158,7 +194,7 @@ export default function MusicCatalogPage() {
                   <th scope="col">Tiêu đề</th>
                   <th scope="col">Nghệ sĩ</th>
                   <th scope="col">Thời lượng</th>
-                  <th scope="col">License</th>
+                  <th scope="col">Giấy phép</th>
                   <th scope="col" style={{ width: 160 }}>Hành động</th>
                 </tr>
               </thead>
@@ -167,8 +203,8 @@ export default function MusicCatalogPage() {
                   <tr key={m._id}>
                     <td>{m.title}</td>
                     <td>{m.artist}</td>
-                    <td>{Math.round(m.durationMs / 1000)}s</td>
-                    <td>{m.licenseType}</td>
+                    <td>{durationLabel(m.durationMs)}</td>
+                    <td>{LICENSE_LABEL[m.licenseType] ?? m.licenseType}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-sm" onClick={() => openEdit(m)} type="button">Sửa</button>
@@ -181,7 +217,7 @@ export default function MusicCatalogPage() {
             </table>
           </div>
         )}
-        <Pagination page={page} totalPages={Math.ceil(total / 20) || 1} total={total} onPageChange={(p) => { setPage(p); load(p); }} />
+        <Pagination page={page} totalPages={Math.ceil(total / 20) || 1} total={total} unit="track" onPageChange={(p) => { setPage(p); load(p); }} />
       </TableShell>
 
       <Dialog open={showCreate} onClose={() => setShowCreate(false)} labelId="music-form-title" variant="wide">
@@ -224,7 +260,7 @@ export default function MusicCatalogPage() {
               </span>
             </div>
             <div className="form-field">
-              <label className="form-label" htmlFor="music-license">License</label>
+              <label className="form-label" htmlFor="music-license">Giấy phép</label>
               <select id="music-license" className="input" value={form.licenseType} onChange={(e) => setForm({ ...form, licenseType: e.target.value })}>
                 <option value="cc0">CC0</option>
                 <option value="cc-by">CC-BY</option>
@@ -233,12 +269,28 @@ export default function MusicCatalogPage() {
               </select>
             </div>
             <div className="form-field">
-              <label className="form-label" htmlFor="music-license-url">License URL</label>
-              <input id="music-license-url" className="input" placeholder="License URL" value={form.licenseUrl} onChange={(e) => setForm({ ...form, licenseUrl: e.target.value })} />
+              <label className="form-label" htmlFor="music-license-url">
+                URL giấy phép <span className="form-required">*</span>
+              </label>
+              <input
+                id="music-license-url" className="input" type="url" inputMode="url"
+                autoComplete="off" spellCheck={false} placeholder="https://…"
+                required aria-required
+                value={form.licenseUrl} onChange={(e) => setForm({ ...form, licenseUrl: e.target.value })}
+              />
+              <span className="form-hint">Trang điều khoản cho phép dùng track này.</span>
             </div>
             <div className="form-field">
-              <label className="form-label" htmlFor="music-source-url">Source URL</label>
-              <input id="music-source-url" className="input" placeholder="Source URL" value={form.sourceUrl} onChange={(e) => setForm({ ...form, sourceUrl: e.target.value })} />
+              <label className="form-label" htmlFor="music-source-url">
+                URL nguồn <span className="form-required">*</span>
+              </label>
+              <input
+                id="music-source-url" className="input" type="url" inputMode="url"
+                autoComplete="off" spellCheck={false} placeholder="https://…"
+                required aria-required
+                value={form.sourceUrl} onChange={(e) => setForm({ ...form, sourceUrl: e.target.value })}
+              />
+              <span className="form-hint">Nơi tải track gốc — cần khi đối soát bản quyền.</span>
             </div>
           </div>
           <div className="detail-bottombar" style={{ justifyContent: 'flex-end' }}>
