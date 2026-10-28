@@ -104,6 +104,26 @@ describe('AdminService', () => {
         NotFoundException,
       );
     });
+
+    // Topbar cần boolean thật: doc cũ chưa có field → lean() trả undefined và
+    // field biến mất khỏi JSON, làm UI không biết có phải cảnh báo hay không.
+    it('luôn trả twoFactorEnabled dạng boolean', async () => {
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: 'admin-id', isPlatformAdmin: true }),
+      );
+      const result = await service.getMe('admin-id');
+      expect(result.twoFactorEnabled).toBe(false);
+
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({
+          _id: 'admin-id',
+          isPlatformAdmin: true,
+          twoFactorEnabled: true,
+        }),
+      );
+      const on = await service.getMe('admin-id');
+      expect(on.twoFactorEnabled).toBe(true);
+    });
   });
 
   // ─── getStats ────────────────────────────────────────────────────────────

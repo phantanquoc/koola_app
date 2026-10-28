@@ -16,6 +16,12 @@ export interface AdminIdentity {
    * này để ẩn nút thay vì để người dùng bấm rồi ăn 403.
    */
   adminRole?: 'super' | 'moderator' | 'support';
+  /**
+   * Admin đã bật xác thực hai lớp chưa. `GET /admin/me` dùng SAFE_PROJECTION
+   * (ẩn secret + recovery codes) nhưng vẫn giữ `twoFactorEnabled`, nên field
+   * này có mặt thật. Topbar cảnh báo khi `false`.
+   */
+  twoFactorEnabled?: boolean;
 }
 
 /**
@@ -41,6 +47,7 @@ interface MeResponse {
   id?: string;
   isPlatformAdmin?: boolean;
   adminRole?: 'super' | 'moderator' | 'support' | null;
+  twoFactorEnabled?: boolean;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -66,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: me.email,
           id: me._id ?? me.id,
           adminRole: me.adminRole ?? 'super',
+          twoFactorEnabled: Boolean(me.twoFactorEnabled),
         });
       })
       .catch(() => {

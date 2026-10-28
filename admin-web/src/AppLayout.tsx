@@ -307,6 +307,18 @@ export default function AppLayout() {
             </nav>
           </div>
           <div className="admin-topbar-actions">
+            {/* Cảnh báo 2FA: tài khoản admin chưa bật xác thực hai lớp thì chỉ
+                cần lộ mật khẩu là vào được toàn bộ dữ liệu. Link thẳng tới hồ
+                sơ của chính mình — panel bật 2FA chỉ hiện ở đó. */}
+            {!identityLoading && identity && identity.twoFactorEnabled === false && (
+              <Link
+                to={identity.id ? `/users/${identity.id}` : '/users'}
+                className="badge badge-warning admin-2fa-badge"
+                title="Bật xác thực hai lớp để bảo vệ tài khoản quản trị"
+              >
+                <ShieldAlert size={13} aria-hidden /> Chưa bật 2FA
+              </Link>
+            )}
             {healthStatus && (
               <Link to="/health" className="badge badge-danger admin-health-badge">
                 Hệ thống: {healthStatus}

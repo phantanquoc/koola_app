@@ -54,7 +54,9 @@ export class AdminService {
 
   // ─── GET /admin/me ──────────────────────────────────────────────────────────
 
-  async getMe(actorId: string): Promise<UserDocument> {
+  async getMe(
+    actorId: string,
+  ): Promise<UserDocument & { twoFactorEnabled: boolean }> {
     const user = await this.userModel
       .findById(actorId)
       .select(SAFE_PROJECTION)
@@ -62,7 +64,12 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException('Admin user not found');
     }
-    return user as UserDocument;
+    // Hồ sơ cũ chưa từng lưu field → `.lean()` trả undefined và field biến mất
+    // khỏi JSON; topbar cần boolean thật để biết có phải cảnh báo hay không.
+    return {
+      ...user,
+      twoFactorEnabled: user.twoFactorEnabled === true,
+    } as unknown as UserDocument & { twoFactorEnabled: boolean };
   }
 
   // ─── GET /admin/stats ───────────────────────────────────────────────────────
