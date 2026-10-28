@@ -127,7 +127,9 @@ h1,
 h2,
 h3 {
   color: var(--koola-ink);
-  letter-spacing: -0.02em;
+  /* Tiếng Việt chồng hai tầng dấu (ễ = ê + ~, ộ = ô + .). Tracking âm quá
+     -0.01em làm dấu của hai ký tự liền kề chạm nhau ở cỡ heading. */
+  letter-spacing: -0.01em;
 }
 
 code,
@@ -353,13 +355,15 @@ code,
   margin-bottom: var(--space-5);
 }
 
+/* Nhãn nhóm điều hướng. Nhãn bằng tiếng Việt nên KHÔNG dùng chữ hoa: Ổ/Ế/Ộ
+   ở 11px mất phân biệt dấu thanh, đọc chậm hơn chữ thường. Phân cấp bằng
+   weight + màu thay vì bằng uppercase. */
 .admin-nav-label {
   margin: 0 0 var(--space-2) var(--space-3);
   color: var(--koola-muted);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .admin-nav-link {
@@ -705,12 +709,13 @@ code,
   list-style: none;
 }
 
+/* Tên nhóm trong command palette là tiếng Việt ("Kiểm duyệt", "Người dùng") —
+   chữ hoa ở 11px làm dấu thanh khó đọc, xem .admin-nav-label. */
 .palette-group {
   color: var(--koola-muted);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   padding: var(--space-2) var(--space-3) var(--space-1);
 }
 
@@ -909,6 +914,8 @@ code,
   white-space: nowrap;
 }
 
+/* Nhãn "Doanh nghiệp" / "Đã chọn" — tiếng Việt có dấu, để chữ thường cho dễ
+   đọc; 10px là cỡ nhỏ nhất nên không thêm chữ hoa. */
 .user-picker-option-tag {
   flex: none;
   margin-left: auto;
@@ -916,11 +923,9 @@ code,
   border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
   color: var(--koola-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 16px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .user-picker-empty {
@@ -1105,13 +1110,15 @@ code,
   gap: var(--space-5);
 }
 
+/* Eyebrow mang cả nhãn tiếng Việt ("Vận hành", "Bắt buộc bảo mật") lẫn tiếng
+   Anh ("Operations dashboard"). Bỏ uppercase + tracking rộng để dấu tiếng Việt
+   không bị dồn; phân cấp bằng màu primary + weight 800 là đủ. */
 .page-eyebrow {
   margin-bottom: var(--space-2);
   color: var(--koola-primary);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .page-title {
@@ -1629,12 +1636,13 @@ code,
   border-bottom: 1px solid var(--koola-line-strong);
   background: var(--koola-surface-soft);
   color: var(--koola-muted);
+  /* Header tiếng Việt ("Người dùng", "Xác minh", "Hành động"). Chữ hoa ở 12px
+     làm Ấ/Ộ/Ỹ mất nét dấu — giữ chữ thường, phân cấp bằng weight 800 + nền. */
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
   padding: 8px 16px;
   text-align: left;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -2251,7 +2259,10 @@ th.sortable:hover {
   color: var(--koola-surface);
   font-size: 42px;
   font-weight: 800;
-  line-height: 1.05;
+  /* Tiếng Việt chồng hai tầng dấu: đo bằng canvas trên chính Inter, chuỗi
+     "Kiểm … ế ộ ỹ ặ ữ ợ ĐẶC" cho ink 49.4px ở 42px → cần ≥1.18. Để 1.2 dư một
+     chút; 1.05 (kiểu tiếng Anh) làm hai dòng chạm nhau. */
+  line-height: 1.2;
 }
 
 .login-hero p {
@@ -3152,11 +3163,12 @@ th.sortable:hover {
   overflow-wrap: anywhere;
 }
 
+/* Tiêu đề nhóm trong trang chi tiết: "Định danh", "Liên hệ", "Pháp lý",
+   "Vận hành". Chữ hoa ở 12px làm dấu thanh tiếng Việt khó phân biệt. */
 .detail-section-title {
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   color: var(--koola-muted);
   border-bottom: 1px solid var(--koola-line);
   padding-bottom: var(--space-2);
@@ -3276,8 +3288,7 @@ th.sortable:hover {
 .filter-panel-title {
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   color: var(--koola-muted);
 }
 
@@ -3661,11 +3672,9 @@ th.sortable:hover {
   border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
   color: var(--koola-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 16px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 /* Ô phiên bản ép cập nhật: câu "chặn N người" phải đọc được ngay, không lẫn
