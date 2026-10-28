@@ -302,14 +302,24 @@ export class AdminController {
     @Req() req: Request,
   ) {
     const res = await this.adminService.bulkApproveBusiness(dto.ids, user.actorId);
-    await this.auditService.log({
-      actorId: user.actorId,
-      action: 'bulk_approve_business',
-      targetType: 'business',
-      targetId: dto.ids.join(','),
-      payload: { ids: dto.ids },
-      ip: req.ip ?? null,
-    });
+    // Một entry cho MỖI hồ sơ đã duyệt, targetId = id của hồ sơ đó: timeline
+    // trong drawer lọc theo targetId nên dòng gộp ("id1,id2,…") không bao giờ
+    // hiện ở đó (openspec admin-business-verification: "each item SHALL write an
+    // audit entry"). batchSize giữ lại dấu vết thao tác hàng loạt.
+    await Promise.all(
+      res.results
+        .filter((r) => r.ok)
+        .map((r) =>
+          this.auditService.log({
+            actorId: user.actorId,
+            action: 'bulk_approve_business',
+            targetType: 'business',
+            targetId: r.id,
+            payload: { batchSize: dto.ids.length },
+            ip: req.ip ?? null,
+          }),
+        ),
+    );
     return res;
   }
 
@@ -329,14 +339,24 @@ export class AdminController {
       dto.rejectionReason ?? 'Bulk rejection',
       user.actorId,
     );
-    await this.auditService.log({
-      actorId: user.actorId,
-      action: 'bulk_reject_business',
-      targetType: 'business',
-      targetId: dto.ids.join(','),
-      payload: { ids: dto.ids, reason: dto.rejectionReason },
-      ip: req.ip ?? null,
-    });
+    // Một entry cho mỗi hồ sơ bị từ chối — cùng lý do như bulkApprove.
+    await Promise.all(
+      res.results
+        .filter((r) => r.ok)
+        .map((r) =>
+          this.auditService.log({
+            actorId: user.actorId,
+            action: 'bulk_reject_business',
+            targetType: 'business',
+            targetId: r.id,
+            payload: {
+              batchSize: dto.ids.length,
+              reason: dto.rejectionReason,
+            },
+            ip: req.ip ?? null,
+          }),
+        ),
+    );
     return res;
   }
 
