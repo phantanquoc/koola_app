@@ -35,4 +35,6 @@ npm run preview  # chạy thử bản production
 
 - `AGENTS.md` — quy tắc code, kiến trúc trang, checklist trước khi báo done
 - `DESIGN.md` — chuẩn giao diện (token, kit component, pattern từng route)
+- `docs/ui-review-checklist.md` — rà từng ô nhập / nhóm thông tin / tiêu đề **của
+  mọi trang**, kèm lệnh grep kiểm tự động và bảng nợ UI hiện tại (P0→P3)
 - `docs/task1.md` — đối chiếu hiện trạng + checklist việc còn thiếu

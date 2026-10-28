@@ -252,6 +252,9 @@ Input: `.input/.select/.textarea`, lỗi cạnh field. `<kbd>` style cho gợi �
 nguyên shape cũ (`number` VND, chuỗi SĐT `0…`, chuỗi ngày ISO); chỉ lớp hiển thị
 đổi. Không migration, không đổi DTO.
 
+> Checklist rà từng ô nhập theo loại dữ liệu (kèm ràng buộc nào kiểm ở client và
+> lệnh grep kiểm tự động): `docs/ui-review-checklist.md` §A.
+
 | Loại dữ liệu | Component | Hiển thị khi gõ | Gửi lên API |
 |---|---|---|---|
 | Tiền VND | `<MoneyInput>` | `1.234.567` (dấu chấm hàng nghìn) | `parseVnd(v)` → số nguyên |
