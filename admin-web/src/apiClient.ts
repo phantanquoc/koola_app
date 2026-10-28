@@ -139,7 +139,13 @@ apiClient.interceptors.response.use(
     }
 
     // 403 → demoted admin. Route to /forbidden, NEVER /login (loop).
+    //
+    // Ngoại lệ: `code: 'mfa_required'` là "cần bật 2FA", không phải bị hạ quyền.
+    // Đá sang /forbidden sẽ báo sai và không có đường bật — AppLayout đã render
+    // wall 2FA nên chỉ cần để lỗi nổi lên cho trang hiện thông điệp.
     if (status === 403) {
+      const code = (error.response?.data as { code?: string } | undefined)?.code;
+      if (code === 'mfa_required') return Promise.reject(error);
       if (window.location.pathname !== '/forbidden' && window.location.pathname !== '/login') {
         window.location.href = '/forbidden';
       }

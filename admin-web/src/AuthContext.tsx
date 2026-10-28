@@ -22,6 +22,11 @@ export interface AdminIdentity {
    * này có mặt thật. Topbar cảnh báo khi `false`.
    */
   twoFactorEnabled?: boolean;
+  /**
+   * Server đang BẮT BUỘC 2FA (`ADMIN_MFA_REQUIRED=true`) hay không. Do server
+   * trả trong `/admin/me` — client không đọc env, và bật cờ không cần build lại.
+   */
+  mfaRequired?: boolean;
 }
 
 /**
@@ -48,6 +53,7 @@ interface MeResponse {
   isPlatformAdmin?: boolean;
   adminRole?: 'super' | 'moderator' | 'support' | null;
   twoFactorEnabled?: boolean;
+  mfaRequired?: boolean;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -74,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: me._id ?? me.id,
           adminRole: me.adminRole ?? 'super',
           twoFactorEnabled: Boolean(me.twoFactorEnabled),
+          mfaRequired: Boolean(me.mfaRequired),
         });
       })
       .catch(() => {

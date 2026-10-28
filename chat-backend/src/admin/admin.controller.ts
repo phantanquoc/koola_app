@@ -27,6 +27,7 @@ import { AdminService } from './admin.service';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
 import { RequireRole } from '../auth/decorators/require-role.decorator';
+import { MfaExempt } from '../auth/decorators/mfa-exempt.decorator';
 import type { AdminRole } from '../users/user.schema';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RejectBusinessDto } from './dto/reject-business.dto';
@@ -62,11 +63,14 @@ export class AdminController {
   // ─── Identity ───────────────────────────────────────────────────────────────
 
   @Get('me')
+  @MfaExempt()
   @ApiOperation({
     summary: 'Get the authenticated admin identity',
   })
   async getMe(@CurrentUser() user: { actorId: string }) {
-    return this.adminService.getMe(user.actorId);
+    const me = await this.adminService.getMe(user.actorId);
+    // Client cần biết chính sách để hiện màn hình bật 2FA thay vì đoán từ 403.
+    return { ...me, mfaRequired: process.env.ADMIN_MFA_REQUIRED === 'true' };
   }
 
   // ─── Dashboard stats ────────────────────────────────────────────────────────

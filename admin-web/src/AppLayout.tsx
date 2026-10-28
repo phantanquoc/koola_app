@@ -36,6 +36,7 @@ import { initials } from './components/formatters';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ImpersonationBar } from './components/ImpersonationBar';
+import { MfaRequiredWall } from './components/MfaRequiredWall';
 
 interface NavItem {
   to: string;
@@ -195,6 +196,12 @@ export default function AppLayout() {
     g.items.map((item) => ({ to: item.to, label: item.label, group: g.label, icon: item.icon })),
   );
 
+  // Wall 2FA: server bắt buộc + tài khoản chưa bật → chặn nội dung, chỉ hiện
+  // form bật. Backend cũng trả 403 cho mọi route khác nên đây là lời giải thích.
+  const mfaBlocked =
+    !identityLoading && identity != null &&
+    identity.mfaRequired === true && identity.twoFactorEnabled === false;
+
   const adminName = identity?.name ?? 'Admin';
   const adminInitial = initials(adminName, 'A');
   const isProd = config.appEnv === 'production';
@@ -342,7 +349,7 @@ export default function AppLayout() {
 
         <div className="admin-content-scroll">
           <main className="admin-content" id="admin-content" tabIndex={-1}>
-            <Outlet />
+            {mfaBlocked ? <MfaRequiredWall userId={identity.id} /> : <Outlet />}
           </main>
         </div>
       </div>
