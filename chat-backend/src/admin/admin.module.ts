@@ -20,6 +20,13 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { AppealController } from './appeal.controller';
+import { ModerationQueueController } from './moderation-queue.controller';
+import { AdminExportController } from './admin-export.controller';
+import { AppealService } from './appeal.service';
+import { ModerationQueueService } from './moderation-queue.service';
+import { AdminExportService } from './admin-export.service';
+import { Appeal, AppealSchema } from './schemas/appeal.schema';
 import { AdminSessionService } from './admin-session.service';
 import { AdminUnbanCron } from './admin-unban.cron';
 import { SessionController } from './session.controller';
@@ -51,6 +58,7 @@ import {
       { name: Story.name, schema: StorySchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
+      { name: Appeal.name, schema: AppealSchema },
     ]),
     MediaModule,
     // Dependency-free (User + CommerceProduct models only) — NOT CommerceModule,
@@ -60,11 +68,17 @@ import {
     RedisModule,
     HealthModule,
   ],
+  // AdminExportController PHẢI đứng trước AdminModerationController:
+  // Express khớp theo thứ tự đăng ký nên nếu sau, GET /admin/reports/export
+  // bị @Get('reports/:id') bắt với id='export'.
   controllers: [
     AdminController,
+    AdminExportController,
     AdminModerationController,
     AdminOpsController,
     SessionController,
+    AppealController,
+    ModerationQueueController,
   ],
   providers: [
     AdminService,
@@ -75,6 +89,9 @@ import {
     ModerationMediaService,
     AdminSessionService,
     AdminUnbanCron,
+    AppealService,
+    ModerationQueueService,
+    AdminExportService,
   ],
   exports: [AdminAuditService],
 })
