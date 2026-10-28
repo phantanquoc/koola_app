@@ -239,6 +239,14 @@ export class ChatGateway
     // Join personal room
     await client.join(`user:${userId}`);
 
+    // Room theo loại tài khoản — broadcast `personal`/`business` cần một đích
+    // để emit, nếu không sẽ phải phát cho toàn bộ socket (xem BroadcastService).
+    // Token mang `accountType` (personal mặc định) nên một socket chỉ thuộc
+    // đúng một trong hai room.
+    const accountType = (client.data as AuthSocketData).user?.accountType
+      ?? 'personal';
+    await client.join(`account:${accountType}`);
+
     // Start heartbeat timeout
     this.resetHeartbeat(client);
 

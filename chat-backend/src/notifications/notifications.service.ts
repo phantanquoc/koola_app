@@ -570,6 +570,79 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Push cho nhiều người nhận cùng nội dung (broadcast toàn hệ thống). Khác
+   * `sendAdminTestPush`: bỏ qua người đang online (đã nhận qua socket) và tôn
+   * trọng `notificationsEnabled`.
+   *
+   * Trả tổng số thiết bị giao được + cờ `skipped` để tầng gọi nói được lý do
+   * thay vì báo "đã push" khi FCM chưa cấu hình.
+   */
+  async sendBroadcastPush(params: {
+    recipientIds: string[];
+    title: string;
+    body: string;
+  }): Promise<{ delivered: number; skipped?: 'fcm_not_configured' }> {
+    const ids = [...new Set(params.recipientIds)];
+    if (ids.length === 0) return { delivered: 0 };
+
+    const users = await this.usersService.findByIds(ids, {
+      withFcmTokens: true,
+    });
+
+    const payload: FirebaseMessagingPayload = {
+      notification: { title: params.title, body: params.body },
+      data: { type: 'system_broadcast' },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    let delivered = 0;
+    let fcmMissing = false;
+
+    // Tuần tự chứ không Promise.all: mỗi người là một lời gọi FCM multicast
+    // riêng, và broadcast admin không phải đường nóng.
+    for (const user of users) {
+      if (user.settings?.notificationsEnabled === false) continue;
+      const tokens = (user.fcmTokens ?? []).map((t) => t.token);
+      if (tokens.length === 0) continue;
+      try {
+        const res = await this.sendMulticast(String(user._id), tokens, payload);
+        delivered += res.successCount;
+        this.opsLog?.logPush({
+          userId: String(user._id),
+          tokenCount: tokens.length,
+          successCount: res.successCount,
+          failureCount: res.failureCount,
+          title: params.title,
+          body: params.body,
+          kind: 'broadcast',
+        });
+      } catch (err) {
+        if (err instanceof ServiceUnavailableException) {
+          fcmMissing = true;
+          break;
+        }
+        this.logger.error(
+          `[Notifications] Broadcast push failed for ${String(user._id)}:`,
+          err,
+        );
+      }
+    }
+
+    return fcmMissing
+      ? { delivered: 0, skipped: 'fcm_not_configured' }
+      : { delivered };
+  }
+
   // ─── Payload Builder ───────────────────────────────────────────────────────
 
   private buildPayload(params: {

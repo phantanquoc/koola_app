@@ -42,6 +42,14 @@ export class BroadcastLog {
   /** Số socket khớp tại thời điểm gửi — độ phủ thật để đối soát. */
   @Prop({ required: true, type: Number, default: 0 })
   recipientsOnline: number;
+
+  /**
+   * Số thiết bị nhận push qua FCM cho người không có socket. Chỉ > 0 khi
+   * `audience='ids'` và có người trong danh sách đang offline: các audience khác
+   * đếm theo socket nên không biết ai offline để push.
+   */
+  @Prop({ type: Number, default: 0 })
+  pushDelivered: number;
 }
 
 export const BroadcastLogSchema = SchemaFactory.createForClass(BroadcastLog);

@@ -64,11 +64,17 @@ interface BroadcastLog {
   /** Tên người gửi resolve ở server — hiện tại backend chỉ trả actorId. */
   sentByName?: string;
   recipientsOnline: number;
+  /** Số thiết bị nhận push cho người offline; 0 với audience không có danh sách. */
+  pushDelivered?: number;
   createdAt: string;
 }
 
 interface BroadcastResponse {
   recipients?: number;
+  /** Số thiết bị nhận push cho người không có socket (chỉ audience=ids). */
+  pushDelivered?: number;
+  /** Lý do không đẩy được push — nói rõ thay vì im lặng. */
+  pushSkipped?: 'no_recipient_list' | 'fcm_not_configured';
   audience?: Audience;
 }
 
@@ -198,12 +204,27 @@ export default function BroadcastPage() {
         audienceIds: audience === 'ids' ? recipients.map((r) => r.id) : [],
       });
       const delivered = res.data?.recipients;
-      addToast(
-        'success',
-        typeof delivered === 'number'
-          ? `Đã gửi tới ${formatNumber(delivered)} người đang online.`
-          : 'Đã gửi broadcast.',
-      );
+      const pushed = res.data?.pushDelivered ?? 0;
+      const skipped = res.data?.pushSkipped;
+      if (typeof delivered !== 'number') {
+        addToast('success', 'Đã gửi broadcast.');
+      } else if (pushed > 0) {
+        addToast(
+          'success',
+          `Đã gửi tới ${formatNumber(delivered)} người đang online và ${formatNumber(pushed)} thiết bị của người offline.`,
+        );
+      } else if (skipped === 'fcm_not_configured') {
+        addToast(
+          'warning',
+          `Đã gửi tới ${formatNumber(delivered)} người đang online. Push chưa gửi được: máy chủ chưa cấu hình FCM.`,
+        );
+      } else {
+        // no_recipient_list: audience đếm theo socket nên không biết ai offline.
+        addToast(
+          'success',
+          `Đã gửi tới ${formatNumber(delivered)} người đang online. Người offline không nhận được — chọn "Chọn người dùng" nếu cần họ cũng nhận.`,
+        );
+      }
       setTitle('');
       setBody('');
       setRecipients([]);
@@ -419,10 +440,10 @@ export default function BroadcastPage() {
         onClose={() => setConfirm(false)}
         title={`Gửi broadcast tới ${AUDIENCE_LABEL[audience].toLowerCase()}?`}
         description={
-          `Gửi tới ${AUDIENCE_LABEL[audience].toLowerCase()} — ${estimateText}. Chỉ người đang online nhận được; broadcast không thu hồi được nên kiểm tra kỹ trước khi gửi.`
-          + (audience === 'personal' || audience === 'business'
-            ? ' Lưu ý: server chưa lọc theo loại tài khoản — thực tế phát tới mọi người đang online.'
-            : '')
+          `Gửi tới ${AUDIENCE_LABEL[audience].toLowerCase()} — ${estimateText}. Broadcast không thu hồi được nên kiểm tra kỹ trước khi gửi.`
+          + (audience === 'ids'
+            ? ' Người đang offline trong danh sách vẫn nhận qua push nếu thiết bị đã đăng ký.'
+            : ' Chỉ người đang online nhận được — chọn "Chọn người dùng" nếu cần cả người offline.')
         }
         confirmLabel="Gửi broadcast"
         variant="danger"
