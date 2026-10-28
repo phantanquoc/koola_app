@@ -98,10 +98,8 @@ export interface SellerStorefront {
     description: string | null;
     logoUrl: string | null;
     coverImageUrl: string | null;
-    followerCount: number;
-    totalSoldCount: number;
-    rating: number;
-    reviewCount: number;
+    // followerCount/totalSoldCount/rating/reviewCount chưa có nguồn dữ liệu
+    // thật — trả số bịa sẽ hiển thị sai trên storefront, nên bỏ hẳn.
   };
   productCount: number;
 }
@@ -310,10 +308,6 @@ export class CommerceService {
         coverImageUrl: (seller as unknown as Record<string, string | undefined>).coverKey
           ? await this.presign((seller as unknown as Record<string, string>).coverKey)
           : null,
-        followerCount: 1200,
-        totalSoldCount: 15000,
-        rating: 4.8,
-        reviewCount: 324,
       },
       productCount,
     };
