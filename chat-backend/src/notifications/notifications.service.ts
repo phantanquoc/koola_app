@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { forwardRef, Inject } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { RedisService } from '../common/redis/redis.service';
 import { getMessaging } from './fcm-client';
 import { MessageType } from '../messages/message.schema';
 import { ConversationType } from '../conversations/conversation.schema';
+import { OpsLogService } from '../ops/ops-log.service';
 import type { Messaging } from 'firebase-admin/messaging';
 
 export interface SendPushNotificationParams {
@@ -33,6 +35,8 @@ export class NotificationsService {
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     private readonly redisService: RedisService,
+    // Optional: log là quan sát, thiếu module thì push vẫn phải chạy.
+    @Optional() private readonly opsLog?: OpsLogService,
   ) {}
 
   // ─── Main Entry Point ───────────────────────────────────────────────────────
@@ -58,7 +62,9 @@ export class NotificationsService {
     const eligibleIds = recipientIds.filter((id) => id !== senderId);
     if (eligibleIds.length === 0) return;
 
-    const users = await this.usersService.findByIds(eligibleIds);
+    const users = await this.usersService.findByIds(eligibleIds, {
+      withFcmTokens: true,
+    });
     const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
     for (const recipientId of eligibleIds) {
@@ -83,6 +89,24 @@ export class NotificationsService {
         this.logger.debug(
           `[Notifications] Skipping ${recipientId} — no FCM tokens`,
         );
+        // Vẫn ghi log để ops thấy "đã cố gửi nhưng người dùng chưa đăng ký
+        // thiết bị" thay vì im lặng như không có chuyện gì.
+        this.opsLog?.logPush({
+          userId: recipientId,
+          tokenCount: 0,
+          successCount: 0,
+          failureCount: 0,
+          // Cùng nội dung sẽ hiện trên thiết bị — log đọc được y như push thật.
+          title:
+            conversationType === ConversationType.GROUP
+              ? conversationName || 'Group Chat'
+              : senderName,
+          body:
+            conversationType === ConversationType.GROUP
+              ? `${senderName}: ${preview}`
+              : preview,
+          kind: 'message',
+        });
         continue;
       }
 
@@ -113,12 +137,30 @@ export class NotificationsService {
 
       const tokens = user.fcmTokens.map((t) => t.token);
       try {
-        await this.sendMulticast(recipientId, tokens, payload);
+        const result = await this.sendMulticast(recipientId, tokens, payload);
+        this.opsLog?.logPush({
+          userId: recipientId,
+          tokenCount: tokens.length,
+          successCount: result.successCount,
+          failureCount: result.failureCount,
+          title: payload.notification.title,
+          body: payload.notification.body,
+          kind: 'message',
+        });
       } catch (err) {
         this.logger.error(
           `[Notifications] Failed to send to ${recipientId}:`,
           err,
         );
+        this.opsLog?.logPush({
+          userId: recipientId,
+          tokenCount: tokens.length,
+          successCount: 0,
+          failureCount: tokens.length,
+          title: payload.notification.title,
+          body: payload.notification.body,
+          kind: 'message',
+        });
       }
     }
   }
@@ -140,7 +182,9 @@ export class NotificationsService {
   }): Promise<void> {
     const { mentionedUserId, authorName, storyId, captionSnippet } = params;
 
-    const user = await this.usersService.findById(mentionedUserId);
+    const user = await this.usersService.findById(mentionedUserId, {
+      withFcmTokens: true,
+    });
     if (!user) return;
 
     if (user.settings?.notificationsEnabled === false) return;
@@ -207,7 +251,9 @@ export class NotificationsService {
   }): Promise<void> {
     const { mentionedUserId, authorName, postId, captionSnippet } = params;
 
-    const user = await this.usersService.findById(mentionedUserId);
+    const user = await this.usersService.findById(mentionedUserId, {
+      withFcmTokens: true,
+    });
     if (!user) return;
 
     if (user.settings?.notificationsEnabled === false) return;
@@ -278,9 +324,12 @@ export class NotificationsService {
     status: string;
     conversationId: string;
   }): Promise<void> {
-    const { recipientUserId, title, body, orderId, status, conversationId } = params;
+    const { recipientUserId, title, body, orderId, status, conversationId } =
+      params;
 
-    const user = await this.usersService.findById(recipientUserId);
+    const user = await this.usersService.findById(recipientUserId, {
+      withFcmTokens: true,
+    });
     if (!user) return;
 
     if (user.settings?.notificationsEnabled === false) return;
@@ -334,7 +383,7 @@ export class NotificationsService {
     recipientId: string,
     tokens: string[],
     payload: FirebaseMessagingPayload,
-  ): Promise<void> {
+  ): Promise<{ successCount: number; failureCount: number }> {
     let messaging: Messaging;
     try {
       messaging = getMessaging();
@@ -371,6 +420,11 @@ export class NotificationsService {
           }
         }
       }
+
+      return {
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+      };
     } catch (err: unknown) {
       const errorCode = (err as { code?: string }).code ?? '';
       if (

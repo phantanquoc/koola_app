@@ -1,10 +1,12 @@
 import {
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as plivo from 'plivo';
+import { OpsLogService } from '../ops/ops-log.service';
 
 @Injectable()
 export class PlivoService {
@@ -12,7 +14,11 @@ export class PlivoService {
   private readonly logger = new Logger(PlivoService.name);
   private readonly appUuid?: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    // Optional để module cũ không cần wiring cũng boot được; log là quan sát.
+    @Optional() private readonly opsLog?: OpsLogService,
+  ) {
     const authId = this.configService.get<string>('PLIVO_AUTH_ID');
     const authToken = this.configService.get<string>('PLIVO_AUTH_TOKEN');
     this.appUuid = this.configService.get<string>('PLIVO_VERIFY_APP_UUID');
@@ -28,7 +34,7 @@ export class PlivoService {
     this.client = new plivo.Client(authId, authToken);
   }
 
-  async sendOtp(phone: string): Promise<string> {
+  async sendOtp(phone: string, purpose = 'otp'): Promise<string> {
     try {
       const response = await this.client.verify_session.create({
         recipient: phone,
@@ -41,9 +47,25 @@ export class PlivoService {
       this.logger.log(
         `[Plivo] OTP sent to ${phone}, session: ${response.sessionUuid}`,
       );
+      this.opsLog?.logOtp({
+        phone,
+        channel: 'sms',
+        purpose,
+        success: true,
+        provider: 'plivo',
+        sessionUuid: response.sessionUuid ?? null,
+      });
       return response.sessionUuid;
     } catch (error) {
       this.logger.error(`[Plivo] Failed to send OTP to ${phone}:`, error);
+      this.opsLog?.logOtp({
+        phone,
+        channel: 'sms',
+        purpose,
+        success: false,
+        provider: 'plivo',
+        error: (error as Error)?.message ?? 'unknown',
+      });
       throw new ServiceUnavailableException(
         'Không thể gửi mã xác thực. Vui lòng thử lại.',
       );

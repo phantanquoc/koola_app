@@ -44,7 +44,9 @@ export class CallNotificationsService {
     const { recipientId, sessionId } = params;
 
     // 1. Load recipient and check tokens
-    const user = await this.usersService.findById(recipientId);
+    const user = await this.usersService.findById(recipientId, {
+      withFcmTokens: true,
+    });
     if (!user || !user.fcmTokens || user.fcmTokens.length === 0) {
       this.logger.debug(
         `[CallNotifications] No FCM tokens for user ${recipientId} (session ${sessionId}) — skipping push`,

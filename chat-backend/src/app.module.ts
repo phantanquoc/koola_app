@@ -24,6 +24,9 @@ import { AccountsModule } from './accounts/accounts.module';
 import { TranslationModule } from './translation/translation.module';
 import { AdminModule } from './admin/admin.module';
 import { CommerceModule } from './commerce/commerce.module';
+// Alias: trùng tên với ConfigModule của @nestjs/config dùng cho forRoot bên dưới.
+import { ConfigModule as AppConfigModule } from './config/config.module';
+import { OpsLogModule } from './ops/ops-log.module';
 
 @Module({
   imports: [
@@ -81,6 +84,9 @@ import { CommerceModule } from './commerce/commerce.module';
     TranslationModule,
     AdminModule,
     CommerceModule,
+    AppConfigModule,
+    // @Global: một lần import là OpsLogService inject được ở Auth/Users/Notifications.
+    OpsLogModule,
   ],
   providers: [
     {

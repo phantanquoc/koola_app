@@ -110,6 +110,8 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
     const messagesService = {
       setBlurhashCallback: jest.fn(),
       setNewMessageEmitCallback: jest.fn(),
+      // afterInit cũng nối callback order-card → message_updated.
+      setMessageUpdatedEmitCallback: jest.fn(),
     };
 
     gateway = new ChatGateway(

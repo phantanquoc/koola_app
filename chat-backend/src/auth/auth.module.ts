@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from '../users/user.schema';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
 import { UsersModule } from '../users/users.module';
+import { OpsLogModule } from '../ops/ops-log.module';
 import {
   AdminAuditLog,
   AdminAuditLogSchema,
@@ -37,6 +38,9 @@ import type { StringValue } from 'ms';
       { name: AdminAuditLog.name, schema: AdminAuditLogSchema },
     ]),
     forwardRef(() => UsersModule),
+    // EmailService/PlivoService nhận OpsLogService (optional) — import tường
+    // minh để không phụ thuộc thứ tự @Global trong AppModule.
+    OpsLogModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, EmailService],

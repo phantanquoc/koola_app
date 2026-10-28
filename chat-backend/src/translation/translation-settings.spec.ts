@@ -120,8 +120,13 @@ describe('UsersService translation settings', () => {
         { $set: { 'settings.preferredLanguage': 'en' } },
         { new: true },
       );
-      // select must be on the $set call chain
-      expect(selectMock).toHaveBeenCalledWith('-passwordHash');
+      // select phải nằm trên chain $set; projection cũng phải giấu 2FA/FCM.
+      expect(selectMock).toHaveBeenCalledWith(
+        expect.stringContaining('-passwordHash'),
+      );
+      expect(selectMock).toHaveBeenCalledWith(
+        expect.stringContaining('-twoFactorSecret'),
+      );
     });
 
     it('only $sets defined fields (notificationsEnabled)', async () => {

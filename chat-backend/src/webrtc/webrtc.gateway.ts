@@ -343,7 +343,9 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!targetOnline) {
       // ── Offline-push branch ──────────────────────────────────────────────
       // Fetch callee to check FCM tokens.
-      const target = await this.usersService.findById(targetUserId);
+      const target = await this.usersService.findById(targetUserId, {
+        withFcmTokens: true,
+      });
       const hasTokens = target?.fcmTokens && target.fcmTokens.length > 0;
 
       if (!hasTokens) {
