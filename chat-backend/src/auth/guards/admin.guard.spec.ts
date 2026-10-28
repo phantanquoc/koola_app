@@ -8,10 +8,14 @@ const mockUserModel = {
   findById: jest.fn(),
 };
 
-function makeContext(actorId: string | undefined): ExecutionContext {
+function makeContext(
+  actorId: string | undefined,
+  method = 'GET',
+): ExecutionContext {
   return {
     switchToHttp: () => ({
       getRequest: () => ({
+        method,
         user: actorId ? { actorId } : undefined,
       }),
     }),
@@ -95,5 +99,48 @@ describe('AdminGuard', () => {
     await expect(guard.canActivate(makeContext('ghost-id'))).rejects.toThrow(
       ForbiddenException,
     );
+  });
+
+  // ─── Vai trò support: chỉ đọc ──────────────────────────────────────────────
+
+  function mockActor(adminRole: string | null) {
+    mockUserModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ isPlatformAdmin: true, adminRole }),
+    });
+  }
+
+  it.each(['GET', 'HEAD', 'OPTIONS'])(
+    'support đọc được (%s)',
+    async (method) => {
+      mockActor('support');
+      await expect(
+        guard.canActivate(makeContext('support-user', method)),
+      ).resolves.toBe(true);
+    },
+  );
+
+  it.each(['POST', 'PATCH', 'PUT', 'DELETE'])(
+    'support KHÔNG được ghi (%s) — chặn ở guard chung, không phụ thuộc route',
+    async (method) => {
+      mockActor('support');
+      await expect(
+        guard.canActivate(makeContext('support-user', method)),
+      ).rejects.toThrow(ForbiddenException);
+    },
+  );
+
+  it('moderator vẫn ghi được — chỉ support mới chỉ-đọc', async () => {
+    mockActor('moderator');
+    await expect(
+      guard.canActivate(makeContext('mod-user', 'POST')),
+    ).resolves.toBe(true);
+  });
+
+  it('admin cũ (adminRole null) coi là super, ghi được', async () => {
+    mockActor(null);
+    await expect(
+      guard.canActivate(makeContext('legacy-admin', 'POST')),
+    ).resolves.toBe(true);
   });
 });
