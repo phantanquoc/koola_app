@@ -20,6 +20,7 @@ import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAdminList } from '../hooks/useAdminList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ExportButton } from '../components/ExportButton';
+import { ExportDateRange } from '../components/ExportDateRange';
 import { BanDialog } from '../components/UserModeration';
 import { useToast } from '../components/Toast';
 import type { AdminUser } from '../components/UserDetail';
@@ -102,6 +103,9 @@ export default function UsersPage() {
   const [restoreTarget, setRestoreTarget] = useState<{ id: string; name: string } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Khoảng ngày chỉ áp cho file xuất, không đổi danh sách đang xem — người dùng
+  // mở dialog để chốt phạm vi file, không phải để lọc bảng.
+  const [exportRange, setExportRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
   const [busy, setBusy] = useState(false);
 
   // Ô tìm kiếm chính: debounce 350ms + Enter chốt ngay, không bắt bấm nút.
@@ -144,13 +148,23 @@ export default function UsersPage() {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
 
-  /** Xuất đúng tập đang xem — cùng tham số filter/sort với list. */
+  /** Xuất đúng tập đang xem — cùng filter/sort với list, KHÁC phân trang. */
   async function handleExport() {
     setExporting(true);
     try {
+      // `params` của list có `page`/`limit`; ExportUsersDto không khai hai field
+      // đó và ValidationPipe bật `forbidNonWhitelisted` → gửi thẳng là 400.
+      // Export tự cap 500 dòng ở server nên bỏ phân trang là đúng nghĩa.
+      const { page: _page, limit: _limit, ...exportParams } = params;
       const res = await apiClient.get<{ data: AdminUser[]; total: number; truncated: boolean }>(
         '/admin/users/export',
-        { params },
+        {
+          params: {
+            ...exportParams,
+            from: exportRange.from || undefined,
+            to: exportRange.to || undefined,
+          },
+        },
       );
       if (res.data.truncated) {
         addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
@@ -526,9 +540,16 @@ export default function UsersPage() {
 
       <ConfirmDialog
         open={exportOpen}
-        onClose={() => setExportOpen(false)}
+        onClose={() => { setExportOpen(false); setExportRange({ from: '', to: '' }); }}
         title={`Xuất ${total.toLocaleString('vi-VN')} tài khoản ra CSV?`}
         description="File chứa email/SĐT/IP đăng nhập KHÔNG che và ghi chú nội bộ. Tối đa 500 dòng — thu hẹp bộ lọc nếu cần đủ. Chỉ lưu ở máy được phép xử lý dữ liệu cá nhân."
+        preview={
+          <ExportDateRange
+            from={exportRange.from}
+            to={exportRange.to}
+            onChange={(patch) => setExportRange((prev) => ({ ...prev, ...patch }))}
+          />
+        }
         confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
         variant="primary"
         busy={exporting}

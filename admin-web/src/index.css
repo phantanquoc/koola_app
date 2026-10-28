@@ -753,6 +753,19 @@ code,
   padding: var(--space-3) var(--space-4);
 }
 
+/* Hai ô ngày + nút xoá trong dialog export. */
+.export-date-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.export-date-row input {
+  width: auto;
+  min-width: 140px;
+}
+
 .confirm-typing {
   display: flex;
   flex-direction: column;

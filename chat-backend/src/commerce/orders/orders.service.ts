@@ -22,6 +22,7 @@ import { MediaService } from '../../media/media.service';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { MessagesService } from '../../messages/messages.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { applyCreatedAtRange } from '../../common/utils/date-range';
 import type {
   AdminListOrdersQueryDto,
   ConfirmOrderDto,
@@ -600,6 +601,7 @@ export class OrdersService {
     if (dto.status) filter.status = dto.status;
     if (dto.buyerId) filter.buyerId = dto.buyerId;
     if (dto.sellerId) filter.sellerId = dto.sellerId;
+    applyCreatedAtRange(filter, dto.from, dto.to);
     return filter;
   }
 

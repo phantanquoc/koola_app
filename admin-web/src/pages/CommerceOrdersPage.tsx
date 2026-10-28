@@ -6,6 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import StateBlock from '../components/StateBlock';
 import { StatusBadge } from '../components/StatusBadge';
 import { ExportButton } from '../components/ExportButton';
+import { ExportDateRange } from '../components/ExportDateRange';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { formatVnd, formatVndInput, parseVnd } from '../components/input-masks';
@@ -109,6 +110,8 @@ export default function CommerceOrdersPage() {
 
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // Khoảng ngày chỉ áp cho file xuất (bộ lọc bảng giữ nguyên).
+  const [exportRange, setExportRange] = useState({ from: '', to: '' });
 
   const fetchList = useCallback(async (p: number, params: AdminListOrdersParams) => {
     setLoading(true);
@@ -259,7 +262,12 @@ export default function CommerceOrdersPage() {
         total: number;
         truncated: boolean;
       }>('/admin/commerce/orders/export', {
-        params: { ...applied, limit: 500 },
+        params: {
+          ...applied,
+          limit: 500,
+          from: exportRange.from || undefined,
+          to: exportRange.to || undefined,
+        },
       });
       if (res.data.truncated) {
         addToast('warning', `Xuất 500/${res.data.total} đơn đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
@@ -739,9 +747,16 @@ export default function CommerceOrdersPage() {
 
       <ConfirmDialog
         open={exportOpen}
-        onClose={() => setExportOpen(false)}
+        onClose={() => { setExportOpen(false); setExportRange({ from: '', to: '' }); }}
         title={`Xuất ${total.toLocaleString('vi-VN')} đơn hàng ra CSV?`}
         description="File chứa tên/SĐT người mua KHÔNG che — dùng cho đối soát. Tối đa 500 dòng; thu hẹp bộ lọc nếu cần đủ."
+        preview={
+          <ExportDateRange
+            from={exportRange.from}
+            to={exportRange.to}
+            onChange={(patch) => setExportRange((prev) => ({ ...prev, ...patch }))}
+          />
+        }
         confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
         variant="primary"
         busy={exporting}

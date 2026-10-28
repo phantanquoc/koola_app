@@ -184,6 +184,17 @@ export class AdminListOrdersQueryDto extends ListOrdersQueryDto {
   @IsOptional()
   @IsMongoId()
   sellerId?: string;
+
+  /** Khoảng ngày tạo đơn (tính cả biên) — dùng chung cho list và export. */
+  @ApiPropertyOptional({ example: '2026-10-01T00:00:00.000Z' })
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-10-31T23:59:59.999Z' })
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 }
 
 /**

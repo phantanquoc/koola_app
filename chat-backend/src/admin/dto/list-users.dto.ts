@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsIn,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationDto } from './pagination.dto';
 
@@ -51,4 +57,18 @@ export class ListUsersDto extends PaginationDto {
   @IsOptional()
   @Matches(/^[a-zA-Z]+:(asc|desc)$/)
   sort?: string;
+
+  /**
+   * Khoảng ngày tạo (tính cả biên). Dùng chung cho list và export vì hai đường
+   * đi qua cùng `buildUsersFilter` — thêm ở đây là export có luôn, không lệch.
+   */
+  @ApiPropertyOptional({ example: '2026-10-01T00:00:00.000Z' })
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-10-31T23:59:59.999Z' })
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 }

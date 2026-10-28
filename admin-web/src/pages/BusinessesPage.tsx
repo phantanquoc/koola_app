@@ -14,6 +14,7 @@ import { EmptyState } from '../components/EmptyState';
 import { VerificationBadge, StatusBadge } from '../components/StatusBadge';
 import { MaskedPII } from '../components/MaskedPII';
 import { ExportButton } from '../components/ExportButton';
+import { ExportDateRange } from '../components/ExportDateRange';
 import { formatDateTime, ageLabel, ageTone, apiErrorMessage } from '../components/formatters';
 import { categoryVi, relationshipVi, RELATIONSHIP_VI, PROVINCES, CATEGORY_OPTIONS } from '../components/vn-data';
 import Dialog from '../components/Dialog';
@@ -164,6 +165,8 @@ export default function BusinessesPage() {
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  // Khoảng ngày chỉ áp cho file xuất — không đổi bảng đang xem.
+  const [exportRange, setExportRange] = useState({ from: '', to: '' });
   const [exporting, setExporting] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<{ id: string; name: string } | null>(null);
 
@@ -340,6 +343,8 @@ export default function BusinessesPage() {
           relationshipType: values.relationship || undefined,
           banned: values.banned || undefined,
           suspended: values.suspended || undefined,
+          from: exportRange.from || undefined,
+          to: exportRange.to || undefined,
         },
       });
       if (res.data.truncated) addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
@@ -782,15 +787,23 @@ export default function BusinessesPage() {
       />
 
       <ConfirmDialog
-        open={exportConfirmOpen} onClose={() => setExportConfirmOpen(false)}
+        open={exportConfirmOpen}
+        onClose={() => { setExportConfirmOpen(false); setExportRange({ from: '', to: '' }); }}
         title="Xuất CSV danh sách doanh nghiệp?"
         description="File chứa số điện thoại và email đầy đủ (không che) của tối đa 500 hồ sơ khớp bộ lọc hiện tại."
         confirmLabel="Tải CSV" variant="primary" busy={exporting} onConfirm={handleExport}
         preview={(
-          <dl className="description-list">
-            <div><dt>Phạm vi</dt><dd>{total} hồ sơ khớp bộ lọc</dd></div>
-            <div><dt>Dữ liệu nhạy cảm</dt><dd>SĐT, email — không che</dd></div>
-          </dl>
+          <>
+            <dl className="description-list">
+              <div><dt>Phạm vi</dt><dd>{total} hồ sơ khớp bộ lọc</dd></div>
+              <div><dt>Dữ liệu nhạy cảm</dt><dd>SĐT, email — không che</dd></div>
+            </dl>
+            <ExportDateRange
+              from={exportRange.from}
+              to={exportRange.to}
+              onChange={(patch) => setExportRange((prev) => ({ ...prev, ...patch }))}
+            />
+          </>
         )}
       />
 

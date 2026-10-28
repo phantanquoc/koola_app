@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -57,4 +57,15 @@ export class ExportBusinessesDto {
   @IsOptional()
   @IsString()
   sort?: string;
+
+  /** Khoảng ngày đăng ký (tính cả biên) — đối soát theo kỳ. */
+  @ApiPropertyOptional({ example: '2026-10-01T00:00:00.000Z' })
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-10-31T23:59:59.999Z' })
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 }

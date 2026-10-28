@@ -22,6 +22,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { ExportUsersDto } from './dto/export-users.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
+import { applyCreatedAtRange } from '../common/utils/date-range';
 
 /**
  * Safe projection — NEVER exposes passwordHash, fcmTokens, refresh tokens or
@@ -281,6 +282,10 @@ export class AdminService {
       }
       (filter as Record<string, unknown>).$or = or;
     }
+
+    // Khoảng ngày đăng ký. Đặt SAU nhánh SLA: helper merge vào `createdAt` có
+    // sẵn nên chọn SLA + khoảng ngày là giao của hai điều kiện, không ghi đè.
+    applyCreatedAtRange(filter, dto.from, dto.to);
 
     // ponytail: whitelist keeps sort injection-proof; extend list if UI needs more keys
     const ALLOWED_SORT = new Set([
@@ -592,6 +597,10 @@ export class AdminService {
       if (Types.ObjectId.isValid(q)) or.push({ _id: new Types.ObjectId(q) });
       filterParts.$or = or;
     }
+
+    // Khoảng ngày tham gia — list và export đi chung filter này nên chỉ cần
+    // khai một chỗ; export không thể lệch với những gì người dùng đang thấy.
+    applyCreatedAtRange(filterParts, dto.from, dto.to);
 
     return filterParts as QueryFilter<UserDocument>;
   }

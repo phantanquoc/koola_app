@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import apiClient from '../apiClient';
 import { ListHeader } from '../components/ListHeader';
 import { ExportButton } from '../components/ExportButton';
+import { ExportDateRange } from '../components/ExportDateRange';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { TableShell } from '../components/TableShell';
@@ -88,6 +89,9 @@ export default function ReportsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const [exportOpen, setExportOpen] = useState(false);
+  // Khoảng ngày chỉ áp cho file xuất — backend đã có `from`/`to`, UI trước đây
+  // không mở ra nên đối soát theo kỳ phải xuất cả file rồi lọc tay.
+  const [exportRange, setExportRange] = useState({ from: '', to: '' });
   const [exporting, setExporting] = useState(false);
 
   /** Xuất đúng tập đang lọc; cap 500 dòng do server áp. */
@@ -103,6 +107,8 @@ export default function ReportsPage() {
           status: values.status || undefined,
           targetType: values.targetType || undefined,
           limit: 500,
+          from: exportRange.from || undefined,
+          to: exportRange.to || undefined,
         },
       });
       if (res.data.truncated) {
@@ -279,9 +285,16 @@ export default function ReportsPage() {
 
       <ConfirmDialog
         open={exportOpen}
-        onClose={() => setExportOpen(false)}
+        onClose={() => { setExportOpen(false); setExportRange({ from: '', to: '' }); }}
         title={`Xuất ${total.toLocaleString('vi-VN')} báo cáo ra CSV?`}
         description="File chứa mã người báo cáo và mã đối tượng — đối chiếu pháp lý, không chia sẻ ra ngoài. Tối đa 500 dòng."
+        preview={
+          <ExportDateRange
+            from={exportRange.from}
+            to={exportRange.to}
+            onChange={(patch) => setExportRange((prev) => ({ ...prev, ...patch }))}
+          />
+        }
         confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
         variant="primary"
         busy={exporting}

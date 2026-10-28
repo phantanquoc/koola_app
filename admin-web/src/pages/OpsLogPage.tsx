@@ -12,6 +12,7 @@ import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatNumber, apiErrorMessage } from '../components/formatters';
 import { useUrlFilters } from '../hooks/useUrlFilters';
+import { isoToDay, dayToIso, dayLabel } from '../components/date-range';
 import './admin-new-pages.css';
 
 /**
@@ -79,16 +80,6 @@ const TABS = [
   { key: 'push', label: 'Push' },
 ];
 
-function isoToDay(iso: string) {
-  return iso ? iso.slice(0, 10) : '';
-}
-
-/** Cắt chuỗi, không qua `new Date()` — tránh lệch một ngày ở UTC+7. */
-function dayLabel(iso: string) {
-  const [y, m, d] = isoToDay(iso).split('-');
-  return y && m && d ? `${d}/${m}/${y}` : isoToDay(iso);
-}
-
 function percent(rate: number) {
   return `${Math.round(rate * 100)}%`;
 }
@@ -137,14 +128,7 @@ export default function OpsLogPage() {
 
   // `type="date"` chỉ nói ngày; biên trên lấy 23:59:59.999 để bao trọn hôm nay.
   function setDay(key: 'from' | 'to', day: string) {
-    if (!day) {
-      set({ [key]: '', page: '1' });
-      return;
-    }
-    const iso = key === 'from'
-      ? new Date(`${day}T00:00:00`).toISOString()
-      : new Date(`${day}T23:59:59.999`).toISOString();
-    set({ [key]: iso, page: '1' });
+    set({ [key]: dayToIso(day, key), page: '1' });
   }
 
   function switchTab(next: string) {
