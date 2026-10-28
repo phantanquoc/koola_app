@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import type { ExecutionContext } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
@@ -65,6 +66,15 @@ import { OpsLogModule } from './ops/ops-log.module';
           },
         ],
         storage: new RedisThrottlerStorage(redis),
+        // Nest mặc định băm sha256 cả key nên không còn dấu vết IP/user.
+        // Prefix + tracker (mặc định req.ip) ở cuối để SCAN của
+        // GET /admin/ratelimit/top tách được tracker.
+        generateKey: (
+          context: ExecutionContext,
+          tracker: string,
+          throttlerName: string,
+        ) =>
+          `throttler:${context.getClass().name}-${context.getHandler().name}-${throttlerName}-${tracker}`,
       }),
     }),
     AuthModule,

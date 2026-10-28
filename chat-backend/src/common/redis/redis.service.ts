@@ -90,6 +90,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return out;
   }
 
+  /**
+   * SCAN theo pattern kèm TTL từng key — phục vụ trang giám sát rate-limit.
+   * TTL lấy bằng pipeline để không N+1 round-trip khi cửa sổ có nhiều key.
+   */
+  async scanKeysWithTtl(
+    pattern: string,
+    countHint = 100,
+  ): Promise<{ key: string; ttl: number }[]> {
+    const keys = await this.scanKeys(pattern, countHint);
+    if (keys.length === 0) return [];
+    const pipeline = this.client.pipeline();
+    for (const k of keys) pipeline.ttl(k);
+    const results = await pipeline.exec();
+    return keys.map((key, i) => ({
+      key,
+      // -2 = key biến mất giữa SCAN và TTL, -1 = key không có TTL.
+      ttl: Number(results?.[i]?.[1] ?? -2),
+    }));
+  }
+
   /** @deprecated Use scanKeys — KEYS blocks Redis. Kept for backwards compat. */
   async keys(pattern: string): Promise<string[]> {
     return this.scanKeys(pattern);

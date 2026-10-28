@@ -20,6 +20,12 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { BroadcastService } from './broadcast.service';
+import { RatelimitMonitorService } from './ratelimit-monitor.service';
+import {
+  BroadcastLog,
+  BroadcastLogSchema,
+} from './schemas/broadcast-log.schema';
 import { ImpersonationController } from './impersonation.controller';
 import { ImpersonationService } from './impersonation.service';
 import { AuthModule } from '../auth/auth.module';
@@ -62,6 +68,7 @@ import {
       { name: Story.name, schema: StorySchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
+      { name: BroadcastLog.name, schema: BroadcastLogSchema },
       { name: Appeal.name, schema: AppealSchema },
     ]),
     MediaModule,
@@ -102,6 +109,8 @@ import {
     ModerationQueueService,
     AdminExportService,
     ImpersonationService,
+    BroadcastService,
+    RatelimitMonitorService,
   ],
   exports: [AdminAuditService],
 })

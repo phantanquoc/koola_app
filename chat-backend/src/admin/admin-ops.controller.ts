@@ -8,6 +8,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -18,21 +19,68 @@ import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { ConversationDoc } from '../conversations/conversation.schema';
 import { Story } from '../moments/schemas/story.schema';
-import { AdminAuditService } from './admin-audit.service';
-import { ChatGateway } from '../gateway/chat.gateway';
+import { BroadcastService } from './broadcast.service';
+import { RatelimitMonitorService } from './ratelimit-monitor.service';
+import { PaginationDto } from './dto/pagination.dto';
+import {
+  BROADCAST_AUDIENCES,
+  type BroadcastAudience,
+} from './schemas/broadcast-log.schema';
 import { RedisService } from '../common/redis/redis.service';
 import { CoturnHealthService } from '../health/services/coturn-health.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InjectConnection } from '@nestjs/mongoose';
 import type { Connection } from 'mongoose';
 import type { Request } from 'express';
-import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { minioClient, BUCKET } from '../media/minio-client';
 
 export class BroadcastDto {
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(200) title: string;
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(2000) body: string;
+
+  @ApiPropertyOptional({
+    enum: BROADCAST_AUDIENCES,
+    default: 'all',
+    description:
+      'Đối tượng nhận. personal/business hiện gửi toàn bộ (chưa có room theo loại) — log ghi lại để đối soát.',
+  })
+  @IsOptional()
+  @IsIn(BROADCAST_AUDIENCES)
+  audience?: BroadcastAudience;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Bắt buộc khi audience=ids. Tối đa 500 id.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  audienceIds?: string[];
+}
+
+export class RatelimitTopQueryDto {
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
 }
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -44,11 +92,11 @@ export class AdminOpsController {
     @InjectModel(ConversationDoc.name)
     private convModel: Model<ConversationDoc>,
     @InjectModel(Story.name) private storyModel: Model<Story>,
-    private readonly audit: AdminAuditService,
-    private readonly chatGateway: ChatGateway,
     private readonly redisService: RedisService,
     private readonly coturnHealthService: CoturnHealthService,
     @InjectConnection() private readonly conn: Connection,
+    private readonly broadcastService: BroadcastService,
+    private readonly ratelimitMonitor: RatelimitMonitorService,
   ) {}
 
   @Get('analytics')
@@ -157,30 +205,22 @@ export class AdminOpsController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const payload = {
-      title: dto.title,
-      body: dto.body,
-      at: new Date().toISOString(),
-    };
-    // Đếm socket đang kết nối trước khi emit để UI báo được độ phủ thật.
-    // Gateway khai báo namespace '/chat' nên Nest inject một Namespace (không
-    // phải Server) — `.sockets` ở đây là Map, dù type gateway khai là Server.
-    const io = this.chatGateway.io as unknown as
-      | { sockets?: Map<string, unknown> }
-      | undefined;
-    const recipients = io?.sockets?.size ?? 0;
-    try {
-      this.chatGateway.io?.emit('system_broadcast', payload);
-    } catch {}
-    await this.audit.log({
-      actorId: u.actorId,
-      action: 'broadcast',
-      targetType: 'broadcast',
-      targetId: 'broadcast',
-      payload: payload as any,
-      ip: req.ip ?? null,
-    });
-    return { message: 'broadcast sent', payload, recipients };
+    // audience='ids' mà không có id thì phát cho 0 người — chặn sớm thay vì
+    // ghi một log "đã gửi" sai sự thật.
+    if (dto.audience === 'ids' && (dto.audienceIds?.length ?? 0) === 0) {
+      throw new BadRequestException('audienceIds là bắt buộc khi audience=ids');
+    }
+    return this.broadcastService.send(dto, u.actorId, req.ip ?? null);
+  }
+
+  @Get('broadcast-history')
+  async broadcastHistory(@Query() query: PaginationDto) {
+    return this.broadcastService.history(query);
+  }
+
+  @Get('ratelimit/top')
+  async ratelimitTop(@Query() query: RatelimitTopQueryDto) {
+    return { data: await this.ratelimitMonitor.top(query.limit ?? 20) };
   }
 
   // Music admin CRUD is handled by AdminModerationController (GET/POST/PATCH/DELETE /admin/music-tracks).
