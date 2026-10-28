@@ -515,6 +515,8 @@ describe('CommerceService', () => {
         tagline: 'Tươi mỗi ngày',
         description: 'Rau củ',
         logoUrl: 'https://minio.test/logos/shop.png?sig',
+        // Shop fixture không có coverKey → null, không lộ key thô.
+        coverImageUrl: null,
       });
     });
 

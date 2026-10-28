@@ -109,18 +109,15 @@ class FakeOrders {
   async create(payload: Record<string, unknown>) {
     if (this.failNextCreate) {
       this.failNextCreate = false;
-      const err: Record<string, unknown> = new Error('duplicate key');
-      err.code = 11000;
+      const err = Object.assign(new Error('duplicate key'), { code: 11000 });
       throw err;
     }
     if (this.docs.some((d) => d.idempotencyKey === payload.idempotencyKey)) {
-      const err: Record<string, unknown> = new Error('duplicate key');
-      err.code = 11000;
+      const err = Object.assign(new Error('duplicate key'), { code: 11000 });
       throw err;
     }
     if (this.docs.some((d) => d.orderCode === payload.orderCode)) {
-      const err: Record<string, unknown> = new Error('duplicate key');
-      err.code = 11000;
+      const err = Object.assign(new Error('duplicate key'), { code: 11000 });
       throw err;
     }
     const now = new Date();

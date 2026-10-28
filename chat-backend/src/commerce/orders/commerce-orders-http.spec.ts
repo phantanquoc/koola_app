@@ -20,6 +20,7 @@ import { AdminCommerceController } from '../admin-commerce.controller';
 import { CommerceService } from '../commerce.service';
 import { OrdersService } from './orders.service';
 import { AdminAuditService } from '../../admin/admin-audit.service';
+import { AdminRevenueService } from './admin-revenue.service';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../users/user.schema';
@@ -103,6 +104,8 @@ describe('Orders HTTP boundary', () => {
       providers: [
         { provide: OrdersService, useValue: orders },
         { provide: CommerceService, useValue: commerce },
+        // Route /revenue chỉ đọc; spec này không kiểm số liệu nên mock rỗng.
+        { provide: AdminRevenueService, useValue: { summary: jest.fn() } },
         { provide: AdminAuditService, useValue: audit },
         { provide: getModelToken(User.name), useValue: userModel },
         AdminGuard,

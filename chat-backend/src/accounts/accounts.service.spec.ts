@@ -11,7 +11,10 @@ import {
 } from './accounts.service';
 import { User } from '../users/user.schema';
 import { AuthService } from '../auth/auth.service';
-import { CreateBusinessAccountDto } from './dto/create-business-account.dto';
+import {
+  CreateBusinessAccountDto,
+  RelationshipType,
+} from './dto/create-business-account.dto';
 
 const mockUserModel = {
   findById: jest.fn(),
@@ -167,7 +170,7 @@ describe('AccountsService', () => {
       displayName: 'Biz Co',
       businessCategory: 'retail',
       province: 'HCM',
-      relationshipType: 'partner',
+      relationshipType: RelationshipType.PARTNER,
       licenseImageKey: 'license/abc.jpg',
     };
 
@@ -181,7 +184,7 @@ describe('AccountsService', () => {
       };
       mockUserModel.create.mockResolvedValue(created);
 
-      const result: { accountType: string; verificationStatus: string } =
+      const result: { accountType: string; verificationStatus?: string } =
         await service.createBusinessAccount(actorId, dto);
       expect(result.accountType).toBe('business');
       expect(result.verificationStatus).toBe('pending');
@@ -252,7 +255,7 @@ describe('AccountsService', () => {
       accountType: 'business',
       verificationStatus: 'verified',
       isBanned: false,
-      relationshipType: 'partner',
+      relationshipType: RelationshipType.PARTNER,
       province: 'HCM',
       businessCategory: 'retail',
     };

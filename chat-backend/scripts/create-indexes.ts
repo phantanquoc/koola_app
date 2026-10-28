@@ -40,6 +40,11 @@ import { CallMetricSchema } from '../src/call-logs/call-metric.schema';
 import { RefreshTokenSchema } from '../src/auth/refresh-token.schema';
 import { AdminAuditLogSchema } from '../src/admin/schemas/admin-audit-log.schema';
 import { ReportSchema } from '../src/admin/schemas/report.schema';
+import { CommerceOrderSchema } from '../src/commerce/orders/schemas/commerce-order.schema';
+import { BroadcastLogSchema } from '../src/admin/schemas/broadcast-log.schema';
+import { AppealSchema } from '../src/admin/schemas/appeal.schema';
+import { OtpLogSchema } from '../src/ops/schemas/otp-log.schema';
+import { PushLogSchema } from '../src/ops/schemas/push-log.schema';
 
 const MODELS: Array<[string, mongoose.Schema]> = [
   ['User', UserSchema],
@@ -60,6 +65,13 @@ const MODELS: Array<[string, mongoose.Schema]> = [
   ['RefreshToken', RefreshTokenSchema],
   ['AdminAuditLog', AdminAuditLogSchema],
   ['Report', ReportSchema],
+  // Trước đây thiếu CommerceOrder: schema có index (buyerId+sellerId, đối soát
+  // theo createdAt) nhưng chạy với autoIndex:false thì chưa bao giờ được tạo.
+  ['CommerceOrder', CommerceOrderSchema],
+  ['BroadcastLog', BroadcastLogSchema],
+  ['Appeal', AppealSchema],
+  ['OtpLog', OtpLogSchema],
+  ['PushLog', PushLogSchema],
 ];
 
 async function main(): Promise<void> {
