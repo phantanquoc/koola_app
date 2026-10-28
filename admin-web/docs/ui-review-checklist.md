@@ -359,7 +359,16 @@ DESIGN · **P3** trau chuốt.
 | P2 | `UserDetail` | `saveField` kiểm username/email/SĐT theo đúng `UpdateUserDto`; SĐT gửi dạng chuẩn hoá |
 | P2 | `ConfigPage` | Bật thông báo mà thiếu tiêu đề/nội dung → lỗi tại chỗ + `aria-required` |
 | P2 | Bảng orders/products/services | Thêm `.col-num` (canh phải + `tabular-nums`); giá gốc gạch ngang bằng class thay inline style |
-| — | `README.md`, `DESIGN.md` | Trỏ tới tài liệu này từ mục Tài liệu và §5.1 |
+| P1 | `AppLayout` topbar (mobile ≤860px) | Badge 2FA + sức khỏe tràn sang trái và **đè lên nút hamburger** — `elementFromPoint(40,67)` trả về badge, drawer không mở được. Thu badge về icon 32px, chữ ẩn bằng `.sr-only` |
+| P1 | `AppLayout` topbar | `Hệ thống: degraded` — enum tiếng Anh lộ ra UI. Dịch `degraded`→"Suy giảm", `error`→"Sự cố"; degraded dùng tone warning thay vì danger |
+| P1 | `AppLayout` sidebar | 21 mục / cao 1178px, màn 768–900px chỉ thấy 13 → mở `/ratelimit` thì mục active nằm ngoài khung. Tự `scrollIntoView` mục active + scrollbar mảnh + `scroll-padding` |
+| P1 | `AppLayout` identity chip | `<div>` có hover nhưng không bấm được, trong khi đây là chỗ duy nhất mở 2FA của chính admin → đổi thành `<Link>` tới `/users/:id` |
+| P1 | `AppLayout` mobile drawer | Backdrop có `onKeyDown` nhưng không bao giờ focus → Esc không đóng; mở drawer không focus vào nav. Thêm listener `document` + focus mục active + trả focus về nút mở |
+| P2 | `AppLayout` sidebar | Nhãn trộn Anh/Việt (`Dashboard`, `Reports`, `Products`, `Health`, `Rate limit`, `Audit log`…). Việt hoá hết (nhóm "Catalog" → "Bán hàng"), giữ alias tiếng Anh trong `NavItem.aliases` để palette vẫn khớp |
+| P2 | `AppLayout` sidebar | Breadcrumb ghi "Quản lý người dùng" trong khi H1 ghi "Người dùng" → breadcrumb dùng đúng nhãn trang |
+| P2 | `AppLayout` sidebar | Không có tín hiệu việc đang chờ → badge `pendingVerification` trên mục Doanh nghiệp (không badge khi 0), chấm góc khi rail thu gọn |
+| P2 | `CommandPalette` | Trang tự bắt `/` (Conversations) → một phím mở cả palette lẫn focus ô search. Palette bỏ qua khi `e.defaultPrevented` |
+| — | `README.md`, `DESIGN.md` | Trỏ tới tài liệu này từ mục Tài liệu và §5.1; DESIGN §2 cập nhật shell mới |
 
 ### Còn lại (theo thứ tự nên làm)
 
@@ -374,8 +383,8 @@ DESIGN · **P3** trau chuốt.
 | P3 | 7 | `CommerceProductsPage`/`Services`/`Music` | Thiếu chọn số dòng/trang dù `Pagination` đã hỗ trợ `pageSizes` |
 | P3 | 8 | Orders / Products / Music | `useState` + `useEffect` fetch tay thay `useUrlFilters` + `useAdminList` → reload mất view, không share link |
 | P3 | 9 | Ngoài Businesses/Users | Không sort được dù server có whitelist sort |
-| P3 | 10 | `AppLayout` | Nhãn điều hướng trộn Anh/Việt: `Dashboard`, `Analytics`, `Reports`, `Messages`, `Products`, `Orders`, `Services`, `Health`, `Broadcast`, `Rate limit`, `Audit log` |
-| P3 | 11 | 4 trang list | Debounce không thống nhất: 350ms (Users, Audit) vs 400ms (Businesses, OpsLog) |
+| P3 | 10 | 4 trang list | Debounce không thống nhất: 350ms (Users, Audit) vs 400ms (Businesses, OpsLog) |
+| P3 | 11 | `ConversationsPage` | Tự bắt `/` để focus ô tìm — giờ palette nhường nhờ `defaultPrevented`, nhưng phím tắt riêng của trang vẫn nên thống nhất về `/` = palette, `f` = ô tìm |
 
 ---
 

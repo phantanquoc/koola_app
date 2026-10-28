@@ -55,10 +55,25 @@ Quy tắc: cấm hex/px cứng ngoài `index.css`; auditor grep `#[0-9a-fA-F]` n
   nút thu gọn = tab floating (22×56px, radius-sm) ôm mép phải sidebar giữa chiều
   cao; collapse lưu localStorage; logout ghost + confirm preview identity;
   mobile ≤860px thành drawer + backdrop (giấu edge-toggle).
+- **Nhãn điều hướng tiếng Việt** (`Tổng quan / Phân tích / Báo cáo / Hội thoại /
+  Khoảnh khắc / Sản phẩm / Nhật ký thao tác`…). Từ tiếng Anh còn quen (`audit`,
+  `broadcast`, `rate limit`) sống ở `aliases` của `NavItem` → palette vẫn khớp,
+  nhãn hiển thị không trộn hai ngôn ngữ. Nhóm "Catalog" đổi thành "Bán hàng".
+- **Badge việc chờ trên nav**: chỉ mục có số thật từ `/admin/stats`
+  (`Doanh nghiệp` = `pendingVerification`). Không badge khi bằng 0; rail thu gọn
+  dùng chấm góc thay số. Nav cuộn được (`scrollbar-width: thin`) và tự
+  `scrollIntoView` mục active khi đổi route — 21 mục không lọt màn 768px.
 - Topbar 72px: breadcrumb `Koola / {route}` trái (KHÔNG title — title thuộc page);
-  **command palette** (`/` hoặc Cmd/Ctrl+K mở, fuzzy không dấu, ↑↓+Enter+Esc)
-  tìm chức năng trước + fallback tìm users/messages + identity chip phải
-  (không badge thừa, ẩn text khi loading).
+  **breadcrumb dùng đúng nhãn của trang** (không "Quản lý người dùng" khi H1 ghi
+  "Người dùng");
+  **command palette** (`/` hoặc Cmd/Ctrl+K mở, fuzzy không dấu + `keywords`,
+  ↑↓+Enter+Esc) tìm chức năng trước + fallback tìm users/messages; identity chip
+  là **link tới hồ sơ của chính admin** (mở được 2FA + phiên đăng nhập — trước
+  đây là div hover được mà bấm không được), ẩn text khi loading.
+- Badge topbar: trạng thái sức khỏe dịch sang tiếng Việt (`degraded` → "Suy giảm",
+  `error` → "Sự cố"); ≤860px cả hai badge thu về icon 32px, chữ ẩn bằng
+  `.sr-only` — chữ đầy đủ từng tràn sang trái và **đè lên nút hamburger khiến nó
+  không bấm được**.
 - Content tối đa 1440px, padding 32px (16px ở mobile).
 
 ## 3. Archetype trang (mọi trang mới chọn 1 trong 4, không chế layout lạ)
