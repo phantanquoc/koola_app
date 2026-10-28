@@ -54,6 +54,14 @@ interface ConfigForm {
 }
 
 const VERSION = /^\d{1,4}(\.\d{1,4}){0,3}$/;
+
+/** Một dòng phân bố phiên bản client do server tổng hợp từ telemetry. */
+interface ClientVersionRow {
+  platform: 'ios' | 'android' | 'web';
+  version: string;
+  users: number;
+  recentlyActive: number;
+}
 const FLAG_KEY = /^[a-zA-Z0-9_-]{1,64}$/;
 const MAX_FLAGS = 200;
 const MAX_MESSAGE = 500;
@@ -73,6 +81,20 @@ function toForm(cfg: PublicConfig, nextRowId: () => number): ConfigForm {
     announcementBody: cfg.announcement.body,
     announcementActive: cfg.announcement.active,
   };
+}
+
+/**
+ * So sánh phiên bản dạng số: `2.0.10 > 2.0.9`. So chuỗi thì "2.0.10" < "2.0.9" —
+ * đúng kiểu lỗi làm admin chọn nhầm mốc.
+ */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => Number(n) || 0);
+  const pb = b.split('.').map((n) => Number(n) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 /** Payload gửi lên + dùng để so sánh "đã đổi gì" trước khi mở confirm. */
@@ -151,6 +173,41 @@ export default function ConfigPage() {
     queryKey: ['admin-config'],
     queryFn: async () => (await apiClient.get<PublicConfig>('/admin/config')).data,
   });
+
+  /**
+   * Phiên bản client đang chạy thật (client tự khai qua header). Đây là nguồn
+   * duy nhất để chọn mốc ép cập nhật — repo chưa có app trên App Store/Play nên
+   * không có gì để fetch từ store.
+   */
+  const versions = useQuery({
+    queryKey: ['admin-client-versions'],
+    queryFn: async () =>
+      (
+        await apiClient.get<{
+          data: ClientVersionRow[];
+          reporters: number;
+          unknown: number;
+        }>('/admin/client-versions')
+      ).data,
+    staleTime: 60_000,
+  });
+
+  /** Phiên bản đang có người dùng, theo từng nền tảng — mới nhất lên đầu. */
+  const versionsByPlatform = useMemo(() => {
+    const out: Record<'android' | 'ios', ClientVersionRow[]> = {
+      android: [],
+      ios: [],
+    };
+    for (const row of versions.data?.data ?? []) {
+      if (row.platform === 'android' || row.platform === 'ios') {
+        out[row.platform].push(row);
+      }
+    }
+    for (const key of ['android', 'ios'] as const) {
+      out[key].sort((a, b) => compareVersions(b.version, a.version));
+    }
+    return out;
+  }, [versions.data]);
 
   // Khởi tạo một lần khi có dữ liệu; refetch nền không được ghi đè thứ đang sửa.
   const [server, setServer] = useState<ConfigForm | null>(null);
@@ -349,20 +406,88 @@ export default function ConfigPage() {
             <div className="form-grid" key={p.key}>
               <div className="form-field">
                 <label className="form-label" htmlFor={`cfg-${p.key}-version`}>Phiên bản tối thiểu · {p.label}</label>
-                {/* Không dùng IntegerInput: phiên bản có dấu chấm (1.2.3) và
-                    inputMode="decimal" mở đúng bàn phím số mà vẫn giữ dấu. */}
+                {/* Gợi ý lấy từ phiên bản client **đang chạy thật**, không phải
+                    gõ tay: gõ sai một chữ số là chặn nhầm cả nhóm người dùng
+                    hoặc không chặn được ai. Vẫn cho nhập tay vì mốc mới (chưa ai
+                    cài) là ca hợp lệ. */}
                 <input
                   id={`cfg-${p.key}-version`}
                   className="input"
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
-                  placeholder="2.1.0"
+                  list={`cfg-${p.key}-version-options`}
+                  placeholder={versionsByPlatform[p.key][0]?.version ?? '2.1.0'}
                   value={p.version}
                   aria-invalid={Boolean(errors[`${p.key}Version`])}
-                  aria-describedby={errors[`${p.key}Version`] ? `cfg-${p.key}-version-error` : undefined}
+                  aria-describedby={`cfg-${p.key}-version-help`}
                   onChange={(e) => patchForm({ [`${p.key}Version`]: e.target.value.replace(/[^0-9.]/g, '') })}
                 />
+                <datalist id={`cfg-${p.key}-version-options`}>
+                  {versionsByPlatform[p.key].map((v) => (
+                    <option key={v.version} value={v.version}>
+                      {v.users} người đang dùng
+                    </option>
+                  ))}
+                </datalist>
+
+                {/* Trạng thái so với dữ liệu thật — trả lời "mốc này chặn ai". */}
+                {(() => {
+                  const rows = versionsByPlatform[p.key];
+                  if (versions.isLoading) {
+                    return <span className="form-hint" id={`cfg-${p.key}-version-help`}>Đang đọc phiên bản client…</span>;
+                  }
+                  if (versions.isError) {
+                    return (
+                      <span className="form-hint" id={`cfg-${p.key}-version-help`}>
+                        Không đọc được phiên bản client — nhập tay được nhưng không kiểm được ai bị chặn.
+                      </span>
+                    );
+                  }
+                  if (rows.length === 0) {
+                    return (
+                      <span className="form-hint" id={`cfg-${p.key}-version-help`}>
+                        Chưa có client {p.label} nào khai phiên bản — chưa kiểm được mốc này.
+                      </span>
+                    );
+                  }
+                  const entered = p.version.trim();
+                  if (!entered) {
+                    const newest = rows[0];
+                    return (
+                      <span className="form-hint" id={`cfg-${p.key}-version-help`}>
+                        Bản mới nhất đang chạy: <strong>{newest.version}</strong> ({newest.users} người).
+                        Nhập mốc để bật ép cập nhật.
+                      </span>
+                    );
+                  }
+                  // Mốc = minVersion: ai có version NHỎ HƠN mốc sẽ bị chặn.
+                  const blocked = rows.filter((r) => compareVersions(r.version, entered) < 0);
+                  const blockedUsers = blocked.reduce((sum, r) => sum + r.users, 0);
+                  const unknownVersion = !VERSION.test(entered);
+
+                  if (unknownVersion) {
+                    return (
+                      <span className="form-hint" id={`cfg-${p.key}-version-help`}>
+                        Phiên bản dạng 1 hoặc 1.2.3.
+                      </span>
+                    );
+                  }
+                  if (blockedUsers === 0) {
+                    return (
+                      <span className="form-hint" id={`cfg-${p.key}-version-help`}>
+                        Không ai bị chặn: mọi client {p.label} đang chạy đều ≥ {entered}.
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="form-hint cfg-version-impact" id={`cfg-${p.key}-version-help`}>
+                      Chặn <strong>{blockedUsers} người</strong> đang chạy{' '}
+                      {blocked.map((b) => b.version).join(', ')} — họ phải cập nhật mới dùng tiếp được.
+                    </span>
+                  );
+                })()}
+
                 {errors[`${p.key}Version`] && (
                   <span className="form-error" id={`cfg-${p.key}-version-error`}>{errors[`${p.key}Version`]}</span>
                 )}

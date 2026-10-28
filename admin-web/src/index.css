@@ -3639,3 +3639,10 @@ th.sortable:hover {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Ô phiên bản ép cập nhật: câu "chặn N người" phải đọc được ngay, không lẫn
+   với hint màu xám thường. */
+.cfg-version-impact {
+  color: var(--koola-warning-dark);
+  font-weight: 700;
+}
