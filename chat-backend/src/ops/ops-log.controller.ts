@@ -8,6 +8,10 @@ import { ListOtpLogsDto, ListPushLogsDto } from './dto/list-ops-logs.dto';
 /**
  * Nhật ký vận hành OTP/SMS và push/FCM. Chỉ đọc, chỉ admin.
  * SĐT trong response đã được che ở service — controller không nới thêm field nào.
+ *
+ * Gửi thử push nằm ở `AdminOpsController` (module Admin) chứ không ở đây: nó
+ * cần NotificationsService + audit, và OpsLogModule là @Global mà
+ * NotificationsModule lại import ngược OpsLogModule — thêm vào đây sẽ thành vòng.
  */
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')

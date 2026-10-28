@@ -21,6 +21,8 @@ import { ConversationDoc } from '../conversations/conversation.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { BroadcastService } from './broadcast.service';
 import { RatelimitMonitorService } from './ratelimit-monitor.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { AdminAuditService } from './admin-audit.service';
 import { PaginationDto } from './dto/pagination.dto';
 import {
   BROADCAST_AUDIENCES,
@@ -37,6 +39,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -44,7 +47,11 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { minioClient, BUCKET } from '../media/minio-client';
 
@@ -83,6 +90,31 @@ export class RatelimitTopQueryDto {
   limit?: number = 20;
 }
 
+/**
+ * Gửi thử push tới một tài khoản để kiểm token sau khi đổi cấu hình FCM.
+ *
+ * `title`/`body` bắt buộc chứ không dùng template: repo không có hệ template
+ * nào (mỗi luồng push dựng payload inline), nên bảng template chỉ để chứa vài
+ * câu mẫu là bề mặt bảo trì không đổi lại giá trị.
+ */
+export class SendTestPushDto {
+  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
+  @IsMongoId({ message: 'userId phải là ObjectId hợp lệ' })
+  userId: string;
+
+  @ApiProperty({ example: 'Koola Admin — kiểm tra' })
+  @IsString()
+  @IsNotEmpty({ message: 'title không được rỗng' })
+  @MaxLength(200)
+  title: string;
+
+  @ApiProperty({ example: 'Đây là push thử từ trang vận hành.' })
+  @IsString()
+  @IsNotEmpty({ message: 'body không được rỗng' })
+  @MaxLength(2000)
+  body: string;
+}
+
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminOpsController {
@@ -97,6 +129,8 @@ export class AdminOpsController {
     @InjectConnection() private readonly conn: Connection,
     private readonly broadcastService: BroadcastService,
     private readonly ratelimitMonitor: RatelimitMonitorService,
+    private readonly notifications: NotificationsService,
+    private readonly audit: AdminAuditService,
   ) {}
 
   @Get('analytics')
@@ -221,6 +255,51 @@ export class AdminOpsController {
   @Get('ratelimit/top')
   async ratelimitTop(@Query() query: RatelimitTopQueryDto) {
     return { data: await this.ratelimitMonitor.top(query.limit ?? 20) };
+  }
+
+  /**
+   * Gửi một push thật tới mọi thiết bị của `userId`.
+   *
+   * Trả số liệu (không ném khi FCM chưa cấu hình) để trang admin hiện được
+   * "0/2 token" — một thông điệp chung "đã gửi" là nói dối khi FCM sai cấu hình.
+   * Ghi audit vì đây là thao tác chạm thiết bị người dùng, không phải đọc log.
+   */
+  @Post('push-logs/test')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 10, ttl: 60000 },
+    long: { limit: 60, ttl: 60000 },
+  })
+  @ApiOperation({ summary: 'Gửi push thử tới một tài khoản' })
+  async sendTestPush(
+    @Body() dto: SendTestPushDto,
+    @CurrentUser() user: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const result = await this.notifications.sendAdminTestPush({
+      userId: dto.userId,
+      title: dto.title,
+      body: dto.body,
+    });
+
+    await this.audit.log({
+      actorId: user.actorId,
+      action: 'send_test_push',
+      targetType: 'user',
+      targetId: dto.userId,
+      // Không log nội dung push — admin có thể gõ thông tin nội bộ vào đó.
+      // Tên key cũng tránh chữ "token": bộ lọc redact bắt theo tên key nên
+      // `tokenCount` bị thay bằng "[REDACTED]" và mất luôn số liệu đối soát.
+      payload: {
+        devices: result.tokenCount,
+        delivered: result.successCount,
+        failed: result.failureCount,
+        skipped: result.skipped ?? null,
+      },
+      ip: req.ip ?? null,
+    });
+
+    return result;
   }
 
   // Music admin CRUD is handled by AdminModerationController (GET/POST/PATCH/DELETE /admin/music-tracks).

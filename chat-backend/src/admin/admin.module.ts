@@ -55,6 +55,7 @@ import {
   AudienceList,
   AudienceListSchema,
 } from '../moments/schemas/audience-list.schema';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -78,6 +79,10 @@ import {
     GatewayModule,
     RedisModule,
     HealthModule,
+    // Gửi thử push từ trang vận hành. NotificationsModule chỉ phụ thuộc
+    // UsersModule (forwardRef) + OpsLogModule (@Global) nên không tạo vòng với
+    // AdminModule.
+    NotificationsModule,
     // ImpersonationService cần JwtService; AuthModule đã export JwtModule.
     AuthModule,
   ],

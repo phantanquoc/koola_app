@@ -11,6 +11,8 @@ import StateBlock from '../components/StateBlock';
 import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatNumber, apiErrorMessage } from '../components/formatters';
+import Dialog from '../components/Dialog';
+import { useToast } from '../components/Toast';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { isoToDay, dayToIso, dayLabel } from '../components/date-range';
 import './admin-new-pages.css';
@@ -66,6 +68,39 @@ interface PushResponse {
 const PAGE_SIZES = [20, 50, 100];
 const DEFAULT_FILTERS = { tab: 'otp', success: '', kind: '', from: '', to: '', page: '1', pageSize: '20' };
 
+interface TestPushResult {
+  tokenCount: number;
+  successCount: number;
+  failureCount: number;
+  skipped?:
+    | 'no_user'
+    | 'notifications_disabled'
+    | 'no_tokens'
+    | 'fcm_not_configured';
+}
+
+/** Diễn giải kết quả gửi thử — "0/0" một mình không nói được vì sao trượt. */
+function describeTestPush(r: TestPushResult): { tone: 'success' | 'warning' | 'danger'; text: string } {
+  switch (r.skipped) {
+    case 'no_user':
+      return { tone: 'danger', text: 'Không tìm thấy tài khoản với id này.' };
+    case 'notifications_disabled':
+      return { tone: 'warning', text: 'Tài khoản đã tắt nhận thông báo — không gửi gì.' };
+    case 'no_tokens':
+      return { tone: 'warning', text: 'Tài khoản chưa đăng ký thiết bị nào (0 FCM token).' };
+    case 'fcm_not_configured':
+      return {
+        tone: 'warning',
+        text: 'Máy chủ chưa cấu hình FCM (thiếu FIREBASE_PRIVATE_KEY) — không phải lỗi thiết bị.',
+      };
+    default:
+      if (r.successCount > 0) {
+        return { tone: 'success', text: `Đã giao ${r.successCount}/${r.tokenCount} thiết bị.` };
+      }
+      return { tone: 'danger', text: `Gửi thất bại cả ${r.tokenCount} thiết bị — kiểm tra cấu hình FCM.` };
+  }
+}
+
 const CHANNEL_LABEL: Record<string, string> = { sms: 'SMS', email: 'Email' };
 const PURPOSE_LABEL: Record<string, string> = {
   register: 'Đăng ký',
@@ -80,12 +115,18 @@ const TABS = [
   { key: 'push', label: 'Push' },
 ];
 
+
 function percent(rate: number) {
   return `${Math.round(rate * 100)}%`;
 }
 
 export default function OpsLogPage() {
   const { values, set, reset } = useUrlFilters(DEFAULT_FILTERS);
+  const { addToast } = useToast();
+  const [testOpen, setTestOpen] = useState(false);
+  const [testForm, setTestForm] = useState({ userId: '', title: '', body: '' });
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<TestPushResult | null>(null);
   const tab: LogTab = values.tab === 'push' ? 'push' : 'otp';
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
@@ -137,6 +178,27 @@ export default function OpsLogPage() {
     set({ tab: next === 'otp' ? '' : next, success: '', kind: '', page: '1' });
   }
 
+  async function submitTestPush() {
+    if (testBusy) return;
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      const res = await apiClient.post<TestPushResult>('/admin/push-logs/test', {
+        userId: testForm.userId.trim(),
+        title: testForm.title.trim(),
+        body: testForm.body.trim(),
+      });
+      setTestResult(res.data);
+      const meta = describeTestPush(res.data);
+      addToast(meta.tone === 'success' ? 'success' : 'warning', meta.text);
+      if (res.data.successCount > 0) void refetch();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Gửi thử thất bại. Vui lòng thử lại.'));
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   const otpStats = tab === 'otp' ? (data as OtpResponse | undefined)?.stats : undefined;
   const pushStats = tab === 'push' ? (data as PushResponse | undefined)?.stats : undefined;
 
@@ -145,7 +207,16 @@ export default function OpsLogPage() {
       <ListHeader
         title="Nhật ký vận hành"
         count={total}
-        actions={<button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>}
+        actions={(
+          <>
+            {tab === 'push' && (
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setTestResult(null); setTestOpen(true); }}>
+                Gửi thử
+              </button>
+            )}
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>
+          </>
+        )}
       >
         <FilterPopover
           activeCount={advancedCount}
@@ -356,6 +427,77 @@ export default function OpsLogPage() {
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
+
+      {/* Gửi thử: kiểm kênh FCM sau khi đổi cấu hình. Không dùng ConfirmDialog
+          vì cần 3 ô nhập + vùng kết quả, không phải một câu xác nhận. */}
+      <Dialog
+        open={testOpen}
+        onClose={() => { setTestOpen(false); setTestResult(null); }}
+        labelId="test-push-title"
+        variant="dialog"
+      >
+        <div className="dialog">
+          <div className="dialog-header">
+            <div>
+              <h2 id="test-push-title" className="panel-title">Gửi push thử</h2>
+              <p className="panel-subtitle">
+                Gửi tới mọi thiết bị đã đăng ký của tài khoản. Người đang online vẫn nhận —
+                mục đích là kiểm kênh FCM, không phải thông báo.
+              </p>
+            </div>
+          </div>
+          <div className="dialog-body">
+            <label className="form-field">
+              <span className="form-label">ID tài khoản nhận</span>
+              <input
+                className="input k-mono" value={testForm.userId} maxLength={64}
+                onChange={(e) => setTestForm((f) => ({ ...f, userId: e.target.value }))}
+                placeholder="507f1f77bcf86cd799439011"
+              />
+            </label>
+            <label className="form-field">
+              <span className="form-label">Tiêu đề</span>
+              <input
+                className="input" value={testForm.title} maxLength={200}
+                onChange={(e) => setTestForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="Koola Admin — kiểm tra"
+              />
+            </label>
+            <label className="form-field">
+              <span className="form-label">Nội dung</span>
+              <input
+                className="input" value={testForm.body} maxLength={2000}
+                onChange={(e) => setTestForm((f) => ({ ...f, body: e.target.value }))}
+                placeholder="Đây là push thử từ trang vận hành."
+              />
+            </label>
+
+            {testResult && (() => {
+              const meta = describeTestPush(testResult);
+              return (
+                <p className="alert" role="status" data-testid="test-push-result">
+                  <StatusBadge tone={meta.tone} label={meta.tone === 'success' ? 'Thành công' : meta.tone === 'warning' ? 'Bỏ qua' : 'Thất bại'} />
+                  {' '}{meta.text}
+                </p>
+              );
+            })()}
+
+            <div className="dialog-actions">
+              <button className="btn btn-secondary" type="button" onClick={() => { setTestOpen(false); setTestResult(null); }}>
+                Đóng
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={testBusy || !testForm.userId.trim() || !testForm.title.trim() || !testForm.body.trim()}
+                onClick={() => void submitTestPush()}
+              >
+                {testBusy ? 'Đang gửi...' : 'Gửi thử'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -177,6 +177,8 @@ describe('AdminOpsController.broadcast', () => {
       { readyState: 1 } as never,
       broadcastService as never,
       {} as never,
+      { sendAdminTestPush: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
 
     const res = await controller.broadcast(
@@ -209,6 +211,8 @@ describe('AdminOpsController.broadcast', () => {
       { readyState: 1 } as never,
       broadcastService as never,
       {} as never,
+      { sendAdminTestPush: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
 
     await expect(

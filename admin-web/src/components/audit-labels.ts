@@ -58,6 +58,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   delete_music_track: 'Xoá track',
   // Hệ thống
   broadcast: 'Gửi broadcast',
+  send_test_push: 'Gửi thử push',
   update_config: 'Cập nhật cấu hình',
 };
 

@@ -445,6 +445,131 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * Gửi thử từ trang admin để kiểm token còn sống sau khi đổi cấu hình FCM.
+   *
+   * Hai điểm cố ý khác luồng push thường:
+   * - **Không** skip khi `user.isOnline`. Push thường bỏ qua người đang online
+   *   (đã có socket), nhưng ở đây mục đích là kiểm kênh FCM — skip thì admin
+   *   không bao giờ thấy kết quả và tưởng cấu hình hỏng.
+   * - Trả số liệu thật thay vì `void`, để UI nói được "0/2 token" thay vì báo
+   *   "đã gửi" chung chung.
+   *
+   * `notificationsEnabled === false` vẫn tôn trọng, nhưng báo rõ lý do bỏ qua.
+   */
+  async sendAdminTestPush(params: {
+    userId: string;
+    title: string;
+    body: string;
+  }): Promise<{
+    tokenCount: number;
+    successCount: number;
+    failureCount: number;
+    skipped?:
+      | 'no_user'
+      | 'notifications_disabled'
+      | 'no_tokens'
+      | 'fcm_not_configured';
+  }> {
+    const user = await this.usersService.findById(params.userId, {
+      withFcmTokens: true,
+    });
+    if (!user) {
+      return {
+        tokenCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skipped: 'no_user',
+      };
+    }
+    if (user.settings?.notificationsEnabled === false) {
+      return {
+        tokenCount: user.fcmTokens?.length ?? 0,
+        successCount: 0,
+        failureCount: 0,
+        skipped: 'notifications_disabled',
+      };
+    }
+    const tokens = (user.fcmTokens ?? []).map((t) => t.token);
+    if (tokens.length === 0) {
+      return {
+        tokenCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skipped: 'no_tokens',
+      };
+    }
+
+    const payload: FirebaseMessagingPayload = {
+      notification: { title: params.title, body: params.body },
+      data: {
+        type: 'admin_test',
+        accountId: params.userId,
+        accountType: (user.accountType as string) ?? 'personal',
+        deepLink: 'koola://home',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    try {
+      const res = await this.sendMulticast(params.userId, tokens, payload);
+      this.opsLog?.logPush({
+        userId: params.userId,
+        tokenCount: tokens.length,
+        successCount: res.successCount,
+        failureCount: res.failureCount,
+        title: params.title,
+        body: params.body,
+        kind: 'admin_test',
+      });
+      return { tokenCount: tokens.length, ...res };
+    } catch (err) {
+      // "FCM chưa cấu hình" là lỗi cấu hình deploy, không phải token chết.
+      // Báo riêng để admin không đi tìm thiết bị hỏng trong khi nguyên nhân là
+      // thiếu FIREBASE_PRIVATE_KEY.
+      if (err instanceof ServiceUnavailableException) {
+        this.logger.warn(
+          `[Notifications] Admin test push skipped — FCM not configured`,
+        );
+        return {
+          tokenCount: tokens.length,
+          successCount: 0,
+          failureCount: 0,
+          skipped: 'fcm_not_configured',
+        };
+      }
+      // Lỗi mạng/FCM khác — trả số liệu thay vì ném, để trang admin hiện
+      // "gửi thất bại" thay vì màn hình lỗi.
+      this.logger.error(
+        `[Notifications] Admin test push failed for ${params.userId}:`,
+        err,
+      );
+      this.opsLog?.logPush({
+        userId: params.userId,
+        tokenCount: tokens.length,
+        successCount: 0,
+        failureCount: tokens.length,
+        title: params.title,
+        body: params.body,
+        kind: 'admin_test',
+      });
+      return {
+        tokenCount: tokens.length,
+        successCount: 0,
+        failureCount: tokens.length,
+      };
+    }
+  }
+
   // ─── Payload Builder ───────────────────────────────────────────────────────
 
   private buildPayload(params: {
