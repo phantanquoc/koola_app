@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { PageHeader } from '../components/PageHeader';
+import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ExportButton } from '../components/ExportButton';
 import { ExportDateRange } from '../components/ExportDateRange';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { UserPicker, type UserOption } from '../components/UserPicker';
 import { useToast } from '../components/Toast';
 import { formatVnd, formatVndInput, parseVnd } from '../components/input-masks';
 import { MoneyInput } from '../components/StructuredInput';
@@ -80,8 +81,12 @@ export default function CommerceOrdersPage() {
   const { addToast } = useToast();
   // Filters
   const [status, setStatus] = useState<string>('');
-  const [sellerId, setSellerId] = useState('');
-  const [buyerId, setBuyerId] = useState('');
+  // Người bán/người mua chọn từ danh sách thật — gõ ObjectId 24 ký tự thì sai
+  // một ký tự là lọc ra rỗng mà không biết vì sao (§5.1b DESIGN).
+  const [seller, setSeller] = useState<UserOption[]>([]);
+  const [buyer, setBuyer] = useState<UserOption[]>([]);
+  const sellerId = seller[0]?.id ?? '';
+  const buyerId = buyer[0]?.id ?? '';
   // Applied (committed) filter values used for fetching
   const [applied, setApplied] = useState<AdminListOrdersParams>({});
 
@@ -135,20 +140,10 @@ export default function CommerceOrdersPage() {
     void fetchList(page, applied);
   }, [fetchList, page, applied]);
 
-  function handleSearch(e?: React.FormEvent) {
-    e?.preventDefault();
-    const next: AdminListOrdersParams = {};
-    if (status) next.status = status;
-    if (sellerId.trim()) next.sellerId = sellerId.trim();
-    if (buyerId.trim()) next.buyerId = buyerId.trim();
-    setApplied(next);
-    setPage(1);
-  }
-
   function handleClear() {
     setStatus('');
-    setSellerId('');
-    setBuyerId('');
+    setSeller([]);
+    setBuyer([]);
     setApplied({});
     setPage(1);
   }
@@ -349,9 +344,9 @@ export default function CommerceOrdersPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader
+      <ListHeader
         title="Đơn hàng"
-        description="Danh sách đơn hàng, xuất CSV để đối soát và can thiệp khi người bán/người mua cần hỗ trợ."
+        count={total}
         actions={
           <ExportButton
             onExport={() => {
@@ -360,54 +355,55 @@ export default function CommerceOrdersPage() {
             }}
           />
         }
-      />
-
-      {/* Filters */}
-      <form
-        onSubmit={handleSearch}
-        style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}
-        aria-label="Bộ lọc đơn hàng"
       >
-        <label style={{ display: 'grid', gap: 4 }}>
-          <span className="form-label">Trạng thái</span>
-          <select className="select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Trạng thái">
-            <option value="">Tất cả</option>
-            {ORDER_STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s] ?? s}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label style={{ display: 'grid', gap: 4 }}>
-          <span className="form-label">Seller ID</span>
-          <input
-            className="input"
-            value={sellerId}
-            onChange={(e) => setSellerId(e.target.value)}
-            placeholder="24-char ObjectId"
-            aria-label="Seller ID"
-            style={{ width: 200 }}
-          />
-        </label>
-        <label style={{ display: 'grid', gap: 4 }}>
-          <span className="form-label">Buyer ID</span>
-          <input
-            className="input"
-            value={buyerId}
-            onChange={(e) => setBuyerId(e.target.value)}
-            placeholder="24-char ObjectId"
-            aria-label="Buyer ID"
-            style={{ width: 200 }}
-          />
-        </label>
-        <button className="btn btn-primary btn-sm" type="submit">
-          Lọc
-        </button>
-        <button className="btn btn-secondary btn-sm" type="button" onClick={handleClear}>
-          Xóa lọc
-        </button>
-      </form>
+        <select
+          className="select"
+          value={status}
+          onChange={(e) => {
+            const v = e.target.value;
+            setStatus(v);
+            setApplied((prev) => ({ ...prev, status: v || undefined }));
+            setPage(1);
+          }}
+          aria-label="Lọc theo trạng thái"
+        >
+          <option value="">Mọi trạng thái</option>
+          {ORDER_STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABEL[s] ?? s}
+            </option>
+          ))}
+        </select>
+        <UserPicker
+          label="Người bán"
+          inputId="orders-seller"
+          value={seller}
+          max={1}
+          placeholder="Tìm doanh nghiệp"
+          onChange={(next) => {
+            setSeller(next);
+            setApplied((prev) => ({ ...prev, sellerId: next[0]?.id }));
+            setPage(1);
+          }}
+        />
+        <UserPicker
+          label="Người mua"
+          inputId="orders-buyer"
+          value={buyer}
+          max={1}
+          placeholder="Tìm người dùng"
+          onChange={(next) => {
+            setBuyer(next);
+            setApplied((prev) => ({ ...prev, buyerId: next[0]?.id }));
+            setPage(1);
+          }}
+        />
+        {(status || seller.length > 0 || buyer.length > 0) && (
+          <button className="btn btn-ghost btn-sm" type="button" onClick={handleClear}>
+            Xoá bộ lọc
+          </button>
+        )}
+      </ListHeader>
 
       <TableShell title="Orders" subtitle={`${total} đơn hàng`}>
         {loading ? (
@@ -430,7 +426,7 @@ export default function CommerceOrdersPage() {
                   <th scope="col">Người bán</th>
                   <th scope="col">Người mua</th>
                   <th scope="col">Số món</th>
-                  <th scope="col">Tổng tiền</th>
+                  <th scope="col" className="col-num">Tổng tiền</th>
                   <th scope="col">Ngày tạo</th>
                 </tr>
               </thead>
@@ -458,7 +454,7 @@ export default function CommerceOrdersPage() {
                     <td>{o.sellerName ?? <span className="cell-meta">{o.sellerId.slice(0, 8)}…</span>}</td>
                     <td>{o.buyerName ?? <span className="cell-meta">{o.buyerId.slice(0, 8)}…</span>}</td>
                     <td>{o.itemCount}</td>
-                    <td>{formatVnd(o.total)}</td>
+                    <td className="col-num">{formatVnd(o.total)}</td>
                     <td className="cell-meta">{formatDate(o.createdAt)}</td>
                   </tr>
                 ))}
@@ -466,7 +462,7 @@ export default function CommerceOrdersPage() {
             </table>
           </div>
         )}
-        <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
+        <Pagination page={page} totalPages={totalPages} total={total} unit="đơn hàng" onPageChange={setPage} />
       </TableShell>
 
       {/* Detail dialog */}

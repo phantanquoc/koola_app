@@ -2656,6 +2656,34 @@ th.sortable:hover {
   flex: 0 1 220px;
 }
 
+/* Cột số/tiền trong bảng: canh phải để so sánh theo hàng dọc (DESIGN §4).
+   Dùng cho <th> và <td> — cần kèm `.data-table` để thắng rule mặc định. */
+.data-table th.col-num,
+.data-table td.col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Giá gốc gạch ngang dưới giá bán — vẫn canh phải theo cột số. */
+.cell-strike {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+/* UserPicker trong filter row: khung chip co lại như một ô input bình thường;
+   danh sách gợi ý neo dưới khung nên cần position:relative trên gốc. */
+.filter-row .user-picker {
+  flex: 0 1 240px;
+  min-width: 180px;
+}
+
+.filter-row .user-picker .form-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--koola-muted);
+}
+
 /* List header gọn (mẫu chung): 1 hàng title + actions, 1 hàng filter */
 .list-header {
   display: flex;

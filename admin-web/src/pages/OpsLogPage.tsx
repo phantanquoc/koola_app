@@ -69,6 +69,14 @@ interface PushResponse {
 const PAGE_SIZES = [20, 50, 100];
 const DEFAULT_FILTERS = { tab: 'otp', success: '', kind: '', from: '', to: '', page: '1', pageSize: '20' };
 
+/** `kind` do backend ghi tự do; đây là các giá trị đang có trong code. */
+const PUSH_KINDS = [
+  { value: 'message', label: 'Tin nhắn' },
+  { value: 'broadcast', label: 'Broadcast' },
+  { value: 'admin_test', label: 'Push thử' },
+  { value: 'report', label: 'Báo cáo' },
+];
+
 interface TestPushResult {
   tokenCount: number;
   successCount: number;
@@ -274,13 +282,17 @@ export default function OpsLogPage() {
           ) : (
             <label className="form-field">
               <span className="form-label">Loại push</span>
-              {/* Máy chủ chỉ lọc theo `kind`, không lọc được "lần gửi trượt".
-                  Không giả vờ có bộ lọc thành công ở tab này. */}
+              {/* Server chỉ lọc theo `kind` (mọi "lần gửi trượt" không lọc được).
+                  Gợi ý các kind đang có trong code nhưng vẫn cho gõ kind mới —
+                  backend thêm kind mới không phải sửa trang này. */}
               <input
                 className="input" type="text" value={kindInput} maxLength={40}
-                placeholder="message"
+                list="ops-push-kinds" placeholder="Mọi loại"
                 onChange={(e) => setKindInput(e.target.value)}
               />
+              <datalist id="ops-push-kinds">
+                {PUSH_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+              </datalist>
             </label>
           )}
 
@@ -289,11 +301,13 @@ export default function OpsLogPage() {
             <div className="filter-date-range">
               <input
                 className="input input-sm" type="date" value={isoToDay(values.from)}
+                max={isoToDay(values.to) || undefined}
                 onChange={(e) => setDay('from', e.target.value)} aria-label="Từ ngày"
               />
               <span className="cell-meta" aria-hidden>→</span>
               <input
                 className="input input-sm" type="date" value={isoToDay(values.to)}
+                min={isoToDay(values.from) || undefined}
                 onChange={(e) => setDay('to', e.target.value)} aria-label="Đến ngày"
               />
             </div>
@@ -457,8 +471,7 @@ export default function OpsLogPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
-          label={totalPages <= 1 ? `${total.toLocaleString('vi-VN')} lượt gửi` : `Trang ${page} / ${totalPages} · ${total.toLocaleString('vi-VN')} lượt gửi`}
+          page={page} totalPages={totalPages} total={total} unit="lượt gửi"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
@@ -510,8 +523,8 @@ export default function OpsLogPage() {
                 Nội dung
                 <span className="form-counter">{testForm.body.length}/2000</span>
               </span>
-              <input
-                className="input" value={testForm.body} maxLength={2000}
+              <textarea
+                className="textarea" rows={3} value={testForm.body} maxLength={2000}
                 onChange={(e) => setTestForm((f) => ({ ...f, body: e.target.value }))}
                 placeholder="Đây là push thử từ trang vận hành."
               />

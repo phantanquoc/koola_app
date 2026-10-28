@@ -157,7 +157,7 @@ export default function CommerceServicesPage() {
               <thead>
                 <tr>
                   <th scope="col">Tên</th>
-                  <th scope="col">Giá</th>
+                  <th scope="col" className="col-num">Giá</th>
                   <th scope="col" className="col-hide-mobile">Danh mục</th>
                   <th scope="col" className="col-hide-xs">Mô tả</th>
                 </tr>
@@ -185,7 +185,7 @@ export default function CommerceServicesPage() {
                       <td>
                         <span className="cell-title">{s.name}</span>
                       </td>
-                      <td>{vnd(s.price)}</td>
+                      <td className="col-num">{vnd(s.price)}</td>
                       <td className="col-hide-mobile">
                         {s.category || <span className="cell-meta">—</span>}
                       </td>
@@ -207,7 +207,7 @@ export default function CommerceServicesPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
+          page={page} totalPages={totalPages} total={total} unit="dịch vụ"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}

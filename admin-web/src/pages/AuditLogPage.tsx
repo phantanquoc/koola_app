@@ -176,11 +176,13 @@ export default function AuditLogPage() {
             <div className="filter-date-range">
               <input
                 className="input input-sm" type="date" value={isoToDay(values.from)}
+                max={isoToDay(values.to) || undefined}
                 onChange={(e) => setDay('from', e.target.value)} aria-label="Từ ngày"
               />
               <span className="cell-meta" aria-hidden>→</span>
               <input
                 className="input input-sm" type="date" value={isoToDay(values.to)}
+                min={isoToDay(values.from) || undefined}
                 onChange={(e) => setDay('to', e.target.value)} aria-label="Đến ngày"
               />
             </div>
@@ -324,7 +326,7 @@ export default function AuditLogPage() {
         )}
 
         <Pagination
-          page={page} totalPages={totalPages} total={total}
+          page={page} totalPages={totalPages} total={total} unit="lượt thao tác"
           onPageChange={(p) => set({ page: String(p) })}
           showGoto pageSize={pageSize} pageSizes={PAGE_SIZES}
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}

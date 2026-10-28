@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { PageHeader } from '../components/PageHeader';
+import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
@@ -307,12 +307,15 @@ export default function CommerceProductsPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="Catalog"
+      <ListHeader
         title="Sản phẩm"
-        description="Sản phẩm thuộc về tài khoản doanh nghiệp đã xác minh. Sản phẩm của người bán chưa hợp lệ sẽ không hiển thị trên app."
-        actions={<button className="btn btn-primary" onClick={openCreate} type="button">Tạo sản phẩm</button>}
-      />
+        count={total}
+        actions={<button className="btn btn-primary btn-sm" onClick={openCreate} type="button">Tạo sản phẩm</button>}
+      >
+        <span className="cell-meta">
+          Chỉ sản phẩm của doanh nghiệp đã xác minh mới hiển thị trên app.
+        </span>
+      </ListHeader>
       <TableShell title="Products" subtitle={`${total} sản phẩm`}>
         {loading ? (
           <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Đang tải" />
@@ -333,7 +336,7 @@ export default function CommerceProductsPage() {
                   <th scope="col">Tên</th>
                   <th scope="col">Người bán</th>
                   <th scope="col">Phân loại</th>
-                  <th scope="col">Giá</th>
+                  <th scope="col" className="col-num">Giá</th>
                   <th scope="col">Trạng thái</th>
                   <th scope="col">Hiển thị</th>
                   <th scope="col" style={{ width: 150 }}>Hành động</th>
@@ -352,10 +355,10 @@ export default function CommerceProductsPage() {
                     </td>
                     <td>{p.seller?.displayName ?? '—'}</td>
                     <td>{CATEGORY_LABEL[p.category] ?? p.category}</td>
-                    <td>
+                    <td className="col-num">
                       {vnd(p.price)}
                       {p.originalPrice !== null ? (
-                        <div style={{ color: 'var(--koola-muted)', textDecoration: 'line-through', fontSize: 12 }}>{vnd(p.originalPrice)}</div>
+                        <div className="cell-meta cell-strike">{vnd(p.originalPrice)}</div>
                       ) : null}
                     </td>
                     <td>
@@ -376,7 +379,7 @@ export default function CommerceProductsPage() {
             </table>
           </div>
         )}
-        <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
+        <Pagination page={page} totalPages={totalPages} total={total} unit="sản phẩm" onPageChange={setPage} />
       </TableShell>
 
       {formOpen && (
