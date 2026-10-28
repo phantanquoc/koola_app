@@ -7,6 +7,7 @@ import { useTabBarBottomInset, useTabDockSuppression } from '../../navigation/Ma
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
+import { usePendingOrderCount } from '../../services/shopping/usePendingOrderCount';
 import { useTheme } from '../../ui';
 import { HeaderSearchDock } from '../../components/HeaderSearchDock';
 import QrScannerModal from './QrScannerModal';
@@ -41,6 +42,10 @@ const SettingsScreen: React.FC = () => {
     bottom: tabBarInset + 16,
   });
   const styles = useMemo(() => makeScreenStyles(), []);
+
+  // Buyer-side badge for the wallet card's order row. Refetches on focus, so
+  // returning from PersonalOrders updates the count.
+  const ordersPending = usePendingOrderCount('buyer', true);
 
   const blockH = insets.top + WORDMARK_TOP + WORDMARK_H + DOCK_GAP + DOCK_H; // = insets.top + 58
   const isDark = resolvedScheme === 'dark';
@@ -178,7 +183,11 @@ const SettingsScreen: React.FC = () => {
           onSwitchAccount={() => navigation.navigate('AccountList')}
           onUpgradeBusiness={() => navigation.navigate('UpgradeAccount')}
         />
-        <PersonalWalletCard onComingSoon={notifyComingSoon} />
+        <PersonalWalletCard
+          onComingSoon={notifyComingSoon}
+          onOrders={() => navigation.navigate('PersonalOrders')}
+          ordersPending={ordersPending}
+        />
 
         {/* Account information — polished Figma 92:51 card */}
         <PersonalAccountInfoCard

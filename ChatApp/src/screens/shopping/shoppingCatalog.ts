@@ -19,10 +19,31 @@ export const SHOPPING_CATEGORIES: ReadonlyArray<{ id: CommerceCategory; label: s
   { id: 'beauty', label: 'Làm đẹp' },
 ];
 
+/**
+ * User-visible label for every server `sort` value — the single source both
+ * chip groups below derive from, so the home filter row and the storefront
+ * row can never drift apart (or lose their diacritics independently).
+ */
+export const SORT_LABELS: Record<CommerceSort, string> = {
+  newest: 'Mới nhất',
+  bestseller: 'Bán chạy',
+  priceLow: 'Giá thấp nhất',
+};
+
 /** Sort chips → server `sort` param ("no chip" = server default `newest`). */
 export const SHOPPING_SORT_CHIPS: ReadonlyArray<{ sort: Exclude<CommerceSort, 'newest'>; label: string }> = [
-  { sort: 'bestseller', label: 'Được mua nhiều nhất' },
-  { sort: 'priceLow', label: 'Giá thấp nhất' },
+  { sort: 'bestseller', label: SORT_LABELS.bestseller },
+  { sort: 'priceLow', label: SORT_LABELS.priceLow },
+];
+
+/**
+ * Storefront chips — all three sorts, `newest` included: the storefront has a
+ * persistent selected sort (not a toggle), so the default needs to be tappable.
+ */
+export const STOREFRONT_SORT_CHIPS: ReadonlyArray<{ sort: CommerceSort; label: string }> = [
+  { sort: 'newest', label: SORT_LABELS.newest },
+  { sort: 'bestseller', label: SORT_LABELS.bestseller },
+  { sort: 'priceLow', label: SORT_LABELS.priceLow },
 ];
 
 /** Tag chips → server `tag` param (exact tag match). */

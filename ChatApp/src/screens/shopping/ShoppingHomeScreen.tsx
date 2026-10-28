@@ -37,6 +37,9 @@ import type { SemanticTokens } from '../../ui/tokens/semantic';
 import type { ShoppingTabStackParamList } from '../../navigation/types';
 import { commerceApi } from '../../services/api/apiService';
 import type { CommerceCategory, CommerceSort, ProductCard } from '../../services/api/apiService';
+import { useCart } from '../../services/shopping/useCart';
+import { usePendingOrderCount } from '../../services/shopping/usePendingOrderCount';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTabBarBottomInset } from '../../navigation/MainNavigator';
 import { formatVnd } from '../../utils/formatVnd';
 import { useCommerceProductList } from './hooks/useCommerceProductList';
@@ -53,7 +56,6 @@ import {
 import { ChromeGlassSheet } from '../../components/ChromeGlassSheet';
 import { ChromeHeaderBox, getChromeBoxHeight } from '../../components/ChromeHeaderBox';
 import { HeaderDockAction, HeaderDockGhostAction } from '../../components/HeaderSearchDock';
-import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { prefersReducedMotion } from '../../ui/tokens/motion';
 
 /**
@@ -467,16 +469,6 @@ const ShoppingHomeScreen: React.FC = () => {
   const isDark = resolvedScheme === 'dark';
   const blockH = getChromeBoxHeight(insets.top);
 
-  const { notify: notifyComingSoon, toast: comingSoonToast } = useComingSoonToast();
-  // Wordmark-row icons share the ghost geometry with HeaderSearchDock
-  // (size 36, glyph 20, muted) so the chrome stays in sync with Connect.
-  const headerActions = (
-    <>
-      <HeaderDockGhostAction icon="chat-bubble-outline" onPress={() => notifyComingSoon()} accessibilityLabel="Tin nhắn" />
-      <HeaderDockGhostAction icon="notifications-none" onPress={() => notifyComingSoon()} accessibilityLabel="Thông báo" />
-    </>
-  );
-
   // Suggestion chips live in the list content (ListHeaderComponent), not in a
   // subtask bar under the header. Scrolling up fades them out in place —
   // they vanish rather than being pushed up. scrolledProgress only drives the
@@ -551,6 +543,36 @@ const ShoppingHomeScreen: React.FC = () => {
   // useKoolaToast() returns a fresh object every render — hold it in a ref so
   // memoized row callbacks stay stable.
   const koolaToastRef = useRef(useKoolaToast());
+
+  // Wordmark-row icons share the ghost geometry with HeaderSearchDock
+  // (size 36, glyph 20, muted) so the chrome stays in sync with Connect.
+  // These replace the two former dead coming-soon ghosts: the orders entry is
+  // seller-side only (ShoppingOrders gates on a business account), the cart
+  // entry is always there and carries the shared cart's quantity badge.
+  const { activeAccount } = useAuth();
+  const isBusiness = activeAccount?.accountType === 'business';
+  const { totalQuantity } = useCart();
+  const sellerPending = usePendingOrderCount('seller', isBusiness);
+  const headerActions = (
+    <>
+      {isBusiness ? (
+        <HeaderDockGhostAction
+          icon="receipt-long"
+          onPress={() => shoppingNav.navigate('ShoppingOrders')}
+          accessibilityLabel="Đơn hàng"
+          badgeCount={sellerPending}
+          badgeAccessibilityText={`${sellerPending} đơn chờ`}
+        />
+      ) : null}
+      <HeaderDockGhostAction
+        icon="shopping-cart"
+        onPress={() => shoppingNav.navigate('ShoppingCart')}
+        accessibilityLabel="Giỏ hàng"
+        badgeCount={totalQuantity}
+        badgeAccessibilityText={`${totalQuantity} sản phẩm`}
+      />
+    </>
+  );
 
   // ── Server-driven list (search / category / tag / sort / pagination) ────
   const listQuery = useMemo(
@@ -803,7 +825,6 @@ const ShoppingHomeScreen: React.FC = () => {
           bottomInset={insets.bottom}
         />
       ) : null}
-      {comingSoonToast}
     </View>
   );
 };

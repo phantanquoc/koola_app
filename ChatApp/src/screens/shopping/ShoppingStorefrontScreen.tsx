@@ -44,7 +44,7 @@ import { formatVnd } from '../../utils/formatVnd';
 import { useCommerceProductList } from './hooks/useCommerceProductList';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { useSellerChat } from './hooks/useSellerChat';
-import { CATEGORY_ICON, soldLabel } from './shoppingCatalog';
+import { CATEGORY_ICON, STOREFRONT_SORT_CHIPS, soldLabel } from './shoppingCatalog';
 import { LightFieldBackground } from '../main/components/personal/LightFieldBackground';
 import UserAvatar from '../../components/UserAvatar';
 import { CATEGORY_LABELS } from '../connect/constants';
@@ -53,11 +53,6 @@ type NavProp = NativeStackNavigationProp<ShoppingTabStackParamList, 'ShoppingSto
 type Route = RouteProp<ShoppingTabStackParamList, 'ShoppingStorefront'>;
 
 const SEARCH_DEBOUNCE_MS = 300;
-const SORT_CHIPS: ReadonlyArray<{ sort: CommerceSort; label: string }> = [
-  { sort: 'newest', label: 'Moi nhat' },
-  { sort: 'bestseller', label: 'Ban chay' },
-  { sort: 'priceLow', label: 'Gia thap nhat' },
-];
 
 type ProfileState =
   | { kind: 'loading' }
@@ -132,17 +127,17 @@ const ShoppingStorefrontScreen: React.FC = () => {
   const contacting = contactingSellerId === sellerId;
 
   const handleShare = useCallback(() => {
-    toastRef.current.show('Chia se — dang phat trien', 'info');
+    toastRef.current.show('Chia sẻ — đang phát triển', 'info');
   }, []);
   const handleCart = useCallback(() => {
     navigation.navigate('ShoppingCart');
   }, [navigation]);
   const handleSearch = useCallback(() => {
-    toastRef.current.show('Tim kiem — dung o tim trong gian hang ben duoi', 'info');
+    toastRef.current.show('Tìm kiếm — dùng ô tìm trong gian hàng bên dưới', 'info');
   }, []);
 
   useShoppingProductHeader({
-    shopName: seller?.displayName ?? 'Gian hang',
+    shopName: seller?.displayName ?? 'Gian hàng',
     onBack: useCallback(() => navigation.goBack(), [navigation]),
     onShare: handleShare,
     onCart: handleCart,
@@ -152,7 +147,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
   const scrollPadTop = headerH + koolaSpacing.sm;
 
   const handleFollow = useCallback(() => {
-    toastRef.current.show(followed ? 'Da bo theo doi' : 'Da theo doi', followed ? 'info' : 'success');
+    toastRef.current.show(followed ? 'Đã bỏ theo dõi' : 'Đã theo dõi', followed ? 'info' : 'success');
     setFollowed(!followed);
   }, [followed]);
 
@@ -168,13 +163,13 @@ const ShoppingStorefrontScreen: React.FC = () => {
       <View style={styles.host}>
         <View style={[styles.notFound, { paddingTop: scrollPadTop }]}>
           <MaterialIcons name="storefront" size={40} color={semantic.text.faint} />
-          <KoolaText tone="muted" style={{ marginTop: 12 }}>Khong tim thay gian hang</KoolaText>
+          <KoolaText tone="muted" style={{ marginTop: 12 }}>Không tìm thấy gian hàng</KoolaText>
           <Pressable
             onPress={() => navigation.goBack()}
             style={[styles.backPill, { borderColor: semantic.border.strong }]}
             accessibilityRole="button"
             android_ripple={{ color: semantic.border.subtle }}>
-            <KoolaText variant="label" weight="700">Quay lai</KoolaText>
+            <KoolaText variant="label" weight="700">Quay lại</KoolaText>
           </Pressable>
         </View>
       </View>
@@ -186,8 +181,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
       <View style={styles.host}>
         <View style={[styles.notFound, { paddingTop: scrollPadTop }]}>
           <KoolaErrorState
-            title="Khong tai duoc gian hang"
-            message="Kiem tra ket noi mang roi thu lai."
+            title="Không tải được gian hàng"
+            message="Kiểm tra kết nối mạng rồi thử lại."
             onRetry={() => void loadProfile()}
           />
         </View>
@@ -196,7 +191,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
   }
 
   const accent = semantic.action.primary;
-  const headerTitle = seller?.displayName ?? 'Gian hang';
+  const headerTitle = seller?.displayName ?? 'Gian hàng';
   const categoryLabel =
     (seller?.businessCategory ? (CATEGORY_LABELS as Record<string, string>)[seller.businessCategory] : undefined) ||
     seller?.businessCategory ||
@@ -264,7 +259,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
             ) : null}
             {seller.foundedYear ? (
               <View style={styles.badgeItem}>
-                <KoolaBadge label={`Tu ${seller.foundedYear}`} tone="muted" />
+                <KoolaBadge label={`Từ ${seller.foundedYear}`} tone="muted" />
               </View>
             ) : null}
           </View>
@@ -294,7 +289,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
               <View style={styles.metaItem}>
                 <MaterialIcons name="visibility" size={14} color={semantic.text.faint} />
                 <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
-                  {seller.viewCount.toLocaleString('vi-VN')} luot xem
+                  {seller.viewCount.toLocaleString('vi-VN')} lượt xem
                 </KoolaText>
               </View>
             ) : null}
@@ -302,7 +297,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
               <View style={styles.metaItem}>
                 <MaterialIcons name="people" size={14} color={semantic.text.faint} />
                 <KoolaText variant="caption" tone="muted" style={{ marginLeft: 4 }}>
-                  {seller.followerCount.toLocaleString('vi-VN')} theo doi
+                  {seller.followerCount.toLocaleString('vi-VN')} theo dõi
                 </KoolaText>
               </View>
             ) : null}
@@ -350,7 +345,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
               {seller.foundedYear ? String(seller.foundedYear) : '—'}
             </KoolaText>
             <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
-              Thanh lap
+              Thành lập
             </KoolaText>
           </View>
           <View style={styles.statsDivider} />
@@ -359,7 +354,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
               {seller.employeeCount ?? '—'}
             </KoolaText>
             <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
-              Nhan su
+              Nhân sự
             </KoolaText>
           </View>
           <View style={styles.statsDivider} />
@@ -372,7 +367,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
                 : '—'}
             </KoolaText>
             <KoolaText variant="caption" tone="muted" weight="500" style={{ textAlign: 'center', marginTop: 4, letterSpacing: 0.5 }}>
-              Thi truong
+              Thị trường
             </KoolaText>
           </View>
         </View>
@@ -402,19 +397,19 @@ const ShoppingStorefrontScreen: React.FC = () => {
               variant="label"
               weight="700"
               style={{ marginLeft: 6, color: followed ? semantic.action.primary : semantic.text.primary }}>
-              {followed ? 'Dang theo doi' : 'Theo doi'}
+              {followed ? 'Đang theo dõi' : 'Theo dõi'}
             </KoolaText>
           </Pressable>
           <Pressable
             onPress={() => void openSellerChat(sellerId)}
             disabled={contacting}
             accessibilityRole="button"
-            accessibilityLabel={`Nhan tin voi ${seller.displayName}`}
+            accessibilityLabel={`Nhắn tin với ${seller.displayName}`}
             style={[styles.msgBtnSmall, { backgroundColor: semantic.action.primary, opacity: contacting ? 0.6 : 1 }]}
             android_ripple={{ color: 'rgba(255,255,255,0.2)' }}>
             <MaterialIcons name="chat-bubble-outline" size={16} color={semantic.text.onAction} />
             <KoolaText variant="label" weight="700" style={{ marginLeft: 6, color: semantic.text.onAction }}>
-              Nhan tin
+              Nhắn tin
             </KoolaText>
           </Pressable>
         </View>
@@ -426,14 +421,14 @@ const ShoppingStorefrontScreen: React.FC = () => {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Tim trong gian hang..."
+          placeholder="Tìm trong gian hàng..."
           placeholderTextColor={semantic.text.faint}
           style={[styles.searchInput, { color: semantic.text.primary }]}
           returnKeyType="search"
-          accessibilityLabel="Tim trong gian hang"
+          accessibilityLabel="Tìm trong gian hàng"
         />
         {query.length > 0 ? (
-          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Xoa tim kiem">
+          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm">
             <MaterialIcons name="close" size={18} color={semantic.text.faint} />
           </Pressable>
         ) : null}
@@ -441,7 +436,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
 
       {/* Sort chips → server `sort` */}
       <View style={styles.chipsRow}>
-        {SORT_CHIPS.map((c) => (
+        {STOREFRONT_SORT_CHIPS.map((c) => (
           <KoolaChip key={c.sort} label={c.label} selected={sort === c.sort} onPress={() => setSort(c.sort)} />
         ))}
       </View>
@@ -451,7 +446,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
   const renderEmpty = () => {
     if (profile.kind === 'loading' || list.status === 'initialLoading') {
       return (
-        <View style={styles.grid} accessibilityRole="progressbar" accessibilityLabel="Dang tai san pham">
+        <View style={styles.grid} accessibilityRole="progressbar" accessibilityLabel="Đang tải sản phẩm">
           {[0, 1, 2, 3].map((i) => (
             <View key={i} style={styles.gridCell}>
               <KoolaSkeleton width="100%" height={200} radius={koolaRadii.md} />
@@ -463,8 +458,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
     if (list.status === 'error') {
       return (
         <KoolaErrorState
-          title="Khong tai duoc san pham"
-          message="Kiem tra ket noi mang roi thu lai."
+          title="Không tải được sản phẩm"
+          message="Kiểm tra kết nối mạng rồi thử lại."
           onRetry={list.retry}
           style={styles.emptyWrap}
         />
@@ -473,8 +468,8 @@ const ShoppingStorefrontScreen: React.FC = () => {
     return (
       <KoolaEmptyState
         icon="search-off"
-        title="Khong tim thay san pham"
-        message={debouncedQuery.trim() ? 'Thu tu khoa khac nhe' : 'Gian hang chua co san pham nao'}
+        title="Không tìm thấy sản phẩm"
+        message={debouncedQuery.trim() ? 'Thử từ khoá khác nhé' : 'Gian hàng chưa có sản phẩm nào'}
         style={styles.emptyWrap}
       />
     );
@@ -484,14 +479,14 @@ const ShoppingStorefrontScreen: React.FC = () => {
     if (list.status === 'loadingMore') {
       return (
         <View style={styles.footer}>
-          <ActivityIndicator color={semantic.action.primary} accessibilityLabel="Dang tai them" />
+          <ActivityIndicator color={semantic.action.primary} accessibilityLabel="Đang tải thêm" />
         </View>
       );
     }
     if (list.status === 'loadMoreError') {
       return (
-        <Pressable onPress={list.retry} style={styles.footer} accessibilityRole="button" accessibilityLabel="Tai them that bai, thu lai">
-          <KoolaText variant="caption" weight="700" tone="primary">Khong tai duoc them · Thu lai</KoolaText>
+        <Pressable onPress={list.retry} style={styles.footer} accessibilityRole="button" accessibilityLabel="Tải thêm thất bại, thử lại">
+          <KoolaText variant="caption" weight="700" tone="primary">Không tải được thêm · Thử lại</KoolaText>
         </Pressable>
       );
     }
@@ -616,7 +611,7 @@ const ShoppingStorefrontScreen: React.FC = () => {
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <KoolaButton
-          title="Nhan tin"
+          title="Nhắn tin"
           icon="chat-bubble-outline"
           variant="primary"
           loading={contacting}
