@@ -268,3 +268,20 @@ Trong lúc viết `client-todo.md` thì phát hiện phần ban có hai lỗ th�
 Kèm theo: `HttpExceptionFilter` trước đó chỉ forward `message`, **nuốt mọi field phụ**
 (`code`, `appealToken`, `banReason`) — nên cả hai cơ chế trên sẽ vô hình với client.
 Nay filter forward toàn bộ payload trừ `statusCode`/`message`/`error`.
+
+## Vòng 5 — thiết kế lại giao diện đã làm
+
+Bốn màn hình ở các vòng trước mới đủ "hiển thị được thông tin", chưa theo DESIGN.md.
+Đã sửa:
+
+| Màn hình | Sai | Nay |
+|---|---|---|
+| `/ratelimit` | Dùng `PageHeader` + eyebrow — §0.2 cấm trên trang data; bảng không có KPI, IP hiện `::ffff:192.168…` | `ListHeader` (title + count + actions + dòng meta "tự làm mới 30s"), 4 MetricCard, IP bỏ tiền tố IPv4-mapped + nhãn "nội bộ", route kỹ thuật dịch sang tiếng Việt, cột số canh phải, thanh tỉ lệ theo bucket cao nhất |
+| Wall 2FA | Nút "Tôi đã bật xong — tải lại" là **nút giả**: bật xong wall vẫn đứng, phải F5 thật | `TwoFactorPanel` gọi `refreshIdentity()` → `AppLayout` đọc lại identity → wall tự mở. Bỏ nút, thêm 3 bước đánh số + lối thoát Đăng xuất |
+| Dialog export ngày | Bắt gõ tay hai ô ngày cho việc 90% là "7 ngày qua" | Preset Hôm nay / 7 / 30 ngày / Tháng này + câu tóm tắt "dd/mm → dd/mm · N ngày", cảnh báo khoảng ngược |
+| Dialog gửi thử push | Kết quả luôn tô đỏ như lỗi (kể cả "chưa có thiết bị" — chuyện bình thường), không biết đang gửi cho ai | Tra tên tài khoản trước khi gửi ("Sẽ gửi tới: …"), chặn gửi khi id sai, tone theo hệ quả (success/warning/danger) + badge, đếm ký tự |
+| Lịch sử broadcast | Cột "Push" đã ghi DB nhưng không hiện (§0.8: field không đọc được ở đâu là dead field); banner nói "chưa có FCM fallback" — sai từ khi có push | Thêm cột Push (số đã giao, `—` cho audience không có danh sách), sửa banner nói đúng loại nào push được |
+
+Rút ra: **component dùng đúng kit chưa đủ** — phải kiểm cả tầng "màn hình này trả lời
+câu hỏi gì". Bảng KPI + cột số canh phải + dịch route kỹ thuật là thứ biến một trang
+từ "hiện dữ liệu" thành "dùng được".
