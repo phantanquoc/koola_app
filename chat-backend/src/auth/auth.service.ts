@@ -27,6 +27,11 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UsersService } from '../users/users.service';
 import { RedisService } from '../common/redis/redis.service';
 import { EmailService } from './email.service';
+import { TwoFactorService } from './two-factor.service';
+import {
+  AdminAuditLog,
+  AdminAuditLogDocument,
+} from '../admin/schemas/admin-audit-log.schema';
 
 // ─── Pending Record Interfaces ───────────────────────────────────────────────
 interface RegPendingRecord {
@@ -59,6 +64,10 @@ const RESET_TICKET_TTL = 600;
 
 @Injectable()
 export class AuthService {
+  // TOTP là logic thuần (không state, không DB) — khởi tạo trực tiếp để AuthModule
+  // không phải đăng ký thêm provider.
+  private readonly twoFactorService = new TwoFactorService();
+
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(RefreshToken.name)
@@ -68,6 +77,8 @@ export class AuthService {
     private usersService: UsersService,
     private readonly redisService: RedisService,
     private readonly emailService: EmailService,
+    @InjectModel(AdminAuditLog.name)
+    private readonly auditModel: Model<AdminAuditLogDocument>,
   ) {}
 
   // ─── Redis Key Helpers ───────────────────────────────────────────────────────
@@ -264,6 +275,7 @@ export class AuthService {
   // ─── Login ─────────────────────────────────────────────────────────────────
   async login(
     dto: LoginDto,
+    ip?: string | null,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const user = await this.userModel.findOne({
       email: dto.email.toLowerCase(),
@@ -284,7 +296,166 @@ export class AuthService {
       );
     }
 
+    // 2FA: bắt buộc mã khi tài khoản đã bật. Recovery code tiêu thụ 1 lần.
+    if (user.twoFactorEnabled) {
+      if (!dto.twoFactorCode) {
+        throw new UnauthorizedException('2FA code required');
+      }
+      const validTotp =
+        !!user.twoFactorSecret &&
+        this.twoFactorService.verifyToken(user.twoFactorSecret, dto.twoFactorCode);
+      if (!validTotp) {
+        const remaining = this.twoFactorService.consumeRecoveryCode(
+          user.twoFactorRecoveryCodes ?? [],
+          dto.twoFactorCode,
+        );
+        if (!remaining) {
+          throw new UnauthorizedException('2FA code invalid');
+        }
+        // Recovery code dùng một lần — ghi đè ngay để không tái sử dụng
+        await this.userModel.updateOne(
+          { _id: user._id },
+          { $set: { twoFactorRecoveryCodes: remaining } },
+        );
+      }
+    }
+
+    // Nhật ký đăng nhập (mục #24). Không ghi audit ở đây: tránh AuthModule → AdminModule.
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          lastLoginAt: new Date(),
+          lastLoginIp: ip ?? null,
+        },
+      },
+    );
+
+    // Đăng nhập của admin là sự kiện an ninh, không phải thao tác dữ liệu —
+    // audit riêng để trang Nhật ký trả lời được "ai đã vào, từ IP nào".
+    if (user.isPlatformAdmin) {
+      await this.auditModel
+        .create({
+          actorId: String(user._id),
+          action: 'admin_login',
+          targetType: 'user',
+          targetId: String(user._id),
+          payload: { ip: ip ?? null },
+          ip: ip ?? null,
+        })
+        .catch(() => {
+          // Ghi log thất bại không được chặn đăng nhập.
+        });
+    }
+
     return this.generateTokenPair(user._id, user.email!);
+  }
+
+  // ─── Two-factor (TOTP) ─────────────────────────────────────────────────────
+  async setupTwoFactor(
+    userId: string,
+  ): Promise<{ secret: string; otpauthUrl: string }> {
+    const user = await this.userModel.findById(userId).select(
+      'email twoFactorEnabled',
+    );
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('2FA đã được bật');
+    }
+
+    const secret = this.twoFactorService.generateSecret();
+    // Chưa bật — chỉ lưu secret chờ xác nhận bằng mã
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { twoFactorSecret: secret } },
+    );
+
+    return {
+      secret,
+      otpauthUrl: this.twoFactorService.buildOtpAuthUrl(
+        user.email ?? '',
+        secret,
+      ),
+    };
+  }
+
+  async enableTwoFactor(
+    userId: string,
+    code: string,
+  ): Promise<{ recoveryCodes: string[] }> {
+    const user = await this.userModel.findById(userId).select(
+      'twoFactorSecret twoFactorEnabled',
+    );
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('2FA đã được bật');
+    }
+    if (
+      !user.twoFactorSecret ||
+      !this.twoFactorService.verifyToken(user.twoFactorSecret, code)
+    ) {
+      throw new BadRequestException('Mã 2FA không đúng');
+    }
+
+    const recoveryCodes = this.twoFactorService.generateRecoveryCodes();
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          twoFactorEnabled: true,
+          twoFactorRecoveryCodes:
+            recoveryCodes.map((c) => this.twoFactorService.hashRecoveryCode(c)),
+        },
+      },
+    );
+
+    // Plaintext chỉ trả về đúng một lần
+    return { recoveryCodes };
+  }
+
+  async disableTwoFactor(
+    userId: string,
+    code: string,
+  ): Promise<{ message: string }> {
+    const user = await this.userModel.findById(userId).select(
+      'twoFactorSecret twoFactorRecoveryCodes twoFactorEnabled',
+    );
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('2FA chưa được bật');
+    }
+
+    const validTotp =
+      !!user.twoFactorSecret &&
+      this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    if (!validTotp) {
+      const remaining = this.twoFactorService.consumeRecoveryCode(
+        user.twoFactorRecoveryCodes ?? [],
+        code,
+      );
+      if (!remaining) {
+        throw new BadRequestException('Mã 2FA không đúng');
+      }
+    }
+
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          twoFactorEnabled: false,
+          twoFactorSecret: null,
+          twoFactorRecoveryCodes: [],
+        },
+      },
+    );
+
+    return { message: 'Đã tắt 2FA' };
   }
 
   // ─── Forgot Password ───────────────────────────────────────────────────────
@@ -488,7 +659,10 @@ export class AuthService {
 
   // ─── Get User by ID ────────────────────────────────────────────────────────
   async getUserById(userId: string): Promise<UserDocument | null> {
-    return this.userModel.findById(userId).select('-passwordHash').exec();
+    return this.userModel
+      .findById(userId)
+      .select('-passwordHash -twoFactorSecret -twoFactorRecoveryCodes')
+      .exec();
   }
 
   // ─── Mint delegated access token (for account switching) ────────────────────

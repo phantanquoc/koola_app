@@ -152,6 +152,25 @@ export class User {
   @Prop({ type: String, enum: ['super', 'moderator', 'support'], default: null })
   adminRole?: AdminRole | null;
 
+  // ─── Admin login trail & 2FA ─────────────────────────────────────────────────
+
+  @Prop({ type: Date, default: null })
+  lastLoginAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  lastLoginIp?: string | null;
+
+  @Prop({ default: false })
+  twoFactorEnabled?: boolean;
+
+  /** Base32 TOTP secret — never returned by any admin projection. */
+  @Prop({ type: String, default: null })
+  twoFactorSecret?: string | null;
+
+  /** SHA-256 hashes of one-time recovery codes (plaintext shown once). */
+  @Prop({ type: [String], default: [] })
+  twoFactorRecoveryCodes?: string[];
+
   /** Platform administration authority — set out-of-band only (see scripts/grant-admin.ts) */
   @Prop({ default: false })
   isPlatformAdmin: boolean;

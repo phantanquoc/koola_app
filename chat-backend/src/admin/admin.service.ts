@@ -24,10 +24,11 @@ import { PaginationDto } from './dto/pagination.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 
 /**
- * Safe projection — NEVER exposes passwordHash, fcmTokens, or refresh tokens.
- * Applied on every user-returning query in this service.
+ * Safe projection — NEVER exposes passwordHash, fcmTokens, refresh tokens or
+ * the 2FA secret/recovery codes. Applied on every user-returning query.
  */
-const SAFE_PROJECTION = '-passwordHash -fcmTokens' as const;
+const SAFE_PROJECTION =
+  '-passwordHash -fcmTokens -twoFactorSecret -twoFactorRecoveryCodes' as const;
 
 /** Tóm tắt business sở hữu bởi một tài khoản cá nhân (GET /admin/users/:id). */
 export interface OwnedBusinessSummary {

@@ -9,6 +9,10 @@ import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from '../users/user.schema';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
 import { UsersModule } from '../users/users.module';
+import {
+  AdminAuditLog,
+  AdminAuditLogSchema,
+} from '../admin/schemas/admin-audit-log.schema';
 import { EmailService } from './email.service';
 import type { StringValue } from 'ms';
 
@@ -28,6 +32,9 @@ import type { StringValue } from 'ms';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: RefreshToken.name, schema: RefreshTokenSchema },
+      // Ghi audit admin_login trực tiếp qua model: import AdminModule sẽ tạo
+      // vòng AuthModule → AdminModule → (AdminGuard dùng User) → UsersModule.
+      { name: AdminAuditLog.name, schema: AdminAuditLogSchema },
     ]),
     forwardRef(() => UsersModule),
   ],
