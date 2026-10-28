@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import { EmptyState } from '../components/EmptyState';
+import StateBlock from '../components/StateBlock';
 import { StatusBadge } from '../components/StatusBadge';
+import { ExportButton } from '../components/ExportButton';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
+import { formatVnd, formatVndInput, parseVnd } from '../components/input-masks';
+import { MoneyInput } from '../components/StructuredInput';
 import {
   ORDER_STATUS_OPTIONS,
   apiErrorMessage,
@@ -12,6 +18,8 @@ import {
   type AdminOrderDetailResponse,
   type AdminOrderSummary,
 } from '../commerceApi';
+import apiClient from '../apiClient';
+import './commerce-admin.css';
 
 const PAGE_SIZE = 20;
 
@@ -31,12 +39,28 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: 'Đã huỷ',
 };
 
-function formatVnd(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—';
-  return `${Number(n).toLocaleString('vi-VN')}đ`;
+/**
+ * Field can thiệp admin chỉ có ở endpoint admin (`toAdminPublic`). Type dùng
+ * chung `AdminOrderDetailResponse` bám shape public nên khai báo phần mở rộng
+ * ở đây thay vì sửa file API ngoài phạm vi.
+ */
+interface AdminOrderFields {
+  internalNote: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  refundedAt: string | null;
+  refundedBy: string | null;
+  refundReason: string | null;
+  refundAmount: number | null;
 }
 
-function formatDate(v: string | null): string {
+type OrderDetail = Omit<AdminOrderDetailResponse, 'order'> & {
+  order: AdminOrderDetailResponse['order'] & AdminOrderFields;
+};
+
+type InterveneKind = 'cancel' | 'refund';
+
+function formatDate(v: string | null | undefined): string {
   if (!v) return '—';
   try {
     return new Date(v).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
@@ -45,7 +69,14 @@ function formatDate(v: string | null): string {
   }
 }
 
+/** Escape ô CSV: dấu phẩy, nháy kép, xuống dòng đều phải bọc nháy. */
+function toCsvCell(v: unknown): string {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 export default function CommerceOrdersPage() {
+  const { addToast } = useToast();
   // Filters
   const [status, setStatus] = useState<string>('');
   const [sellerId, setSellerId] = useState('');
@@ -61,9 +92,23 @@ export default function CommerceOrdersPage() {
 
   // Detail
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<AdminOrderDetailResponse | null>(null);
+  const [detail, setDetail] = useState<OrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  // Tăng sau mutation để nạp lại chi tiết từ server, không tự đoán state.
+  const [detailVersion, setDetailVersion] = useState(0);
+
+  // Can thiệp
+  const [intervene, setIntervene] = useState<InterveneKind | null>(null);
+  const [reason, setReason] = useState('');
+  const [refundAmount, setRefundAmount] = useState('');
+  const [interveneError, setInterveneError] = useState<string | null>(null);
+  const [interveneBusy, setInterveneBusy] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const fetchList = useCallback(async (p: number, params: AdminListOrdersParams) => {
     setLoading(true);
@@ -107,7 +152,7 @@ export default function CommerceOrdersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Load detail when selectedId changes
+  // Load detail when selectedId changes (hoặc sau mutation).
   useEffect(() => {
     if (!selectedId) {
       setDetail(null);
@@ -120,7 +165,10 @@ export default function CommerceOrdersPage() {
     commerceOrdersAdminApi
       .getOrder(selectedId)
       .then((res) => {
-        if (!cancelled) setDetail(res);
+        if (cancelled) return;
+        const next = res as unknown as OrderDetail;
+        setDetail(next);
+        setNoteDraft(next.order.internalNote ?? '');
       })
       .catch((err: unknown) => {
         if (!cancelled) setDetailError(apiErrorMessage(err, 'Tải chi tiết đơn hàng thất bại'));
@@ -131,18 +179,179 @@ export default function CommerceOrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, detailVersion]);
 
   function closeDetail() {
     setSelectedId(null);
+    setIntervene(null);
   }
+
+  const order = detail?.order;
+
+  function openIntervene(kind: InterveneKind) {
+    setIntervene(kind);
+    setReason('');
+    setRefundAmount(kind === 'refund' && order ? formatVndInput(String(order.total)) : '');
+    setInterveneError(null);
+  }
+
+  const reasonOk = reason.trim().length > 0;
+  const refundAmountNum = parseVnd(refundAmount);
+  const refundAmountOk =
+    Number.isInteger(refundAmountNum) &&
+    refundAmountNum >= 1 &&
+    !!order &&
+    refundAmountNum <= order.total;
+
+  async function submitIntervene() {
+    if (!selectedId || !intervene || interveneBusy) return;
+    if (!reasonOk) {
+      setInterveneError('Lý do là bắt buộc.');
+      return;
+    }
+    if (intervene === 'refund' && !refundAmountOk) {
+      setInterveneError('Số tiền hoàn phải là số nguyên từ 1 đến tổng đơn.');
+      return;
+    }
+    setInterveneBusy(true);
+    setInterveneError(null);
+    try {
+      const body =
+        intervene === 'refund'
+          ? { reason: reason.trim(), amount: refundAmountNum }
+          : { reason: reason.trim() };
+      await apiClient.post(`/admin/commerce/orders/${selectedId}/${intervene}`, body);
+      addToast(
+        'success',
+        intervene === 'refund' ? 'Đã ghi nhận hoàn tiền cho đơn.' : 'Đã huỷ đơn và thông báo người mua.',
+      );
+      setIntervene(null);
+      setDetailVersion((v) => v + 1);
+      void fetchList(page, applied);
+    } catch (err) {
+      setInterveneError(apiErrorMessage(err, 'Thao tác thất bại. Vui lòng thử lại.'));
+    } finally {
+      setInterveneBusy(false);
+    }
+  }
+
+  async function saveNote() {
+    if (!selectedId || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      await apiClient.patch(`/admin/commerce/orders/${selectedId}/note`, {
+        internalNote: noteDraft.trim(),
+      });
+      addToast('success', noteDraft.trim() ? 'Đã lưu ghi chú nội bộ.' : 'Đã xoá ghi chú nội bộ.');
+      setDetailVersion((v) => v + 1);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Lưu ghi chú thất bại. Vui lòng thử lại.'));
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await apiClient.get<{
+        data: AdminOrderSummary[];
+        total: number;
+        truncated: boolean;
+      }>('/admin/commerce/orders/export', {
+        params: { ...applied, limit: 500 },
+      });
+      if (res.data.truncated) {
+        addToast('warning', `Xuất 500/${res.data.total} đơn đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
+      }
+      const header = [
+        'Mã đơn', 'Trạng thái', 'Người bán', 'Seller ID', 'Người mua', 'Buyer ID',
+        'Số món', 'Tạm tính', 'Phí ship', 'Tổng tiền', 'Thanh toán', 'Ngày tạo',
+      ];
+      const lines = res.data.data.map((o) =>
+        [
+          o.orderCode, STATUS_LABEL[o.status] ?? o.status, o.sellerName ?? '', o.sellerId,
+          o.buyerName ?? '', o.buyerId, o.itemCount, o.subtotal,
+          o.shippingFee ?? '', o.total, o.payment, o.createdAt ?? '',
+        ].map(toCsvCell).join(','),
+      );
+      // BOM để Excel đọc đúng tiếng Việt.
+      const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `don-hang-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('success', `Đã xuất ${lines.length} đơn CSV.`);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại. Vui lòng thử lại.'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const canCancel = order?.status === 'PENDING' || order?.status === 'CONFIRMED';
+  const canRefund =
+    (order?.status === 'DELIVERED' || order?.status === 'CANCELLED') && !order.refundedAt;
+
+  // Preview confirm dùng state của page — ConfirmDialog chỉ lo khung/focus.
+  const intervenePreview = useMemo(
+    () => (
+      <div className="form-field">
+        <label className="form-label" htmlFor="intervene-reason">
+          Lý do <span className="form-required">*</span>
+        </label>
+        <textarea
+          id="intervene-reason"
+          className="textarea"
+          style={{ minHeight: 88 }}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={500}
+          placeholder={
+            intervene === 'refund'
+              ? 'VD: hàng lỗi, người mua đã gửi ảnh xác nhận'
+              : 'VD: người bán không giao được, xác nhận qua hotline'
+          }
+        />
+        {intervene === 'refund' && (
+          <>
+            <label className="form-label" htmlFor="intervene-amount">
+              Số tiền hoàn (VND) <span className="form-required">*</span>
+            </label>
+            <MoneyInput
+              id="intervene-amount"
+              value={refundAmount}
+              onChange={setRefundAmount}
+              placeholder="VD: 250.000"
+              aria-label="Số tiền hoàn"
+            />
+            <span className="form-hint">
+              Tổng đơn: {formatVnd(order?.total)}. Mỗi đơn chỉ hoàn một lần.
+            </span>
+          </>
+        )}
+        {interveneError && <p className="form-error" role="alert">{interveneError}</p>}
+      </div>
+    ),
+    [intervene, reason, refundAmount, interveneError, order?.total],
+  );
 
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Commerce"
         title="Đơn hàng"
-        description="Danh sách đơn hàng (chỉ xem). Lọc theo trạng thái, người bán hoặc người mua."
+        description="Danh sách đơn hàng, xuất CSV để đối soát và can thiệp khi người bán/người mua cần hỗ trợ."
+        actions={
+          <ExportButton
+            onExport={() => {
+              if (exporting) return;
+              setExportOpen(true);
+            }}
+          />
+        }
       />
 
       {/* Filters */}
@@ -194,14 +403,13 @@ export default function CommerceOrdersPage() {
 
       <TableShell title="Orders" subtitle={`${total} đơn hàng`}>
         {loading ? (
-          <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Đang tải" />
+          <StateBlock variant="loading" title="Đang tải đơn hàng" copy="Đang lấy danh sách mới nhất." />
         ) : loadError ? (
-          <EmptyState
-            icon="!"
-            title="Không tải được danh sách"
-            copy={loadError}
-            action={<button className="btn" onClick={() => void fetchList(page, applied)} type="button">Thử lại</button>}
-          />
+          <StateBlock variant="error" title="Không tải được danh sách" copy={loadError}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void fetchList(page, applied)} type="button">
+              Thử lại
+            </button>
+          </StateBlock>
         ) : data.length === 0 ? (
           <EmptyState title="Chưa có đơn hàng" copy="Chưa có đơn hàng nào khớp bộ lọc hiện tại." />
         ) : (
@@ -272,44 +480,97 @@ export default function CommerceOrdersPage() {
                 ✕
               </button>
             </div>
-            <div className="dialog-body" style={{ display: 'grid', gap: 16 }}>
+            <div className="dialog-body order-detail-body">
               {detailLoading ? (
-                <div className="skeleton" style={{ height: 200 }} aria-busy="true" aria-label="Đang tải chi tiết" />
+                <StateBlock variant="loading" title="Đang tải chi tiết" copy="Đang lấy dữ liệu đơn." />
               ) : detailError ? (
-                <EmptyState
-                  icon="!"
-                  title="Không tải được chi tiết"
-                  copy={detailError}
-                  action={
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => {
-                        if (!selectedId) return;
-                        setDetailLoading(true);
-                        setDetailError(null);
-                        commerceOrdersAdminApi
-                          .getOrder(selectedId)
-                          .then(setDetail)
-                          .catch((err: unknown) => setDetailError(apiErrorMessage(err, 'Tải chi tiết thất bại')))
-                          .finally(() => setDetailLoading(false));
-                      }}
-                    >
-                      Thử lại
-                    </button>
-                  }
-                />
-              ) : detail ? (
+                <StateBlock variant="error" title="Không tải được chi tiết" copy={detailError}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => setDetailVersion((v) => v + 1)}
+                  >
+                    Thử lại
+                  </button>
+                </StateBlock>
+              ) : order ? (
                 <>
                   {/* Header summary */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 16 }}>{(detail.order as unknown as AdminOrderSummary).orderCode}</span>
-                    <StatusBadge
-                      tone={STATUS_TONE[(detail.order as unknown as AdminOrderSummary).status] ?? 'muted'}
-                      label={STATUS_LABEL[(detail.order as unknown as AdminOrderSummary).status] ?? (detail.order as unknown as AdminOrderSummary).status}
-                    />
-                    <span className="cell-meta">{formatDate((detail.order as unknown as AdminOrderSummary).createdAt)}</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 16 }}>{order.orderCode}</span>
+                    <StatusBadge tone={STATUS_TONE[order.status] ?? 'muted'} label={STATUS_LABEL[order.status] ?? order.status} />
+                    {order.refundedAt && <StatusBadge tone="success" label="Đã hoàn tiền" />}
+                    <span className="cell-meta">{formatDate(order.createdAt)}</span>
                   </div>
+
+                  {/* Can thiệp — chỉ hiện hành động hợp lệ với trạng thái hiện tại */}
+                  <section className="order-intervene" aria-labelledby="order-intervene-title">
+                    <div className="order-intervene-head">
+                      <h3 id="order-intervene-title" className="panel-title" style={{ fontSize: 14, margin: 0 }}>
+                        Can thiệp của admin
+                      </h3>
+                      <span className="cell-meta">Mọi thao tác đều ghi audit và thông báo người mua.</span>
+                    </div>
+
+                    <div className="order-intervene-actions">
+                      {canCancel && (
+                        <button className="btn btn-danger-ghost btn-sm" type="button" onClick={() => openIntervene('cancel')}>
+                          Huỷ đơn
+                        </button>
+                      )}
+                      {canRefund && (
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => openIntervene('refund')}>
+                          Hoàn tiền
+                        </button>
+                      )}
+                      {!canCancel && !canRefund && (
+                        <span className="cell-meta">
+                          Đơn đang {STATUS_LABEL[order.status] ?? order.status} — không còn thao tác huỷ/hoàn tiền.
+                        </span>
+                      )}
+                    </div>
+
+                    {order.refundedAt && (
+                      <dl className="order-refund-box" style={{ margin: 0 }}>
+                        <dt>Đã hoàn tiền {formatVnd(order.refundAmount)}</dt>
+                        <dd style={{ margin: 0 }}>
+                          {formatDate(order.refundedAt)}
+                          {order.refundReason ? <> · Lý do: {order.refundReason}</> : null}
+                        </dd>
+                      </dl>
+                    )}
+
+                    {order.cancelReason && (
+                      <p className="cell-meta" style={{ margin: 0 }}>
+                        Huỷ bởi admin · Lý do: {order.cancelReason}
+                      </p>
+                    )}
+
+                    <div className="order-note">
+                      <label className="form-label" htmlFor="order-internal-note">
+                        Ghi chú nội bộ
+                      </label>
+                      <textarea
+                        id="order-internal-note"
+                        className="textarea"
+                        style={{ minHeight: 80 }}
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        maxLength={2000}
+                        placeholder="Chỉ admin thấy. Để trống rồi Lưu để xoá ghi chú."
+                      />
+                      <div>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          type="button"
+                          onClick={() => void saveNote()}
+                          disabled={noteBusy || noteDraft.trim() === (order.internalNote ?? '')}
+                        >
+                          {noteBusy ? 'Đang lưu...' : 'Lưu ghi chú'}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
 
                   {/* Status timeline */}
                   <section>
@@ -317,32 +578,30 @@ export default function CommerceOrdersPage() {
                       Lịch sử trạng thái
                     </h3>
                     <ol style={{ display: 'grid', gap: 6, margin: 0, paddingLeft: 18 }}>
-                      {((detail.order as unknown as { statusHistory: Array<{ status: string; at: string; by: string; note: string | null }> }).statusHistory ?? []).map(
-                        (h, i) => (
-                          <li key={i} style={{ fontSize: 13 }}>
-                            <StatusBadge tone={STATUS_TONE[h.status] ?? 'muted'} label={STATUS_LABEL[h.status] ?? h.status} />{' '}
-                            <span className="cell-meta">{formatDate(h.at)}</span>
-                            {h.by ? <span className="cell-meta"> · by {h.by.slice(0, 8)}…</span> : null}
-                            {h.by === 'system' ? <span className="cell-meta"> (system)</span> : null}
-                            {h.note ? <div style={{ color: 'var(--koola-muted)', marginTop: 2 }}>{h.note}</div> : null}
-                          </li>
-                        ),
-                      )}
+                      {(order.statusHistory ?? []).map((h, i) => (
+                        <li key={i} style={{ fontSize: 13 }}>
+                          <StatusBadge tone={STATUS_TONE[h.status] ?? 'muted'} label={STATUS_LABEL[h.status] ?? h.status} />{' '}
+                          <span className="cell-meta">{formatDate(h.at)}</span>
+                          {h.by ? <span className="cell-meta"> · by {h.by.slice(0, 8)}…</span> : null}
+                          {h.by === 'system' ? <span className="cell-meta"> (system)</span> : null}
+                          {h.note ? <div style={{ color: 'var(--koola-muted)', marginTop: 2 }}>{h.note}</div> : null}
+                        </li>
+                      ))}
                     </ol>
                   </section>
 
                   {/* Items */}
                   <section>
                     <h3 className="panel-title" style={{ fontSize: 14, marginBottom: 8 }}>
-                      Sản phẩm ({(detail.order as unknown as AdminOrderSummary).itemCount} món)
+                      Sản phẩm ({order.itemCount} món)
                     </h3>
                     <div style={{ display: 'grid', gap: 8 }}>
-                      {(detail.order as unknown as AdminOrderSummary).items.map((item, idx) => (
+                      {order.items.map((item, idx) => (
                         <div
                           key={`${item.productId}-${idx}`}
                           style={{ display: 'flex', gap: 10, alignItems: 'center', border: '1px solid var(--koola-line)', borderRadius: 8, padding: 8 }}
                         >
-                          {detail.itemImageUrls[idx] ? (
+                          {detail?.itemImageUrls[idx] ? (
                             <img
                               src={detail.itemImageUrls[idx]!}
                               alt={item.name}
@@ -379,17 +638,17 @@ export default function CommerceOrdersPage() {
                     <div style={{ display: 'grid', gap: 4, marginTop: 10, fontSize: 13 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Tạm tính</span>
-                        <span>{formatVnd((detail.order as unknown as AdminOrderSummary).subtotal)}</span>
+                        <span>{formatVnd(order.subtotal)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Phí ship</span>
-                        <span>{(detail.order as unknown as AdminOrderSummary).shippingFee !== null ? formatVnd((detail.order as unknown as AdminOrderSummary).shippingFee) : '—'}</span>
+                        <span>{order.shippingFee !== null ? formatVnd(order.shippingFee) : '—'}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid var(--koola-line)', paddingTop: 6 }}>
                         <span>Tổng</span>
-                        <span>{formatVnd((detail.order as unknown as AdminOrderSummary).total)}</span>
+                        <span>{formatVnd(order.total)}</span>
                       </div>
-                      <div className="cell-meta">Thanh toán: {(detail.order as unknown as AdminOrderSummary).payment}</div>
+                      <div className="cell-meta">Thanh toán: {order.payment}</div>
                     </div>
                   </section>
 
@@ -400,14 +659,14 @@ export default function CommerceOrdersPage() {
                     </h3>
                     <div style={{ fontSize: 13, display: 'grid', gap: 4 }}>
                       <div>
-                        <strong>{detail.buyer?.displayName ?? (detail.order as unknown as AdminOrderSummary).buyerName ?? '—'}</strong>
-                        <span className="cell-meta"> · {(detail.order as unknown as { buyerInfo: { phone: string } }).buyerInfo?.phone ?? '—'}</span>
+                        <strong>{detail?.buyer?.displayName ?? order.buyerName ?? '—'}</strong>
+                        <span className="cell-meta"> · {order.buyerInfo?.phone ?? '—'}</span>
                       </div>
-                      <div>{(detail.order as unknown as { buyerInfo: { address: string } }).buyerInfo?.address ?? '—'}</div>
-                      {(detail.order as unknown as { buyerInfo: { note: string | null } }).buyerInfo?.note ? (
-                        <div className="cell-meta">Ghi chú: {(detail.order as unknown as { buyerInfo: { note: string | null } }).buyerInfo.note}</div>
+                      <div>{order.buyerInfo?.address ?? '—'}</div>
+                      {order.buyerInfo?.note ? (
+                        <div className="cell-meta">Ghi chú: {order.buyerInfo.note}</div>
                       ) : null}
-                      <div className="cell-meta">Buyer ID: {(detail.order as unknown as AdminOrderSummary).buyerId}</div>
+                      <div className="cell-meta">Buyer ID: {order.buyerId}</div>
                     </div>
                   </section>
 
@@ -417,8 +676,8 @@ export default function CommerceOrdersPage() {
                       Người bán
                     </h3>
                     <div style={{ fontSize: 13 }}>
-                      <strong>{detail.seller?.displayName ?? (detail.order as unknown as AdminOrderSummary).sellerName ?? '—'}</strong>
-                      <span className="cell-meta"> · {(detail.order as unknown as AdminOrderSummary).sellerId}</span>
+                      <strong>{detail?.seller?.displayName ?? order.sellerName ?? '—'}</strong>
+                      <span className="cell-meta"> · {order.sellerId}</span>
                     </div>
                   </section>
 
@@ -428,18 +687,16 @@ export default function CommerceOrdersPage() {
                       Vận chuyển
                     </h3>
                     <div style={{ fontSize: 13, display: 'grid', gap: 4 }}>
-                      {(() => {
-                        const sh = (detail.order as unknown as { shipping: { fee: number | null; carrier: string | null; trackingCode: string | null; expectedDeliveryDate: string | null } }).shipping;
-                        if (!sh) return <span className="cell-meta">—</span>;
-                        return (
-                          <>
-                            <div>Phí: {sh.fee !== null ? formatVnd(sh.fee) : '—'}</div>
-                            <div>Đơn vị: {sh.carrier ?? '—'}</div>
-                            <div>Mã vận đơn: {sh.trackingCode ?? '—'}</div>
-                            <div>Ngày giao dự kiến: {sh.expectedDeliveryDate ? formatDate(sh.expectedDeliveryDate) : '—'}</div>
-                          </>
-                        );
-                      })()}
+                      {order.shipping ? (
+                        <>
+                          <div>Phí: {order.shipping.fee !== null ? formatVnd(order.shipping.fee) : '—'}</div>
+                          <div>Đơn vị: {order.shipping.carrier ?? '—'}</div>
+                          <div>Mã vận đơn: {order.shipping.trackingCode ?? '—'}</div>
+                          <div>Ngày giao dự kiến: {order.shipping.expectedDeliveryDate ? formatDate(order.shipping.expectedDeliveryDate) : '—'}</div>
+                        </>
+                      ) : (
+                        <span className="cell-meta">—</span>
+                      )}
                     </div>
                   </section>
 
@@ -449,7 +706,7 @@ export default function CommerceOrdersPage() {
                       Hội thoại
                     </h3>
                     <div className="cell-meta" style={{ fontSize: 13, wordBreak: 'break-all' }}>
-                      {(detail.order as unknown as AdminOrderSummary).conversationId || '—'}
+                      {order.conversationId || '—'}
                     </div>
                   </section>
                 </>
@@ -463,6 +720,33 @@ export default function CommerceOrdersPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={intervene !== null}
+        onClose={() => setIntervene(null)}
+        title={intervene === 'refund' ? 'Hoàn tiền cho đơn này?' : 'Huỷ đơn này?'}
+        description={
+          intervene === 'refund'
+            ? 'Hoàn tiền chỉ ghi nhận trên hệ thống, không chuyển khoản. Mỗi đơn chỉ hoàn được một lần.'
+            : 'Đơn chuyển sang Đã huỷ. Người mua nhận thông báo; thao tác này không hoàn tác được.'
+        }
+        preview={intervenePreview}
+        confirmLabel={intervene === 'refund' ? 'Xác nhận hoàn tiền' : 'Xác nhận huỷ đơn'}
+        variant="danger"
+        busy={interveneBusy}
+        onConfirm={() => void submitIntervene()}
+      />
+
+      <ConfirmDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`Xuất ${total.toLocaleString('vi-VN')} đơn hàng ra CSV?`}
+        description="File chứa tên/SĐT người mua KHÔNG che — dùng cho đối soát. Tối đa 500 dòng; thu hẹp bộ lọc nếu cần đủ."
+        confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
+        variant="primary"
+        busy={exporting}
+        onConfirm={() => void handleExport()}
+      />
     </div>
   );
 }

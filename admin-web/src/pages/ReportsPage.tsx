@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import apiClient from '../apiClient';
 import { ListHeader } from '../components/ListHeader';
+import { ExportButton } from '../components/ExportButton';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
 import { TableShell } from '../components/TableShell';
 import { Pagination } from '../components/Pagination';
 import StateBlock from '../components/StateBlock';
@@ -37,7 +40,27 @@ export interface ReportItem {
 
 const PAGE_SIZES = [20, 50];
 
+/** Dòng export từ server: chỉ cột của collection Report, không join PII người báo. */
+interface ReportExportRow {
+  _id: string;
+  reporterId: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  status: string;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string | null;
+}
+
+/** Escape ô CSV: dấu phẩy, nháy kép, xuống dòng đều phải bọc nháy. */
+function toCsvCell(v: unknown): string {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 export default function ReportsPage() {
+  const { addToast } = useToast();
   const { values, set, reset } = useUrlFilters({
     status: '', targetType: '', page: '1', pageSize: '20',
   });
@@ -58,12 +81,66 @@ export default function ReportsPage() {
   const hasActiveFilter = Boolean(values.status || values.targetType);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  /** Xuất đúng tập đang lọc; cap 500 dòng do server áp. */
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await apiClient.get<{
+        data: ReportExportRow[];
+        total: number;
+        truncated: boolean;
+      }>('/admin/reports/export', {
+        params: {
+          status: values.status || undefined,
+          targetType: values.targetType || undefined,
+          limit: 500,
+        },
+      });
+      if (res.data.truncated) {
+        addToast('warning', `Xuất 500/${res.data.total} báo cáo đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
+      }
+      const header = [
+        'ID', 'Người báo cáo', 'Loại đối tượng', 'ID đối tượng', 'Lý do',
+        'Trạng thái', 'Người xử lý', 'Xử lý lúc', 'Thời gian báo cáo',
+      ];
+      const lines = res.data.data.map((r) =>
+        [
+          r._id, r.reporterId, reportTargetLabel(r.targetType), r.targetId, r.reason,
+          reportStatusLabel(r.status), r.resolvedBy ?? '', r.resolvedAt ?? '', r.createdAt ?? '',
+        ].map(toCsvCell).join(','),
+      );
+      // BOM để Excel đọc đúng tiếng Việt.
+      const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `bao-cao-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('success', `Đã xuất ${lines.length} báo cáo CSV.`);
+      setExportOpen(false);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại. Vui lòng thử lại.'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <ListHeader
         title="Báo cáo"
         count={total}
-        actions={<button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>}
+        actions={
+          <>
+            <ExportButton onExport={() => setExportOpen(true)} />
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>Làm mới</button>
+          </>
+        }
       >
         <select
           className="select" value={values.targetType}
@@ -193,6 +270,17 @@ export default function ReportsPage() {
           onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
         />
       </TableShell>
+
+      <ConfirmDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`Xuất ${total.toLocaleString('vi-VN')} báo cáo ra CSV?`}
+        description="File chứa mã người báo cáo và mã đối tượng — đối chiếu pháp lý, không chia sẻ ra ngoài. Tối đa 500 dòng."
+        confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
+        variant="primary"
+        busy={exporting}
+        onConfirm={() => void handleExport()}
+      />
     </div>
   );
 }

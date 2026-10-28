@@ -1,0 +1,84 @@
+/* Trang đơn hàng + đối soát doanh thu. File riêng để không sửa index.css;
+   chỉ dùng token trong :root. */
+
+/* Thân dialog chi tiết đơn — nhịp dọc đều, không cần inline style từng khối. */
+.order-detail-body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Khối can thiệp của admin: tách khỏi dữ liệu đơn để không bấm nhầm. */
+.order-intervene {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface-soft);
+  padding: var(--space-4);
+}
+
+.order-intervene-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.order-intervene-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Hoàn tiền đã ghi nhận: viền trái xanh để không đọc nhầm là "chưa xử lý". */
+.order-refund-box {
+  border-left: 3px solid var(--koola-success);
+  border-radius: var(--radius-sm);
+  background: var(--koola-success-soft);
+  padding: var(--space-3);
+  font-size: 13px;
+}
+
+.order-refund-box dt {
+  color: var(--koola-success-dark);
+  font-weight: 800;
+}
+
+/* Ghi chú nội bộ: nhãn → textarea → nút Lưu theo chiều dọc. */
+.order-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Lưới metric doanh thu: 5 thẻ, tự co theo bề ngang thay vì cố 4 cột. */
+.revenue-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Tiền VND dài hơn số đếm — hạ cỡ để "1.234.567.890đ" không tràn thẻ. */
+.revenue-metric-grid .metric-value {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+/* Cột số trong bảng doanh thu: canh phải cho dễ so sánh (DESIGN §4).
+   Phải kèm `.data-table th` để thắng specificity của rule gốc. */
+.data-table th.revenue-num-head {
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .revenue-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .revenue-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}

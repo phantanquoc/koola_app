@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
+  Banknote,
   Briefcase,
   Building2,
   Camera,
@@ -75,6 +76,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { to: '/products', label: 'Products', icon: Package },
       { to: '/orders', label: 'Orders', icon: ShoppingCart },
       { to: '/services', label: 'Services', icon: Briefcase },
+      { to: '/revenue', label: 'Doanh thu', icon: Banknote },
     ],
   },
   {
@@ -109,6 +111,7 @@ const routeTitles: Record<string, string> = {
   '/appeals': 'Kháng nghị',
   '/ops-logs': 'Nhật ký vận hành',
   '/config': 'Cấu hình hệ thống',
+  '/revenue': 'Doanh thu',
 };
 
 /**
