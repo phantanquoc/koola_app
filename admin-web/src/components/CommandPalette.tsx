@@ -7,6 +7,8 @@ export interface PaletteCommand {
   label: string;
   group: string;
   icon: LucideIcon;
+  /** Từ khoá thay thế (tiếng Anh, tên cũ) — người vận hành vẫn gõ "audit", "broadcast". */
+  keywords?: string[];
 }
 
 interface CommandPaletteProps {
@@ -82,7 +84,10 @@ export default function CommandPalette({
 
   const results = useMemo(() => {
     const matched = commands.filter(
-      (c) => fuzzyMatch(query, c.label) || fuzzyMatch(query, c.group),
+      (c) =>
+        fuzzyMatch(query, c.label) ||
+        fuzzyMatch(query, c.group) ||
+        (c.keywords ?? []).some((k) => fuzzyMatch(query, k)),
     );
     return [...matched, ...dataTarget(query)].slice(0, 10);
   }, [commands, query]);
@@ -94,6 +99,10 @@ export default function CommandPalette({
   // Global shortcut: "/" hoặc Cmd/Ctrl+K mở palette (ngoài input).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Trang tự bắt "/" (ConversationsPage focus ô tìm) chạy handler trên
+      // `document` trước handler `window` này. Không kiểm cờ thì một phím mở
+      // cả palette lẫn ô search — hai bề mặt tranh nhau.
+      if (e.defaultPrevented) return;
       const el = e.target as HTMLElement | null;
       const inField =
         !!el &&
