@@ -161,7 +161,7 @@ export class AdminService {
   // ─── GET /admin/businesses/pending ─────────────────────────────────────────
 
   async listPendingBusinesses(dto: ListPendingBusinessesDto): Promise<{
-    data: (UserDocument & { licenseImageUrl: string | null })[];
+    data: UserDocument[];
     total: number;
     page: number;
     limit: number;
@@ -176,7 +176,7 @@ export class AdminService {
    * để bảo vệ API — export qua endpoint list sẽ 400 vì limit vượt Max).
    */
   async exportBusinesses(dto: ExportBusinessesDto): Promise<{
-    data: (UserDocument & { licenseImageUrl: string | null })[];
+    data: UserDocument[];
     total: number;
     page: number;
     limit: number;
@@ -191,7 +191,7 @@ export class AdminService {
     page: number,
     limit: number,
   ): Promise<{
-    data: (UserDocument & { licenseImageUrl: string | null })[];
+    data: UserDocument[];
     total: number;
     page: number;
     limit: number;
@@ -311,26 +311,10 @@ export class AdminService {
       this.userModel.countDocuments(filter),
     ]);
 
-    // Enrich with presigned URL for license image (D5: null when no key)
-    const data = await Promise.all(
-      docs.map(async (doc) => {
-        let licenseImageUrl: string | null = null;
-        if (doc.licenseImageKey) {
-          try {
-            licenseImageUrl = await this.mediaService.generatePresignedGetUrl(
-              doc.licenseImageKey,
-            );
-          } catch {
-            licenseImageUrl = null;
-          }
-        }
-        return { ...doc, licenseImageUrl } as unknown as UserDocument & {
-          licenseImageUrl: string | null;
-        };
-      }),
-    );
-
-    return { data, total, page, limit };
+    // Không ký licenseImageUrl ở đây: danh sách không render ảnh (chỉ drawer
+    // detail mới hiện), mà presign từng dòng là N lần HMAC mỗi trang. Drawer tự
+    // lấy URL qua getBusiness.
+    return { data: docs as UserDocument[], total, page, limit };
   }
 
   // ─── POST /admin/businesses/:id/approve ────────────────────────────────────

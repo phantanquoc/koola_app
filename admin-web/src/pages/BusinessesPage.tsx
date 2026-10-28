@@ -42,7 +42,6 @@ interface Business {
   licenseExpiresAt?: string;
   deletedAt?: string | null;
   createdAt?: string;
-  licenseImageUrl?: string | null;
 }
 
 /** Response thật của bulk-approve / bulk-reject (xem AdminService.bulk*Business). */

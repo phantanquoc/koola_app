@@ -186,7 +186,7 @@ describe('AdminService', () => {
   // ─── listPendingBusinesses ────────────────────────────────────────────────
 
   describe('listPendingBusinesses', () => {
-    it('returns only pending businesses with licenseImageUrl', async () => {
+    it('returns only pending businesses — không presign từng dòng', async () => {
       const business = {
         _id: 'biz-1',
         accountType: 'business',
@@ -195,38 +195,16 @@ describe('AdminService', () => {
       };
       mockUserModel.find.mockReturnValue(makeLeanQuery([business]));
       mockUserModel.countDocuments.mockResolvedValue(1);
-      mockMediaService.generatePresignedGetUrl.mockResolvedValue(
-        'https://presigned.url/license.jpg',
-      );
 
       const result = await service.listPendingBusinesses({
         page: 1,
         limit: 20,
       });
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].licenseImageUrl).toBe(
-        'https://presigned.url/license.jpg',
-      );
-      expect(result.total).toBe(1);
-    });
-
-    it('sets licenseImageUrl to null when licenseImageKey is missing', async () => {
-      const business = {
-        _id: 'biz-2',
-        accountType: 'business',
-        verificationStatus: 'pending',
-        licenseImageKey: undefined,
-      };
-      mockUserModel.find.mockReturnValue(makeLeanQuery([business]));
-      mockUserModel.countDocuments.mockResolvedValue(1);
-
-      const result = await service.listPendingBusinesses({
-        page: 1,
-        limit: 20,
-      });
-      expect(result.data[0].licenseImageUrl).toBeNull();
-      // Media service must NOT be called when there is no key (D5)
+      // Bảng danh sách không render ảnh giấy phép; ký URL từng dòng là N HMAC
+      // mỗi trang vô ích. Drawer detail tự presign qua getBusiness.
       expect(mockMediaService.generatePresignedGetUrl).not.toHaveBeenCalled();
+      expect(result.total).toBe(1);
     });
 
     it('does NOT include verified or rejected businesses', async () => {
