@@ -106,6 +106,46 @@ not exist`.
 
 ---
 
+## 1b. Gửi phiên bản app qua header (BẮT BUỘC để admin chọn được mốc ép cập nhật)
+
+**Vì sao:** trang Cấu hình → "Ép cập nhật" cần biết **bản nào đang chạy ngoài đời**
+trước khi chọn mốc chặn. Repo chưa có app trên App Store/Play (`itunes lookup` trả
+0 kết quả, Play Store 404) và không có project `ios/`, nên không có store nào để
+tra. Cách duy nhất có dữ liệu thật là app tự khai — giống Firebase Remote Config.
+
+### Gửi gì
+
+Mỗi request tới backend (chỉ cần khi đã đăng nhập):
+
+```
+X-App-Platform: ios | android | web
+X-App-Version:  <versionName hiện tại, dạng 1.2.3>
+```
+
+Server sẽ ghi `lastAppPlatform`/`lastAppVersion` của tài khoản (dedupe 24 giờ/phiên
+bản) và tổng hợp thành `GET /admin/client-versions`.
+
+### Lấy version ở đâu trong code
+
+| Nền tảng | Nguồn |
+|---|---|
+| Android | `versionName` trong `android/app/build.gradle` (hiện `"1.0"`) — đọc lúc runtime qua native module, không hardcode |
+| iOS | `CFBundleShortVersionString` trong `Info.plist` (chưa có project `ios/` trong repo) |
+
+Gợi ý: axios request interceptor trong `services/api/apiService.ts` đã có sẵn chỗ
+gắn `Authorization` — thêm 2 header ở cùng chỗ đó.
+
+### Quy tắc
+
+- **Không** dùng `package.json` version (`0.1.0`) làm version app: nó là version
+  của JS bundle, không phải bản người dùng cài.
+- Version sai định dạng (`"1.0-beta"`) sẽ bị server **bỏ qua im lặng** — chỉ nhận
+  `\d{1,4}(.\d{1,4}){0,3}`.
+- Thiếu header không làm hỏng request (app cũ vẫn chạy), nhưng tài khoản đó sẽ
+  nằm trong nhóm `unknown` và admin không chọn được mốc chính xác cho nó.
+- Gửi kèm **mọi** request đã đăng nhập (interceptor) thay vì chỉ lúc login: người
+  dùng đổi máy/cập nhật app giữa phiên vẫn được ghi nhận.
+
 ## 2. Đọc cấu hình công khai lúc khởi động
 
 **Vì sao:** backend vừa có `GET /config/public`. Trước đó admin bật bảo trì / ép cập nhật

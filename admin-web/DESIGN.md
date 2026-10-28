@@ -287,6 +287,25 @@ Quy tắc bắt buộc:
 Ngoại lệ hợp lệ: ô tìm kiếm/`type="search"` (chuỗi tự do), `type="checkbox"`,
 textarea văn bản dài. Mọi field còn lại có cấu trúc thì phải dùng component trên.
 
+### 5.1b Chọn đối tượng: combobox từ dữ liệu thật, không free text id
+
+Ô nhập id/username trần là bẫy: admin phải nhớ 24 ký tự hex, gõ sai thì biết sau khi
+bấm, dán nhầm người thì không biết. Mọi chỗ chọn người/đối tượng phải **chọn từ kết
+quả server**, giống ô "To" của Gmail.
+
+- `UserPicker` (`src/components/UserPicker.tsx`): typeahead ≥2 ký tự, debounce 300ms,
+  chip cho người đã chọn, ↑/↓/Enter/Esc, `role="combobox"` + `role="listbox"`.
+- Gợi ý hiện **dòng phụ** (email/SĐT) để phân biệt người trùng tên, và nhãn "Doanh
+  nghiệp" để biết loại tài khoản trước khi gửi.
+- Người đã chọn bị `aria-disabled` trong danh sách, không thêm lần hai.
+- `max` chặn số lượng (broadcast 500, gửi thử 1) và báo bằng `form-error`.
+- Không dùng `<datalist>`: không hiện được dòng phụ, không điều khiển được phím.
+
+**Ô số/phiên bản cũng vậy**: gợi ý phải lấy từ dữ liệu **đang chạy thật**
+(`GET /admin/client-versions` do client tự khai qua `X-App-Platform`/`X-App-Version`),
+và hiện trước hệ quả: "Chặn 4 người đang chạy 2.0.5". Không có store nào để fetch
+phiên bản mới nhất — repo chưa phát hành app.
+
 ### 5.2 Trạng thái & dữ liệu vận hành
 
 Sáu quy tắc dưới đây là hợp đồng giữa admin-web và backend. Trang mới vi phạm một

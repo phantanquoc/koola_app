@@ -285,3 +285,38 @@ Bốn màn hình ở các vòng trước mới đủ "hiển thị được thô
 Rút ra: **component dùng đúng kit chưa đủ** — phải kiểm cả tầng "màn hình này trả lời
 câu hỏi gì". Bảng KPI + cột số canh phải + dịch route kỹ thuật là thứ biến một trang
 từ "hiện dữ liệu" thành "dùng được".
+
+## Vòng 6 — ô nhập free text thay bằng chọn từ dữ liệu thật
+
+Vấn đề: các ô quan trọng vẫn là free text nên rất dễ sai dữ liệu.
+
+| Chỗ | Trước | Nay |
+|---|---|---|
+| Chọn người nhận broadcast | Gõ tay **ObjectId 24 ký tự** hoặc `@username`; sai thì chỉ biết sau khi bấm Thêm; chip chỉ hiện mã hex | `UserPicker` kiểu Gmail: typeahead ≥2 ký tự, gợi ý kèm email + nhãn "Doanh nghiệp", chip hiện **tên**, ↑/↓/Enter/Esc |
+| Tài khoản nhận push thử | Gõ id trần, hệ quả có thể gửi nhầm thiết bị | Cùng `UserPicker`, `max=1` |
+| Phiên bản tối thiểu khi ép cập nhật | Gõ tay `2.1.0`, không biết mốc đó chặn ai | Gợi ý (`datalist`) lấy từ **phiên bản client đang chạy thật**, kèm câu "Chặn N người đang chạy 2.0.5" cập nhật theo từng ký tự |
+
+### Về "fetch phiên bản mới nhất từ App Store / Play Store"
+
+**Không làm được, và không phải vì lười.** Kiểm thật ngày 2026-10-28:
+
+```
+itunes.apple.com/lookup?bundleId=com.chatapp  → resultCount: 0
+play.google.com/store/apps/details?id=com.chatapp → HTTP 404
+ChatApp/ios/  → không tồn tại (repo chỉ có android/)
+```
+
+App chưa phát hành nên **không có nguồn nào để fetch**. Cách duy nhất có dữ liệu thật
+là để client tự khai — đúng cách Firebase Remote Config / Sentry releases làm:
+
+- `ClientVersionInterceptor` (global) đọc `X-App-Platform` + `X-App-Version` mỗi
+  request → ghi `User.lastAppVersion` (dedupe Redis 24h/phiên bản, không UPDATE mỗi
+  request; lỗi telemetry bị nuốt, không ảnh hưởng request người dùng).
+- `GET /admin/client-versions` trả phân bố `{platform, version, users, recentlyActive}`
+  + `reporters`/`unknown` (số tài khoản chưa từng khai).
+- iOS + Android dùng chung shape nên trang Cấu hình có gợi ý cho cả hai ngay khi
+  client khai; trước đó hiện "Chưa có client nào khai phiên bản".
+
+**Việc còn lại thuộc client**: gửi 2 header (đã ghi ở `client-todo.md` §1b, gồm cả
+chỗ lấy `versionName`/`CFBundleShortVersionString`). Khi chưa gửi, ô phiên bản nói
+thật là chưa kiểm được thay vì giả vờ có dữ liệu.
