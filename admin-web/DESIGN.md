@@ -287,6 +287,125 @@ Quy tắc bắt buộc:
 Ngoại lệ hợp lệ: ô tìm kiếm/`type="search"` (chuỗi tự do), `type="checkbox"`,
 textarea văn bản dài. Mọi field còn lại có cấu trúc thì phải dùng component trên.
 
+### 5.2 Trạng thái & dữ liệu vận hành
+
+Sáu quy tắc dưới đây là hợp đồng giữa admin-web và backend. Trang mới vi phạm một
+trong sáu là lỗi, không phải "khác phong cách" — mỗi quy tắc đều từng gây sự cố thật.
+
+#### 5.2.1 Media: server ký, client chỉ render field `*Signed`
+
+`messages.mediaUrl` và `stories.mediaKey` lưu **MinIO object key**, không phải URL;
+admin-web không giữ credential MinIO. Vì vậy backend ký lúc đọc và trả thêm field
+hậu tố `Signed`, giữ nguyên key gốc cho consumer khác (mobile tự ký).
+
+| Nguồn | Field trả về | Ghi chú |
+|---|---|---|
+| Tin nhắn (list/chi tiết/tìm kiếm) | `mediaUrlSigned`, `mediaKeyPreviewSigned` | ký cả preview story-reply |
+| Story (list + lightbox) | `mediaUrlSigned`, `thumbnailUrlSigned` | dùng chung một lần ký mỗi trang |
+| Hồ sơ doanh nghiệp | `licenseImageUrl`, `logoUrl`, `coverUrl` | presign ở detail; list chỉ cần giấy phép |
+| Báo cáo | `targetName`/`targetDetail` (chưa có media) | muốn xem ảnh phải bổ sung presign ở server trước |
+
+- **Cấm render object key.** `<img src={mediaUrl}>` là bug đã từng làm vỡ toàn bộ ảnh
+  trong trang hội thoại. Chỉ dùng field `*Signed`; key gốc chỉ hiện trong
+  "Chi tiết kỹ thuật".
+- **`null` nghĩa là ký thất bại, không phải "không có media".** UI hiện "Không tải
+  được media"; fallback về key là đường dẫn chết, không phải graceful degradation.
+- **Ký lúc đọc, không lưu DB và không cache toàn cục.** URL sống 60 phút; mở lại
+  preview thì xin lại. Gặp 403/hết hạn → gọi lại endpoint, không hiện ảnh hỏng.
+- **Ký theo lô, lỗi từng key độc lập.** Một object mồ côi không được kéo cả trang về
+  `null`; trần 60 key/lần (vượt trần trả `null`) để payload không phình.
+
+#### 5.2.2 Mọi mutation admin đều ghi audit
+
+Thao tác ghi nào của admin cũng phải để lại một dòng `AdminAuditLog` — kể cả xoá
+mềm/khôi phục, sửa cấu hình, gửi broadcast, quyết định kháng nghị.
+
+- `action`/`targetType` lấy từ `ADMIN_AUDIT_ACTIONS` và `ADMIN_AUDIT_TARGET_TYPES`:
+  một nguồn cho union type, DTO lọc và nhãn UI. Thêm hành động mới = thêm vào hằng
+  số + `audit-labels.ts`, **không** cast `as unknown as`.
+- `targetType` theo nơi người vận hành sẽ tra: thao tác trên tài khoản doanh nghiệp
+  ghi `business` (timeline hồ sơ lọc theo đó), không ghi `user`.
+- Payload là bản **đã redact**: không token, password, secret, recovery code. Không
+  đặt tên field chứa chữ `token` cho id phiên (dùng `sessionId`) — bộ lọc redact bắt
+  theo tên key.
+- Bulk ghi **một** dòng với `targetId = ids.join(',')`; lịch sử từng hồ sơ nằm ở
+  `verificationHistory[]` của hồ sơ đó.
+- Tiến trình hệ thống (cron gỡ ban…) ghi `actorId = 'system'` + `payload.reason` nêu
+  nguồn, để audit không có dòng "ai làm" trống.
+- Ghi audit hỏng **không** được làm hỏng thao tác đã thành công — chỉ log cảnh báo.
+
+#### 5.2.3 Mọi list admin phân trang và có đủ ba trạng thái
+
+- Server bắt buộc `page`/`limit` (mặc định 20, trần 100; export trần 500) và trả
+  `{ data, total, page, limit }`. Không endpoint nào trả cả bảng.
+- `total` phải `countDocuments` trên **cùng filter** với `data`; đếm ở client sẽ lệch
+  ngay khi filter nằm ở server.
+- UI: `Pagination` render khi `total > 0`; rỗng thật và rỗng do lọc là hai copy khác
+  nhau; lỗi là `StateBlock variant="error"` + nút "Thử lại", cấm `.catch(() => {})`.
+- Count trên tab lấy từ endpoint stats của module, không đếm mảng đã tải.
+- Endpoint export dùng chung filter với list và trả `{ data, total, truncated }` để
+  UI nói được "còn dữ liệu chưa xuất".
+
+#### 5.2.4 Token xem thay chỉ đọc
+
+- Token impersonate TTL 5 phút, **không** có refresh; payload `sub` = người bị xem
+  thay, `act` = admin gốc, `imp = true`.
+- `JwtAuthGuard` chặn mọi method ngoài `GET/HEAD/OPTIONS` khi `imp` — chốt ở guard,
+  không dựa vào từng controller tự nhớ kiểm tra.
+- Không xem thay chính mình hoặc tài khoản quản trị khác: đó là mượn quyền, không
+  phải debug khiếu nại.
+- Audit chỉ ghi `expiresIn`; không bao giờ đưa token vào payload hay log.
+- UI: banner cố định + đếm ngược, tự thoát khi hết hạn; cất token admin vào
+  `sessionStorage` để có đường về. Thiếu chỗ lưu thì **từ chối bắt đầu** — thà không
+  xem được còn hơn kẹt ở token người dùng.
+- Nút bắt đầu phải nằm ở trang chi tiết người dùng; chỉ mount banner mà không có
+  điểm vào là tính năng chết.
+
+#### 5.2.5 2FA TOTP tự viết, không thêm dependency
+
+- RFC 6238 thuần `crypto` (HMAC-SHA1, bước 30s, 6 số, base32). Chấp nhận lệch ±1
+  bước để bù đồng hồ thiết bị. **Không** kéo thêm thư viện OTP.
+- `/auth/2fa/*` chỉ thao tác trên **người gọi token**: admin không bật/hộ 2FA cho
+  người khác, nên panel chỉ hiện khi mở đúng hồ sơ của mình.
+- Secret và recovery code không xuất hiện ở bất kỳ projection admin nào
+  (`SAFE_PROJECTION` loại `twoFactorSecret`/`twoFactorRecoveryCodes`).
+- Recovery code trả plaintext **một lần**, DB lưu SHA-256; dùng xong phải xoá khỏi
+  mảng ngay trong cùng request.
+- Không lưu mã OTP vào DB ở bất kỳ luồng nào.
+
+#### 5.2.6 Broadcast phải chọn đối tượng và ghi lịch sử
+
+- `audience` thuộc enum dùng chung `BROADCAST_AUDIENCES`
+  (`all | personal | business | ids`). `audience=ids` mà rỗng là 400 (đừng ghi log
+  "đã gửi" cho 0 người); id trùng được dedupe; trần 500 id.
+- Mỗi lần gửi ghi một `BroadcastLog` (title/body/audience/ids/sentBy/
+  `recipientsOnline`) **và** một dòng audit chỉ chứa số lượng — không nhét hàng trăm
+  ObjectId vào payload audit.
+- Lịch sử đọc qua `GET /admin/broadcast-history` (phân trang, trần 100/trang).
+- `recipientsOnline` là số socket khớp tại thời điểm emit, không phải số người nhận
+  thật; copy UI phải nói "đang online". Lỗi gateway không được làm mất log.
+- Chưa có FCM fallback cho người offline và chưa có lịch gửi; `personal`/`business`
+  hiện fanout toàn bộ nhưng vẫn ghi audience để đối soát khi gửi lại đúng nhóm.
+
+#### 5.2.7 `@Prop({ type: Types.ObjectId })` là bug — phải dùng `SchemaTypes.ObjectId`
+
+Không phải quy ước đặt tên: `@nestjs/mongoose` quyết định giữ nguyên type bằng
+`isMongooseSchemaType()`, và `Types.ObjectId` là class BSON nên **trượt** kiểm tra →
+nestjs thay bằng `{}` → mongoose tạo path `Mixed` → **chuỗi ObjectId không được cast**.
+
+Hệ quả thật đã gặp và phải sửa: `refreshtokens.userId` là `Mixed`, nên
+`{ userId: '6ad…' }` khớp 0 bản ghi. Nghĩa là `revoke-sessions` trả `{revoked: 0}`,
+ban không đá được phiên, danh sách thiết bị luôn rỗng — trong khi mọi test đơn vị
+(mock model) vẫn xanh vì không đi qua cast thật.
+
+- Đúng: `@Prop({ type: SchemaTypes.ObjectId, ref: 'User' })`. Nếu chỉ cần kiểu TS
+  chứ không cần query theo field thì `@Prop()` với `design:type` là đủ.
+- Phát hiện: `schema.path('x').instance === 'Mixed'` trên schema đã build là dấu hiệu.
+- Đã có test chốt (`src/auth/refresh-token.schema.spec.ts`): refresh token,
+  user-conversation, member, conversation, ownerUserId.
+- Kiểm tra chéo khi thêm schema: viết query bằng **chuỗi id** trong một spec chạm
+  schema thật, không chỉ mock — mock không bao giờ thấy lỗi này.
+
 ## 6. Motion & responsive
 
 - Transition 160ms ease; toast 200ms; sidebar 200ms. Không animation trang trí
