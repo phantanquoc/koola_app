@@ -79,25 +79,56 @@ interface TestPushResult {
     | 'fcm_not_configured';
 }
 
-/** Diễn giải kết quả gửi thử — "0/0" một mình không nói được vì sao trượt. */
-function describeTestPush(r: TestPushResult): { tone: 'success' | 'warning' | 'danger'; text: string } {
+/**
+ * Diễn giải kết quả gửi thử.
+ *
+ * `tone` theo **hệ quả với người bấm nút**, không theo "có gửi được hay không":
+ * tài khoản không có thiết bị là chuyện bình thường (chưa cài app), không phải
+ * lỗi — tô đỏ nó làm admin đi tìm sự cố không tồn tại.
+ */
+function describeTestPush(r: TestPushResult): {
+  tone: 'success' | 'warning' | 'danger';
+  badge: string;
+  text: string;
+} {
   switch (r.skipped) {
     case 'no_user':
-      return { tone: 'danger', text: 'Không tìm thấy tài khoản với id này.' };
+      return {
+        tone: 'danger',
+        badge: 'Sai id',
+        text: 'Không có tài khoản nào với id này. Kiểm tra lại mã trước khi gửi.',
+      };
     case 'notifications_disabled':
-      return { tone: 'warning', text: 'Tài khoản đã tắt nhận thông báo — không gửi gì.' };
+      return {
+        tone: 'warning',
+        badge: 'Không gửi',
+        text: 'Tài khoản này đã tắt nhận thông báo trong cài đặt — tôn trọng lựa chọn, không gửi.',
+      };
     case 'no_tokens':
-      return { tone: 'warning', text: 'Tài khoản chưa đăng ký thiết bị nào (0 FCM token).' };
+      return {
+        tone: 'warning',
+        badge: 'Không gửi',
+        text: 'Tài khoản chưa đăng ký thiết bị nào. Họ cần mở app và đăng nhập trước.',
+      };
     case 'fcm_not_configured':
       return {
         tone: 'warning',
-        text: 'Máy chủ chưa cấu hình FCM (thiếu FIREBASE_PRIVATE_KEY) — không phải lỗi thiết bị.',
+        badge: 'Chưa cấu hình',
+        text: 'Máy chủ chưa có khoá Firebase (FIREBASE_PRIVATE_KEY) — lỗi cấu hình deploy, không phải lỗi thiết bị.',
       };
     default:
       if (r.successCount > 0) {
-        return { tone: 'success', text: `Đã giao ${r.successCount}/${r.tokenCount} thiết bị.` };
+        return {
+          tone: 'success',
+          badge: 'Đã giao',
+          text: `${r.successCount}/${r.tokenCount} thiết bị nhận được thông báo.`,
+        };
       }
-      return { tone: 'danger', text: `Gửi thất bại cả ${r.tokenCount} thiết bị — kiểm tra cấu hình FCM.` };
+      return {
+        tone: 'danger',
+        badge: 'Thất bại',
+        text: `Cả ${r.tokenCount} thiết bị đều lỗi — kiểm tra cấu hình Firebase hoặc token đã hết hạn.`,
+      };
   }
 }
 
@@ -127,6 +158,13 @@ export default function OpsLogPage() {
   const [testForm, setTestForm] = useState({ userId: '', title: '', body: '' });
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<TestPushResult | null>(null);
+  /**
+   * Tên tài khoản tra theo id. Gửi push tới đúng người là thao tác chạm thiết bị
+   * thật — gõ id trần rồi bấm gửi mà không biết đang gửi cho ai là bẫy.
+   */
+  const [testUser, setTestUser] = useState<
+    { state: 'idle' | 'loading' | 'found' | 'missing'; name?: string } | null
+  >(null);
   const tab: LogTab = values.tab === 'push' ? 'push' : 'otp';
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
@@ -139,6 +177,42 @@ export default function OpsLogPage() {
     const t = setTimeout(() => set({ kind: kindInput.trim(), page: '1' }), 400);
     return () => clearTimeout(t);
   }, [kindInput, values.kind, set]);
+
+  // Tra tên tài khoản khi id đủ dài để là ObjectId. Debounce để không bắn query
+  // theo từng ký tự đang dán.
+  const userIdInput = testForm.userId.trim();
+  useEffect(() => {
+    if (!testOpen) return;
+    if (!/^[a-f0-9]{24}$/i.test(userIdInput)) {
+      setTestUser(null);
+      return;
+    }
+    let cancelled = false;
+    setTestUser({ state: 'loading' });
+    const t = setTimeout(() => {
+      apiClient
+        .get<{ data: Array<{ _id: string; displayName?: string; email?: string }> }>(
+          '/admin/users',
+          { params: { search: userIdInput, limit: 1 } },
+        )
+        .then((res) => {
+          if (cancelled) return;
+          const hit = res.data.data?.[0];
+          setTestUser(
+            hit && hit._id === userIdInput
+              ? { state: 'found', name: hit.displayName ?? hit.email ?? userIdInput }
+              : { state: 'missing' },
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setTestUser({ state: 'missing' });
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [testOpen, userIdInput]);
 
   const params = useMemo(() => ({
     page,
@@ -432,7 +506,7 @@ export default function OpsLogPage() {
           vì cần 3 ô nhập + vùng kết quả, không phải một câu xác nhận. */}
       <Dialog
         open={testOpen}
-        onClose={() => { setTestOpen(false); setTestResult(null); }}
+        onClose={() => { setTestOpen(false); setTestResult(null); setTestUser(null); }}
         labelId="test-push-title"
         variant="dialog"
       >
@@ -441,22 +515,42 @@ export default function OpsLogPage() {
             <div>
               <h2 id="test-push-title" className="panel-title">Gửi push thử</h2>
               <p className="panel-subtitle">
-                Gửi tới mọi thiết bị đã đăng ký của tài khoản. Người đang online vẫn nhận —
-                mục đích là kiểm kênh FCM, không phải thông báo.
+                Kiểm kênh FCM sau khi đổi cấu hình. Người đang online vẫn nhận —
+                mục đích là kiểm thiết bị, không phải thông báo.
               </p>
             </div>
           </div>
-          <div className="dialog-body">
-            <label className="form-field">
-              <span className="form-label">ID tài khoản nhận</span>
+          <div className="dialog-body page-stack">
+            <div className="form-field">
+              <span className="form-label">Tài khoản nhận</span>
               <input
-                className="input k-mono" value={testForm.userId} maxLength={64}
+                className="input k-mono"
+                value={testForm.userId}
+                maxLength={64}
                 onChange={(e) => setTestForm((f) => ({ ...f, userId: e.target.value }))}
                 placeholder="507f1f77bcf86cd799439011"
+                aria-label="ID tài khoản nhận"
+                aria-describedby="test-push-user-hint"
               />
-            </label>
+              {/* Tra tên trước khi gửi: gõ id trần rồi bấm gửi mà không biết
+                  đang gửi cho ai là bẫy của thao tác chạm thiết bị thật. */}
+              <span
+                id="test-push-user-hint"
+                className={testUser?.state === 'missing' ? 'cell-meta form-error' : 'cell-meta'}
+              >
+                {testUser?.state === 'loading' && 'Đang tra tài khoản…'}
+                {testUser?.state === 'found' && `Sẽ gửi tới: ${testUser.name}`}
+                {testUser?.state === 'missing' && 'Không tìm thấy tài khoản với id này'}
+                {(testUser === null || testUser.state === 'idle') &&
+                  'Dán id tài khoản (24 ký tự). Hệ thống sẽ hiện tên để xác nhận trước khi gửi.'}
+              </span>
+            </div>
+
             <label className="form-field">
-              <span className="form-label">Tiêu đề</span>
+              <span className="form-label">
+                Tiêu đề
+                <span className="form-counter">{testForm.title.length}/200</span>
+              </span>
               <input
                 className="input" value={testForm.title} maxLength={200}
                 onChange={(e) => setTestForm((f) => ({ ...f, title: e.target.value }))}
@@ -464,7 +558,10 @@ export default function OpsLogPage() {
               />
             </label>
             <label className="form-field">
-              <span className="form-label">Nội dung</span>
+              <span className="form-label">
+                Nội dung
+                <span className="form-counter">{testForm.body.length}/2000</span>
+              </span>
               <input
                 className="input" value={testForm.body} maxLength={2000}
                 onChange={(e) => setTestForm((f) => ({ ...f, body: e.target.value }))}
@@ -475,21 +572,34 @@ export default function OpsLogPage() {
             {testResult && (() => {
               const meta = describeTestPush(testResult);
               return (
-                <p className="alert" role="status" data-testid="test-push-result">
-                  <StatusBadge tone={meta.tone} label={meta.tone === 'success' ? 'Thành công' : meta.tone === 'warning' ? 'Bỏ qua' : 'Thất bại'} />
-                  {' '}{meta.text}
-                </p>
+                <div
+                  className={`test-push-result test-push-result--${meta.tone}`}
+                  role="status"
+                  data-testid="test-push-result"
+                >
+                  <StatusBadge tone={meta.tone} label={meta.badge} />
+                  <span>{meta.text}</span>
+                </div>
               );
             })()}
 
             <div className="dialog-actions">
-              <button className="btn btn-secondary" type="button" onClick={() => { setTestOpen(false); setTestResult(null); }}>
+              <button
+                className="btn btn-secondary" type="button"
+                onClick={() => { setTestOpen(false); setTestResult(null); setTestUser(null); }}
+              >
                 Đóng
               </button>
               <button
                 className="btn btn-primary"
                 type="button"
-                disabled={testBusy || !testForm.userId.trim() || !testForm.title.trim() || !testForm.body.trim()}
+                disabled={
+                  testBusy ||
+                  testUser?.state === 'missing' ||
+                  !testForm.userId.trim() ||
+                  !testForm.title.trim() ||
+                  !testForm.body.trim()
+                }
                 onClick={() => void submitTestPush()}
               >
                 {testBusy ? 'Đang gửi...' : 'Gửi thử'}

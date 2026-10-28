@@ -3391,6 +3391,49 @@ th.sortable:hover {
     display: none;
   }
 }
+
+/* Dialog gửi thử push: đếm ký tự + khối kết quả theo tone. */
+.form-counter {
+  margin-left: var(--space-2);
+  color: var(--koola-faint);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.test-push-result {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface-soft);
+  padding: var(--space-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.test-push-result--success {
+  border-color: var(--koola-success-soft);
+  background: var(--koola-success-soft);
+  color: var(--koola-success-dark);
+}
+
+.test-push-result--warning {
+  border-color: var(--koola-warning-soft);
+  background: var(--koola-warning-soft);
+  color: var(--koola-warning-dark);
+}
+
+.test-push-result--danger {
+  border-color: var(--koola-danger-soft);
+  background: var(--koola-danger-soft);
+  color: var(--koola-danger-dark);
+}
+
+.test-push-result .badge {
+  flex: none;
+}
 /* Khoá rate limit: IP + nhãn "nội bộ". Vẫn phải hiện IP — đó là thứ phân biệt
    các dòng; nhãn chỉ để khỏi đi tra WHOIS. */
 .rl-key {
