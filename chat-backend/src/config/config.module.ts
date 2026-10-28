@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppConfig, AppConfigSchema } from './config.schema';
 import { ConfigService } from './config.service';
 import { ConfigController } from './config.controller';
+import { PublicConfigController } from './public-config.controller';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { User, UserSchema } from '../users/user.schema';
 import {
@@ -23,7 +24,7 @@ import {
       { name: User.name, schema: UserSchema },
     ]),
   ],
-  controllers: [ConfigController],
+  controllers: [ConfigController, PublicConfigController],
   providers: [ConfigService, AdminGuard],
   exports: [ConfigService],
 })
