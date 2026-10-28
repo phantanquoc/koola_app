@@ -20,6 +20,9 @@ import {
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
+import { AdminSessionService } from './admin-session.service';
+import { AdminUnbanCron } from './admin-unban.cron';
+import { SessionController } from './session.controller';
 import { ModerationMediaService } from './moderation-media.service';
 import {
   ConversationDoc,
@@ -57,7 +60,12 @@ import {
     RedisModule,
     HealthModule,
   ],
-  controllers: [AdminController, AdminModerationController, AdminOpsController],
+  controllers: [
+    AdminController,
+    AdminModerationController,
+    AdminOpsController,
+    SessionController,
+  ],
   providers: [
     AdminService,
     AdminGuard,
@@ -65,6 +73,8 @@ import {
     AdminReportService,
     CoturnHealthService,
     ModerationMediaService,
+    AdminSessionService,
+    AdminUnbanCron,
   ],
   exports: [AdminAuditService],
 })

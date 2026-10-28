@@ -19,6 +19,8 @@ export const ADMIN_AUDIT_ACTIONS = [
   'delete_user',
   'restore_user',
   'revoke_sessions',
+  // Một phiên thiết bị (khác revoke_sessions = thu hồi tất cả).
+  'revoke_session',
   'update_business',
   'suspend_business',
   'unsuspend_business',
@@ -44,6 +46,13 @@ export const ADMIN_AUDIT_ACTIONS = [
   'update_music_track',
   'delete_music_track',
   'broadcast',
+  'cancel_order',
+  'refund_order',
+  'note_order',
+  'decide_appeal',
+  'impersonate_start',
+  'admin_login',
+  'update_config',
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -59,6 +68,9 @@ export const ADMIN_AUDIT_TARGET_TYPES = [
   'store',
   'music_track',
   'broadcast',
+  'order',
+  'appeal',
+  'config',
 ] as const;
 
 export type AdminAuditTargetType = (typeof ADMIN_AUDIT_TARGET_TYPES)[number];
