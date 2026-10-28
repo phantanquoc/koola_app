@@ -8,6 +8,7 @@ import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { AdminService } from './admin.service';
 import { AdminAuditService } from './admin-audit.service';
+import { RedisService } from '../common/redis/redis.service';
 
 const APPEAL_ID = '507f1f77bcf86cd799439030';
 const USER_ID = '507f1f77bcf86cd799439001';
@@ -55,6 +56,11 @@ describe('AppealService', () => {
         { provide: getModelToken(Story.name), useValue: storyModel },
         { provide: AdminService, useValue: adminService },
         { provide: AdminAuditService, useValue: audit },
+        // AppealService.submit cần Redis; các test decide/list không chạm tới.
+        {
+          provide: RedisService,
+          useValue: { incrementWithExpiry: jest.fn().mockResolvedValue(1) },
+        },
       ],
     }).compile();
     service = moduleRef.get(AppealService);

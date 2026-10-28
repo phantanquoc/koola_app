@@ -1,17 +1,26 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Appeal, AppealDocument, AppealStatus } from './schemas/appeal.schema';
+import {
+  Appeal,
+  AppealDocument,
+  AppealStatus,
+  AppealTargetType,
+} from './schemas/appeal.schema';
 import { User } from '../users/user.schema';
 import { Message, MessageType } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminService } from './admin.service';
+import { RedisService } from '../common/redis/redis.service';
 
 /** Appeal + tên resolve lúc đọc (không denormalize — đổi tên là thấy ngay). */
 export type AppealWithContext = AppealDocument & {
@@ -20,6 +29,10 @@ export type AppealWithContext = AppealDocument & {
   targetName?: string;
   targetDetail?: string;
 };
+
+/** Trần nộp kháng nghị: 3 lượt/giờ cho mỗi (người, loại hình phạt). */
+const SUBMIT_RATE_MAX = 3;
+const SUBMIT_RATE_WINDOW_SECONDS = 3_600;
 
 @Injectable()
 export class AppealService {
@@ -31,7 +44,134 @@ export class AppealService {
     @InjectModel(Story.name) private readonly storyModel: Model<Story>,
     private readonly adminService: AdminService,
     private readonly audit: AdminAuditService,
+    private readonly redis: RedisService,
   ) {}
+
+  /**
+   * Người dùng tự nộp kháng nghị cho hình phạt của chính mình.
+   *
+   * Ba chốt an toàn, mỗi cái chặn một kiểu lạm dụng khác nhau:
+   *
+   * 1. **Chỉ nộp cho hình phạt của mình.** `userId` lấy từ token, không từ body;
+   *    với `ban` thì targetId phải chính là người gọi. Nếu không, user A nộp
+   *    kháng nghị hộ user B và hàng đợi admin đầy đơn rác.
+   * 2. **Hình phạt đó phải đang có hiệu lực.** `takedown` đòi story đang bị gỡ,
+   *    `soft-delete` đòi message đang bị xoá, `ban` đòi user đang bị cấm. Nộp
+   *    kháng nghị cho thứ chưa từng bị xử lý là vô nghĩa.
+   * 3. **Không nộp trùng.** Một kháng nghị đang chờ là đủ; cho nộp thêm chỉ tạo
+   *    hàng đợi trùng lặp cho cùng một quyết định.
+   *
+   * Rate limit theo cặp (userId, targetType) — chặn spam nhưng không chặn người
+   * thật sự có 3 hình phạt khác loại cần kháng nghị.
+   */
+  async submit(
+    userId: string,
+    dto: {
+      targetType: AppealTargetType;
+      targetId: string;
+      message: string;
+    },
+  ): Promise<AppealDocument> {
+    const message = dto.message.trim();
+    if (message.length === 0) {
+      throw new BadRequestException('Nội dung kháng nghị không được để trống');
+    }
+
+    await this.assertOwnsPenalty(userId, dto.targetType, dto.targetId);
+
+    const existing = await this.appealModel.exists({
+      userId,
+      targetType: dto.targetType,
+      targetId: dto.targetId,
+      status: 'pending',
+    });
+    if (existing) {
+      throw new ConflictException('Kháng nghị cho nội dung này đang chờ xử lý');
+    }
+
+    // Đếm SAU khi đã validate: yêu cầu sai (không bị cấm, sai chủ, trùng) không
+    // được ăn vào trần — nếu không, người gõ nhầm 3 lần là bị khoá một giờ, và
+    // việc kiểm tra "tôi có đang bị cấm không" lại tự khoá chính mình. Tần suất
+    // gọi thô đã có @Throttle ở controller chặn.
+    const hits = await this.redis.incrementWithExpiry(
+      `appeal:submit:${userId}:${dto.targetType}`,
+      SUBMIT_RATE_WINDOW_SECONDS,
+    );
+    if (hits > SUBMIT_RATE_MAX) {
+      throw new HttpException(
+        'Bạn đã gửi quá nhiều kháng nghị. Vui lòng thử lại sau.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    return this.appealModel.create({
+      userId,
+      targetType: dto.targetType,
+      targetId: dto.targetId,
+      message,
+      status: 'pending',
+    });
+  }
+
+  /** 404 khi không tồn tại, 403 khi tồn tại nhưng không phải của người gọi. */
+  private async assertOwnsPenalty(
+    userId: string,
+    targetType: AppealTargetType,
+    targetId: string,
+  ): Promise<void> {
+    if (targetType === 'ban') {
+      // Hình phạt ban áp lên chính người gọi → targetId phải trùng token.
+      if (targetId !== userId) {
+        throw new ForbiddenException(
+          'Chỉ được kháng nghị hình phạt của chính mình',
+        );
+      }
+      const user = await this.userModel
+        .findById(userId)
+        .select('isBanned')
+        .lean();
+      if (!user) throw new NotFoundException('Tài khoản không tồn tại');
+      if (!user.isBanned) {
+        throw new BadRequestException('Tài khoản hiện không bị cấm');
+      }
+      return;
+    }
+
+    if (!Types.ObjectId.isValid(targetId)) {
+      throw new NotFoundException('Nội dung không tồn tại');
+    }
+
+    if (targetType === 'takedown') {
+      const story = await this.storyModel
+        .findById(targetId)
+        .select('authorId isActive')
+        .lean();
+      if (!story) throw new NotFoundException('Story không tồn tại');
+      if (String(story.authorId) !== userId) {
+        throw new ForbiddenException(
+          'Chỉ được kháng nghị nội dung của chính mình',
+        );
+      }
+      if (story.isActive !== false) {
+        throw new BadRequestException('Story hiện không bị gỡ');
+      }
+      return;
+    }
+
+    const msg = await this.msgModel
+      .findById(targetId)
+      .select('senderId deleted')
+      .lean();
+    if (!msg) throw new NotFoundException('Tin nhắn không tồn tại');
+    if (String(msg.senderId) !== userId) {
+      throw new ForbiddenException(
+        'Chỉ được kháng nghị nội dung của chính mình',
+      );
+    }
+    if (msg.deleted !== true) {
+      throw new BadRequestException('Tin nhắn hiện không bị gỡ');
+    }
+  }
 
   async list(dto: { status?: AppealStatus; page?: number; limit?: number }) {
     const page = dto.page ?? 1;
