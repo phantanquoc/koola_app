@@ -1,10 +1,13 @@
 import {
   IsEmail,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -107,4 +110,15 @@ export class UpdateBusinessDto {
   @IsString()
   @MaxLength(120)
   assignee?: string;
+
+  /**
+   * Tỉ lệ hoa hồng nền tảng (0..1). Vào bảng đối soát doanh thu; chỉ đổi được
+   * qua route này nên luôn kèm audit `update_business`.
+   */
+  @ApiPropertyOptional({ example: 0.1, minimum: 0, maximum: 1 })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1)
+  commissionRate?: number;
 }

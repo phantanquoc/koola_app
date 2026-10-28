@@ -171,6 +171,13 @@ export class User {
   @Prop({ type: [String], default: [] })
   twoFactorRecoveryCodes?: string[];
 
+  /**
+   * Tỉ lệ hoa hồng nền tảng thu trên GMV (0..1). Chỉ có nghĩa với tài khoản
+   * doanh nghiệp; đối soát doanh thu nhân GMV với giá trị này.
+   */
+  @Prop({ type: Number, default: 0, min: 0, max: 1 })
+  commissionRate?: number;
+
   /** Platform administration authority — set out-of-band only (see scripts/grant-admin.ts) */
   @Prop({ default: false })
   isPlatformAdmin: boolean;

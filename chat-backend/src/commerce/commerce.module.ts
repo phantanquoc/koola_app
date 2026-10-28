@@ -30,6 +30,7 @@ import {
 import { OrdersService } from './orders/orders.service';
 import { OrdersCronService } from './orders/orders-cron.service';
 import { OrdersController } from './orders/orders.controller';
+import { AdminRevenueService } from './orders/admin-revenue.service';
 
 /**
  * Import graph (commerce-orders D1/D3/D4): CommerceModule → AdminModule,
@@ -64,7 +65,12 @@ import { OrdersController } from './orders/orders.controller';
     NotificationsModule,
   ],
   controllers: [CommerceController, AdminCommerceController, OrdersController],
-  providers: [CommerceService, OrdersService, OrdersCronService],
+  providers: [
+    CommerceService,
+    OrdersService,
+    OrdersCronService,
+    AdminRevenueService,
+  ],
   exports: [CommerceService, OrdersService],
 })
 export class CommerceModule {}

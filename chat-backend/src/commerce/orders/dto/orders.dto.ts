@@ -185,3 +185,18 @@ export class AdminListOrdersQueryDto extends ListOrdersQueryDto {
   @IsMongoId()
   sellerId?: string;
 }
+
+/**
+ * Xuất đơn: cùng bộ lọc với danh sách admin nhưng cap riêng 500 (list cap 100
+ * để bảo vệ API). Khai báo lại `limit` để @Max(500) của lớp con thay @Max(100)
+ * của lớp cha — class-validator loại metadata trùng tên khi kế thừa.
+ */
+export class ExportOrdersDto extends AdminListOrdersQueryDto {
+  @ApiPropertyOptional({ default: 500, minimum: 1, maximum: 500 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number = 500;
+}

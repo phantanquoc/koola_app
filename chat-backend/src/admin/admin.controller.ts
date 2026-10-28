@@ -146,8 +146,12 @@ export class AdminController {
     @Param('id') id: string,
     @Body() dto: UpdateBusinessDto,
     @CurrentUser() user: { actorId: string },
-    @Req() req: Request,
+    @Req() req: Request & { adminRole?: AdminRole },
   ) {
+    // Hoa hồng là số liệu tài chính — moderator sửa được là đổi được doanh thu.
+    if (dto.commissionRate !== undefined && req.adminRole !== 'super') {
+      throw new ForbiddenException('Chỉ super admin được đổi hoa hồng');
+    }
     const res = await this.adminService.updateBusiness(id, dto);
     await this.auditService.log({
       actorId: user.actorId,

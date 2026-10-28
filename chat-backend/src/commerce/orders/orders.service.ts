@@ -25,11 +25,17 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import type {
   AdminListOrdersQueryDto,
   ConfirmOrderDto,
+  ExportOrdersDto,
   ListOrdersQueryDto,
   PlaceOrderDto,
   RejectOrderDto,
   ShipOrderDto,
 } from './dto/orders.dto';
+import type {
+  AdminCancelOrderDto,
+  AdminOrderNoteDto,
+  AdminRefundOrderDto,
+} from '../dto/admin-order-actions.dto';
 
 // ─── Public response shapes ─────────────────────────────────────────────────
 
@@ -420,18 +426,136 @@ export class OrdersService {
     return this.toDetail(order);
   }
 
-  /** Admin read-only list with filters + batched name lookups. */
+  /** Admin list with filters + batched name lookups (gồm cả field can thiệp). */
   async listAdmin(dto: AdminListOrdersQueryDto): Promise<OrderListResponse> {
-    const filter: QueryFilter<CommerceOrderDocument> = {};
-    if (dto.status) filter.status = dto.status;
-    if (dto.buyerId) filter.buyerId = dto.buyerId;
-    if (dto.sellerId) filter.sellerId = dto.sellerId;
-    return this.listWithFilter(filter, dto);
+    return this.listWithFilter(this.adminFilter(dto), dto, true);
   }
 
-  /** Admin read-only detail. */
+  /** Admin detail — kèm ghi chú nội bộ + dấu vết huỷ/hoàn tiền. */
   async getAdminById(orderId: string): Promise<OrderDetailResponse> {
-    return this.toDetail(await this.loadOrderOrFail(orderId));
+    return this.toDetail(await this.loadOrderOrFail(orderId), true);
+  }
+
+  /**
+   * Xuất CSV phía admin: cùng bộ lọc, cap 500 dòng/lần. `truncated` cho UI
+   * biết còn dữ liệu — không im lặng cắt mất phần kế toán cần.
+   */
+  async exportAdmin(dto: ExportOrdersDto): Promise<{
+    data: Record<string, unknown>[];
+    total: number;
+    truncated: boolean;
+  }> {
+    const limit = Math.min(dto.limit ?? 500, 500);
+    const [docs, total] = await Promise.all([
+      this.orderModel
+        .find(this.adminFilter(dto))
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(limit)
+        .lean<LeanOrder[]>(),
+      this.orderModel.countDocuments(this.adminFilter(dto)),
+    ]);
+    const names = await this.loadDisplayNames(
+      docs.flatMap((d) => [d.buyerId, d.sellerId]),
+    );
+    return {
+      data: docs.map((d) => this.toAdminPublic(d, names)),
+      total,
+      truncated: total > docs.length,
+    };
+  }
+
+  // ═══ Admin intervention (#20) ══════════════════════════════════════════════
+
+  /**
+   * Admin huỷ đơn: chỉ PENDING/CONFIRMED. SHIPPING/DELIVERED phải đi đường
+   * hoàn tiền — huỷ sau khi đã giao sẽ làm sai lệch đối soát.
+   */
+  async adminCancelOrder(
+    actorId: string,
+    orderId: string,
+    dto: AdminCancelOrderDto,
+  ): Promise<Record<string, unknown>> {
+    const order = await this.loadOrderOrFail(orderId);
+    if (order.status !== 'PENDING' && order.status !== 'CONFIRMED') {
+      throw new BadRequestException(
+        `Chỉ huỷ được đơn Chờ xác nhận/Đã xác nhận (đơn đang ${order.status})`,
+      );
+    }
+    const reason = dto.reason.trim();
+    const updated = await this.atomicTransition(orderId, order.status, {
+      status: 'CANCELLED',
+      by: actorId,
+      note: reason,
+      extra: { cancelledBy: actorId, cancelReason: reason },
+    });
+    await this.afterTransition(updated, {
+      systemLine: `Admin đã huỷ đơn #${updated.orderCode}: ${reason}`,
+      notifyUserId: updated.buyerId,
+    });
+    return this.toAdminPublic(updated);
+  }
+
+  /**
+   * Hoàn tiền KHÔNG đổi status (mobile `ChatApp` switch chỉ có 5 trạng thái).
+   * Chỉ DELIVERED/CANCELLED; mỗi đơn hoàn tối đa một lần để không cộng trùng
+   * vào đối soát.
+   */
+  async adminRefundOrder(
+    actorId: string,
+    orderId: string,
+    dto: AdminRefundOrderDto,
+  ): Promise<Record<string, unknown>> {
+    const order = await this.loadOrderOrFail(orderId);
+    if (order.status !== 'DELIVERED' && order.status !== 'CANCELLED') {
+      throw new BadRequestException(
+        `Chỉ hoàn tiền đơn Đã giao hoặc Đã huỷ (đơn đang ${order.status})`,
+      );
+    }
+    if (order.refundedAt) {
+      throw new BadRequestException('Đơn này đã được hoàn tiền');
+    }
+    const total = orderTotal(order);
+    if (dto.amount > total) {
+      throw new BadRequestException(
+        `Số tiền hoàn vượt tổng đơn (${formatVnd(total)})`,
+      );
+    }
+    const updated = await this.orderModel
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(orderId), refundedAt: null },
+        {
+          $set: {
+            refundedAt: new Date(),
+            refundedBy: actorId,
+            refundReason: dto.reason.trim(),
+            refundAmount: dto.amount,
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean<LeanOrder | null>();
+    if (!updated) {
+      throw new ConflictException('Đơn vừa được hoàn tiền bởi thao tác khác');
+    }
+    return this.toAdminPublic(updated);
+  }
+
+  /** Ghi chú nội bộ — không đổi status, chuỗi rỗng để xoá ghi chú. */
+  async adminNoteOrder(
+    _actorId: string,
+    orderId: string,
+    dto: AdminOrderNoteDto,
+  ): Promise<Record<string, unknown>> {
+    const note = dto.internalNote.trim();
+    const updated = await this.orderModel
+      .findByIdAndUpdate(
+        orderId,
+        { $set: { internalNote: note ? note : null } },
+        { returnDocument: 'after' },
+      )
+      .lean<LeanOrder | null>();
+    if (!updated) throw new NotFoundException('Order not found');
+    return this.toAdminPublic(updated);
   }
 
   // ═══ Helpers ════════════════════════════════════════════════════════════════
@@ -439,6 +563,7 @@ export class OrdersService {
   private async listWithFilter(
     filter: QueryFilter<CommerceOrderDocument>,
     dto: ListOrdersQueryDto,
+    admin = false,
   ): Promise<OrderListResponse> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
@@ -457,12 +582,25 @@ export class OrdersService {
       docs.flatMap((d) => [d.buyerId, d.sellerId]),
     );
     return {
-      data: docs.map((d) => this.toPublic(d, names)),
+      data: docs.map((d) =>
+        admin ? this.toAdminPublic(d, names) : this.toPublic(d, names),
+      ),
       total,
       page,
       limit,
       hasMore: page * limit < total,
     };
+  }
+
+  /** Bộ lọc dùng chung cho list/export (một nguồn, tránh lệch kết quả). */
+  private adminFilter(
+    dto: AdminListOrdersQueryDto,
+  ): QueryFilter<CommerceOrderDocument> {
+    const filter: QueryFilter<CommerceOrderDocument> = {};
+    if (dto.status) filter.status = dto.status;
+    if (dto.buyerId) filter.buyerId = dto.buyerId;
+    if (dto.sellerId) filter.sellerId = dto.sellerId;
+    return filter;
   }
 
   private toPublic(
@@ -494,13 +632,18 @@ export class OrdersService {
     };
   }
 
-  private async toDetail(order: LeanOrder): Promise<OrderDetailResponse> {
+  private async toDetail(
+    order: LeanOrder,
+    admin = false,
+  ): Promise<OrderDetailResponse> {
     const names = await this.loadDisplayNames([order.buyerId, order.sellerId]);
     const itemImageUrls = await Promise.all(
       order.items.map((i) => (i.imageKey ? this.presign(i.imageKey) : null)),
     );
     return {
-      order: this.toPublic(order, names),
+      order: admin
+        ? this.toAdminPublic(order, names)
+        : this.toPublic(order, names),
       seller: {
         id: order.sellerId,
         displayName: names.get(order.sellerId) ?? 'Shop',
@@ -510,6 +653,26 @@ export class OrdersService {
         displayName: names.get(order.buyerId) ?? 'Khách',
       },
       itemImageUrls,
+    };
+  }
+
+  /**
+   * Mở rộng của `toPublic` cho admin: ghi chú nội bộ + dấu vết huỷ/hoàn tiền.
+   * Buyer/seller không bao giờ thấy các field này.
+   */
+  private toAdminPublic(
+    order: LeanOrder,
+    names?: Map<string, string>,
+  ): Record<string, unknown> {
+    return {
+      ...this.toPublic(order, names),
+      internalNote: order.internalNote ?? null,
+      cancelledBy: order.cancelledBy ?? null,
+      cancelReason: order.cancelReason ?? null,
+      refundedAt: order.refundedAt ?? null,
+      refundedBy: order.refundedBy ?? null,
+      refundReason: order.refundReason ?? null,
+      refundAmount: order.refundAmount ?? null,
     };
   }
 
@@ -592,6 +755,8 @@ export class OrdersService {
       soldCountApplied?: boolean;
       by: string;
       note: string | null;
+      /** Field phụ ghi cùng transition (vd. cancelledBy/cancelReason của admin). */
+      extra?: Record<string, unknown>;
     },
   ): Promise<LeanOrder> {
     const now = new Date();
@@ -600,6 +765,7 @@ export class OrdersService {
     if (patch.soldCountApplied !== undefined) {
       $set.soldCountApplied = patch.soldCountApplied;
     }
+    if (patch.extra) Object.assign($set, patch.extra);
     const updated = await this.orderModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(orderId), status: from },

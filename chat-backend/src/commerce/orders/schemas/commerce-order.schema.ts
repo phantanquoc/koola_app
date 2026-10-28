@@ -170,6 +170,33 @@ export class CommerceOrder {
   @Prop({ type: Boolean, default: false })
   soldCountApplied: boolean;
 
+  // ─── Admin intervention (chỉ admin thấy các field dưới) ────────────────────
+
+  /** Ghi chú nội bộ của admin — không bao giờ trả cho buyer/seller. */
+  @Prop({ type: String, default: null })
+  internalNote: string | null;
+
+  /** Admin huỷ đơn ngoài luồng buyer/seller. */
+  @Prop({ type: String, default: null })
+  cancelledBy: string | null;
+
+  @Prop({ type: String, default: null })
+  cancelReason: string | null;
+
+  /** Hoàn tiền KHÔNG đổi status — trạng thái vẫn là DELIVERED/CANCELLED. */
+  @Prop({ type: Date, default: null })
+  refundedAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  refundedBy: string | null;
+
+  @Prop({ type: String, default: null })
+  refundReason: string | null;
+
+  /** Số tiền hoàn (VND); total của đơn giữ nguyên để đối soát. */
+  @Prop({ type: Number, default: null })
+  refundAmount: number | null;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -182,3 +209,6 @@ CommerceOrderSchema.index({ sellerId: 1, status: 1, createdAt: -1 });
 CommerceOrderSchema.index({ conversationId: 1 });
 CommerceOrderSchema.index({ idempotencyKey: 1 }, { unique: true });
 CommerceOrderSchema.index({ orderCode: 1 }, { unique: true });
+// Đối soát doanh thu: quét theo khoảng ngày, có/không lọc seller.
+CommerceOrderSchema.index({ createdAt: 1 });
+CommerceOrderSchema.index({ sellerId: 1, createdAt: 1 });

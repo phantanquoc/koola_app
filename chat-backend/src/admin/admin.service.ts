@@ -982,6 +982,8 @@ export class AdminService {
     'licenseExpiresAt',
     'internalNote',
     'assignee',
+    // Hoa hồng đi cùng hồ sơ doanh nghiệp: đổi qua PATCH để luôn có audit.
+    'commissionRate',
   ] as const;
 
   async updateBusiness(
