@@ -753,7 +753,38 @@ code,
   padding: var(--space-3) var(--space-4);
 }
 
-/* Hai ô ngày + nút xoá trong dialog export. */
+/* Chọn khoảng ngày trong dialog export: preset → hai ô ngày → câu tóm tắt. */
+.export-range {
+  gap: var(--space-3);
+}
+
+.export-range-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Preset là lựa chọn nhanh, không phải nút hành động: viền nhạt để không tranh
+   với "Xuất CSV" ở cuối dialog. */
+.export-range-presets .btn-ghost {
+  border: 1px solid var(--koola-line);
+  background: var(--koola-surface);
+  color: var(--koola-ink);
+  font-weight: 600;
+}
+
+.export-range-presets .btn-ghost:hover {
+  border-color: var(--koola-primary);
+  color: var(--koola-primary-dark);
+  background: var(--koola-surface);
+}
+
+.export-range-clear {
+  border-color: transparent !important;
+  color: var(--koola-muted) !important;
+  text-decoration: underline;
+}
+
 .export-date-row {
   display: flex;
   align-items: center;
@@ -763,7 +794,7 @@ code,
 
 .export-date-row input {
   width: auto;
-  min-width: 140px;
+  min-width: 150px;
 }
 
 .confirm-typing {
