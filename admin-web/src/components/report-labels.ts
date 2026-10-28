@@ -42,12 +42,23 @@ export function reportStatusTone(status: string): 'warning' | 'success' | 'muted
 /**
  * Deep-link sang đối tượng bị báo cáo.
  *
- * Chỉ trả về link khi trang đích THẬT SỰ đọc param. Hiện `ConversationsPage` và
- * `MessageSearchPage` chưa xử lý `focus`, nên link cũ `?focus=<id>` chỉ mở trang
- * trống — hứa suông (DESIGN §0.7). Trả null để UI hiện tên thay vì link chết.
- * Khi hai trang đó đọc `focus`, thêm case ở đây là đủ.
+ * Mỗi trang đích đọc `focus` và tự tải đúng đối tượng qua API riêng
+ * (`/admin/conversations/:id`, `/admin/messages/:id`, `/admin/stories/:id`),
+ * nên link luôn mở được nội dung thật — kể cả khi nó đã bị gỡ hoặc không nằm
+ * trong trang/tab mặc định.
  */
 export function reportTargetHref(type: string, id: string): string | null {
-  if (type === 'user') return `/users?search=${encodeURIComponent(id)}`;
-  return null;
+  const focus = encodeURIComponent(id);
+  switch (type) {
+    case 'user':
+      return `/users?search=${focus}`;
+    case 'conversation':
+      return `/conversations?focus=${focus}`;
+    case 'message':
+      return `/messages?focus=${focus}`;
+    case 'story':
+      return `/moments?focus=${focus}`;
+    default:
+      return null;
+  }
 }

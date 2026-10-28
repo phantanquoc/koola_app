@@ -1,6 +1,7 @@
 import './ConversationsPage.css';
 import './moderation-media.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
@@ -364,6 +365,30 @@ export default function ConversationsPage() {
     setServerIds(null);
     setFindHint(false);
   }, []);
+
+  // Deep-link `?focus=<conversationId>` từ trang báo cáo: mở sẵn drawer.
+  // Xoá param khi đóng để reload không bật lại drawer người dùng vừa tắt.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get('focus');
+  const closeDetailAndClearFocus = useCallback(() => {
+    closeDetail();
+    if (focusId) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('focus');
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [closeDetail, focusId, setSearchParams]);
+
+  useEffect(() => {
+    if (focusId) void openDetail(focusId);
+    // Chỉ chạy khi param đổi — openDetail đọc state khác nên không đưa vào deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
 
   const findQ = findOpen ? findQuery.trim() : '';
 
@@ -766,7 +791,7 @@ export default function ConversationsPage() {
         </div>
       </section>
 
-      <Dialog open={detailId !== null} onClose={closeDetail} labelId="conv-detail-title" variant="drawer">
+      <Dialog open={detailId !== null} onClose={closeDetailAndClearFocus} labelId="conv-detail-title" variant="drawer">
         {detailId && (
           <aside className="drawer conv-drawer">
             <div className="drawer-header conv-drawer-head">
@@ -785,7 +810,7 @@ export default function ConversationsPage() {
                 {!findOpen && !detailLoading && (
                   <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={() => { setFindOpen(true); requestAnimationFrame(() => findInputRef.current?.focus()); }} type="button" aria-label="Tìm trong hội thoại" title="Tìm trong hội thoại"><Search size={16} strokeWidth={2} aria-hidden /></button>
                 )}
-                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={closeDetail} type="button" aria-label="Đóng" title="Đóng"><X size={16} strokeWidth={2} aria-hidden /></button>
+                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={closeDetailAndClearFocus} type="button" aria-label="Đóng" title="Đóng"><X size={16} strokeWidth={2} aria-hidden /></button>
               </div>
             </div>
             {detailId && !detailLoading && (

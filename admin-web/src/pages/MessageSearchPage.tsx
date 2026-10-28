@@ -61,9 +61,10 @@ function MediaThumb({ type, url }: { type?: string; url?: string | null }) {
 export default function MessageSearchPage() {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
-  const { values, set } = useUrlFilters({ q: '', page: '1' });
+  const { values, set } = useUrlFilters({ q: '', page: '1', focus: '' });
   const q = values.q.trim();
   const page = Math.max(1, Number(values.page) || 1);
+  const focus = values.focus.trim();
 
   // Ô nhập tách khỏi `q` trong URL: gõ chưa bấm Tìm thì chưa gọi API.
   const [qInput, setQInput] = useState(values.q);
@@ -84,6 +85,14 @@ export default function MessageSearchPage() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Deep-link `?focus=<messageId>` từ trang báo cáo: tải đúng tin nhắn đó,
+  // kể cả khi nó đã bị gỡ hoặc không khớp từ khoá đang gõ.
+  const { data: focused, isError: focusError } = useQuery({
+    queryKey: ['admin-message', focus],
+    queryFn: async () => (await apiClient.get<MessageItem>(`/admin/messages/${focus}`)).data,
+    enabled: focus.length > 0,
+  });
 
   const [deleteTarget, setDeleteTarget] = useState<MessageItem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -113,6 +122,9 @@ export default function MessageSearchPage() {
       } : prev);
       addToast('success', 'Đã gỡ tin nhắn.');
       setDeleteTarget(null);
+      // Khối "được chỉ tới" giữ bản cache riêng — nếu không làm mới, nó vẫn
+      // hiện nút Gỡ cho tin vừa gỡ xong.
+      if (focus) void queryClient.invalidateQueries({ queryKey: ['admin-message', focus] });
     } catch (err) {
       addToast('error', apiErrorMessage(err, 'Gỡ tin nhắn thất bại. Vui lòng thử lại.'));
     } finally {
@@ -151,6 +163,48 @@ export default function MessageSearchPage() {
           Tìm
         </button>
       </ListHeader>
+
+      {/* Tin nhắn được deep-link tới — hiện riêng để không phụ thuộc kết quả
+          tìm kiếm hiện tại (có thể khác từ khoá hoặc đã bị gỡ). */}
+      {focus && (
+        <TableShell title="Tin nhắn được chỉ tới">
+          {focusError ? (
+            <StateBlock
+              variant="error" title="Không tải được tin nhắn"
+              copy="Tin nhắn có thể đã bị xoá cứng hoặc id không hợp lệ."
+            >
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => set({ focus: '' })}>
+                Bỏ chỉ tới
+              </button>
+            </StateBlock>
+          ) : !focused ? (
+            <StateBlock variant="loading" title="Đang tải tin nhắn" copy="Đang lấy nội dung được báo cáo." />
+          ) : (
+            <div className="mod-media-cell" style={{ padding: 'var(--space-3)' }}>
+              <MediaThumb type={focused.type} url={focused.mediaUrlSigned} />
+              <div>
+                <div className="cell-title">
+                  {focused.content?.trim() || 'Không có nội dung văn bản'}
+                </div>
+                <p className="cell-meta">
+                  {focused.senderName ?? (focused.senderId ? shortId(focused.senderId) : '—')}
+                  {' · '}
+                  {focused.conversationName
+                    ?? (focused.conversationId ? shortId(focused.conversationId) : '—')}
+                </p>
+              </div>
+              <div className="table-actions">
+                <button className="btn btn-danger-ghost btn-sm" type="button" onClick={() => setDeleteTarget(focused)}>
+                  Gỡ
+                </button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => set({ focus: '' })}>
+                  Bỏ chỉ tới
+                </button>
+              </div>
+            </div>
+          )}
+        </TableShell>
+      )}
 
       <TableShell>
         {isError && (

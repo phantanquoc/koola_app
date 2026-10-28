@@ -97,3 +97,17 @@ a.mod-report-media img {
   max-height: 260px;
   border-radius: var(--radius-sm);
 }
+
+/* Khối "được chỉ tới" từ deep-link ?focus= — ảnh + mô tả + hành động. */
+.mod-focus-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.mod-focus-body {
+  flex: 1 1 200px;
+  min-width: 0;
+}

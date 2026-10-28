@@ -446,6 +446,22 @@ export class AdminModerationController {
     return this.withSignedMedia(mapped);
   }
 
+  /**
+   * Một tin nhắn theo id — đích của deep-link `?focus=<id>` từ trang báo cáo.
+   * Không lọc `deleted`: moderator mở để xem lại nội dung đã gỡ.
+   */
+  @Get('messages/:id')
+  async getMessage(@Param('id') id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Message not found');
+    }
+    const msg = await this.msgModel.findById(id).lean();
+    if (!msg) throw new NotFoundException('Message not found');
+    const [enriched] = await this.withMessageNames([msg]);
+    const [signed] = await this.withSignedMedia([enriched]);
+    return signed;
+  }
+
   @Post('messages/:id/soft-delete')
   @HttpCode(HttpStatus.OK)
   @Throttle({
@@ -544,6 +560,22 @@ export class AdminModerationController {
         authorAvatar: author?.avatar ?? null,
       };
     });
+  }
+
+  /**
+   * Một story theo id — đích của deep-link `?focus=<id>` từ trang báo cáo.
+   * Không lọc isActive: moderator mở để xem lại story đã gỡ.
+   */
+  @Get('stories/:id')
+  async getStory(@Param('id') id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Story not found');
+    }
+    const story = await this.storyModel.findById(id).lean();
+    if (!story) throw new NotFoundException('Story not found');
+    const [withNames] = await this.withAuthorNames([story]);
+    const [withMedia] = await this.withStoryMedia([withNames]);
+    return withMedia;
   }
 
   @Post('stories/:id/takedown')

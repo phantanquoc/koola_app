@@ -1,6 +1,6 @@
 import './moderation-media.css';
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera } from 'lucide-react';
 import apiClient from '../apiClient';
 import { ListHeader } from '../components/ListHeader';
@@ -43,10 +43,11 @@ const ACTIVE_TABS = ['', 'true', 'false'] as const;
 export default function MomentsModerationPage() {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
-  const { values, set } = useUrlFilters({ active: '', page: '1', pageSize: '20' });
+  const { values, set } = useUrlFilters({ active: '', page: '1', pageSize: '20', focus: '' });
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
   const active = (ACTIVE_TABS as readonly string[]).includes(values.active) ? values.active : '';
+  const focus = values.focus.trim();
 
   const { rows, total, isLoading, isError, error, refetch } = useAdminList<StoryItem>(
     ['stories', active, page, pageSize],
@@ -63,6 +64,14 @@ export default function MomentsModerationPage() {
   const [lightbox, setLightbox] = useState<StoryItem | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Deep-link `?focus=<storyId>` từ trang báo cáo: tải đúng story đó kể cả khi
+  // nó đã bị gỡ hoặc nằm ngoài trang/tab đang xem.
+  const { data: focused, isError: focusError } = useQuery({
+    queryKey: ['story', focus],
+    queryFn: async () => (await apiClient.get<StoryItem>(`/admin/stories/${focus}`)).data,
+    enabled: focus.length > 0,
+  });
+
   async function confirmTakedown() {
     if (!takedownTarget || busy) return;
     setBusy(true);
@@ -71,6 +80,7 @@ export default function MomentsModerationPage() {
       addToast('success', 'Đã gỡ story.');
       setTakedownTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['stories'] });
+      if (focus) void queryClient.invalidateQueries({ queryKey: ['story', focus] });
     } catch (err) {
       addToast('error', apiErrorMessage(err, 'Gỡ story thất bại. Vui lòng thử lại.'));
     } finally {
@@ -99,6 +109,60 @@ export default function MomentsModerationPage() {
           onChange={(k) => set({ active: k, page: '1' })}
         />
       </ListHeader>
+
+      {/* Story được deep-link tới — hiện riêng để không phụ thuộc tab/trang. */}
+      {focus && (
+        <TableShell title="Story được chỉ tới">
+          {focusError ? (
+            <StateBlock
+              variant="error" title="Không tải được story"
+              copy="Story có thể đã bị xoá cứng hoặc id không hợp lệ."
+            >
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => set({ focus: '' })}>
+                Bỏ chỉ tới
+              </button>
+            </StateBlock>
+          ) : !focused ? (
+            <StateBlock variant="loading" title="Đang tải story" copy="Đang lấy nội dung được báo cáo." />
+          ) : (
+            <div className="mod-focus-row">
+              <button
+                className="mod-thumb"
+                type="button"
+                onClick={() => setLightbox(focused)}
+                aria-label="Xem media của story"
+              >
+                <img
+                  src={focused.mediaType === 'video'
+                    ? focused.thumbnailUrlSigned ?? ''
+                    : focused.mediaUrlSigned ?? ''}
+                  alt=""
+                />
+              </button>
+              <div className="mod-focus-body">
+                <div className="cell-title">
+                  {focused.caption?.trim() || 'Không có caption'}
+                </div>
+                <p className="cell-meta">
+                  {focused.authorName ?? 'Tài khoản đã xoá'}
+                  {' · '}
+                  {focused.isActive === false ? 'Đã gỡ' : 'Đang hiển thị'}
+                </p>
+              </div>
+              <div className="table-actions table-actions--end">
+                {focused.isActive !== false && (
+                  <button className="btn btn-danger-ghost btn-sm" type="button" onClick={() => setTakedownTarget(focused)}>
+                    Gỡ
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => set({ focus: '' })}>
+                  Bỏ chỉ tới
+                </button>
+              </div>
+            </div>
+          )}
+        </TableShell>
+      )}
 
       <TableShell>
         {isError && (
