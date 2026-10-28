@@ -8,8 +8,11 @@ import {
   ChartLine,
   ChevronsLeft,
   ChevronsRight,
+  FileClock,
   Flag,
+  Gavel,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Megaphone,
   Menu,
@@ -18,6 +21,7 @@ import {
   Music,
   Package,
   ScrollText,
+  Settings,
   ShoppingCart,
   Users,
   X,
@@ -54,6 +58,8 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { to: '/messages', label: 'Messages', icon: MessageSquare },
       { to: '/moments', label: 'Moments', icon: Camera },
       { to: '/music', label: 'Music', icon: Music },
+      { to: '/moderation-queue', label: 'Hàng đợi', icon: ListChecks },
+      { to: '/appeals', label: 'Appeal', icon: Gavel },
     ],
   },
   {
@@ -75,6 +81,8 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     label: 'Hệ thống',
     items: [
       { to: '/health', label: 'Health', icon: Activity },
+      { to: '/ops-logs', label: 'Nhật ký vận hành', icon: FileClock },
+      { to: '/config', label: 'Cấu hình', icon: Settings },
       { to: '/broadcast', label: 'Broadcast', icon: Megaphone },
       { to: '/audit-logs', label: 'Audit log', icon: ScrollText },
     ],
@@ -97,6 +105,10 @@ const routeTitles: Record<string, string> = {
   '/health': 'Sức khỏe hệ thống',
   '/broadcast': 'Broadcast',
   '/audit-logs': 'Audit log',
+  '/moderation-queue': 'Hàng đợi kiểm duyệt',
+  '/appeals': 'Kháng nghị',
+  '/ops-logs': 'Nhật ký vận hành',
+  '/config': 'Cấu hình hệ thống',
 };
 
 /**
