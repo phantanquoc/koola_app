@@ -196,6 +196,21 @@ export class User {
   })
   fcmTokens: { token: string; platform: string; createdAt: Date }[];
 
+  // ─── Phiên bản client đang chạy (telemetry tự khai) ────────────────────────
+  /**
+   * Client gửi `X-App-Platform` + `X-App-Version` mỗi request; interceptor ghi
+   * lại lần gần nhất (dedupe 24h). Dùng để admin biết bản nào còn ngoài đời
+   * trước khi bật ép cập nhật — repo chưa có app trên store nào để tra.
+   */
+  @Prop({ type: String, default: null })
+  lastAppPlatform: 'ios' | 'android' | 'web' | null;
+
+  @Prop({ type: String, default: null })
+  lastAppVersion: string | null;
+
+  @Prop({ type: Date, default: null })
+  lastAppVersionAt: Date | null;
+
   @Prop({
     type: Object,
     default: {

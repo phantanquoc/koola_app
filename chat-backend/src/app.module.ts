@@ -4,7 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import type { ExecutionContext } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -28,6 +28,8 @@ import { CommerceModule } from './commerce/commerce.module';
 // Alias: trùng tên với ConfigModule của @nestjs/config dùng cho forRoot bên dưới.
 import { ConfigModule as AppConfigModule } from './config/config.module';
 import { OpsLogModule } from './ops/ops-log.module';
+import { ClientVersionInterceptor } from './common/interceptors/client-version.interceptor';
+import { User, UserSchema } from './users/user.schema';
 
 @Module({
   imports: [
@@ -43,6 +45,8 @@ import { OpsLogModule } from './ops/ops-log.module';
       process.env.MONGODB_URI || 'mongodb://localhost:27017/chat',
       { autoIndex: false, maxPoolSize: 20 },
     ),
+    // Interceptor ghi phiên bản client cần model User ở phạm vi AppModule.
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     ScheduleModule.forRoot(),
     // Redis-backed storage makes rate-limit quota global across instances:
     // the 61st request in a window returns 429 regardless of which instance
@@ -106,6 +110,11 @@ import { OpsLogModule } from './ops/ops-log.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Telemetry phiên bản client: đọc X-App-Platform/X-App-Version mỗi request.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ClientVersionInterceptor,
     },
   ],
 })

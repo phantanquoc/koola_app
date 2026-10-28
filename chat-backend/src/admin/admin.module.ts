@@ -32,6 +32,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
 import { AppealController } from './appeal.controller';
 import { UserAppealController } from './user-appeal.controller';
+import { AdminClientVersionController } from './admin-client-version.controller';
 import { ModerationQueueController } from './moderation-queue.controller';
 import { AdminExportController } from './admin-export.controller';
 import { AppealService } from './appeal.service';
@@ -98,6 +99,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     SessionController,
     AppealController,
     UserAppealController,
+    AdminClientVersionController,
     ModerationQueueController,
     ImpersonationController,
   ],
