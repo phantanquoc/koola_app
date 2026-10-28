@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, ArrowLeft, Check, Loader2, LogOut, Pencil,
+  AlertTriangle, ArrowLeft, Check, Eye, Loader2, LogOut, Pencil,
   RotateCcw, ShieldAlert, ShieldOff, Trash2, X,
 } from 'lucide-react';
 import apiClient from '../apiClient';
@@ -10,11 +10,20 @@ import { MaskedPII } from './MaskedPII';
 import { StatusBadge, VerificationBadge } from './StatusBadge';
 import { ConfirmDialog } from './ConfirmDialog';
 import { apiErrorMessage, banStatusLabel, formatDateTime, initials } from './formatters';
+import { isInternalIp, normalizeIp } from './audit-labels';
 import { useToast } from './Toast';
 import { BanDialog } from './UserModeration';
 import { useViolationHistory } from '../hooks/useViolationHistory';
 import { accountTypeLabel, banBadge } from './user-labels';
 import { PhoneInput } from './StructuredInput';
+import { UserDevices } from './UserDevices';
+import { TwoFactorPanel } from './TwoFactorPanel';
+import {
+  ADMIN_ROLES, ADMIN_ROLE_LABELS, adminRoleTone, resolveAdminRole, type AdminRole,
+} from './admin-role';
+import './user-admin.css';
+import { useAdminRole } from '../useAuth';
+import { startImpersonation } from './ImpersonationBar';
 
 /** Doanh nghiệp do một tài khoản cá nhân sở hữu (ownerUserId trỏ tới họ). */
 export interface OwnedBusiness {
@@ -40,6 +49,11 @@ export interface AdminUser {
   banReason?: string | null;
   bannedUntil?: string | null;
   isPlatformAdmin?: boolean;
+  /** Vai trò trong khu admin; null = super (admin cũ chưa gán role). */
+  adminRole?: AdminRole | null;
+  lastLoginAt?: string | null;
+  lastLoginIp?: string | null;
+  twoFactorEnabled?: boolean;
   verificationStatus?: string;
   ownerUserId?: string;
   /** Chủ sở hữu đã resolve tên — chỉ có ở tài khoản doanh nghiệp. */
@@ -78,8 +92,12 @@ const MULTILINE: ReadonlySet<EditableKey> = new Set(['bio', 'internalNote']);
 export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
+  // Hook phải chạy trước mọi early-return của trang (rules of hooks).
+  const adminRole = useAdminRole();
+  const [impersonateBusy, setImpersonateBusy] = useState(false);
   const [banTarget, setBanTarget] = useState<{ id: string; name: string; action: 'ban' | 'unban' } | null>(null);
   const [confirm, setConfirm] = useState<'delete' | 'restore' | 'revoke' | null>(null);
+  const [roleTarget, setRoleTarget] = useState<AdminRole | null>(null);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -184,6 +202,29 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
     invalidate();
   }
 
+  async function saveRole() {
+    if (!data || !roleTarget || busy) return;
+    setBusy(true);
+    try {
+      const res = await apiClient.patch<AdminUser>(`/admin/users/${data._id}`, { adminRole: roleTarget });
+      queryClient.setQueryData(['user', id], res.data);
+      addToast('success', `Đã đổi vai trò thành ${ADMIN_ROLE_LABELS[roleTarget]}.`);
+      setRoleTarget(null);
+      invalidate();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Đổi vai trò thất bại. Vui lòng thử lại.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** IP public che octet cuối — octet đủ để đối chiếu nhà mạng, không đủ định danh. */
+  function maskLoginIp(ip: string): string {
+    const v4 = normalizeIp(ip);
+    const parts = v4.split('.');
+    return parts.length === 4 ? `${parts.slice(0, 3).join('.')}.x` : v4;
+  }
+
   if (isLoading) {
     return (
       <section className="table-shell detail-card" aria-label="Chi tiết người dùng">
@@ -227,6 +268,28 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
   // Hồ sơ đã xoá mềm: backend chặn PATCH + mutation (list/update đều lọc
   // deletedAt), nên UI chỉ để đọc + nút Khôi phục.
   const readOnly = isDeleted;
+  const currentRole = resolveAdminRole(data);
+  // Chỉ super được đổi vai trò (backend trả 403 cho moderator/support) — ẩn ô
+  // chọn thay vì để bấm rồi ăn lỗi. Thiếu context = super, khớp AdminRoleGuard.
+  const canAssignRole = adminRole === 'super';
+  // Xem thay cấp token đọc dữ liệu người khác → cùng mức quyền với đổi vai trò.
+  // Không cho xem thay chính mình/admin khác: backend đã chặn, ẩn nút cho khỏi bấm.
+  const canImpersonate =
+    adminRole === 'super' && !data.isPlatformAdmin && !isDeleted;
+
+  async function beginImpersonation() {
+    if (impersonateBusy) return;
+    setImpersonateBusy(true);
+    try {
+      await startImpersonation(data._id, apiClient);
+      // Token đã đổi; reload để mọi query đi lại bằng danh tính mới.
+      window.location.reload();
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Không bắt đầu được chế độ xem thay.');
+      setImpersonateBusy(false);
+    }
+  }
+  const loginIp = data.lastLoginIp && !isInternalIp(data.lastLoginIp) ? maskLoginIp(data.lastLoginIp) : null;
 
   return (
     <section className="table-shell detail-card" aria-label="Chi tiết người dùng">
@@ -368,6 +431,74 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
           </section>
         )}
 
+        {/* Vai trò quyết định admin này làm được gì; hạ super là thay đổi quyền
+            của người khác nên luôn qua confirm, kể cả khi đảo ngược được. */}
+        {data.isPlatformAdmin && !isDeleted && (
+          <section className="detail-section" aria-label="Quyền quản trị">
+            <h3 className="detail-section-title">Quyền quản trị</h3>
+            <dl className="description-list">
+              <div className="inline-field">
+                <dt className="cell-meta">Vai trò hiện tại</dt>
+                <dd>
+                  <StatusBadge
+                    tone={adminRoleTone(currentRole ?? 'super')}
+                    label={ADMIN_ROLE_LABELS[currentRole ?? 'super']}
+                  />
+                </dd>
+              </div>
+            </dl>
+            {canAssignRole ? (
+              <label className="form-field">
+                <span className="form-label">Đổi vai trò</span>
+                <select
+                  className="select" value={currentRole ?? 'super'} disabled={busy}
+                  onChange={(e) => {
+                    const next = e.target.value as AdminRole;
+                    if (next !== currentRole) setRoleTarget(next);
+                  }}
+                >
+                  {ADMIN_ROLES.map((r) => (
+                    <option key={r} value={r}>{ADMIN_ROLE_LABELS[r]}</option>
+                  ))}
+                </select>
+                <span className="cell-meta">
+                  Hạ vai trò cấp cao có hiệu lực ngay ở request kế tiếp. Đảm bảo còn ít nhất
+                  một tài khoản cấp cao khác trước khi hạ người cuối cùng.
+                </span>
+              </label>
+            ) : (
+              <span className="cell-meta">
+                Chỉ quản trị cấp cao được đổi vai trò.
+              </span>
+            )}
+          </section>
+        )}
+
+        {/* Hồ sơ đã xoá mềm: mọi phiên đã bị thu hồi lúc xoá, nên hai khối vận
+            hành này chỉ còn giá trị khi tài khoản đang sống. */}
+        {!isDeleted && (
+          <>
+            <TwoFactorPanel userId={data._id} />
+            <UserDevices user={data} />
+          </>
+        )}
+
+        <section className="detail-section" aria-label="Nhật ký đăng nhập">
+          <h3 className="detail-section-title">Nhật ký đăng nhập</h3>
+          <dl className="description-list">
+            <dt className="cell-meta">Đăng nhập gần nhất</dt>
+            <dd>{data.lastLoginAt ? formatDateTime(data.lastLoginAt) : <span className="cell-meta">Chưa ghi nhận</span>}</dd>
+            <dt className="cell-meta">IP</dt>
+            <dd>
+              {data.lastLoginIp
+                ? loginIp
+                  ? <span className="k-mono">{loginIp}</span>
+                  : <span className="cell-meta">IP nội bộ</span>
+                : <span className="cell-meta">—</span>}
+            </dd>
+          </dl>
+        </section>
+
         <section
           className={`detail-section${readOnly ? '' : ' fields-editable'}`}
           aria-label="Ghi chú nội bộ"
@@ -447,6 +578,14 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
           </button>
         ) : (
           <>
+            {canImpersonate && (
+              <button
+                className="btn btn-secondary btn-sm" type="button" disabled={busy || impersonateBusy}
+                onClick={() => void beginImpersonation()}
+              >
+                <Eye size={14} aria-hidden /> {impersonateBusy ? 'Đang mở…' : 'Xem thay'}
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setConfirm('revoke')}>
               <LogOut size={14} aria-hidden /> Thu hồi phiên
             </button>
@@ -473,6 +612,21 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
       </div>
 
       <BanDialog target={banTarget} onClose={() => setBanTarget(null)} onDone={afterBan} />
+
+      <ConfirmDialog
+        open={roleTarget !== null}
+        onClose={() => setRoleTarget(null)}
+        title={`Đổi vai trò của "${data.displayName}"?`}
+        description={
+          roleTarget
+            ? `Vai trò mới: ${ADMIN_ROLE_LABELS[roleTarget]} (${roleTarget}). Quyền cũ mất hiệu lực ngay ở request kế tiếp${roleTarget !== 'super' ? ' — kiểm tra còn admin cấp cao khác trước khi hạ người cuối cùng.' : '.'}`
+            : undefined
+        }
+        confirmLabel="Đổi vai trò"
+        variant={roleTarget === 'super' ? 'primary' : 'danger'}
+        busy={busy}
+        onConfirm={saveRole}
+      />
 
       <ConfirmDialog
         open={confirm === 'delete'}

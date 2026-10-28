@@ -1,0 +1,69 @@
+/* Trang Người dùng — vai trò quản trị, phiên thiết bị, 2FA.
+   File riêng để không đụng index.css; chỉ dùng token trong :root. */
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface-soft);
+}
+
+.device-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mfa-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.mfa-code-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mfa-code-grid li {
+  padding: var(--space-2);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-xs);
+  background: var(--koola-surface);
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+.mfa-code-input {
+  max-width: 160px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.3em;
+}
+
+.mfa-otp-url {
+  word-break: break-all;
+}
+
+@media (max-width: 560px) {
+  .mfa-code-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

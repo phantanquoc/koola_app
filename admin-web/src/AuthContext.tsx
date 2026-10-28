@@ -9,6 +9,13 @@ export interface AdminIdentity {
   name: string;
   email?: string;
   id?: string;
+  /**
+   * Vai trò quản trị của chính admin đang đăng nhập. Backend trả null cho
+   * admin cũ chưa phân vai trò — coi là `super` (AdminRoleGuard cũng vậy).
+   * Trang nào chỉ super được thao tác (đổi vai trò, sửa cấu hình) dùng field
+   * này để ẩn nút thay vì để người dùng bấm rồi ăn 403.
+   */
+  adminRole?: 'super' | 'moderator' | 'support';
 }
 
 /**
@@ -32,6 +39,8 @@ interface MeResponse {
   email?: string;
   _id?: string;
   id?: string;
+  isPlatformAdmin?: boolean;
+  adminRole?: 'super' | 'moderator' | 'support' | null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -56,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: me.displayName ?? me.name ?? me.email ?? 'Admin',
           email: me.email,
           id: me._id ?? me.id,
+          adminRole: me.adminRole ?? 'super',
         });
       })
       .catch(() => {

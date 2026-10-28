@@ -29,6 +29,7 @@ import apiClient from './apiClient';
 import { initials } from './components/formatters';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ImpersonationBar } from './components/ImpersonationBar';
 
 interface NavItem {
   to: string;
@@ -191,6 +192,8 @@ export default function AppLayout() {
       <div className={`env-banner ${isProd ? 'env-banner--prod' : 'env-banner--dev'}`} role="status">
         {isProd ? 'PROD · Koola Admin' : 'DEV · Koola Admin'}
       </div>
+      {/* Bar tự render null khi không có phiên xem-thay — không cần cờ ở layout. */}
+      <ImpersonationBar />
       {mobileNavOpen && (
         <div
           className="mobile-nav-backdrop"
