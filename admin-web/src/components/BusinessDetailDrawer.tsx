@@ -11,6 +11,7 @@ import { categoryVi, relationshipVi, PROVINCES, CATEGORY_OPTIONS } from './vn-da
 import LicensePreview from './LicensePreview';
 import { BusinessCreateForm } from './BusinessCreateForm';
 import { PhoneInput, IntegerInput } from './StructuredInput';
+import { isValidVnPhone, normalizeVnPhone } from './input-masks';
 import StateBlock from './StateBlock';
 import { useAdminRole } from '../useAuth';
 
@@ -129,7 +130,9 @@ const FIELD_GROUPS: Array<{ title: string; keys: EditableKey[]; stack?: boolean 
   { title: 'Định danh', keys: ['displayName', 'businessCategory', 'tagline', 'description'] },
   { title: 'Liên hệ', keys: ['contactEmail', 'contactPhone', 'address', 'province', 'website'], stack: true },
   { title: 'Pháp lý', keys: ['taxCode', 'licenseExpiresAt'] },
-  { title: 'Vận hành', keys: ['internalNote', 'assignee'] },
+  // Hoa hồng là thoả thuận nền tảng, không phải thuộc tính hồ sơ — nhưng vẫn
+  // phải hiện ở đây thì mới sửa được. `SUPER_ONLY_KEYS` ẩn bút với moderator.
+  { title: 'Vận hành', keys: ['internalNote', 'assignee', 'commissionRate'] },
 ];
 
 /** 0.125 → "12,5%" — người vận hành nghĩ theo %, DB lưu tỉ lệ. */
@@ -145,6 +148,29 @@ function pctToRate(raw: string): number | null {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n / 100 : null;
+}
+
+/** Lỗi tại chỗ cho field sửa inline — server vẫn kiểm lần nữa. */
+function fieldError(key: EditableKey, raw: string): string | null {
+  const v = raw.trim();
+  if (key === 'displayName' && v.length < 2) return 'Tên doanh nghiệp phải có ít nhất 2 ký tự.';
+  if (key === 'contactEmail' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+    return 'Email không hợp lệ.';
+  }
+  if (key === 'contactPhone' && v && !isValidVnPhone(v)) {
+    return 'SĐT phải là di động 10 số hoặc số cố định 11 số.';
+  }
+  if (key === 'taxCode' && v && !/^\d{10}(?:\d{3})?$/.test(v)) {
+    return 'Mã số thuế phải là 10 hoặc 13 chữ số.';
+  }
+  if (key === 'website' && v && !/^https?:\/\/\S+$/i.test(v)) {
+    return 'Website phải bắt đầu bằng http:// hoặc https://.';
+  }
+  if (key === 'commissionRate' && v) {
+    const n = Number(v.replace(',', '.').replace(/%/g, ''));
+    if (!Number.isFinite(n) || n < 0 || n > 100) return 'Hoa hồng phải từ 0 đến 100%.';
+  }
+  return null;
 }
 
 function displayValue(data: BusinessDetail, key: EditableKey): string {
@@ -381,17 +407,20 @@ export function BusinessDetailDrawer({
   async function saveField() {
     if (!businessId || !editingKey || busy) return;
     const v = draft.trim();
-    // Backend từ chối tên <2 ký tự (UpdateBusinessDto) — bắt tại chỗ cho phản hồi tức thì
-    if (editingKey === 'displayName' && v.length < 2) {
-      addToast('error', 'Tên doanh nghiệp phải có ít nhất 2 ký tự.');
+    const invalid = fieldError(editingKey, v);
+    if (invalid) {
+      addToast('error', invalid);
       return;
     }
     setBusy(true);
     try {
-      // Hoa hồng nhập theo % nhưng backend nhận tỉ lệ 0..1.
+      // Hoa hồng nhập theo % nhưng backend nhận tỉ lệ 0..1. SĐT gửi dạng đã
+      // chuẩn hoá để backend @IsVnPhone nhận cả số cố định 11 số.
       const body = editingKey === 'commissionRate'
         ? { commissionRate: pctToRate(v) ?? 0 }
-        : { [editingKey]: v };
+        : editingKey === 'contactPhone'
+          ? { contactPhone: normalizeVnPhone(v) }
+          : { [editingKey]: v };
       await apiClient.patch(`/admin/businesses/${businessId}`, body);
       addToast('success', `Đã cập nhật ${EDIT_LABELS[editingKey]}.`);
       setEditingKey(null);
@@ -434,12 +463,15 @@ export function BusinessDetailDrawer({
       setEditAll(false);
       return;
     }
-    if (
-      typeof payload.displayName === 'string' &&
-      payload.displayName.length < 2
-    ) {
-      addToast('error', 'Tên doanh nghiệp phải có ít nhất 2 ký tự.');
-      return;
+    // Kiểm mọi field đã đổi trước khi gửi — lỗi một field thì không gửi gì,
+    // tránh PATCH nửa đúng nửa sai. `commissionRate` kiểm trên giá trị % đang
+    // gõ (formAll), không phải tỉ lệ 0..1 đã quy đổi trong payload.
+    for (const key of Object.keys(payload) as EditableKey[]) {
+      const invalid = fieldError(key, formAll[key] ?? '');
+      if (invalid) {
+        addToast('error', `${EDIT_LABELS[key]}: ${invalid}`);
+        return;
+      }
     }
     setBusy(true);
     try {
