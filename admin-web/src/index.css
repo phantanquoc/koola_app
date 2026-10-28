@@ -3434,6 +3434,14 @@ th.sortable:hover {
 .test-push-result .badge {
   flex: none;
 }
+
+/* Cột số trong lịch sử broadcast — canh phải cho dễ so sánh (§4). */
+.bc-col-num {
+  width: 88px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* Khoá rate limit: IP + nhãn "nội bộ". Vẫn phải hiện IP — đó là thứ phân biệt
    các dòng; nhãn chỉ để khỏi đi tra WHOIS. */
 .rl-key {

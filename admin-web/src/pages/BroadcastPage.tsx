@@ -261,11 +261,15 @@ export default function BroadcastPage() {
         description="Gửi thông báo hệ thống tới nhóm người dùng đã chọn."
       />
 
+      {/* Copy phải khớp hành vi hiện tại: `ids` có push cho người offline, ba loại
+          còn lại thì không (đếm theo socket). Câu cũ nói "chưa có FCM fallback" —
+          sai từ khi push fallback được thêm vào. */}
       <p className="bc-note" role="note">
         <Info size={16} aria-hidden />
         <span>
-          Broadcast hiện <strong>chỉ tới người đang online</strong> (đang mở app/socket).
-          Chưa có FCM fallback — người offline sẽ không nhận được.
+          <strong>Tất cả / Cá nhân / Doanh nghiệp</strong> chỉ tới người đang mở app.
+          Chọn <strong>Chọn người dùng</strong> nếu người offline cũng phải nhận —
+          nhóm đó có gửi push.
         </span>
       </p>
 
@@ -387,14 +391,15 @@ export default function BroadcastPage() {
                   <th scope="col">Thời điểm</th>
                   <th scope="col">Tiêu đề</th>
                   <th scope="col" className="col-hide-mobile">Đối tượng</th>
-                  <th scope="col">Người nhận online</th>
+                  <th scope="col" className="bc-col-num">Online</th>
+                  <th scope="col" className="bc-col-num col-hide-mobile">Push</th>
                   <th scope="col" className="col-hide-xs">Người gửi</th>
                 </tr>
               </thead>
               <tbody>
                 {history.rows.length === 0 && (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <EmptyState
                         title="Chưa gửi broadcast nào"
                         copy="Mỗi lần gửi thành công sẽ được ghi ở đây để đối soát."
@@ -413,7 +418,18 @@ export default function BroadcastPage() {
                       <div className="cell-meta bc-log-body">{log.body}</div>
                     </td>
                     <td className="col-hide-mobile">{logAudience(log)}</td>
-                    <td className="k-mono">{formatNumber(log.recipientsOnline)}</td>
+                    <td className="bc-col-num k-mono">
+                      {formatNumber(log.recipientsOnline)}
+                    </td>
+                    {/* Field đã ghi trong DB từ khi có push fallback nhưng trước
+                        đây không hiện → không đối soát được "đã push cho ai". */}
+                    <td className="bc-col-num col-hide-mobile">
+                      {log.pushDelivered && log.pushDelivered > 0
+                        ? <span className="k-mono">{formatNumber(log.pushDelivered)}</span>
+                        : log.audience === 'ids'
+                          ? <span className="cell-meta">0</span>
+                          : <span className="cell-meta" title="Audience này đếm theo socket, không biết ai offline để push">—</span>}
+                    </td>
                     <td className="col-hide-xs">{senderLabel(log)}</td>
                   </tr>
                 ))}
