@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MfaRequiredWall } from '../components/MfaRequiredWall';
 
@@ -9,19 +9,14 @@ vi.mock('../components/TwoFactorPanel', () => ({
   ),
 }));
 
+const logout = vi.fn();
+vi.mock('../useAuth', () => ({
+  useAuth: () => ({ logout }),
+}));
+
 describe('MfaRequiredWall', () => {
-  const original = window.location;
-
   beforeEach(() => {
-    // `window.location.reload` không ghi đè được trực tiếp — thay cả object.
-    Object.defineProperty(window, 'location', {
-      writable: true,
-      value: { ...original, reload: vi.fn() },
-    });
-  });
-
-  afterEach(() => {
-    Object.defineProperty(window, 'location', { writable: true, value: original });
+    logout.mockClear();
   });
 
   it('render form bật 2FA thay vì nội dung admin', () => {
@@ -41,10 +36,19 @@ describe('MfaRequiredWall', () => {
     expect(screen.getByRole('alert')).toBeTruthy();
   });
 
-  it('nút tải lại gọi location.reload để đọc trạng thái mới từ server', () => {
+  // Wall tự mở sau khi bật 2FA (TwoFactorPanel gọi refreshIdentity) — nên KHÔNG
+  // còn nút "tải lại" thủ công. Nếu ai thêm lại, test này chặn.
+  it('không có nút tải lại thủ công', () => {
     render(<MfaRequiredWall userId="admin-1" />);
 
-    screen.getByRole('button', { name: /tải lại/i }).click();
-    expect(window.location.reload).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /tải lại/i })).toBeNull();
+  });
+
+  // Admin không muốn bật lúc này vẫn có lối thoát thay vì kẹt một màn hình.
+  it('có nút đăng xuất gọi logout', () => {
+    render(<MfaRequiredWall userId="admin-1" />);
+
+    screen.getByRole('button', { name: /đăng xuất/i }).click();
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 });

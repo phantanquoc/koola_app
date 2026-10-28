@@ -40,6 +40,14 @@ interface AuthState {
   identityLoading: boolean;
   login: (accessToken: string, refreshToken: string) => void;
   logout: () => void;
+  /**
+   * Đọc lại `/admin/me` và cập nhật identity.
+   *
+   * Dùng khi trạng thái tài khoản vừa đổi ở phía server mà không có token mới —
+   * ví dụ admin vừa bật 2FA trên wall: không có nó thì wall đứng nguyên và cách
+   * duy nhất để thoát là F5, đúng kiểu "nút giả" §0.7 cấm.
+   */
+  refreshIdentity: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthState | null>(null);
@@ -61,40 +69,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [identity, setIdentity] = useState<AdminIdentity | null>(null);
   const [identityLoading, setIdentityLoading] = useState(false);
 
+  /** Dùng chung cho effect khởi động và cho `refreshIdentity` (gọi sau mutation). */
+  const loadIdentity = useCallback(async (): Promise<void> => {
+    setIdentityLoading(true);
+    try {
+      const res = await apiClient.get<MeResponse>('/admin/me');
+      const me = res.data;
+      setIdentity({
+        name: me.displayName ?? me.name ?? me.email ?? 'Admin',
+        email: me.email,
+        id: me._id ?? me.id,
+        adminRole: me.adminRole ?? 'super',
+        twoFactorEnabled: Boolean(me.twoFactorEnabled),
+        mfaRequired: Boolean(me.mfaRequired),
+      });
+    } catch {
+      // 401/403 do apiClient interceptor lo (logout/forbidden). Lỗi mạng thì để
+      // identity null — trang vẫn render, chỉ thiếu chip tên.
+      setIdentity(null);
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, []);
+
   // Fetch /me whenever a token exists (login or page reload with session).
   useEffect(() => {
     if (!token) {
       setIdentity(null);
       return;
     }
-    let cancelled = false;
-    setIdentityLoading(true);
-    apiClient
-      .get<MeResponse>('/admin/me')
-      .then((res) => {
-        if (cancelled) return;
-        const me = res.data;
-        setIdentity({
-          name: me.displayName ?? me.name ?? me.email ?? 'Admin',
-          email: me.email,
-          id: me._id ?? me.id,
-          adminRole: me.adminRole ?? 'super',
-          twoFactorEnabled: Boolean(me.twoFactorEnabled),
-          mfaRequired: Boolean(me.mfaRequired),
-        });
-      })
-      .catch(() => {
-        // 401/403 are handled by the apiClient interceptor (logout/forbidden).
-        // Other failures (network) just leave identity null; pages still work.
-        if (!cancelled) setIdentity(null);
-      })
-      .finally(() => {
-        if (!cancelled) setIdentityLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    // React 18 không cảnh báo setState sau unmount, và `loadIdentity` tự nuốt lỗi
+    // — không cần cờ `cancelled` (bản trước có nhưng không chặn được gì vì
+    // setState nằm bên trong callback, ngoài phạm vi effect).
+    void loadIdentity();
+  }, [token, loadIdentity]);
 
   const login = useCallback((accessToken: string, refreshToken: string) => {
     tokenStorage.setAccess(accessToken);
@@ -123,8 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       identityLoading,
       login,
       logout,
+      refreshIdentity: loadIdentity,
     }),
-    [token, identity, identityLoading, login, logout],
+    [token, identity, identityLoading, login, logout, loadIdentity],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

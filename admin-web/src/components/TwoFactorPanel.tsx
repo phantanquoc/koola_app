@@ -6,6 +6,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { apiErrorMessage } from './formatters';
 import { StatusBadge } from './StatusBadge';
 import { useToast } from './Toast';
+import { useRefreshIdentity } from '../useAuth';
 import './user-admin.css';
 
 interface MeAccount {
@@ -30,6 +31,9 @@ type Step = 'idle' | 'setup' | 'recovery' | 'disable';
 export function TwoFactorPanel({ userId }: { userId: string }) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
+  // Wall 2FA đọc `identity.twoFactorEnabled`; bật xong phải làm mới identity thì
+  // wall mới tự mở, nếu không admin phải F5 — đúng kiểu nút giả.
+  const refreshIdentity = useRefreshIdentity();
   const [step, setStep] = useState<Step>('idle');
   const [setup, setSetup] = useState<SetupResult | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
@@ -86,6 +90,8 @@ export function TwoFactorPanel({ userId }: { userId: string }) {
       setStep('recovery');
       addToast('success', 'Đã bật 2FA. Lưu ngay mã khôi phục.');
       void queryClient.invalidateQueries({ queryKey: ['admin-me'] });
+      // Wall 2FA đọc từ AuthContext — không làm mới thì đứng nguyên sau khi bật.
+      void refreshIdentity();
     } catch (err) {
       addToast('error', apiErrorMessage(err, 'Mã xác thực không đúng.'));
     } finally {
@@ -101,6 +107,7 @@ export function TwoFactorPanel({ userId }: { userId: string }) {
       addToast('success', 'Đã tắt 2FA.');
       reset();
       void queryClient.invalidateQueries({ queryKey: ['admin-me'] });
+      void refreshIdentity();
     } catch (err) {
       addToast('error', apiErrorMessage(err, 'Mã xác thực không đúng.'));
     } finally {

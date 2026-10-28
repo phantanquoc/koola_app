@@ -8,12 +8,24 @@ interface AuthState {
   identityLoading: boolean;
   login: (accessToken: string, refreshToken: string) => void;
   logout: () => void;
+  refreshIdentity: () => Promise<void>;
 }
 
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
+}
+
+/**
+ * Làm mới identity sau một mutation — không ném khi thiếu provider.
+ *
+ * `TwoFactorPanel` render được trong test component đơn lẻ (không có
+ * AuthProvider), và ở đó chỉ cần "không có gì để làm mới" chứ không phải lỗi.
+ */
+export function useRefreshIdentity(): () => Promise<void> {
+  const ctx = useContext(AuthContext);
+  return ctx?.refreshIdentity ?? (() => Promise.resolve());
 }
 
 /**
