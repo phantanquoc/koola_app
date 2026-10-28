@@ -328,8 +328,12 @@ mềm/khôi phục, sửa cấu hình, gửi broadcast, quyết định kháng n
 - Payload là bản **đã redact**: không token, password, secret, recovery code. Không
   đặt tên field chứa chữ `token` cho id phiên (dùng `sessionId`) — bộ lọc redact bắt
   theo tên key.
-- Bulk ghi **một** dòng với `targetId = ids.join(',')`; lịch sử từng hồ sơ nằm ở
-  `verificationHistory[]` của hồ sơ đó.
+- Bulk ghi **một dòng cho mỗi hồ sơ đã xử lý** (`targetId` = id của hồ sơ đó,
+  `payload.batchSize` cho biết lô lớn bao nhiêu). Ghi một dòng gộp
+  `targetId = ids.join(',')` là sai: timeline từng hồ sơ lọc theo `targetId` nên
+  lệnh duyệt hàng loạt biến mất khỏi đó, và
+  `openspec/specs/admin-business-verification` yêu cầu rõ "each item SHALL write
+  an audit entry".
 - Tiến trình hệ thống (cron gỡ ban…) ghi `actorId = 'system'` + `payload.reason` nêu
   nguồn, để audit không có dòng "ai làm" trống.
 - Ghi audit hỏng **không** được làm hỏng thao tác đã thành công — chỉ log cảnh báo.
@@ -405,6 +409,28 @@ ban không đá được phiên, danh sách thiết bị luôn rỗng — trong 
   user-conversation, member, conversation, ownerUserId.
 - Kiểm tra chéo khi thêm schema: viết query bằng **chuỗi id** trong một spec chạm
   schema thật, không chỉ mock — mock không bao giờ thấy lỗi này.
+
+#### 5.2.8 Vai trò `support` chỉ đọc — chốt ở `AdminGuard`, không ở từng route
+
+- `AdminGuard` chạy sau `JwtAuthGuard` trên **mọi** controller `/admin/*`, đọc lại
+  `adminRole` từ DB rồi chặn mọi method ngoài `GET/HEAD/OPTIONS` khi vai trò là
+  `support`. Đặt ở guard thay vì rải `@RequireRole` vì route thêm mới không thể lọt
+  lưới — bảo vệ mặc định thay vì bảo vệ theo trí nhớ.
+- `@RequireRole('super')` chỉ dùng để siết **thêm** (moderator cũng không được xoá
+  user, thu hồi toàn bộ phiên, cấp token xem thay, đổi hoa hồng, sửa cấu hình).
+- `adminRole` null (admin cũ) = `super`; guard fail-closed khi thiếu `request.adminRole`
+  (sai thứ tự guard) để lỗi cấu hình không âm thầm mở quyền.
+- UI ẩn nút theo `useAdminRole()` chỉ để đỡ bấm-rồi-ăn-403; quyền thật do backend quyết.
+
+#### 5.2.9 Deep-link `focus` phải có endpoint đọc-một-đối-tượng
+
+- Link từ trang báo cáo dùng `?focus=<id>`; mỗi trang đích tự tải đối tượng qua
+  endpoint riêng (`GET /admin/conversations/:id`, `/admin/messages/:id`,
+  `/admin/stories/:id`) thay vì tìm trong danh sách đã phân trang.
+- Endpoint đọc-một **không** lọc `deleted`/`isActive`: moderator mở để xem lại nội
+  dung đã gỡ — đó chính là lúc cần nhất.
+- Chỉ trả link khi trang đích thật sự đọc param (DESIGN §0.7). Đóng khối/drawer focus
+  thì xoá param để reload không bật lại.
 
 ## 6. Motion & responsive
 
