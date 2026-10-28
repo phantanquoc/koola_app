@@ -753,6 +753,182 @@ code,
   padding: var(--space-3) var(--space-4);
 }
 
+/* ─── UserPicker: chọn người nhận kiểu Gmail ─────────────────────────────── */
+.user-picker {
+  position: relative;
+}
+
+.user-picker-count {
+  margin-left: var(--space-2);
+  color: var(--koola-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Khung giả input: chip + ô gõ cùng một viền để đọc như một control. */
+.user-picker-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface);
+  padding: var(--space-1) var(--space-2);
+  cursor: text;
+}
+
+.user-picker-box:focus-within {
+  border-color: var(--koola-primary);
+  box-shadow: 0 0 0 3px var(--koola-primary-soft);
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 220px;
+  border-radius: var(--radius-pill);
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+  padding: 2px 4px 2px var(--space-3);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.user-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.user-chip-remove:hover {
+  background: var(--koola-primary);
+  color: var(--koola-surface);
+  opacity: 1;
+}
+
+.user-picker-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+
+.user-picker-icon {
+  flex: none;
+  color: var(--koola-faint);
+}
+
+.user-picker-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: var(--space-2) 0;
+  font: inherit;
+  color: var(--koola-ink);
+}
+
+.user-picker-input:focus {
+  outline: none;
+}
+
+/* Dùng lại keyframe có sẵn (.state-icon-spin) thay vì khai báo thêm một cái
+   giống hệt. */
+.user-picker-spin {
+  flex: none;
+  color: var(--koola-muted);
+  animation: state-icon-spin 900ms linear infinite;
+}
+
+/* Gợi ý nằm dưới khung, không đẩy layout — cùng kỹ thuật FilterPopover. */
+.user-picker-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.user-picker-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.user-picker-option.is-active {
+  background: var(--koola-primary-soft);
+}
+
+.user-picker-option.is-picked {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.user-picker-option-name {
+  font-weight: 700;
+  color: var(--koola-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-picker-option-detail {
+  color: var(--koola-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-picker-option-tag {
+  flex: none;
+  margin-left: auto;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  color: var(--koola-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.user-picker-empty {
+  padding: var(--space-3);
+  color: var(--koola-muted);
+  font-size: 13px;
+}
+
 /* Chọn khoảng ngày trong dialog export: preset → hai ô ngày → câu tóm tắt. */
 .export-range {
   gap: var(--space-3);

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
 import { Info } from 'lucide-react';
 import apiClient from '../apiClient';
 import { PageHeader } from '../components/PageHeader';
@@ -11,6 +10,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useToast } from '../components/Toast';
 import { apiErrorMessage, formatDateTime, formatNumber } from '../components/formatters';
 import { useAdminList } from '../hooks/useAdminList';
+import { UserPicker, type UserOption } from '../components/UserPicker';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { useAuth } from '../useAuth';
 import './broadcast.css';
@@ -19,7 +19,6 @@ const TITLE_MAX = 120;
 const BODY_MAX = 1000;
 const IDS_MAX = 500;
 const PAGE_SIZES = [20, 50, 100];
-const OBJECT_ID = /^[a-f0-9]{24}$/i;
 
 type Audience = 'all' | 'personal' | 'business' | 'ids';
 
@@ -42,17 +41,7 @@ interface Stats {
   totalBusiness: number;
 }
 
-/** Một chip người nhận — label là @username khi tra được, ngược lại là id rút gọn. */
-interface Recipient {
-  id: string;
-  label: string;
-}
 
-interface AdminUserLite {
-  _id: string;
-  displayName?: string;
-  username?: string;
-}
 
 interface BroadcastLog {
   _id: string;
@@ -88,9 +77,9 @@ export default function BroadcastPage() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<Audience>('all');
-  const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [idInput, setIdInput] = useState('');
-  const [adding, setAdding] = useState(false);
+  // UserPicker giữ cả id và tên; `label` cũ chỉ có id rút gọn nên bảng xác
+  // nhận toàn mã hex — người gửi không đọc được mình đang gửi cho ai.
+  const [recipients, setRecipients] = useState<UserOption[]>([]);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -141,58 +130,6 @@ export default function BroadcastPage() {
         : (stats.totalPersonal ?? 0) + (stats.totalBusiness ?? 0);
     return `khoảng ${formatNumber(n)} tài khoản`;
   }, [audience, recipients.length, stats, statsLoading]);
-
-  async function addRecipient(e: FormEvent) {
-    e.preventDefault();
-    const raw = idInput.trim().replace(/^@/, '');
-    if (!raw || adding) return;
-    // ObjectId là hex: so khớp không phân biệt hoa/thường để không thêm trùng.
-    const alreadyAdded = (id: string) =>
-      recipients.some((r) => r.id.toLowerCase() === id.toLowerCase());
-    if (recipients.length >= IDS_MAX) {
-      addToast('warning', `Chỉ chọn được tối đa ${IDS_MAX} người nhận.`);
-      return;
-    }
-    if (OBJECT_ID.test(raw)) {
-      if (alreadyAdded(raw)) {
-        addToast('warning', 'Người dùng này đã có trong danh sách.');
-        return;
-      }
-      setRecipients((prev) => [...prev, { id: raw, label: shortId(raw) }]);
-      setIdInput('');
-      return;
-    }
-    setAdding(true);
-    try {
-      const res = await apiClient.get<{ data?: AdminUserLite[] }>('/admin/users', {
-        params: { search: raw, limit: 5 },
-      });
-      const match = (res.data.data ?? []).find(
-        (u) => (u.username ?? '').toLowerCase() === raw.toLowerCase(),
-      );
-      if (!match) {
-        addToast('error', `Không tìm thấy username @${raw}. Kiểm tra lại hoặc dùng ObjectId.`);
-        return;
-      }
-      if (alreadyAdded(match._id)) {
-        addToast('warning', 'Người dùng này đã có trong danh sách.');
-        return;
-      }
-      setRecipients((prev) => [
-        ...prev,
-        { id: match._id, label: `@${match.username ?? match.displayName ?? shortId(match._id)}` },
-      ]);
-      setIdInput('');
-    } catch (err) {
-      addToast('error', apiErrorMessage(err, 'Không tra được người dùng. Vui lòng thử lại.'));
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  function removeRecipient(id: string) {
-    setRecipients((prev) => prev.filter((r) => r.id !== id));
-  }
 
   async function send() {
     setBusy(true);
@@ -317,48 +254,15 @@ export default function BroadcastPage() {
           </div>
 
           {audience === 'ids' && (
-            <div className="form-field">
-              <label className="form-label" htmlFor="bc-ids-input">
-                Người nhận <span className="bc-count">{recipients.length} người</span>
-              </label>
-              <form className="bc-ids-entry" onSubmit={addRecipient}>
-                <input
-                  className="input"
-                  id="bc-ids-input"
-                  value={idInput}
-                  onChange={(e) => setIdInput(e.target.value)}
-                  placeholder="ObjectId hoặc @username"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button
-                  className="btn btn-secondary"
-                  type="submit"
-                  disabled={!idInput.trim() || adding || recipients.length >= IDS_MAX}
-                >
-                  {adding ? 'Đang tra…' : 'Thêm'}
-                </button>
-              </form>
-              <span className="form-hint">
-                Nhập ObjectId 24 ký tự hoặc username rồi Enter. Tối đa {IDS_MAX} người.
-              </span>
-              {recipients.length > 0 && (
-                <div className="bc-chip-row" aria-label="Người nhận đã chọn">
-                  {recipients.map((r) => (
-                    <button
-                      key={r.id}
-                      className="filter-chip filter-chip-removable"
-                      type="button"
-                      title={`${r.label} · ${r.id}`}
-                      aria-label={`Gỡ ${r.label}`}
-                      onClick={() => removeRecipient(r.id)}
-                    >
-                      {r.label} ✕
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <UserPicker
+              label="Người nhận"
+              inputId="bc-ids-input"
+              value={recipients}
+              onChange={setRecipients}
+              max={IDS_MAX}
+              placeholder="Tìm theo tên, email, SĐT hoặc @username"
+              hint={`Chọn từ danh sách để không gửi nhầm. Tối đa ${IDS_MAX} người — người offline trong danh sách vẫn nhận qua push.`}
+            />
           )}
 
           <div>
@@ -474,7 +378,7 @@ export default function BroadcastPage() {
               <div>
                 <dt>Danh sách</dt>
                 <dd className="bc-preview-ids">
-                  {recipients.map((r) => r.label).join(', ')}
+                  {recipients.map((r) => r.name).join(', ')}
                 </dd>
               </div>
             )}

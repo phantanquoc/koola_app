@@ -12,6 +12,7 @@ import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatNumber, apiErrorMessage } from '../components/formatters';
 import Dialog from '../components/Dialog';
+import { UserPicker, type UserOption } from '../components/UserPicker';
 import { useToast } from '../components/Toast';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { isoToDay, dayToIso, dayLabel } from '../components/date-range';
@@ -155,16 +156,14 @@ export default function OpsLogPage() {
   const { values, set, reset } = useUrlFilters(DEFAULT_FILTERS);
   const { addToast } = useToast();
   const [testOpen, setTestOpen] = useState(false);
-  const [testForm, setTestForm] = useState({ userId: '', title: '', body: '' });
+  const [testForm, setTestForm] = useState({ title: '', body: '' });
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<TestPushResult | null>(null);
   /**
-   * Tên tài khoản tra theo id. Gửi push tới đúng người là thao tác chạm thiết bị
-   * thật — gõ id trần rồi bấm gửi mà không biết đang gửi cho ai là bẫy.
+   * Người nhận chọn từ `UserPicker` — không gõ id tay. Gửi push là thao tác chạm
+   * thiết bị thật nên phải chọn từ danh sách thật, không phải dán chuỗi hex.
    */
-  const [testUser, setTestUser] = useState<
-    { state: 'idle' | 'loading' | 'found' | 'missing'; name?: string } | null
-  >(null);
+  const [testTarget, setTestTarget] = useState<UserOption[]>([]);
   const tab: LogTab = values.tab === 'push' ? 'push' : 'otp';
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
@@ -177,42 +176,6 @@ export default function OpsLogPage() {
     const t = setTimeout(() => set({ kind: kindInput.trim(), page: '1' }), 400);
     return () => clearTimeout(t);
   }, [kindInput, values.kind, set]);
-
-  // Tra tên tài khoản khi id đủ dài để là ObjectId. Debounce để không bắn query
-  // theo từng ký tự đang dán.
-  const userIdInput = testForm.userId.trim();
-  useEffect(() => {
-    if (!testOpen) return;
-    if (!/^[a-f0-9]{24}$/i.test(userIdInput)) {
-      setTestUser(null);
-      return;
-    }
-    let cancelled = false;
-    setTestUser({ state: 'loading' });
-    const t = setTimeout(() => {
-      apiClient
-        .get<{ data: Array<{ _id: string; displayName?: string; email?: string }> }>(
-          '/admin/users',
-          { params: { search: userIdInput, limit: 1 } },
-        )
-        .then((res) => {
-          if (cancelled) return;
-          const hit = res.data.data?.[0];
-          setTestUser(
-            hit && hit._id === userIdInput
-              ? { state: 'found', name: hit.displayName ?? hit.email ?? userIdInput }
-              : { state: 'missing' },
-          );
-        })
-        .catch(() => {
-          if (!cancelled) setTestUser({ state: 'missing' });
-        });
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [testOpen, userIdInput]);
 
   const params = useMemo(() => ({
     page,
@@ -258,7 +221,7 @@ export default function OpsLogPage() {
     setTestResult(null);
     try {
       const res = await apiClient.post<TestPushResult>('/admin/push-logs/test', {
-        userId: testForm.userId.trim(),
+        userId: testTarget[0].id,
         title: testForm.title.trim(),
         body: testForm.body.trim(),
       });
@@ -506,7 +469,7 @@ export default function OpsLogPage() {
           vì cần 3 ô nhập + vùng kết quả, không phải một câu xác nhận. */}
       <Dialog
         open={testOpen}
-        onClose={() => { setTestOpen(false); setTestResult(null); setTestUser(null); }}
+        onClose={() => { setTestOpen(false); setTestResult(null); setTestTarget([]); }}
         labelId="test-push-title"
         variant="dialog"
       >
@@ -521,30 +484,15 @@ export default function OpsLogPage() {
             </div>
           </div>
           <div className="dialog-body page-stack">
-            <div className="form-field">
-              <span className="form-label">Tài khoản nhận</span>
-              <input
-                className="input k-mono"
-                value={testForm.userId}
-                maxLength={64}
-                onChange={(e) => setTestForm((f) => ({ ...f, userId: e.target.value }))}
-                placeholder="507f1f77bcf86cd799439011"
-                aria-label="ID tài khoản nhận"
-                aria-describedby="test-push-user-hint"
-              />
-              {/* Tra tên trước khi gửi: gõ id trần rồi bấm gửi mà không biết
-                  đang gửi cho ai là bẫy của thao tác chạm thiết bị thật. */}
-              <span
-                id="test-push-user-hint"
-                className={testUser?.state === 'missing' ? 'cell-meta form-error' : 'cell-meta'}
-              >
-                {testUser?.state === 'loading' && 'Đang tra tài khoản…'}
-                {testUser?.state === 'found' && `Sẽ gửi tới: ${testUser.name}`}
-                {testUser?.state === 'missing' && 'Không tìm thấy tài khoản với id này'}
-                {(testUser === null || testUser.state === 'idle') &&
-                  'Dán id tài khoản (24 ký tự). Hệ thống sẽ hiện tên để xác nhận trước khi gửi.'}
-              </span>
-            </div>
+            <UserPicker
+              label="Tài khoản nhận"
+              inputId="test-push-user"
+              value={testTarget}
+              onChange={(next) => setTestTarget(next.slice(0, 1))}
+              max={1}
+              placeholder="Tìm theo tên, email, SĐT hoặc username"
+              hint="Chọn đúng một tài khoản. Push đi tới mọi thiết bị đã đăng ký của người đó."
+            />
 
             <label className="form-field">
               <span className="form-label">
@@ -586,7 +534,7 @@ export default function OpsLogPage() {
             <div className="dialog-actions">
               <button
                 className="btn btn-secondary" type="button"
-                onClick={() => { setTestOpen(false); setTestResult(null); setTestUser(null); }}
+                onClick={() => { setTestOpen(false); setTestResult(null); setTestTarget([]); }}
               >
                 Đóng
               </button>
@@ -595,8 +543,7 @@ export default function OpsLogPage() {
                 type="button"
                 disabled={
                   testBusy ||
-                  testUser?.state === 'missing' ||
-                  !testForm.userId.trim() ||
+                  testTarget.length === 0 ||
                   !testForm.title.trim() ||
                   !testForm.body.trim()
                 }
