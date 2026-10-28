@@ -687,6 +687,7 @@ export class AdminService {
    * Không có `accountType` (đổi loại tài khoản gãy toàn bộ dữ liệu liên quan),
    * `isBanned`/`isPlatformAdmin`/`suspended` (mỗi cái có endpoint + audit +
    * side-effect riêng), `passwordHash` (admin không được đặt mật khẩu người khác).
+   * `adminRole` chỉ super được đổi — controller chặn trước khi gọi service.
    */
   static readonly USER_PATCH_KEYS = [
     'displayName',
@@ -716,7 +717,10 @@ export class AdminService {
       const value = typeof raw === 'string' ? raw.trim() : raw;
       // Chuỗi rỗng trên field unique = gửi null vào index unique → E11000.
       // `$unset` mới đúng nghĩa "xoá khỏi hồ sơ".
-      if (value === '' && (k === 'username' || k === 'phone' || k === 'email' || k === 'bio')) {
+      if (
+        value === '' &&
+        (k === 'username' || k === 'phone' || k === 'email' || k === 'bio')
+      ) {
         unset[k] = '';
         continue;
       }
