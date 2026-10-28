@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { AdminModerationController } from './admin-moderation.controller';
 import { AdminOpsController } from './admin-ops.controller';
@@ -138,17 +139,44 @@ describe('AdminModerationController — enrich + filter', () => {
 
 describe('AdminOpsController.broadcast', () => {
   it('trả recipients = số socket đang kết nối', async () => {
-    // Khởi tạo trực tiếp — controller chỉ giữ tham chiếu model, không cần DI.
+    // Controller chỉ uỷ quyền cho BroadcastService; stub bắt chước đúng
+    // phần emit + đếm socket để test không phụ thuộc model log.
+    const broadcastService = {
+      send: jest.fn(
+        async (
+          input: { title: string; body: string },
+          _actorId: string,
+          _ip: string | null,
+        ) => {
+          const payload = {
+            title: input.title,
+            body: input.body,
+            at: new Date().toISOString(),
+          };
+          chatGateway.io.emit('system_broadcast', payload);
+          return {
+            message: 'broadcast sent',
+            payload,
+            recipients: chatGateway.io.sockets.size,
+            audience: 'all',
+            audienceIds: [],
+            logId: null,
+          };
+        },
+      ),
+    };
+
+    // Khởi tạo trực tiếp — controller chỉ giữ tham chiếu, không cần DI.
     const controller = new AdminOpsController(
       userModel as never,
       msgModel as never,
       convModel as never,
       storyModel as never,
-      audit as never,
-      chatGateway as never,
       {} as never,
       {} as never,
       { readyState: 1 } as never,
+      broadcastService as never,
+      {} as never,
     );
 
     const res = await controller.broadcast(
@@ -158,9 +186,38 @@ describe('AdminOpsController.broadcast', () => {
     );
 
     expect(res).toMatchObject({ message: 'broadcast sent', recipients: 1 });
+    expect(broadcastService.send).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 't', body: 'b' }),
+      'a1',
+      '127.0.0.1',
+    );
     expect(chatGateway.io.emit).toHaveBeenCalledWith(
       'system_broadcast',
       expect.objectContaining({ title: 't', body: 'b' }),
     );
+  });
+
+  it('audience=ids không có id → 400, không gọi service', async () => {
+    const broadcastService = { send: jest.fn() };
+    const controller = new AdminOpsController(
+      userModel as never,
+      msgModel as never,
+      convModel as never,
+      storyModel as never,
+      {} as never,
+      {} as never,
+      { readyState: 1 } as never,
+      broadcastService as never,
+      {} as never,
+    );
+
+    await expect(
+      controller.broadcast(
+        { title: 't', body: 'b', audience: 'ids', audienceIds: [] },
+        { actorId: 'a1' },
+        { ip: null } as never,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(broadcastService.send).not.toHaveBeenCalled();
   });
 });

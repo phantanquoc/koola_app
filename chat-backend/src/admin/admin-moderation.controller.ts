@@ -69,7 +69,7 @@ export class AdminModerationController {
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
     private readonly reportService: AdminReportService,
-  private readonly moderationMedia: ModerationMediaService,
+    private readonly moderationMedia: ModerationMediaService,
   ) {}
 
   private displayNameFor(conv: any, members: any[]): string {
@@ -325,22 +325,6 @@ export class AdminModerationController {
     });
   }
 
-  /** Ký mediaKey/thumbnailKey để admin-web hiển thị story; key gốc giữ nguyên. */
-  private async withStoryMedia(data: any[]) {
-    if (data.length === 0) return data;
-    const signed = await this.moderationMedia.presignMany(
-      data.flatMap((s: any) => [s.mediaKey, s.thumbnailKey]),
-    );
-    return data.map((s: any) => ({
-      ...s,
-      mediaUrlSigned: s.mediaKey ? (signed.get(s.mediaKey) ?? null) : null,
-      thumbnailUrlSigned: s.thumbnailKey
-        ? (signed.get(s.thumbnailKey) ?? null)
-        : null,
-    }));
-  }
-
-
   @Get('conversations/:id')
   async getConversation(
     @Param('id') id: string,
@@ -360,10 +344,10 @@ export class AdminModerationController {
       .lean();
     const hasMore = fetched.length > msgLimit;
     const recentMessages = hasMore ? fetched.slice(0, msgLimit) : fetched;
-    // Reported-message badge signal: pending message-report counts for shown msgs.
     // mediaUrl/metadata.storyReply.mediaKeyPreview là MinIO key; admin-web cần
     // URL đọc được nên ký thêm bản *Signed, giữ nguyên key cho consumer khác.
     const signedMessages = await this.withSignedMedia(recentMessages as any[]);
+    // Reported-message badge signal: pending message-report counts for shown msgs.
     const shownIds = recentMessages.map((m: any) => String(m._id));
     const msgCounts = shownIds.length
       ? await this.reportModel.aggregate([
@@ -454,11 +438,12 @@ export class AdminModerationController {
     const convNameById = new Map(
       convsWithName.map((c: any) => [String(c._id), c.displayName]),
     );
-    return data.map((m: any) => ({
+    const mapped = data.map((m: any) => ({
       ...m,
       senderName: senderNameById.get(String(m.senderId)) ?? null,
       conversationName: convNameById.get(String(m.conversationId)) ?? null,
     }));
+    return this.withSignedMedia(mapped);
   }
 
   @Post('messages/:id/soft-delete')
@@ -511,7 +496,28 @@ export class AdminModerationController {
         .lean(),
       this.storyModel.countDocuments(filter),
     ]);
-    return { data: await this.withAuthorNames(data as any[]), total, page, limit };
+    const withNames = await this.withAuthorNames(data as any[]);
+    return {
+      data: await this.withStoryMedia(withNames),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /** Ký mediaKey/thumbnailKey để admin-web hiển thị story; key gốc giữ nguyên. */
+  private async withStoryMedia(data: any[]) {
+    if (data.length === 0) return data;
+    const signed = await this.moderationMedia.presignMany(
+      data.flatMap((s: any) => [s.mediaKey, s.thumbnailKey]),
+    );
+    return data.map((s: any) => ({
+      ...s,
+      mediaUrlSigned: s.mediaKey ? (signed.get(s.mediaKey) ?? null) : null,
+      thumbnailUrlSigned: s.thumbnailKey
+        ? (signed.get(s.thumbnailKey) ?? null)
+        : null,
+    }));
   }
 
   /** Gắn authorName/authorAvatar lúc đọc — 1 query cho cả trang. */
