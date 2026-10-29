@@ -305,8 +305,11 @@ export class CommerceService {
         tagline: seller.tagline ?? null,
         description: seller.description ?? null,
         logoUrl: seller.logoKey ? await this.presign(seller.logoKey) : null,
-        coverImageUrl: (seller as unknown as Record<string, string | undefined>).coverKey
-          ? await this.presign((seller as unknown as Record<string, string>).coverKey)
+        coverImageUrl: (seller as unknown as Record<string, string | undefined>)
+          .coverKey
+          ? await this.presign(
+              (seller as unknown as Record<string, string>).coverKey,
+            )
           : null,
       },
       productCount,

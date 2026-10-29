@@ -4,8 +4,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  Platform,
 } from 'react-native';
 import { GiftedChat, SystemMessage, IMessage, SystemMessageProps, DayProps, InputToolbarProps, MessageProps } from 'react-native-gifted-chat';
+import { useAnimatedStyle } from 'react-native-reanimated';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -111,6 +114,14 @@ function makeScreenStyles(compTokens: ComponentTokens, semantic: SemanticTokens)
 const NOOP_SEND = () => {};
 const RENDER_NO_LOAD_EARLIER = () => null;
 
+// The flip VirtualizedList applies to an `inverted` list, mirroring its own
+// platform split (VirtualizedList's `styles.verticallyInverted`). Resolved once
+// at module scope so the worklet that re-declares it (see `listShiftStyle`)
+// captures a frozen value instead of reaching for the Platform module on the UI
+// thread every keyboard frame.
+const LIST_INVERSION_FLIP: { scale: -1 } | { scaleY: -1 } =
+  Platform.OS === 'android' ? { scale: -1 } : { scaleY: -1 };
+
 const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
@@ -125,6 +136,42 @@ const ChatScreen: React.FC = () => {
   // above every screen in the stack (zIndex 10), and hosts this screen's
   // header (chat variant). Content starts right below it.
   const notchPadTop = getNotchHeaderHeight(insets.top, 'chat');
+
+  // The window is edge-to-edge (MainActivity clears decorFitsSystemWindows, and
+  // App.tsx's KeyboardProvider keeps it that way), so `adjustResize` in the
+  // manifest no longer resizes anything — the keyboard arrives purely as a
+  // window inset and the app has to move its own content. GiftedChat's built-in
+  // handling, which translates the whole list+composer block, is deliberately
+  // off (`isKeyboardInternallyHandled={false}` below) because translating a
+  // mounted FlatList through its own Animated.View was the jank source.
+  //
+  // So the list is shifted here instead, by the exact value ChatComposer uses
+  // for the dock (`keyboard.height`, 0 hidden and negative when shown). Both
+  // move together, which is what keeps every existing offset — the composer
+  // clearance reserved in `contentContainerStyle.paddingTop`, the dock's own
+  // absolute bottom:0 anchor — valid without recomputation. Without this the
+  // dock floats over the keyboard while the newest message stays pinned to the
+  // bottom of the window, hidden behind both.
+  //
+  // The inversion flip is re-declared here, and it is not optional. The list is
+  // `inverted`, which VirtualizedList implements by composing its own flip
+  // BEFORE the caller's style (`style: [inversionStyle, this.props.style]`) and
+  // flipping every cell back. `transform` is a single property, not a set of
+  // mergeable parts, so any transform we supply REPLACES that outer flip
+  // instead of adding to it — leaving only the per-cell flip, which renders
+  // every message upside down. Shifting via translateY therefore has to carry
+  // the flip along. Android uses `scale: -1` (both axes) where iOS uses
+  // `scaleY: -1`; this mirrors VirtualizedList's own platform split exactly,
+  // because a mismatch would mirror the rows horizontally.
+  // translateY comes FIRST so it acts in unflipped screen space: the composed
+  // matrix is T·S, so a point is flipped and only then moved, which keeps a
+  // negative keyboard height moving the list up. Reversed, the flip would
+  // invert the travel direction and the list would dive down behind the
+  // keyboard.
+  const keyboard = useReanimatedKeyboardAnimation();
+  const listShiftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboard.height.value }, LIST_INVERSION_FLIP],
+  }));
 
   const { tokens } = useTheme();
   const styles = useMemo(
@@ -147,26 +194,32 @@ const ChatScreen: React.FC = () => {
   const composerRef = useRef<ChatComposerHandle>(null);
   const suppressTabDock = useTabDockSuppression();
 
-  // While Chat is on screen, the main tab dock stays hidden. On back, hide the
-  // composer first and return the dock after the tuned handoff delay; this avoids
-  // the heavy overlap of an immediate release without waiting for full pop end.
+  // While Chat is on screen, the main tab dock stays hidden. The dock must not
+  // return before the pop has actually finished — it would paint over the
+  // shrinking card and cover the composer — so the release is armed from
+  // `beforeRemove` (the committed pop) and fired by the pop's own
+  // `transitionEnd` (`closing: true`), which native-stack emits from the
+  // native screen's `onDisappear` on the frame the 200ms close tween ends.
+  // `beforeRemove` still starts the composer exit immediately.
   useEffect(() => {
     const releaseSuppression = suppressTabDock();
     let released = false;
     let isRemoving = false;
-    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubscribeTransitionEnd: (() => void) | null = null;
 
     const release = () => {
       if (released) return;
       released = true;
-      if (releaseTimer) clearTimeout(releaseTimer);
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if (unsubscribeTransitionEnd) {
+        unsubscribeTransitionEnd();
+        unsubscribeTransitionEnd = null;
+      }
       releaseSuppression();
-    };
-
-    const scheduleComposerExitRelease = () => {
-      if (released) return;
-      if (releaseTimer) clearTimeout(releaseTimer);
-      releaseTimer = setTimeout(release, 280);
     };
 
     const unsubscribeRemove = navigation.addListener('beforeRemove', () => {
@@ -174,15 +227,40 @@ const ChatScreen: React.FC = () => {
       notifyNativePopping();
       isRemoving = true;
       setIsComposerExiting(true);
-      scheduleComposerExitRelease();
+      if (released || unsubscribeTransitionEnd) return;
+      // Arm both signals only now, after the pop is committed: the push-in
+      // `transitionEnd` (`closing: false`) fires while this screen is being
+      // entered, so subscribing earlier would release the dock mid-push.
+      // `transitionEnd` is a native-stack event; the base NavigationProp type
+      // does not list it, hence the same narrow cast used by
+      // `src/hooks/useAfterTransition.ts`.
+      const addListener = navigation.addListener as unknown as (
+        type: 'transitionEnd',
+        listener: (e: { data?: { closing?: boolean } }) => void,
+      ) => () => void;
+      unsubscribeTransitionEnd = addListener('transitionEnd', (e) => {
+        // Belt and braces: only the closing transition ends the pop. Gesture
+        // cancels are known to skip this event entirely — the fallback covers
+        // them, and an interrupted pop must never leave the dock hidden.
+        if (e?.data?.closing === true) release();
+      });
+      // Fallback for the case the event never arrives (gesture-cancel paths,
+      // an interrupted transition, or a screen removed without an animation).
+      // 350ms bounds the worst case: dock slightly late, never permanently
+      // hidden. Whichever fires first wins; `release()` cancels the other.
+      fallbackTimer = setTimeout(release, 350);
     });
 
     return () => {
       unsubscribeRemove();
-      if (isRemoving) {
-        scheduleComposerExitRelease();
-        return;
-      }
+      // native-stack removes the route from JS state as soon as the pop is
+      // dispatched, so this cleanup runs at pop START — before the native
+      // 200ms close tween has finished. Once the pop is committed the release
+      // must therefore stay armed past unmount: `transitionEnd` lands at pop
+      // end (that is the whole point — it is the frame the card stops moving)
+      // and the fallback covers a dropped event. Both remove themselves on the
+      // first release, so nothing outlives the pop by more than 350ms.
+      if (isRemoving && !released) return;
       release();
     };
   }, [navigation, suppressTabDock]);
@@ -934,6 +1012,11 @@ const ChatScreen: React.FC = () => {
   const stableListViewProps = useMemo(
     () => ({
       scrollEventThrottle: 16,
+      // MessageContainer renders an Animated.createAnimatedComponent(FlatList)
+      // and spreads `listViewProps` AFTER its own `style={fill}`, so this wins
+      // and the animated style reaches a component that can consume it. `flex: 1`
+      // restores what the overridden `fill` provided.
+      style: [{ flex: 1 }, listShiftStyle],
       contentContainerStyle: {
         paddingTop: composerScrollClearance,
         paddingBottom: notchPadTop,
@@ -967,7 +1050,7 @@ const ChatScreen: React.FC = () => {
         }, 100);
       },
     }),
-    [composerScrollClearance, notchPadTop],
+    [composerScrollClearance, notchPadTop, listShiftStyle],
   );
 
   return (

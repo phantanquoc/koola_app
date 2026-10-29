@@ -6,6 +6,7 @@ import {
   DarkTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { LinkingOptions, NavigationState, PartialState } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../ui';
 import MainNavigator from './MainNavigator';
@@ -20,24 +21,35 @@ import ImageViewerScreen from '../screens/chat/ImageViewerScreen';
 import CoverPhotoViewerScreen from '../screens/main/CoverPhotoViewerScreen';
 import SplashScreen from '../components/SplashScreen';
 import type { RootStackParamList } from './types';
+import { momentsLinking } from './momentsLinking';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
-// Deep link config — koola://moments/story/<id> → opens MomentViewer
-const linking = {
-  prefixes: ['koola://'],
-  config: {
-    screens: {
-      Main: {
-        screens: {
-          ChatTab: {
-            screens: {
-              MomentViewer: 'moments/story/:startStoryId',
-            },
-          },
-        },
-      },
-    },
+// Deep link config — the Moments routes live in momentsLinking.ts so their
+// story/post contract can be unit-tested without the navigator tree.
+//
+// `getStateFromPath` only SWAPS the state of a deep link that arrives while
+// the app is already running (a tapped `koola://moments/post/<id>`). It keeps
+// the tab that is focused and replaces the CHAT stack with the link's state,
+// so MomentViewer is pushed on top of ChatHome instead of over whatever
+// screen the user was on (a product detail, a profile…) — and its back
+// button always returns to the Moments feed. The default behaviour nests the
+// new params into the CURRENT route, leaving the old screen underneath.
+const linking: LinkingOptions<RootStackParamList> = {
+  ...momentsLinking,
+  getStateFromPath: (path, options): PartialState<NavigationState> | undefined => {
+    const state: PartialState<NavigationState> | undefined = require(
+      '@react-navigation/native'
+    ).getStateFromPath(path, options);
+    if (!state) return state;
+    const stack = state.routes.find((route) => route.name === 'Main')?.state;
+    const chatTab = stack?.routes?.find((route) => route.name === 'ChatTab');
+    if (chatTab) {
+      // Drop stale ChatTab params (e.g. a `postId` left over from an edit)
+      // — a fresh entry, like navigating to the tab itself.
+      delete (chatTab as { params?: unknown }).params;
+    }
+    return state;
   },
 };
 
@@ -83,12 +95,6 @@ const RootNavigator: React.FC = () => {
           statusBarTranslucent: true,
           statusBarStyle: isDark ? 'light' : 'dark',
           navigationBarTranslucent: true,
-          // Fabric fix (parity with ChatTabStack): native-stack detaches the
-          // previous screen off-tree to save memory; swapping the whole auth
-          // group while a screen is detached desyncs Fabric's ViewGroup child
-          // count → "Cannot remove child at index N … childCount may be
-          // incorrect" on logout. Keep previous screens mounted.
-          ...( { detachPreviousScreen: false } as object),
         }}>
         {isAuthenticated ? (
           <>

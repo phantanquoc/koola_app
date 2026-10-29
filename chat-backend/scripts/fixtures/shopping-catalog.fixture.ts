@@ -1,17 +1,19 @@
-import type { ImageSourcePropType } from 'react-native';
-
 /**
- * Ảnh sản phẩm mẫu là bundled asset local trong `src/assets/mock-shopping/`
- * (Pexels free license — được dùng thương mại, không cần credit). Hoàn toàn
- * offline, không gọi network, deterministic khi test — cùng tinh thần với
- * `momentsMockPosts.ts`.
+ * Shopping catalog seed fixture — the data `scripts/seed-commerce-catalog.ts`
+ * seeds the live Shopping catalog from (openspec change `commerce-catalog-live`,
+ * design D8).
+ *
+ * This is PLAIN TypeScript data, deliberately free of any React Native import:
+ * the seed script does not execute it, it parses it with the TypeScript
+ * compiler API and evaluates literal values only. Keep every value a string /
+ * number / boolean / plain object / array literal — any call expression aborts
+ * the run (see the "FIXTURE PARSING" section of the seed script).
+ *
+ * The product photos themselves still live in the mobile app, under
+ * `ChatApp/src/assets/mock-shopping/` (Pexels free license — commercial use,
+ * no credit required). `ShoppingProduct.image` is only the FILENAME inside that
+ * folder; the seed script joins it with its own `IMAGE_DIR` to upload to MinIO.
  */
-
-export type ShoppingCategory = {
-  id: string;
-  label: string;
-  icon: string;
-};
 
 export type ShoppingSeller = {
   id: string;
@@ -38,36 +40,11 @@ export type ShoppingProduct = {
   description?: string;
   seller: ShoppingSeller;
   /**
-   * Bundled offline mock photo (`require()` result — `number` under RN's
-   * asset pipeline). Optional: `accent`/`icon` stay the loading/fallback
-   * visual (accent-tinted backdrop + glyph) while the image decodes or if
-   * a product has none, same intent as `momentsMockPosts.ts`.
+   * Filename inside `ChatApp/src/assets/mock-shopping/` (e.g. `vegetables.jpg`).
+   * Optional: products without one simply seed no `imageKeys`.
    */
-  image?: ImageSourcePropType;
+  image?: string;
 };
-
-export type ShoppingStore = {
-  id: string;
-  name: string;
-  category: string;
-  distance: string;
-  eta: string;
-  rating: number;
-  icon: string;
-  accent: string;
-};
-
-export const shoppingCategories: ShoppingCategory[] = [
-  { id: 'all', label: 'Tất cả', icon: 'apps' },
-  { id: 'grocery', label: 'Tạp hóa', icon: 'local-grocery-store' },
-  { id: 'food', label: 'Đồ ăn', icon: 'restaurant' },
-  { id: 'electronics', label: 'Điện tử', icon: 'phone-iphone' },
-  { id: 'home', label: 'Nhà cửa', icon: 'home' },
-  { id: 'beauty', label: 'Làm đẹp', icon: 'spa' },
-];
-
-export const shoppingSortChips = ['Được mua nhiều nhất', 'Giá thấp nhất'] as const;
-export const shoppingAttributeChips = ['Organic', 'Chứng nhận', 'Đã xác minh'] as const;
 
 export const shoppingProducts: ShoppingProduct[] = [
   {
@@ -87,7 +64,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Không đường', 'Chính hãng'],
     description: 'Rau củ tươi hái mỗi sáng tại Đà Lạt, giao trong ngày. Combo 3-4 loại theo mùa, kèm hướng dẫn bảo quản.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p2',
@@ -105,7 +82,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Không đường', 'Chính hãng'],
     description: 'Cơm gà ta sốt tiêu xanh, ăn kèm rau trộn và canh. Bếp nấu theo đơn, giao nóng trong 25 phút.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p3',
@@ -124,7 +101,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Tai nghe nhét tai Bluetooth 5.3, pin 6h, kèm case sạc. Đổi mới 7 ngày nếu lỗi kỹ thuật.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p4',
@@ -142,7 +119,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh', 'Chính hãng', 'Chứng nhận'],
     description: 'Bộ lau nhà gấp gọn, đầu lau xoay 360°, cán inox. Gọn khi cất, bền khi dùng.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p5',
@@ -161,7 +138,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Sữa rửa mặt pH 5.5, không cồn, cho da nhạy cảm. Dung tích 120ml, dùng ~2 tháng.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p6',
@@ -179,7 +156,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Đã xác minh'],
     description: 'Gạo ST25 chính vụ, dẻo thơm, đóng túi hút chân không 5kg. Giao 4h nội thành.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   // ── seller-fresh 7 thêm (p7-p13) ─────────────────────────────────
   {
@@ -199,7 +176,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Đã xác minh'],
     description: 'Dâu tây giống Nhật trồng tại Đà Lạt, hái sáng giao chiều. Hộp 500g, ngọt thanh, mọng nước.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p8',
@@ -217,7 +194,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Chính hãng'],
     description: 'Bơ 034 cơm vàng dẻo, hạt nhỏ. 1kg khoảng 2-3 trái, chín tự nhiên không thuốc.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p9',
@@ -234,7 +211,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Không đường'],
     description: 'Rau salad mix 5 loại hữu cơ, đã rửa sạch, đóng hộp 300g. Ăn liền hoặc trộn sốt.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p10',
@@ -252,7 +229,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Chứng nhận'],
     description: 'Nấm đùi gà trồng trong phòng lạnh, giòn ngọt, không chất bảo quản. Gói 400g.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p11',
@@ -271,7 +248,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Đã xác minh', 'Chính hãng'],
     description: 'Khoai lang mật Tà Nung nướng chảy mật, dẻo ngọt. Túi 2kg, củ vừa đều.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p12',
@@ -288,7 +265,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic'],
     description: 'Cà chua beef mọng nước, thịt dày, thích hợp nấu sốt hoặc ăn sống. 1kg khoảng 4-5 trái.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p13',
@@ -306,7 +283,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Không đường', 'Chứng nhận'],
     description: 'Atiso đỏ Đà Lạt sấy dẻo, chua ngọt tự nhiên, không phẩm màu. Hũ 250g.',
     seller: { id: 'seller-fresh', name: 'Koola Fresh Market', verified: true, province: 'Đà Lạt' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   // ── seller-bep 7 thêm (p14-p20) ──────────────────────────────────
   {
@@ -325,7 +302,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Đã xác minh'],
     description: 'Bún bò Huế nước dùng hầm 8 tiếng, thịt bò — chả — huyết đầy đủ. Kèm rau sống và chanh ớt.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p15',
@@ -342,7 +319,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Không đường'],
     description: 'Gỏi cuốn tôm thịt tươi, bánh tráng mỏng, chấm mắm nêm hoặc tương đậu. Hộp 10 cuốn.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p16',
@@ -360,7 +337,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Phở gà ta nước trong, thịt gà thả vườn xé, hành ngò thơm. Giao nóng kèm chanh ớt.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p17',
@@ -377,7 +354,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh'],
     description: 'Bánh mì giòn kẹp chả cá Nha Trang chiên nóng, dưa chua và sốt mayo.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p18',
@@ -395,7 +372,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Không đường', 'Chính hãng'],
     description: 'Chè khúc bạch phô mai 3 màu, hạnh nhân lát, nhãn tươi. Ly 350ml, ngọt dịu.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p19',
@@ -412,7 +389,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Cơm tấm sườn nướng mật ong, bì thính, chả trứng. Kèm canh chua và nước mắm.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p20',
@@ -430,7 +407,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Không đường'],
     description: 'Trà đào cam sả thơm, đào miếng giòn, cam vàng tươi. Ly 700ml đá riêng.',
     seller: { id: 'seller-bep', name: 'Bếp Nhà Koola', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   // ── seller-tech 7 thêm (p21-p27) ─────────────────────────────────
   {
@@ -450,7 +427,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Sạc dự phòng 10000mAh sạc nhanh PD 20W, 2 cổng USB-C. Nhỏ gọn, kèm cáp.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p22',
@@ -468,7 +445,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Cáp USB-C bện dù, sạc nhanh 60W, truyền dữ liệu 480Mbps. Dài 1.5m, bền 20k lần gập.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p23',
@@ -485,7 +462,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh'],
     description: 'Giá đỡ nhôm để bàn, xoay 360°, gấp gọn. Dùng cho điện thoại và tablet đến 12 inch.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p24',
@@ -504,7 +481,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Chuột không dây bấm êm, DPI 1600, pin 12 tháng. Kết nối 2.4GHz + Bluetooth.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p25',
@@ -523,7 +500,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Đã xác minh'],
     description: 'Bàn phím cơ 68 phím, switch đỏ, LED RGB. Kết nối dây và Bluetooth 5.0.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p26',
@@ -540,7 +517,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Loa Bluetooth 5.3 mini, chống nước IPX5, pin 8h. Âm bass ấm, kẹp ba lô tiện.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p27',
@@ -558,7 +535,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh'],
     description: 'Ốp lưng TPU trong suốt chống ố vàng, viền dày bảo vệ camera. Đủ size iPhone.',
     seller: { id: 'seller-tech', name: 'Tech Corner', verified: false, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   // ── seller-nhaxinh 7 thêm (p28-p34) ──────────────────────────────
   {
@@ -576,7 +553,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Khăn microfiber thấm hút, không để lại bụi vải. Set 3 cái 40x40cm, nhiều màu.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p29',
@@ -595,7 +572,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh', 'Chính hãng'],
     description: 'Hộp vải đựng đồ gấp gọn 45L, khung thép, nắp đậy. Đựng quần áo, đồ chơi, gọn khi không dùng.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p30',
@@ -613,7 +590,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chứng nhận', 'Đã xác minh'],
     description: 'Kệ góc inox 304 dán tường không khoan, chịu lực 8kg. 2 tầng, thoát nước nhanh.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p31',
@@ -630,7 +607,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Thảm chân microfiber siêu thấm, đế cao su chống trượt. 40x60cm, giặt máy được.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p32',
@@ -648,7 +625,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh'],
     description: 'Móc dán trong suốt chịu lực 5kg, không để lại vết khi tháo. Gói 6 móc.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p33',
@@ -665,7 +642,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Giỏ vải đựng đồ giặt 60L có nắp, quai xách, gấp gọn. Vải canvas dày dặn.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p34',
@@ -684,7 +661,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Chính hãng'],
     description: 'Nến thơm sáp đậu nành 180g, hương gỗ đàn, cháy 35h. Hũ thủy tinh tái dùng.',
     seller: { id: 'seller-nhaxinh', name: 'Nhà Xinh Store', verified: true, province: 'TP.HCM' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   // ── seller-beauty 7 thêm (p35-p41) ───────────────────────────────
   {
@@ -704,7 +681,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Son tint lì mịn môi, giữ màu 8h, 5 tông MLBB. Không khô môi, mùi trái cây nhẹ.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p36',
@@ -721,7 +698,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Mặt nạ đất sét kiềm dầu, thu nhỏ lỗ chân lông. Tuýp 100ml, dùng 2 lần/tuần.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p37',
@@ -739,7 +716,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Đã xác minh'],
     description: 'Kem chống nắng SPF50 PA++++, không bết dính, nâng tone nhẹ. 50ml.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p38',
@@ -758,7 +735,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Chính hãng'],
     description: 'Toner hoa hồng cấp ẩm, cân bằng pH, không cồn. Chai 200ml.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p39',
@@ -775,7 +752,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic'],
     description: 'Dầu gội tinh dầu bưởi kích mọc tóc, giảm gãy rụng. Chai 300ml.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p40',
@@ -793,7 +770,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Chứng nhận'],
     description: 'Kem dưỡng ẩm ceramide, phục hồi hàng rào da. Hũ 50g, thấm nhanh không nhờn.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p41',
@@ -812,7 +789,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng', 'Đã xác minh'],
     description: 'Nước tẩy trang micellar 3-in-1, sạch sâu không cần rửa lại. Chai 400ml.',
     seller: { id: 'seller-beauty', name: 'Beauty Lab', verified: true, province: 'Hà Nội' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   // ── seller-choviet 7 thêm (p42-p48) ──────────────────────────────
   {
@@ -830,7 +807,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh', 'Chính hãng'],
     description: 'Nước mắm nhĩ Phú Quốc 40 độ đạm, ủ chượp 12 tháng. Chai thủy tinh 500ml.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
   {
     id: 'p43',
@@ -848,7 +825,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic'],
     description: 'Bún gạo khô sợi nhỏ, dai không nát. Gói 1kg, nấu bún xào hay bún nước đều ngon.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/chicken-rice.jpg'),
+    image: 'chicken-rice.jpg',
   },
   {
     id: 'p44',
@@ -867,7 +844,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chứng nhận', 'Chính hãng'],
     description: 'Dầu gạo lứt nguyên chất, giàu gamma oryzanol. Chai 1L, chiên xào thơm nhẹ.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/earbuds.jpg'),
+    image: 'earbuds.jpg',
   },
   {
     id: 'p45',
@@ -884,7 +861,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh'],
     description: 'Mắm ruốc Huế thơm đậm, chấm rau luộc hay nấu bún bò đều ngon. Hũ 400g.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/mop.jpg'),
+    image: 'mop.jpg',
   },
   {
     id: 'p46',
@@ -902,7 +879,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Organic', 'Đã xác minh'],
     description: 'Đường thốt nốt An Giang nguyên chất, ngọt thanh, nấu chè hay pha nước đều ngon. Gói 1kg.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/skincare.jpg'),
+    image: 'skincare.jpg',
   },
   {
     id: 'p47',
@@ -921,7 +898,7 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Đã xác minh', 'Chứng nhận'],
     description: 'Khô cá lóc đồng, ướp muối ớt vừa ăn, phơi nắng tự nhiên. Gói 500g hút chân không.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/rice.jpg'),
+    image: 'rice.jpg',
   },
   {
     id: 'p48',
@@ -938,6 +915,6 @@ export const shoppingProducts: ShoppingProduct[] = [
     tags: ['Chính hãng'],
     description: 'Hạt điều Bình Phước rang muối giòn bùi, hạt to đều. Hũ 300g.',
     seller: { id: 'seller-choviet', name: 'Chợ Việt Online', verified: false, province: 'Cần Thơ' },
-    image: require('../../assets/mock-shopping/vegetables.jpg'),
+    image: 'vegetables.jpg',
   },
 ];

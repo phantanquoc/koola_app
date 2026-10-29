@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -14,6 +15,7 @@ import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { UpdateConversationPrefsDto } from './dto/update-conversation-prefs.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   ApiTags,
@@ -195,6 +197,50 @@ export class ConversationsController {
       userId,
     );
     return { message: 'Message unpinned' };
+  }
+
+  @Patch(':id/prefs')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Update the caller’s private prefs (pin / mute) for a conversation',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ conversationId, pinned, mutedUntil, clearedAt }',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid body, no field given, or PIN_LIMIT_REACHED',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Conversation not found or not a member',
+  })
+  async updatePrefs(
+    @Param('id') id: string,
+    @Body() dto: UpdateConversationPrefsDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.conversationsService.updatePrefs(id, userId, dto);
+  }
+
+  @Post(':id/clear')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Clear conversation history for the caller only (hides it until a new message)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ conversationId, pinned, mutedUntil, clearedAt }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Conversation not found or not a member',
+  })
+  async clearForMe(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.conversationsService.clearForMe(id, userId);
   }
 
   @Put(':id')

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Animated as NativeAnimated, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import { Animated as NativeAnimated, BackHandler, View, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { createMaterialTopTabNavigator, MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useNavigation } from '@react-navigation/native';
@@ -31,6 +31,10 @@ import MomentsScreen from './MomentsScreen';
 import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
+import ChatStartPopup from '../../components/ChatStartPopup';
+import { useChatHomeOverlay, type ChatHomeOverlay, type GroupCloseRequester } from './useChatHomeOverlay';
+import { useTabDockSuppression } from '../../navigation/MainNavigator';
+import { acquireBackIntercept } from '../../services/nativeBack';
 import { KoolaText, KoolaSkeleton, koolaRadii, useTheme } from '../../ui';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
 
@@ -418,6 +422,14 @@ const CustomTabBar: React.FC<CustomTabBarProps> = ({ state, navigation, position
 // entire nested TopTab.Navigator tree — 4 sub-tabs, each mounting its own
 // screen component — even though none of that UI depends on the outer state.
 // Memoizing here confines those re-renders to the chrome layer above and
+/** A header press parked while ChatHomeContent was absent, with its dock
+ * suppressor already held. Owned by ChatHomeScreen — never by a hook
+ * instance — so there is exactly one place a parked press can wait. */
+export interface ParkedOverlayPress {
+  next: ChatHomeOverlay;
+  release: () => void;
+}
+
 interface ChatHomeContentProps {
   styles: ReturnType<typeof makeScreenStyles>;
   hiddenProgress: SharedValue<number>;
@@ -425,12 +437,14 @@ interface ChatHomeContentProps {
   /** y where the overlaid sub-tab bar sits (= glass header block height). */
   tabBarTop: number;
   topTabNavRef: React.MutableRefObject<{ navigate: (name: string) => void } | null>;
-  qrVisible: boolean;
-  onQrClose: () => void;
+  /** Receives the content's overlay `open` (header presses go through this). */
+  overlayOpenRef: React.MutableRefObject<((next: ChatHomeOverlay) => void) | null>;
+  /** Screen-owned parked press, consumed exactly once on mount (see above). */
+  parkedRef: React.MutableRefObject<ParkedOverlayPress | null>;
+  /** Tells the screen the parked press was adopted (clears the parked flag). */
+  onParkedAdopted: () => void;
   onNavigateProfile: (userId: string) => void;
   onNavigateChat: (conversationId: string) => void;
-  groupModalVisible: boolean;
-  setGroupModalVisible: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function ChatHomeContent({
@@ -439,12 +453,11 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
   scrolledProgress,
   tabBarTop,
   topTabNavRef,
-  qrVisible,
-  onQrClose,
+  overlayOpenRef,
+  parkedRef,
+  onParkedAdopted,
   onNavigateProfile,
   onNavigateChat,
-  groupModalVisible,
-  setGroupModalVisible,
 }) {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
 
@@ -470,15 +483,59 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
     topTabNavRef.current?.navigate('Messages');
   }), [topTabNavRef]);
 
-  // onCreated must be stable for GroupCreateModal AND for this memo boundary.
-  // It closes over `navigation` only (a stable navigator ref), so deps are
-  // correct and the callback identity survives parent re-renders.
-  const handleGroupCreated = useCallback((conv: { _id: string }) => {
-    setGroupModalVisible(false);
-    navigation.navigate('Chat', { conversationId: conv._id });
-  }, [navigation, setGroupModalVisible]);
+  // Single overlay owner (start popup | group form | QR scanner): state machine,
+  // hardware Back and tab-dock suppression all live in this hook. It is called
+  // HERE, inside the memo boundary, so popup state never re-renders the header.
+  // This is the ONLY hook instance on this screen: a header press that landed
+  // while this subtree was absent was parked (with its dock suppression
+  // already held) in the screen-owned `parkedRef`, and is adopted below into
+  // this instance via `adoptParked` — the parked suppressor is transferred,
+  // never stacked, and the header never paints an overlay.
+  const { overlay, open, close, adoptParked, requestGroupCloseRef } = useChatHomeOverlay();
 
-  const handleCloseGroupModal = useCallback(() => setGroupModalVisible(false), [setGroupModalVisible]);
+  // Publish the header trigger AND adopt a parked press in one effect, in this
+  // order: the trigger must exist before adoption runs, otherwise a second
+  // press landing between the two could park again instead of opening
+  // directly. Consuming `parkedRef.current` (ref, not state) makes adoption
+  // exactly-once even under StrictMode double-effects: the second setup sees
+  // null and does nothing, so there is no double open and no second
+  // suppressor. `close` is stable; `adoptParked` transfers the suppressor.
+  useEffect(() => {
+    overlayOpenRef.current = open;
+    const parked = parkedRef.current;
+    if (parked !== null) {
+      parkedRef.current = null;
+      onParkedAdopted();
+      adoptParked(parked.next, parked.release);
+    }
+    return () => {
+      overlayOpenRef.current = null;
+    };
+  }, [open, overlayOpenRef, parkedRef, onParkedAdopted, adoptParked]);
+
+  // onCreated must be stable for GroupCreateModal AND for this memo boundary.
+  // It closes over `navigation` and the owner's stable callbacks only, so its
+  // identity survives parent re-renders.
+  const handleGroupCreated = useCallback((conv: { _id: string }) => {
+    close();
+    navigation.navigate('Chat', { conversationId: conv._id });
+  }, [navigation, close]);
+
+  // The start popup is a two-stage flow: switching stages keeps the suppression
+  // held (the hook's open() does not stack suppressors).
+  const handleStartGroup = useCallback(() => open('group'), [open]);
+  const handleStartNewMessage = useCallback(() => {
+    // Clear the overlay first so the destination opens onto a released dock.
+    close();
+    topTabNavRef.current?.navigate('Contacts');
+  }, [close, topTabNavRef]);
+
+  // Assigning through a callback ref re-publishes the guarded close on every
+  // render (its identity changes with `creating`); React calls it with null on
+  // unmount, which clears it for the owner's Back handler.
+  const setGroupCloseRef = useCallback((fn: GroupCloseRequester | null) => {
+    requestGroupCloseRef.current = fn;
+  }, [requestGroupCloseRef]);
 
   return (
     <>
@@ -499,16 +556,25 @@ const ChatHomeContent: React.FC<ChatHomeContentProps> = React.memo(function Chat
           <TopTab.Screen name="Shorts" component={ShortsScreen} />
         </TopTab.Navigator>
       </ChatSubTabVisibilityContext.Provider>
-      <QrScannerModal
-        visible={qrVisible}
-        onClose={onQrClose}
-        onNavigateProfile={onNavigateProfile}
-        onNavigateChat={onNavigateChat}
+      {/* Sibling of the navigator, inside the memoized content: the scrim covers
+          the list + sub-tab bar but never the header chrome above. */}
+      <ChatStartPopup
+        visible={overlay === 'start'}
+        onClose={close}
+        onGroupPress={handleStartGroup}
+        onNewMessagePress={handleStartNewMessage}
       />
       <GroupCreateModal
-        visible={groupModalVisible}
-        onClose={handleCloseGroupModal}
+        visible={overlay === 'group'}
+        onClose={close}
         onCreated={handleGroupCreated}
+        requestCloseRef={setGroupCloseRef}
+      />
+      <QrScannerModal
+        visible={overlay === 'qr'}
+        onClose={close}
+        onNavigateProfile={onNavigateProfile}
+        onNavigateChat={onNavigateChat}
       />
     </>
   );
@@ -520,8 +586,6 @@ const ChatHomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ChatTabStackParamList>>();
   const { tokens, resolvedScheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const [qrVisible, setQrVisible] = useState(false);
-  const [groupModalVisible, setGroupModalVisible] = useState(false);
   const hiddenProgress = useSharedValue(0);
   const scrolledProgress = useSharedValue(0);
   const topTabNavRef = React.useRef<{ navigate: (name: string) => void } | null>(null);
@@ -533,6 +597,62 @@ const ChatHomeScreen: React.FC = () => {
 
   const isDark = resolvedScheme === 'dark';
 
+  // The overlay state machine lives inside ChatHomeContent (memo boundary);
+  // the header must not open it itself, it just asks the content to. The
+  // HEADER PRESS ITSELF is owned here: the content subtree does not exist
+  // while the first-mount shell is showing, so a ref populated by the content
+  // would silently drop every press in that window (the very first press after
+  // mount is the common case). Parking therefore lives in a screen-owned ref
+  // (`parkedRef`) — not in any hook instance, of which there is now exactly
+  // one (the content's, the sole renderer). `parkPress` acquires the dock
+  // suppression synchronously with the press and parks the stage; the content
+  // adopts it on mount via its own `adoptParked`, transferring the suppressor.
+  // A press while a park is already waiting is dropped — it restates the same
+  // request, so a second suppressor must never be acquired.
+  const suppressTabDock = useTabDockSuppression();
+  const parkedRef = useRef<ParkedOverlayPress | null>(null);
+  const [parkedActive, setParkedActive] = useState(false);
+  const overlayOpenRef = useRef<((next: ChatHomeOverlay) => void) | null>(null);
+  const parkPress = useCallback((next: ChatHomeOverlay) => {
+    const openFromContent = overlayOpenRef.current;
+    if (openFromContent) {
+      openFromContent(next);
+      return;
+    }
+    if (parkedRef.current !== null) return;
+    parkedRef.current = { next, release: suppressTabDock() };
+    setParkedActive(true);
+  }, [suppressTabDock]);
+  const handleOpenStart = useCallback(() => parkPress('start'), [parkPress]);
+  const handleQrPress = useCallback(() => parkPress('qr'), [parkPress]);
+  // Adoption handshake: the content nulled the slot and calls this to drop the
+  // parked flag (the Back listener below is then unmounted).
+  const handleParkedAdopted = useCallback(() => setParkedActive(false), []);
+
+  // Back + unmount safety net for a parked press: the content subtree (and its
+  // overlay owner) does not exist yet, so Back must dismiss the park here —
+  // releasing the held suppressor and clearing the slot so a later mount
+  // adopts nothing. Cleanup also covers screen unmount with a park still held:
+  // the slot is consumed (nulled) so the suppressor can never leak.
+  useEffect(() => {
+    if (!parkedActive) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      const parked = parkedRef.current;
+      parkedRef.current = null;
+      parked?.release();
+      setParkedActive(false);
+      return true;
+    });
+    // JS consumes Back while the park is armed → native skips the card shrink.
+    const releaseIntercept = acquireBackIntercept();
+    return () => {
+      sub.remove();
+      releaseIntercept();
+      const parked = parkedRef.current;
+      parkedRef.current = null;
+      parked?.release();
+    };
+  }, [parkedActive]);
 
   // ─── First-mount defer: paint chrome immediately, defer heavy nested tabs ────
   const [contentReady, setContentReady] = useState(false);
@@ -549,9 +669,6 @@ const ChatHomeScreen: React.FC = () => {
 
   const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
 
-  const handleQrPress = useCallback(() => setQrVisible(true), []);
-  const handleQrClose = useCallback(() => setQrVisible(false), []);
-  const handleAddPress = useCallback(() => setGroupModalVisible(true), []);
   const handleSearchPress = useCallback(() => {
     navigation.navigate('UniversalSearch');
   }, [navigation]);
@@ -573,6 +690,8 @@ const ChatHomeScreen: React.FC = () => {
           onSearchPress={handleSearchPress}
           hiddenProgress={hiddenProgress}
           rightActions={
+            // QR is back as a standalone dock icon next to `+`, as before this
+            // change; `+` opens the two-row "Bắt đầu mới" popup.
             <>
               <HeaderDockAction
                 icon="qr-code-scanner"
@@ -582,9 +701,9 @@ const ChatHomeScreen: React.FC = () => {
               />
               <HeaderDockAction
                 icon="add"
-                onPress={handleAddPress}
-                accessibilityLabel="Tạo nhóm"
-                accessibilityHint="Tạo nhóm mới"
+                onPress={handleOpenStart}
+                accessibilityLabel="Tạo trò chuyện mới"
+                accessibilityHint="Mở bảng tạo nhóm hoặc nhắn tin mới"
               />
             </>
           }
@@ -598,12 +717,11 @@ const ChatHomeScreen: React.FC = () => {
             scrolledProgress={scrolledProgress}
             tabBarTop={tabBarTop}
             topTabNavRef={topTabNavRef}
-            qrVisible={qrVisible}
-            onQrClose={handleQrClose}
+            overlayOpenRef={overlayOpenRef}
+            parkedRef={parkedRef}
+            onParkedAdopted={handleParkedAdopted}
             onNavigateProfile={handleNavigateProfile}
             onNavigateChat={handleNavigateChat}
-            groupModalVisible={groupModalVisible}
-            setGroupModalVisible={setGroupModalVisible}
           />
         )}
       </View>

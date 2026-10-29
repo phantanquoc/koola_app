@@ -40,7 +40,6 @@ class MainActivity : ReactActivity() {
   }
 
   private lateinit var backCallback: OnBackPressedCallback
-  private lateinit var snapshots: BackSnapshotController
   private val mainHandler = Handler(Looper.getMainLooper())
   private val decelerate = DecelerateInterpolator()
   private val cards = HashMap<View, CardState>()
@@ -83,9 +82,6 @@ class MainActivity : ReactActivity() {
     val density = resources.displayMetrics.density
     maxRadiusPx = 20f * density
     maxElevationPx = 16f * density
-
-    snapshots = BackSnapshotController(this)
-    snapshots.register()
 
     backCallback =
         object : OnBackPressedCallback(true) {
@@ -201,7 +197,6 @@ class MainActivity : ReactActivity() {
     if (card == null) return
     cancelCardAnimations(card)
     gestureCard = card
-    snapshots.install(card)
     applyProgress(card, decelerate.getInterpolation(rawProgress.coerceIn(0f, 1f)))
   }
 
@@ -279,7 +274,6 @@ class MainActivity : ReactActivity() {
   private fun startQuickShrink(card: View) {
     cancelCardAnimations(card)
     quickCard = card
-    snapshots.install(card)
     runCardAnimator(card, progressOf(card), 1f, QUICK_MS) { cancelled ->
       if (quickCard === card) quickCard = null
       if (!cancelled) {
@@ -315,7 +309,7 @@ class MainActivity : ReactActivity() {
     card.invalidateOutline()
   }
 
-  /** Instantly restore the card to identity, drop its snapshot, and forget it. */
+  /** Instantly restore the card to identity and forget it. */
   private fun clearCard(card: View) {
     val state = cards.remove(card) ?: return
     state.animator?.let {
@@ -332,7 +326,6 @@ class MainActivity : ReactActivity() {
     }
     if (quickCard === card) quickCard = null
     if (gestureCard === card) gestureCard = null
-    snapshots.uninstall(card)
     card.scaleX = 1f
     card.scaleY = 1f
     card.outlineProvider = state.originalProvider
@@ -503,7 +496,6 @@ class MainActivity : ReactActivity() {
     mainHandler.removeCallbacksAndMessages(null)
     quickCard = null
     gestureCard = null
-    if (::snapshots.isInitialized) snapshots.unregister()
     super.onDestroy()
   }
 
@@ -521,7 +513,8 @@ class MainActivity : ReactActivity() {
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
   companion object {
-    private const val NATIVE_ID = BackSnapshotController.CARD_NATIVE_ID
+    /** Must stay byte-identical to the `nativeID` ChatScreen.tsx sets on its root view. */
+    private const val NATIVE_ID = "chat-screen-card"
     private const val MAX_SHRINK = 0.08f
     private const val QUICK_MS = 150L
     private const val QUICK_PROGRESS_THRESHOLD = 0.02f

@@ -21,6 +21,9 @@ export class PostComment {
   /** Set to false on soft-delete */
   @Prop({ type: Boolean, default: true })
   isActive: boolean;
+
+  @Prop({ type: Number, default: 0 })
+  likeCount: number;
 }
 
 export const PostCommentSchema = SchemaFactory.createForClass(PostComment);
@@ -30,3 +33,7 @@ PostCommentSchema.index({ postId: 1, createdAt: 1 });
 
 // Reply lookup per parent
 PostCommentSchema.index({ parentId: 1 });
+
+// Cursor pagination on _id + cascade/filtered reads
+PostCommentSchema.index({ postId: 1, parentId: 1, _id: 1 });
+PostCommentSchema.index({ postId: 1, parentId: 1, isActive: 1 });

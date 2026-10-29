@@ -476,9 +476,7 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @UseGuards(WsAuthGuard)
   @SubscribeMessage('call_sync')
-  async handleCallSync(
-    @ConnectedSocket() client: AuthSocket,
-  ): Promise<void> {
+  async handleCallSync(@ConnectedSocket() client: AuthSocket): Promise<void> {
     const userId = client.data.user?.sub;
     if (!userId) return;
     try {
@@ -502,12 +500,16 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
         : 0;
       if (session && session.state === 'initiated' && deadline > Date.now()) {
         client.emit('incoming_call', payload);
-        this.logger.log(`[WebrtcGateway] call_sync replayed ${sessionId} to ${userId}`);
+        this.logger.log(
+          `[WebrtcGateway] call_sync replayed ${sessionId} to ${userId}`,
+        );
       } else {
         await this.callSessionService.delPendingCall(userId);
       }
     } catch (err) {
-      this.logger.warn(`[WebrtcGateway] call_sync failed for ${userId}: ${(err as Error).message}`);
+      this.logger.warn(
+        `[WebrtcGateway] call_sync failed for ${userId}: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -1094,47 +1096,71 @@ export class WebrtcGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-
   private async emitCallLogUpdate(sessionId: string): Promise<void> {
     try {
       const log = await this.callLogsService.findBySessionId(sessionId);
       if (!log) return;
-      const raw = (log as unknown as Record<string, unknown>);
+      const raw = log as unknown as Record<string, unknown>;
       const payload: Record<string, unknown> =
-        typeof (log as unknown as { toObject?: () => Record<string, unknown> }).toObject === 'function'
-          ? (log as unknown as { toObject: () => Record<string, unknown> }).toObject()
+        typeof (log as unknown as { toObject?: () => Record<string, unknown> })
+          .toObject === 'function'
+          ? (
+              log as unknown as { toObject: () => Record<string, unknown> }
+            ).toObject()
           : { ...raw };
       // Normalize _id for client (ObjectId → string)
       if (payload._id != null && typeof payload._id !== 'string') {
         payload._id = String(payload._id);
       }
-      if (payload.sessionId == null && (raw as Record<string, unknown>).sessionId) {
-        payload.sessionId = (raw as Record<string, unknown>).sessionId;
+      if (payload.sessionId == null && raw.sessionId) {
+        payload.sessionId = raw.sessionId;
       }
       // Emit on /webrtc namespace to user rooms (SocketService is on /chat,
       // but WebRTCService is on /webrtc — see socketEventRouter wiring).
       // Also emit conversation:-scoped for future ChatGateway bridging.
-      const initiatorId = String((payload.initiatorId as string) ?? (raw.initiatorId as string) ?? '');
-      const targetId = String((payload.targetUserId as string) ?? (raw.targetUserId as string) ?? '');
-      const conversationId = String((payload.conversationId as string) ?? (raw.conversationId as string) ?? '');
+      const initiatorId = String(
+        (payload.initiatorId as string) ?? (raw.initiatorId as string) ?? '',
+      );
+      const targetId = String(
+        (payload.targetUserId as string) ?? (raw.targetUserId as string) ?? '',
+      );
+      const conversationId = String(
+        (payload.conversationId as string) ??
+          (raw.conversationId as string) ??
+          '',
+      );
       if (initiatorId) {
-        try { this.io.to(`user:${initiatorId}`).emit('call_log_updated', payload); } catch {}
+        try {
+          this.io.to(`user:${initiatorId}`).emit('call_log_updated', payload);
+        } catch {}
       }
       if (targetId) {
-        try { this.io.to(`user:${targetId}`).emit('call_log_updated', payload); } catch {}
+        try {
+          this.io.to(`user:${targetId}`).emit('call_log_updated', payload);
+        } catch {}
       }
       if (conversationId) {
-        try { this.io.to(`conversation:${conversationId}`).emit('call_log_updated', payload); } catch {}
+        try {
+          this.io
+            .to(`conversation:${conversationId}`)
+            .emit('call_log_updated', payload);
+        } catch {}
       }
       // Back-compat: also emit call_log_created for clients that distinguish create vs update
       if (initiatorId) {
-        try { this.io.to(`user:${initiatorId}`).emit('call_log_created', payload); } catch {}
+        try {
+          this.io.to(`user:${initiatorId}`).emit('call_log_created', payload);
+        } catch {}
       }
       if (targetId) {
-        try { this.io.to(`user:${targetId}`).emit('call_log_created', payload); } catch {}
+        try {
+          this.io.to(`user:${targetId}`).emit('call_log_created', payload);
+        } catch {}
       }
     } catch (err) {
-      this.logger.warn('[WebrtcGateway] emitCallLogUpdate failed: ' + (err as Error).message);
+      this.logger.warn(
+        '[WebrtcGateway] emitCallLogUpdate failed: ' + (err as Error).message,
+      );
     }
   }
 

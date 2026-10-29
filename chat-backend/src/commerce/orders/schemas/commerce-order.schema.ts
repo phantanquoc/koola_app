@@ -131,7 +131,12 @@ export class CommerceOrder {
   subtotal: number;
 
   @Prop({ required: true, type: OrderBuyerInfoSchema })
-  buyerInfo: { name: string; phone: string; address: string; note: string | null };
+  buyerInfo: {
+    name: string;
+    phone: string;
+    address: string;
+    note: string | null;
+  };
 
   @Prop({ required: true, type: String, enum: ['cod', 'bank'] })
   payment: 'cod' | 'bank';
@@ -144,7 +149,12 @@ export class CommerceOrder {
     expectedDeliveryDate: Date | null;
   };
 
-  @Prop({ required: true, type: String, enum: ORDER_STATUSES, default: 'PENDING' })
+  @Prop({
+    required: true,
+    type: String,
+    enum: ORDER_STATUSES,
+    default: 'PENDING',
+  })
   status: OrderStatus;
 
   @Prop({ required: true, type: [OrderStatusHistorySchema], default: [] })

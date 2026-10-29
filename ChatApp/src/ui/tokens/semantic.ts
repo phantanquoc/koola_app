@@ -8,7 +8,15 @@ export type SemanticTokens = {
   text: { primary: string; muted: string; faint: string; onAction: string };
   action: { primary: string; primaryPressed: string; primarySoft: string };
   signal: { selected: string; unread: string };
-  status: { success: string; warning: string; danger: string };
+  status: {
+    success: string;
+    warning: string;
+    danger: string;
+    /** Soft tint for an icon shell behind a status-hued glyph. */
+    successSoft: string;
+    warningSoft: string;
+    dangerSoft: string;
+  };
   border: { subtle: string; strong: string };
   focus: { ring: string };
   link: string;
@@ -57,6 +65,9 @@ export function makeSemanticTokens(
       success: palette.success,
       warning: palette.warning,
       danger: palette.danger,
+      successSoft: palette.successSoft,
+      warningSoft: palette.warningSoft,
+      dangerSoft: palette.dangerSoft,
     },
     border: {
       subtle: palette.line,

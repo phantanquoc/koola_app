@@ -25,13 +25,12 @@ const ChatTabStack: React.FC = () => {
   const isDark = resolvedScheme === 'dark';
   const [headerConfig, setHeaderConfig] = useState<ChatHeaderConfig | null>(null);
   // Which route in THIS stack is focused, tracked from the navigator's own
-  // focus events. The Chat screen runs with `freezeOnBlur: true`, so its
-  // `useFocusEffect` cleanup (which calls setConfig(null)) sits inside a
-  // subtree that react-freeze suspends shortly after blur. The ordering does
-  // work out today — react-native-screens' DelayedFreeze defers the freeze by
-  // a setTimeout(0) while `blur` is emitted from a passive effect in the same
-  // commit — but the band must not depend on winning that race. This gate is
-  // driven from outside the frozen subtree, so leaving Chat always reverts the
+  // focus events. The Chat route opts out of freezing (`freezeOnBlur: false`
+  // below), so its `useFocusEffect` cleanup (which calls setConfig(null)) does
+  // run on blur today. The band must not depend on that cleanup arriving at
+  // all, though — an interrupted pop, a re-render race or a future freeze
+  // change would strand the chat header over another route. This gate is
+  // driven from outside the screen subtree, so leaving Chat always reverts the
   // band to the wordmark even if the release never arrives.
   const [focusedRouteName, setFocusedRouteName] =
     useState<keyof ChatTabStackParamList>('ChatHome');
@@ -77,31 +76,33 @@ const ChatTabStack: React.FC = () => {
           statusBarTranslucent: true,
           navigationBarTranslucent: true,
           statusBarStyle: isDark ? 'light' : 'dark',
-          ...( { cardStyle: { backgroundColor: 'transparent' } } as object),
-          // Fabric fix: native-stack detaches the previous screen off-tree to save
-          // memory; popping while previous is detached desyncs Fabric's ViewGroup
-          // child count. Keep previous screen mounted.
-          ...( { detachPreviousScreen: false } as object),
         }}>
         <Stack.Screen name="ChatHome" component={ChatHomeScreen} />
         <Stack.Screen
           name="Chat"
           component={ChatScreen}
           options={{
-            // `transparentModal` renders Chat in a separate Android Dialog
-            // window outside the main Activity, which breaks safe-area insets
-            // (header collapses) and keyboard resize (keyboard covers the UI
-            // instead of pushing the composer up). Reverted to a normal card
-            // screen. `ios_from_right` maps to rns_ios_from_right_* tweens on
+            // `transparentModal` is the only lever that makes `ScreenStack`
+            // keep the screen below attached: `Screen.isTranslucent()` is true
+            // for TRANSPARENT_MODAL/FORM_SHEET, so the Chat Home fragment is no
+            // longer removed from the window while a conversation is open. The
+            // back transition therefore reveals the LIVE conversation list
+            // instead of a captured bitmap of it (the deleted PixelCopy
+            // controller existed precisely because `push` detached it).
+            // On this library version the route still lives in the main window
+            // — `ScreenStack.adapt()` returns a ScreenStackFragment for every
+            // presentation, and the dialog-hosted ScreenModalFragment is never
+            // instantiated — so safe-area insets and keyboard resize keep
+            // working. The card shrink targets the `nativeID="chat-screen-card"`
+            // view inside this screen, which the presentation does not change.
+            // `ios_from_right` maps to rns_ios_from_right_* tweens on
             // config_shortAnimTime (~200ms, accelerate_decelerate) — faster
-            // than `slide_from_right`'s config_mediumAnimTime (~400ms) while
-            // staying in the main window.
+            // than `slide_from_right`'s config_mediumAnimTime (~400ms).
+            presentation: 'transparentModal',
             animation: 'ios_from_right',
             gestureEnabled: true,
             freezeOnBlur: false,
             contentStyle: { backgroundColor: 'transparent' } as never,
-            ...( { cardStyle: { backgroundColor: 'transparent' } } as object),
-            ...( { detachPreviousScreen: false } as object),
           }}
         />
         <Stack.Screen

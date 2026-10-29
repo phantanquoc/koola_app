@@ -49,6 +49,9 @@ describe('MessagesService — reply validation', () => {
     findByIdOrFail: jest.fn(),
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {
@@ -353,6 +356,9 @@ describe('MessagesService — setReaction', () => {
     findByIdOrFail: jest.fn(),
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {
@@ -532,6 +538,9 @@ describe('MessagesService — searchMessages enrichment', () => {
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
     getConversationsByIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
 
   const mockMembershipService = {
@@ -794,7 +803,7 @@ describe('MessagesService — searchMessages enrichment', () => {
 
     // Message.senderId is a plain String (no ref) — populating was a bogus
     // query; guard that the fixed path never calls populate again.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
     const chain = mockMessageModel.find.mock.results[0].value as {
       populate: jest.Mock;
     };

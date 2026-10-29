@@ -199,6 +199,12 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Default size 40px, icon 22px
 - Press feedback: opacity 0.78 + scale 0.98
 
+### List/menu row icons
+- Icon carries a semantic hue by meaning — primary for helpful actions, warning for muted/suppressed state, danger for destructive — never a house neutral for all rows
+- Pair the glyph with a soft tinted shell at the same hue — use the palette `*Soft` token (`semantic.action.primarySoft`, `semantic.status.{warning,danger,success}Soft`) so dark mode gets its own tint; never `hex + '1F'`
+- One glyph size per menu; fix the shell width so labels align across rows
+- The label text stays neutral unless the row is destructive
+
 ### Empty/Error States (KoolaState)
 - Centered layout with icon shell (58px, primarySoft bg, lg radius)
 - Heading + optional body + optional action button
@@ -236,6 +242,8 @@ Faux-blur docks (when BlurView is unsafe — see chat_popback_flicker / removeVi
 - Pressable pattern: track pressed state, apply opacity + subtle scale transform
 - Android: use `android_ripple` on Pressable elements
 - Modals: bottom sheets use `animationType="fade"`, full-screen pickers use `animationType="slide"`
+- Dialog/sheet entrance: backdrop fades while the panel fades + lifts (~12px) + scales in (0.94 → 1) with `decelerate` over `normal`; exit is instant so it hands off to the next native surface without lag
+- Tall panels (near-full-height forms, e.g. the group creation form) SLIDE up instead of scaling: backdrop fades over `normal`; panel starts below the screen edge (its measured height, with a constant fallback) and travels to 0 with `decelerate` over `slow`. A 0.94 scale on a near-full-height panel reads as a jitter, not a deliberate zoom. Exit is instant here too.
 
 ### Duration tokens (`koolaDurations`)
 

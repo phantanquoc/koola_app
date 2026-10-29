@@ -9,7 +9,7 @@
  * Publish failure keeps the screen open with inputs preserved + retry.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Image,
@@ -19,9 +19,9 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
-  Share,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -39,6 +39,7 @@ import { generateClientId } from '../../utils/clientId';
 type ComposerStep = 'media-picker' | 'edit' | 'publishing' | 'error';
 
 type NavProp = NativeStackNavigationProp<ChatTabStackParamList>;
+type ComposerRouteProp = RouteProp<ChatTabStackParamList, 'PostComposer'>;
 
 interface PickedAsset {
   uri: string;
@@ -47,6 +48,8 @@ interface PickedAsset {
   fileSize: number;
   duration?: number;
   filename: string;
+  width?: number;
+  height?: number;
 }
 
 const MAX_ASSETS = 10;
@@ -60,11 +63,23 @@ const AUDIENCE_LABELS: Record<string, string> = {
 
 const PostComposerScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
+  const route = useRoute<ComposerRouteProp>();
+  // The route is registered for BOTH modes, so `params` survive from the
+  // previous push: `{ postId }` from "Sửa bài viết" would still be there on
+  // the next "Bài viết mới" open and turn it into an edit. A `key` forces a
+  // fresh instance per mode (and per post), so the mounted screen's params
+  // always describe what the user just asked for.
+  const editPostId = route.params && route.params.postId ? route.params.postId : null;
+  const isEdit = editPostId !== null;
   const insets = useSafeAreaInsets();
   const { palette } = useTheme();
   const styles = useMemo(() => makeStyles(palette), [palette]);
 
-  const [step, setStep] = useState<ComposerStep>('media-picker');
+  // Edit mode seeds from the post already in the service cache (the feed and
+  // the menu both came from it); a cold deep link falls back to a fetch.
+  const [step, setStep] = useState<ComposerStep>(() =>
+    editPostId ? 'edit' : 'media-picker',
+  );
   const [assets, setAssets] = useState<PickedAsset[]>([]);
   const [caption, setCaption] = useState('');
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
@@ -74,8 +89,36 @@ const PostComposerScreen: React.FC = () => {
   const [showAudiencePicker, setShowAudiencePicker] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
+  const [loadingPost, setLoadingPost] = useState(false);
 
   const clientPostIdRef = useRef(generateClientId());
+
+  // Seed caption/audience once when editing.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!editPostId || seededRef.current) return;
+    seededRef.current = true;
+    const cached = momentsService.getState().postsById.get(editPostId);
+    if (cached) {
+      setCaption(cached.caption ?? '');
+      setAudienceScope(cached.audienceScope);
+      setAudienceListId(cached.audienceListId);
+      return;
+    }
+    setLoadingPost(true);
+    import('../../services/moments/postsApi')
+      .then(({ postsApi }) => postsApi.getPostById(editPostId))
+      .then((post) => {
+        setCaption(post.caption ?? '');
+        setAudienceScope(post.audienceScope);
+        setAudienceListId(post.audienceListId);
+      })
+      .catch(() => {
+        setErrorMsg('Không tải được bài viết để sửa');
+        setStep('error');
+      })
+      .finally(() => setLoadingPost(false));
+  }, [editPostId]);
 
   // --- Step 1: Multi-asset picker ---
   const handlePickMedia = useCallback(async () => {
@@ -104,6 +147,8 @@ const PostComposerScreen: React.FC = () => {
           fileSize: asset.fileSize ?? 0,
           duration: isVideo ? asset.duration : undefined,
           filename: asset.fileName ?? 'post',
+          width: asset.width,
+          height: asset.height,
         });
       }
       setAssets(picked);
@@ -128,18 +173,68 @@ const PostComposerScreen: React.FC = () => {
     setShowAudiencePicker(true);
   }, []);
 
-  // --- Publish ---
+  // --- Publish (create) / Save (edit) ---
   const handlePublish = useCallback(async () => {
     if (!caption.trim() && assets.length === 0) {
       setErrorMsg('Bài viết cần có nội dung hoặc ít nhất một ảnh/video');
       setStep('error');
       return;
     }
+    if (editPostId) {
+      // Edit covers what the API allows to change: caption + audience. Media
+      // is immutable after publish (no media-add/remove endpoint).
+      setStep('publishing');
+      setErrorMsg('');
+      try {
+        await momentsService.editPost(editPostId, {
+          caption: caption.trim(),
+          audienceScope,
+          audienceListId: audienceScope === 'custom' ? audienceListId ?? undefined : undefined,
+        });
+        navigation.goBack();
+      } catch (err: unknown) {
+        setErrorMsg(
+          `Lưu thay đổi thất bại: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        setStep('error');
+      }
+      return;
+    }
     setStep('publishing');
     setErrorMsg('');
     setUploadProgress({});
     try {
-      // Upload each asset via presigned URL with per-asset progress
+      // Upload each asset via presigned URL with per-asset progress.
+      // Offline: enqueue local URIs — the outbox dispatcher uploads on
+      // reconnect and creates the post with the same clientPostId.
+      const NetInfo = (await import('@react-native-community/netinfo')).default;
+      const netState = await NetInfo.fetch();
+      if (!netState.isConnected) {
+        const { momentsService: svc } = await import('../../services/moments/momentsService');
+        await svc.createPost({
+          caption: caption.trim() ? caption : undefined,
+          media: assets.map((a) => ({
+            mediaKey: a.uri,
+            mediaType: a.type,
+            duration: a.duration,
+            width: a.width,
+            height: a.height,
+          })),
+          audienceScope,
+          audienceListId: audienceListId ?? undefined,
+          mentions: mentions.length > 0 ? mentions : undefined,
+          clientPostId: clientPostIdRef.current,
+        }).catch((err: unknown) => {
+          if ((err as { code?: string }).code !== 'QUEUED') throw err;
+        });
+        Toast.show({
+          type: 'info',
+          text1: 'Sẽ đăng khi có mạng',
+          visibilityTime: 2000,
+        });
+        navigation.goBack();
+        return;
+      }
       const media = [];
       for (let i = 0; i < assets.length; i++) {
         const asset = assets[i];
@@ -157,6 +252,8 @@ const PostComposerScreen: React.FC = () => {
           mediaKey,
           mediaType: asset.type,
           duration: asset.duration,
+          width: asset.width,
+          height: asset.height,
         });
       }
       await momentsService.createPost({
@@ -190,7 +287,7 @@ const PostComposerScreen: React.FC = () => {
       setErrorMsg(msg);
       setStep('error');
     }
-  }, [assets, caption, mentions, audienceScope, audienceListId, navigation]);
+  }, [assets, caption, mentions, audienceScope, audienceListId, navigation, editPostId]);
 
   const audienceScopeLabel =
     audienceScope === 'custom'
@@ -238,7 +335,9 @@ const PostComposerScreen: React.FC = () => {
       <View style={styles.container} accessibilityLiveRegion="polite">
         <ActivityIndicator size="large" color={palette.primary} style={styles.publishingLoader} />
         <KoolaText tone="muted" align="center" style={styles.publishingText}>
-          {assets.length > 0
+          {isEdit
+            ? 'Đang lưu thay đổi...'
+            : assets.length > 0
             ? `Đang tải lên ${done}/${assets.length}...`
             : 'Đang đăng...'}
         </KoolaText>
@@ -251,7 +350,7 @@ const PostComposerScreen: React.FC = () => {
       <View style={styles.container}>
         <View style={[styles.pickerHeader, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity
-            onPress={() => setStep(assets.length > 0 || caption ? 'edit' : 'media-picker')}
+            onPress={() => (isEdit ? setStep('edit') : setStep(assets.length > 0 || caption ? 'edit' : 'media-picker'))}
             accessibilityRole="button"
             accessibilityLabel="Quay lại">
             <KoolaText tone="primary">Quay lại</KoolaText>
@@ -267,7 +366,7 @@ const PostComposerScreen: React.FC = () => {
             title="Thử lại"
             onPress={handlePublish}
             style={styles.retryButton}
-            accessibilityLabel="Thử đăng lại bài viết"
+            accessibilityLabel={isEdit ? 'Thử lưu lại' : 'Thử đăng lại bài viết'}
           />
         </View>
       </View>
@@ -279,20 +378,21 @@ const PostComposerScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={[styles.pickerHeader, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity
-          onPress={() => setStep('media-picker')}
+          onPress={() => (isEdit ? navigation.goBack() : setStep('media-picker'))}
           accessibilityRole="button"
-          accessibilityLabel="Quay lại chọn ảnh">
-          <KoolaText tone="primary">Quay lại</KoolaText>
+          accessibilityLabel={isEdit ? 'Hủy sửa bài viết' : 'Quay lại chọn ảnh'}>
+          <KoolaText tone="primary">{isEdit ? 'Hủy' : 'Quay lại'}</KoolaText>
         </TouchableOpacity>
         <KoolaText variant="label" weight="700">
-          Bài viết mới
+          {isEdit ? 'Sửa bài viết' : 'Bài viết mới'}
         </KoolaText>
         <TouchableOpacity
           onPress={handlePublish}
+          disabled={loadingPost}
           accessibilityRole="button"
-          accessibilityLabel="Đăng bài viết">
-          <KoolaText tone="primary" weight="700">
-            Đăng
+          accessibilityLabel={isEdit ? 'Lưu thay đổi' : 'Đăng bài viết'}>
+          <KoolaText tone={loadingPost ? 'muted' : 'primary'} weight="700">
+            {isEdit ? 'Lưu' : 'Đăng'}
           </KoolaText>
         </TouchableOpacity>
       </View>
@@ -387,6 +487,7 @@ const PostComposerScreen: React.FC = () => {
             <View style={{ width: 40 }} />
           </View>
           <FlatList
+            removeClippedSubviews={false}
             data={[
               { id: 'public', label: 'Công khai', scope: 'public' as AudienceScope },
               { id: 'connections', label: 'Người kết nối', scope: 'connections' as AudienceScope },
@@ -434,14 +535,6 @@ const PostComposerScreen: React.FC = () => {
     </View>
   );
 };
-
-export async function sharePostDeepLink(deepLink: string, caption: string): Promise<void> {
-  try {
-    await Share.share({ message: `${caption}\n${deepLink}` });
-  } catch {
-    // User dismissed — non-fatal
-  }
-}
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({

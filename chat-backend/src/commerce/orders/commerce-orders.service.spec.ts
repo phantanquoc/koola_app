@@ -59,7 +59,10 @@ function getPath(doc: Record<string, unknown>, path: string): unknown {
     );
 }
 
-function matches(doc: Record<string, unknown>, filter: Record<string, unknown>): boolean {
+function matches(
+  doc: Record<string, unknown>,
+  filter: Record<string, unknown>,
+): boolean {
   return Object.entries(filter).every(([k, cond]) =>
     matchesCond(getPath(doc, k), cond),
   );
@@ -91,9 +94,17 @@ class FakeOrders {
       skipped: 0,
       limited: null as number | null,
       sorted: rows,
-      sort() { return query; },
-      skip(n: number) { query.skipped = n; return query; },
-      limit(n: number) { query.limited = n; return query; },
+      sort() {
+        return query;
+      },
+      skip(n: number) {
+        query.skipped = n;
+        return query;
+      },
+      limit(n: number) {
+        query.limited = n;
+        return query;
+      },
       lean() {
         let out = query.sorted.map((r) => ({ ...r }));
         out = out.slice(query.skipped);
@@ -121,11 +132,19 @@ class FakeOrders {
       throw err;
     }
     const now = new Date();
-    const doc = { _id: new Types.ObjectId(), createdAt: now, updatedAt: now, ...payload };
+    const doc = {
+      _id: new Types.ObjectId(),
+      createdAt: now,
+      updatedAt: now,
+      ...payload,
+    };
     this.docs.push(doc);
     return { ...doc, toObject: () => ({ ...doc }) };
   }
-  async updateOne(filter: Record<string, unknown>, update: { $set: Record<string, unknown> }) {
+  async updateOne(
+    filter: Record<string, unknown>,
+    update: { $set: Record<string, unknown> },
+  ) {
     const doc = this.docs.find((d) => matches(d, filter));
     if (doc) Object.assign(doc, update.$set, { updatedAt: new Date() });
     return { modifiedCount: doc ? 1 : 0 };
@@ -155,11 +174,19 @@ class FakeProducts {
   async bulkWrite(ops: unknown[]) {
     this.bulkWriteCalls.push(ops);
     for (const op of ops) {
-      const u = (op as { updateOne: { filter: Record<string, unknown>; update: { $inc: Record<string, number> } } }).updateOne;
+      const u = (
+        op as {
+          updateOne: {
+            filter: Record<string, unknown>;
+            update: { $inc: Record<string, number> };
+          };
+        }
+      ).updateOne;
       const doc = this.docs.find((d) => matches(d, u.filter));
       if (doc) {
         for (const [k, v] of Object.entries(u.update.$inc)) {
-          (doc as Record<string, number>)[k] = ((doc as Record<string, number>)[k] ?? 0) + v;
+          (doc as Record<string, number>)[k] =
+            ((doc as Record<string, number>)[k] ?? 0) + v;
         }
       }
     }
@@ -171,11 +198,17 @@ class FakeUsers {
   docs: Record<string, unknown>[] = [];
   findById(id: unknown) {
     const row = this.docs.find((d) => normId(d._id) === normId(id)) ?? null;
-    return { select: () => ({ lean: () => Promise.resolve(row ? { ...row } : null) }) };
+    return {
+      select: () => ({ lean: () => Promise.resolve(row ? { ...row } : null) }),
+    };
   }
   find(filter: Record<string, unknown>) {
     const rows = this.docs.filter((d) => matches(d, filter));
-    return { select: () => ({ lean: () => Promise.resolve(rows.map((r) => ({ ...r }))) }) };
+    return {
+      select: () => ({
+        lean: () => Promise.resolve(rows.map((r) => ({ ...r }))),
+      }),
+    };
   }
 }
 
@@ -195,7 +228,9 @@ class FakeMessages {
     this.updateOneCalls.push({ filter, update });
     const doc = this.docs.find((d) => matches(d, filter));
     if (doc && update && typeof update === 'object' && '$set' in update) {
-      for (const [k, v] of Object.entries((update as { $set: Record<string, unknown> }).$set)) {
+      for (const [k, v] of Object.entries(
+        (update as { $set: Record<string, unknown> }).$set,
+      )) {
         const parts = k.split('.');
         let target = doc;
         for (let i = 0; i < parts.length - 1; i++) {
@@ -248,7 +283,9 @@ function placeDto(sellerId: string, productId: string, key?: string) {
     items: [{ productId, qty: 2 }],
     buyerInfo: { name: 'Lan', phone: '0901', address: '1 Đà Lạt' },
     payment: 'cod' as const,
-    idempotencyKey: key ?? `11111111-1111-4111-8111-${String(placeDtoSeq++).padStart(12, '0')}`,
+    idempotencyKey:
+      key ??
+      `11111111-1111-4111-8111-${String(placeDtoSeq++).padStart(12, '0')}`,
   };
 }
 let placeDtoSeq = 1;
@@ -270,7 +307,12 @@ describe('OrdersService (Batch A)', () => {
   let buyerId: string;
   let productId: string;
 
-  async function build(opts: { seller?: Record<string, unknown>; prods?: Record<string, unknown>[] } = {}) {
+  async function build(
+    opts: {
+      seller?: Record<string, unknown>;
+      prods?: Record<string, unknown>[];
+    } = {},
+  ) {
     orders = new FakeOrders();
     products = new FakeProducts();
     users = new FakeUsers();
@@ -283,7 +325,11 @@ describe('OrdersService (Batch A)', () => {
       createSystemMessage: jest.fn(async () => ({ _id: oid() })),
       updateLastMessage: jest.fn(async () => undefined),
     };
-    media = { generatePresignedGetUrl: jest.fn(async (k: string) => `https://cdn.test/${k}`) };
+    media = {
+      generatePresignedGetUrl: jest.fn(
+        async (k: string) => `https://cdn.test/${k}`,
+      ),
+    };
     const messagesService = {
       findOrderCard: jest.fn(async () => null),
       sendMessageWithOrderCard: jest.fn(async (_cid: string, _sid: string) => {
@@ -321,32 +367,53 @@ describe('OrdersService (Batch A)', () => {
     productId = normId(prodDocs[0]._id);
   }
 
-  async function placed(status: 'PENDING' | 'CONFIRMED' | 'SHIPPING' = 'PENDING') {
-    const res = await service.placeOrder(buyerId, placeDto(sellerId, productId));
-    const id = String((res.order as Record<string, unknown>).id);
+  async function placed(
+    status: 'PENDING' | 'CONFIRMED' | 'SHIPPING' = 'PENDING',
+  ) {
+    const res = await service.placeOrder(
+      buyerId,
+      placeDto(sellerId, productId),
+    );
+    const id = String(res.order.id);
     if (status !== 'PENDING') {
       await service.confirmOrder(
         { sub: sellerId, accountType: 'business' },
         id,
-        { shippingFee: 20000, expectedDeliveryDate: new Date(Date.now() + 86400000).toISOString() },
+        {
+          shippingFee: 20000,
+          expectedDeliveryDate: new Date(Date.now() + 86400000).toISOString(),
+        },
       );
     }
     if (status === 'SHIPPING') {
-      await service.shipOrder({ sub: sellerId, accountType: 'business' }, id, {});
+      await service.shipOrder(
+        { sub: sellerId, accountType: 'business' },
+        id,
+        {},
+      );
     }
     return id;
   }
 
-  const sellerCaller = () => ({ sub: sellerId, accountType: 'business' as const });
-  const buyerCaller = () => ({ sub: buyerId, accountType: 'personal' as const });
+  const sellerCaller = () => ({
+    sub: sellerId,
+    accountType: 'business' as const,
+  });
+  const buyerCaller = () => ({
+    sub: buyerId,
+    accountType: 'personal' as const,
+  });
 
   // ─── Placement ────────────────────────────────────────────────────────────
 
   describe('placeOrder', () => {
     it('creates a PENDING order with frozen snapshot + card + system line', async () => {
       await build();
-      const res = await service.placeOrder(buyerId, placeDto(sellerId, productId));
-      const o = res.order as Record<string, unknown>;
+      const res = await service.placeOrder(
+        buyerId,
+        placeDto(sellerId, productId),
+      );
+      const o = res.order;
       expect(o.status).toBe('PENDING');
       expect(o.subtotal).toBe(200000);
       expect(String(o.orderCode)).toMatch(/^KO-/);
@@ -362,32 +429,36 @@ describe('OrdersService (Batch A)', () => {
 
     it('rejects ordering from your own shop', async () => {
       await build();
-      await expect(service.placeOrder(sellerId, placeDto(sellerId, productId))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.placeOrder(sellerId, placeDto(sellerId, productId)),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects an unverified seller (400, no order)', async () => {
-      await build({ seller: verifiedSeller({ _id: SELLER, verificationStatus: 'pending' }) });
-      await expect(service.placeOrder(buyerId, placeDto(sellerId, productId))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await build({
+        seller: verifiedSeller({ _id: SELLER, verificationStatus: 'pending' }),
+      });
+      await expect(
+        service.placeOrder(buyerId, placeDto(sellerId, productId)),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(orders.docs).toHaveLength(0);
     });
 
     it('rejects a banned seller (400, no order)', async () => {
       await build({ seller: verifiedSeller({ _id: SELLER, isBanned: true }) });
-      await expect(service.placeOrder(buyerId, placeDto(sellerId, productId))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.placeOrder(buyerId, placeDto(sellerId, productId)),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(orders.docs).toHaveLength(0);
     });
 
     it('rejects a non-business seller (400)', async () => {
-      await build({ seller: verifiedSeller({ _id: SELLER, accountType: 'personal' }) });
-      await expect(service.placeOrder(buyerId, placeDto(sellerId, productId))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await build({
+        seller: verifiedSeller({ _id: SELLER, accountType: 'personal' }),
+      });
+      await expect(
+        service.placeOrder(buyerId, placeDto(sellerId, productId)),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects an inactive product naming it (400, no order)', async () => {
@@ -430,13 +501,15 @@ describe('OrdersService (Batch A)', () => {
 
     it('duplicate idempotencyKey returns the same order (200-shape) with one card', async () => {
       await build();
-      const dto = placeDto(sellerId, productId, '11111111-1111-4111-8111-111111111111');
+      const dto = placeDto(
+        sellerId,
+        productId,
+        '11111111-1111-4111-8111-111111111111',
+      );
       const first = await service.placeOrder(buyerId, dto);
       orders.failNextCreate = true; // simulate the unique-index violation path
       const second = await service.placeOrder(buyerId, dto);
-      expect(String((second.order as Record<string, unknown>).id)).toBe(
-        String((first.order as Record<string, unknown>).id),
-      );
+      expect(String(second.order.id)).toBe(String(first.order.id));
       expect(orders.docs).toHaveLength(1);
       expect(messages.docs).toHaveLength(1);
       expect(convs.createDirect).toHaveBeenCalledTimes(1);
@@ -445,7 +518,7 @@ describe('OrdersService (Batch A)', () => {
     it('freezes prices: later price change does not alter the order', async () => {
       await build();
       await service.placeOrder(buyerId, placeDto(sellerId, productId));
-      (products.docs[0] as Record<string, unknown>).price = 999999;
+      products.docs[0].price = 999999;
       const stored = orders.docs[0];
       expect((stored.items as Record<string, unknown>[])[0].price).toBe(100000);
       expect(stored.subtotal).toBe(200000);
@@ -458,13 +531,13 @@ describe('OrdersService (Batch A)', () => {
     it('seller confirms with fee + date; buyer gets 403', async () => {
       await build();
       const id = await placed();
-      const out = (await service.confirmOrder(sellerCaller(), id, {
+      const out = await service.confirmOrder(sellerCaller(), id, {
         shippingFee: 20000,
         expectedDeliveryDate: new Date(Date.now() + 86400000).toISOString(),
-      })) as Record<string, unknown>;
+      });
       expect(out.status).toBe('CONFIRMED');
       expect((out.shipping as Record<string, unknown>).fee).toBe(20000);
-      expect((out.statusHistory as unknown[])).toHaveLength(2);
+      expect(out.statusHistory as unknown[]).toHaveLength(2);
       await expect(
         service.confirmOrder(buyerCaller(), id, {
           shippingFee: 0,
@@ -487,28 +560,43 @@ describe('OrdersService (Batch A)', () => {
     it('seller rejects with reason → CANCELLED', async () => {
       await build();
       const id = await placed();
-      const out = (await service.rejectOrder(sellerCaller(), id, { reason: 'Hết hàng' })) as Record<string, unknown>;
+      const out = await service.rejectOrder(sellerCaller(), id, {
+        reason: 'Hết hàng',
+      });
       expect(out.status).toBe('CANCELLED');
-      expect(((out.statusHistory as Record<string, unknown>[]).at(-1) as Record<string, unknown>).note).toBe('Hết hàng');
+      expect(
+        (
+          (out.statusHistory as Record<string, unknown>[]).at(-1) as Record<
+            string,
+            unknown
+          >
+        ).note,
+      ).toBe('Hết hàng');
     });
 
     it('ship on PENDING → 409; ship on CONFIRMED → SHIPPING', async () => {
       await build();
       const pending = await placed();
-      await expect(service.shipOrder(sellerCaller(), pending, {})).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.shipOrder(sellerCaller(), pending, {}),
+      ).rejects.toBeInstanceOf(ConflictException);
       const id = await placed('CONFIRMED');
-      const out = (await service.shipOrder(sellerCaller(), id, {
+      const out = await service.shipOrder(sellerCaller(), id, {
         carrier: 'GHN',
         trackingCode: 'ABC123',
-      })) as Record<string, unknown>;
+      });
       expect(out.status).toBe('SHIPPING');
-      expect((out.shipping as Record<string, unknown>).trackingCode).toBe('ABC123');
+      expect((out.shipping as Record<string, unknown>).trackingCode).toBe(
+        'ABC123',
+      );
     });
 
     it('buyer cannot ship (403)', async () => {
       await build();
       const id = await placed('CONFIRMED');
-      await expect(service.shipOrder(buyerCaller(), id, {})).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.shipOrder(buyerCaller(), id, {}),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -521,31 +609,46 @@ describe('OrdersService (Batch A)', () => {
       expect(stored.status).toBe('DELIVERED');
       expect(stored.soldCountApplied).toBe(true);
       expect(products.bulkWriteCalls).toHaveLength(1);
-      expect((products.docs[0] as Record<string, unknown>).soldCount).toBe(2);
+      expect(products.docs[0].soldCount).toBe(2);
       // Second receive → 409, no second increment.
-      await expect(service.receiveOrder(buyerCaller(), id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.receiveOrder(buyerCaller(), id),
+      ).rejects.toBeInstanceOf(ConflictException);
       expect(products.bulkWriteCalls).toHaveLength(1);
-      expect((products.docs[0] as Record<string, unknown>).soldCount).toBe(2);
+      expect(products.docs[0].soldCount).toBe(2);
     });
 
     it('seller cannot receive (403)', async () => {
       await build();
       const id = await placed('SHIPPING');
-      await expect(service.receiveOrder(sellerCaller(), id)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.receiveOrder(sellerCaller(), id),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('receive on CONFIRMED → 409', async () => {
       await build();
       const id = await placed('CONFIRMED');
-      await expect(service.receiveOrder(buyerCaller(), id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.receiveOrder(buyerCaller(), id),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('system receive path works without role check', async () => {
       await build();
       const id = await placed('SHIPPING');
-      const out = (await service.receiveOrder({ sub: 'system' }, id, { bySystem: true })) as Record<string, unknown>;
+      const out = await service.receiveOrder({ sub: 'system' }, id, {
+        bySystem: true,
+      });
       expect(out.status).toBe('DELIVERED');
-      expect(((out.statusHistory as Record<string, unknown>[]).at(-1) as Record<string, unknown>).by).toBe('system');
+      expect(
+        (
+          (out.statusHistory as Record<string, unknown>[]).at(-1) as Record<
+            string,
+            unknown
+          >
+        ).by,
+      ).toBe('system');
     });
   });
 
@@ -553,29 +656,39 @@ describe('OrdersService (Batch A)', () => {
     it('buyer cancels PENDING and CONFIRMED without reason', async () => {
       await build();
       const p = await placed();
-      expect(((await service.cancelOrder(buyerCaller(), p)) as Record<string, unknown>).status).toBe('CANCELLED');
+      expect((await service.cancelOrder(buyerCaller(), p)).status).toBe(
+        'CANCELLED',
+      );
       const c = await placed('CONFIRMED');
-      expect(((await service.cancelOrder(buyerCaller(), c)) as Record<string, unknown>).status).toBe('CANCELLED');
+      expect((await service.cancelOrder(buyerCaller(), c)).status).toBe(
+        'CANCELLED',
+      );
     });
 
     it('buyer cannot cancel SHIPPING (409)', async () => {
       await build();
       const id = await placed('SHIPPING');
-      await expect(service.cancelOrder(buyerCaller(), id)).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.cancelOrder(buyerCaller(), id),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('seller cancels PENDING with reason; seller cancel without reason → 400', async () => {
       await build();
       const id = await placed();
-      await expect(service.cancelOrder(sellerCaller(), id, '  ')).rejects.toBeInstanceOf(BadRequestException);
-      const out = (await service.cancelOrder(sellerCaller(), id, 'Kho hết')) as Record<string, unknown>;
+      await expect(
+        service.cancelOrder(sellerCaller(), id, '  '),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      const out = await service.cancelOrder(sellerCaller(), id, 'Kho hết');
       expect(out.status).toBe('CANCELLED');
     });
 
     it('seller cannot cancel CONFIRMED (409)', async () => {
       await build();
       const id = await placed('CONFIRMED');
-      await expect(service.cancelOrder(sellerCaller(), id, 'Đổi ý')).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.cancelOrder(sellerCaller(), id, 'Đổi ý'),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('stranger cancel → 403', async () => {
@@ -598,7 +711,9 @@ describe('OrdersService (Batch A)', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
       await expect(service.getById(buyerCaller(), id)).resolves.toBeTruthy();
       await expect(service.getById(sellerCaller(), id)).resolves.toBeTruthy();
-      await expect(service.getById(buyerCaller(), hex(oid()))).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.getById(buyerCaller(), hex(oid())),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('getById includes names + item image URLs', async () => {
@@ -613,7 +728,9 @@ describe('OrdersService (Batch A)', () => {
     it('listSeller: personal token → 403', async () => {
       await build();
       await placed();
-      await expect(service.listSeller(buyerCaller(), {})).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.listSeller(buyerCaller(), {}),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       const res = await service.listSeller(sellerCaller(), {});
       expect(res.total).toBe(1);
     });

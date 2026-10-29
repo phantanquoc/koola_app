@@ -48,6 +48,7 @@ const PersonalOrdersScreen: React.FC = () => {
         ))}
       </View>
       <FlatList
+        removeClippedSubviews={false}
         data={data}
         keyExtractor={(o) => o.id}
         contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}

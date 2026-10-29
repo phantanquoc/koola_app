@@ -187,6 +187,7 @@ const makeStyles = (p: Palette) =>
       marginLeft: 8,
     },
     listContent: {
+      paddingHorizontal: 12,
       paddingTop: 8,
       paddingBottom: 16,
       flexGrow: 1,

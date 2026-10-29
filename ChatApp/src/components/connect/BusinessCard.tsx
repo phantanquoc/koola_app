@@ -40,6 +40,12 @@ function darkenHex(hex: string, amount: number): string {
   b = Math.max(0, Math.round(b * (1 - amount)));
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
+/** "TP. HỒ CHÍ MINH, VIỆT NAM" → "TP. Hồ Chí Minh" for the compact meta line. */
+function shortLocation(label?: string): string {
+  if (!label) return '';
+  const first = label.split(',')[0].trim().replace(/^TP\.\s*/i, '');
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
 
 const VNFlag: React.FC<{ w?: number; h?: number }> = ({ w = 30, h = 19 }) => (
   <Svg width={w} height={h} viewBox="0 0 38 24">
@@ -66,7 +72,7 @@ const Stars: React.FC<{ value: number; semantic: SemanticTokens }> = ({ value, s
       <MaterialIcons
         key={i}
         name={i < Math.round(value) ? 'star' : 'star-border'}
-        size={11}
+        size={12}
         color={i < Math.round(value) ? '#C5A000' : semantic.border.subtle}
         style={{ marginRight: 1 }}
       />
@@ -74,152 +80,63 @@ const Stars: React.FC<{ value: number; semantic: SemanticTokens }> = ({ value, s
   </View>
 );
 
-// ── Per-cert badge with distinct color + icon ────────────────────────────────
+// ── Per-cert badge with distinct color + icon (content tint follows its own
+//    brand palette; the pill shape/size is uniform so the wrap stays tidy) ────
 const CertBadge: React.FC<{ cert: { key: string; label: string; sublabel?: string }; s: SemanticTokens }> = ({ cert, s }) => {
+  const text = cert.key === 'iso' && cert.sublabel ? `ISO ${cert.sublabel}` : cert.label;
+  let icon: React.ReactNode;
+  let fg = s.action.primary;
+  let border = '#BFDBFE';
+  let bg = '#EFF6FF';
   if (cert.key === 'iso') {
-    return (
-      <View style={stylesCert.iso}>
-        <Svg width={22} height={22} viewBox="0 0 22 22">
-          <Circle cx={11} cy={11} r={10} fill="#E8F0FE" stroke="#1A56DB" strokeWidth={1} />
-          <Circle cx={11} cy={11} r={7} fill="none" stroke="#1A56DB" strokeWidth={0.7} opacity={0.35} />
-        </Svg>
-        <View style={{ marginLeft: 4 }}>
-          <KoolaText weight="800" style={{ fontSize: 8, color: '#1A56DB', lineHeight: 9, letterSpacing: 0.3 }}>
-            ISO
-          </KoolaText>
-          <KoolaText weight="600" style={{ fontSize: 6, color: '#1A56DB', lineHeight: 6 }}>
-            {cert.sublabel ?? '9001:2015'}
-          </KoolaText>
-        </View>
-      </View>
-    );
-  }
-  if (cert.key === 'haccp') {
-    return (
-      <View style={stylesCert.haccp}>
-        <View style={stylesCert.haccpSeal}>
-          <KoolaText weight="800" style={{ fontSize: 6, color: '#92400E', lineHeight: 7, textAlign: 'center' }}>
-            HACCP
-          </KoolaText>
-          <KoolaText weight="600" style={{ fontSize: 5, color: '#92400E', lineHeight: 5, textAlign: 'center' }}>
-            Certified
-          </KoolaText>
-        </View>
-        <View style={stylesCert.haccpRibbon} />
-      </View>
-    );
-  }
-  if (cert.key === 'globalgap') {
-    return (
-      <View style={stylesCert.globalgap}>
-        <Svg width={18} height={18} viewBox="0 0 18 18">
-          <Circle cx={9} cy={9} r={8} fill="none" stroke="#16A34A" strokeWidth={1.15} strokeDasharray="2 1.2" />
-          <Path d="M5 9 Q9 3 13 9 Q9 15 5 9" fill="#DCFCE7" stroke="#16A34A" strokeWidth={0.9} />
-          <Path d="M9 5 L9 13 M6.5 7.5 Q9 9 11.5 7.5" stroke="#16A34A" strokeWidth={0.7} fill="none" />
-        </Svg>
-        <KoolaText weight="700" style={{ fontSize: 8, color: '#15803D', marginLeft: 3 }}>
-          GLOBALG.A.P.
-        </KoolaText>
-      </View>
-    );
-  }
-  if (cert.key === 'vietgap') {
-    return (
-      <View style={stylesCert.vietgap}>
-        <MaterialIcons name="eco" size={10} color="#15803D" />
-        <KoolaText weight="800" style={{ fontSize: 8, color: '#15803D', marginLeft: 2, letterSpacing: 0.2 }}>
-          VIETGAP
-        </KoolaText>
-      </View>
-    );
+    icon = <MaterialIcons name="verified-user" size={12} color={fg} />;
+  } else if (cert.key === 'haccp') {
+    fg = '#B45309'; border = '#FDE68A'; bg = '#FFFBEB';
+    icon = <MaterialIcons name="verified" size={12} color={fg} />;
+  } else if (cert.key === 'globalgap' || cert.key === 'vietgap') {
+    fg = '#15803D'; border = '#BBF7D0'; bg = '#F0FDF4';
+    icon = <MaterialIcons name={cert.key === 'vietgap' ? 'eco' : 'verified'} size={12} color={fg} />;
+  } else {
+    icon = <MaterialIcons name="verified" size={12} color={fg} />;
   }
   return (
-    <View style={stylesCert.generic}>
-      <MaterialIcons name="verified" size={10} color={s.action.primary} />
-      <KoolaText weight="700" style={{ fontSize: 8, color: s.text.primary, marginLeft: 3 }}>
-        {cert.label}
+    <View style={[stylesCert.pill, stylesCert.pillWrap, { borderColor: border, backgroundColor: bg }]}>
+      {icon}
+      <KoolaText weight="700" numberOfLines={1} style={[stylesCert.text, { color: fg }]}>
+        {text}
       </KoolaText>
     </View>
   );
 };
 
 const stylesCert = StyleSheet.create({
-  iso: {
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
-    borderRadius: 999,
-    paddingLeft: 3,
-    paddingRight: 7,
-    paddingVertical: 2,
+    borderRadius: koolaRadii.pill,
+    paddingLeft: 6,
+    paddingRight: 8,
+    height: 22,
+    flexShrink: 0,
   },
-  haccp: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FDE68A',
-    backgroundColor: '#FFFBEB',
-    borderRadius: 999,
-    paddingLeft: 5,
-    paddingRight: 7,
-    paddingVertical: 2,
-    gap: 4,
-  },
-  haccpSeal: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  haccpRibbon: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#DC2626',
-    marginLeft: -2,
-    marginTop: 8,
-  },
-  globalgap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#BBF7D0',
-    backgroundColor: '#F0FDF4',
-    borderRadius: 999,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  vietgap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#BBF7D0',
-    backgroundColor: '#F0FDF4',
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  generic: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E4E7EC',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
+  pillWrap: { marginRight: 5, marginBottom: 3 },
+  text: { fontSize: 10.5, marginLeft: 3, letterSpacing: 0.2 },
 });
+
+/** Label + value block: the value wraps on its own lines instead of fragmenting
+ *  the inline label/value row into stray fragments. */
+const Field: React.FC<{
+  label: string;
+  children?: React.ReactNode;
+  styles: ReturnType<typeof makeStyles>;
+  topGap?: boolean;
+}> = ({ label, children, styles, topGap }) => (
+  <View style={topGap ? styles.fieldSpaced : undefined}>
+    <KoolaText weight="700" style={styles.fieldLabel}>{label}</KoolaText>
+    <View style={styles.fieldValueRow}>{children}</View>
+  </View>
+);
 
 const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePress, messageDisabled, messageLoading }) => {
   const { resolvedScheme, tokens } = useTheme();
@@ -231,85 +148,49 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
   const ctaBg = s.action.primary;
   const ctaPressedBg = useMemo(() => darkenHex(ctaBg, 0.14), [ctaBg]);
 
-  if (!mock) {
+  const avatar = useMemo(() => {
+    if (mock?.demoImage) return <Image source={mock.demoImage} style={styles.avatar} />;
+    const realDemoImage = (item as unknown as { demoImage?: ImageSourcePropType }).demoImage;
+    if (realDemoImage) return <Image source={realDemoImage} style={styles.avatar} />;
+    const avatarStr = typeof (item as BusinessAccountItem).avatar === 'string' ? ((item as BusinessAccountItem).avatar as string) : '';
+    if (avatarStr && isHttpUri(avatarStr)) return <Image source={{ uri: avatarStr }} style={styles.avatar} />;
     return (
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => setCardPressed(true)}
-        onPressOut={() => setCardPressed(false)}
-        android_ripple={{ color: s.border.subtle }}
-        accessibilityRole="button"
-        accessibilityLabel={`Xem hồ sơ ${item.displayName}`}
-        style={[styles.card, cardPressed && styles.cardPressed]}>
-        <View style={styles.accentBar} />
-        <View style={styles.headerCompact}>
-          <View style={styles.logoWrapSm}>
-            {(() => {
-              const realDemoImage = (item as unknown as { demoImage?: ImageSourcePropType }).demoImage;
-              const avatarStr = typeof (item as BusinessAccountItem).avatar === 'string' ? ((item as BusinessAccountItem).avatar as string) : '';
-              const hasHttpAvatar = !!avatarStr && isHttpUri(avatarStr);
-              if (realDemoImage) return <Image source={realDemoImage} style={styles.avatarSm} />;
-              if (hasHttpAvatar) return <Image source={{ uri: avatarStr }} style={styles.avatarSm} />;
-              return (
-                <View style={[styles.avatarSm, styles.avatarFallback]}>
-                  <DVMark size={24} />
-                </View>
-              );
-            })()}
-          </View>
-          <View style={{ flex: 1, minWidth: 0, marginLeft: 9 }}>
-            <KoolaText weight="700" numberOfLines={1} ellipsizeMode="tail" style={styles.nameSm}>
-              {item.displayName}
-            </KoolaText>
-            {item.province ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 1 }}>
-                <MaterialIcons name="place" size={9} color="#667085" style={{ marginRight: 2 }} />
-                <KoolaText weight="500" numberOfLines={1} style={styles.subSm}>
-                  {item.province}
-                </KoolaText>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.flagBadgeSm}>
-            <VNFlag w={13} h={9} />
-            <KoolaText weight="700" style={styles.flagSm}>
-              VN
-            </KoolaText>
-          </View>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.footerBarSm}>
-          <View style={styles.footerLeft}>
-            <MaterialIcons name="visibility" size={11} color="#667085" />
-            <KoolaText weight="600" style={styles.footerMetaSm}>
-              {formatCompact(0)}
-            </KoolaText>
-          </View>
-          <Pressable
-            onPress={(e) => { e.stopPropagation(); onMessagePress(); }}
-            onPressIn={(e) => { e.stopPropagation(); setCtaPressed(true); }}
-            onPressOut={() => setCtaPressed(false)}
-            disabled={!!messageDisabled || !!messageLoading}
-            android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
-            accessibilityRole="button"
-            accessibilityLabel="Nhắn tin ngay"
-            style={[styles.ctaSm, { backgroundColor: ctaPressed ? ctaPressedBg : ctaBg }, ctaPressed && styles.ctaPressed, (messageDisabled || messageLoading) && styles.ctaDisabled]}>
-            {messageLoading ? <ActivityIndicator size="small" color={s.text.onAction} /> : (
-              <>
-                <MaterialIcons name="chat-bubble-outline" size={11} color={s.text.onAction} />
-                <KoolaText weight="700" style={styles.ctaTextSm}>Nhắn tin ngay</KoolaText>
-              </>
-            )}
-          </Pressable>
-        </View>
-      </Pressable>
+      <View style={[styles.avatar, styles.avatarFallback]}>
+        <DVMark size={28} />
+      </View>
     );
-  }
+  }, [item, mock, styles]);
 
-  const certs = mock.certifications ?? [];
-  const MAX = 4;
-  const visible = certs.slice(0, MAX);
-  const rest = certs.length - visible.length;
+  // Normalize the two data shapes into one view model so the card has a single
+  // layout — the rich mock fields simply override the base item fields.
+  const verified = mock ? !!mock.verifiedMark : item.verificationStatus === 'verified';
+  const rating = mock?.rating;
+  const years = mock?.yearsActive;
+  const location = shortLocation(mock?.locationLabel ?? item.province);
+  const mainProduct = mock ? (mock.mainProduct ?? mock.tagline) : item.tagline;
+  const certs = mock?.certifications ?? [];
+  const MAX_CERTS = 4;
+  const visibleCerts = certs.slice(0, MAX_CERTS);
+  const restCerts = certs.length - visibleCerts.length;
+  const capacity = mock?.supplyCapacity;
+  const views = mock?.viewCount ?? 0;
+  const feedback = mock?.positiveFeedbackCount;
+  const loading = !!messageDisabled || !!messageLoading;
+
+  const metaLine = [
+    rating != null ? (
+      <Stars key="stars" value={rating} semantic={s} />
+    ) : null,
+    years != null ? (
+      <KoolaText key="years" weight="600" style={styles.metaText}>{years} năm</KoolaText>
+    ) : null,
+    location ? (
+      <View key="loc" style={styles.metaLoc}>
+        <MaterialIcons name="place" size={12} color={s.text.muted} style={{ marginRight: 2 }} />
+        <KoolaText weight="500" numberOfLines={1} style={styles.metaText}>{location}</KoolaText>
+      </View>
+    ) : null,
+  ].filter(Boolean);
 
   return (
     <Pressable
@@ -322,112 +203,82 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
       style={[styles.card, cardPressed && styles.cardPressed]}>
       <View style={styles.accentBar} />
 
-      {/* Header */}
-      <View style={styles.headerCompact}>
-        <View style={styles.logoWrapSm}>
-          {mock.demoImage ? <Image source={mock.demoImage} style={styles.avatarSm} /> : (
-            <View style={[styles.avatarSm, styles.avatarFallback]}><DVMark size={24} /></View>
-          )}
-        </View>
-        <View style={{ flex: 1, minWidth: 0, marginLeft: 9 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <KoolaText weight="700" numberOfLines={1} ellipsizeMode="tail" style={[styles.nameSm, { flexShrink: 1 }]}>
-              {item.displayName}
-            </KoolaText>
-            {mock.verifiedMark ? (
-              <View style={styles.verifiedSm}><MaterialIcons name="verified" size={8} color="#fff" /></View>
-            ) : null}
+      {/* Body */}
+      <View style={styles.body}>
+        <View style={styles.header}>
+          <View style={styles.logoWrap}>{avatar}</View>
+          <View style={styles.headerCol}>
+            <View style={styles.nameRow}>
+              <KoolaText weight="700" numberOfLines={2} ellipsizeMode="tail" style={styles.name}>
+                {item.displayName}
+              </KoolaText>
+              {verified ? (
+                <View style={styles.verified}><MaterialIcons name="verified" size={9} color={s.text.onAction} /></View>
+              ) : null}
+            </View>
+            {metaLine.length > 0 ? <View style={styles.metaRow}>{metaLine}</View> : null}
           </View>
-          <View style={styles.headerMetaRow}>
-            <Stars value={mock.rating ?? 5} semantic={s} />
-            {mock.yearsActive != null ? <KoolaText weight="600" style={styles.subStrong}> · {mock.yearsActive} năm</KoolaText> : null}
-            <KoolaText weight="500" numberOfLines={1} style={[styles.subSm, { flexShrink: 1 }]}>
-              · {(mock.locationLabel ?? mock.province ?? '').replace('TP. ', '').replace(', VIỆT NAM', '')}
-            </KoolaText>
+          <View style={styles.flagBadge}>
+            <VNFlag w={13} h={9} />
+            <KoolaText weight="700" style={styles.flagText}>VN</KoolaText>
           </View>
         </View>
-        <View style={styles.flagBadgeSm}>
-          <VNFlag w={13} h={9} />
-          <KoolaText weight="700" style={styles.flagSm}>VN</KoolaText>
-        </View>
+
+        {mainProduct ? (
+          <Field label="SẢN PHẨM CHÍNH" styles={styles} topGap>
+            <KoolaText weight="600" numberOfLines={2} style={styles.valueText}>{mainProduct}</KoolaText>
+          </Field>
+        ) : item.description ? (
+          <Field label="GIỚI THIỆU" styles={styles} topGap>
+            <KoolaText weight="500" numberOfLines={2} style={styles.valueText}>{item.description}</KoolaText>
+          </Field>
+        ) : null}
+
+        {certs.length > 0 ? (
+          <Field label="CHỨNG CHỈ" styles={styles} topGap>
+            <View style={styles.certWrap}>
+              {visibleCerts.map((c) => <CertBadge key={c.key} cert={c} s={s} />)}
+              {restCerts > 0 ? (
+                <View style={styles.pillMore}><KoolaText weight="700" style={styles.pillMoreText}>+{restCerts}</KoolaText></View>
+              ) : null}
+            </View>
+          </Field>
+        ) : null}
+
+        {capacity ? (
+          <Field label="NĂNG LỰC CUNG ỨNG" styles={styles} topGap>
+            <KoolaText weight="600" numberOfLines={2} style={styles.valueText}>{capacity}</KoolaText>
+          </Field>
+        ) : null}
       </View>
 
-      <View style={styles.divider} />
-
-      {/* Sản phẩm chính — 1 hàng riêng, text đen như demo */}
-      <View style={styles.rowLine}>
-        <KoolaText weight="700" style={styles.rowLabel}>SẢN PHẨM CHÍNH:</KoolaText>
-        <KoolaText weight="600" numberOfLines={1} ellipsizeMode="tail" style={styles.rowValue}>
-          {' '}{mock.mainProduct ?? mock.tagline ?? '—'}
-        </KoolaText>
-      </View>
-
-      <View style={styles.divider} />
-
-      {/* Thâm niên + Vị trí — sao vàng đậm */}
-      <View style={styles.rowLine}>
-        <Stars value={mock.rating ?? 5} semantic={s} />
-        <KoolaText weight="700" style={styles.rowLabel}>THÂM NIÊN:</KoolaText>
-        <KoolaText weight="600" style={styles.rowValue}> {mock.yearsActive ?? 15} NĂM</KoolaText>
-        <View style={styles.dotDark} />
-        <MaterialIcons name="place" size={10} color="#101828" style={{ marginRight: 2 }} />
-        <KoolaText weight="600" numberOfLines={1} style={[styles.rowValue, { flexShrink: 1 }]}>
-          {mock.locationLabel ?? mock.province ?? 'TP. HỒ CHÍ MINH, VIỆT NAM'}
-        </KoolaText>
-      </View>
-
-      <View style={styles.divider} />
-
-      {/* Chứng chỉ — icon + màu riêng từng loại */}
-      <View style={styles.certRowLine}>
-        <KoolaText weight="700" style={styles.rowLabel}>CHỨNG CHỈ:</KoolaText>
-        <View style={styles.certWrapLine}>
-          {visible.map((c) => <CertBadge key={c.key} cert={c} s={s} />)}
-          {rest > 0 ? (
-            <View style={styles.pillMore}><KoolaText weight="700" style={styles.pillMoreText}>+{rest}</KoolaText></View>
-          ) : null}
-          {visible.length === 0 ? <KoolaText weight="500" style={styles.rowValue}> —</KoolaText> : null}
-        </View>
-      </View>
-
-      <View style={styles.divider} />
-
-      {/* Năng lực cung ứng — 1 hàng riêng như demo */}
-      <View style={styles.rowLine}>
-        <MaterialIcons name="local-shipping" size={11} color="#101828" style={{ marginRight: 4 }} />
-        <KoolaText weight="700" style={styles.rowLabel}>NĂNG LỰC CUNG ỨNG:</KoolaText>
-        <KoolaText weight="600" numberOfLines={1} ellipsizeMode="tail" style={styles.rowValue}>
-          {' '}{mock.supplyCapacity ?? '100 TẤN/THÁNG, XUẤT KHẨU QUỐC TẾ'}
-        </KoolaText>
-      </View>
-
-      <View style={styles.divider} />
-
-      {/* Footer — views + CTA */}
-      <View style={styles.footerBarSm}>
+      {/* Footer */}
+      <View style={styles.footer}>
         <View style={styles.footerLeft}>
           <View style={styles.footerStat}>
-            <MaterialIcons name="visibility" size={11} color="#1D2939" />
-            <KoolaText weight="600" style={styles.footerMetaDark}>{formatCompact(mock.viewCount ?? 12500)}</KoolaText>
+            <MaterialIcons name="visibility" size={13} color={s.text.muted} />
+            <KoolaText weight="600" style={styles.footerMeta}>{formatCompact(views)}</KoolaText>
           </View>
-          <View style={styles.footerStat}>
-            <MaterialIcons name="chat-bubble" size={10} color="#1D2939" />
-            <KoolaText weight="600" style={styles.footerMetaDark}>{mock.positiveFeedbackCount ?? 185}</KoolaText>
-          </View>
+          {feedback != null ? (
+            <View style={styles.footerStat}>
+              <MaterialIcons name="chat-bubble" size={12} color={s.text.muted} />
+              <KoolaText weight="600" style={styles.footerMeta}>{formatCompact(feedback)}</KoolaText>
+            </View>
+          ) : null}
         </View>
         <Pressable
           onPress={(e) => { e.stopPropagation(); onMessagePress(); }}
           onPressIn={(e) => { e.stopPropagation(); setCtaPressed(true); }}
           onPressOut={() => setCtaPressed(false)}
-          disabled={!!messageDisabled || !!messageLoading}
+          disabled={loading}
           android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
           accessibilityRole="button"
-          accessibilityLabel="Nhắn tin ngay"
-          style={[styles.ctaSm, { backgroundColor: ctaPressed ? ctaPressedBg : ctaBg }, ctaPressed && styles.ctaPressed, (messageDisabled || messageLoading) && styles.ctaDisabled]}>
+          accessibilityLabel={`Nhắn tin cho ${item.displayName}`}
+          style={[styles.cta, { backgroundColor: ctaPressed ? ctaPressedBg : ctaBg }, ctaPressed && styles.ctaPressed, loading && styles.ctaDisabled]}>
           {messageLoading ? <ActivityIndicator size="small" color={s.text.onAction} /> : (
             <>
-              <MaterialIcons name="chat-bubble-outline" size={11} color={s.text.onAction} />
-              <KoolaText weight="700" style={styles.ctaTextSm}>Nhắn tin ngay</KoolaText>
+              <MaterialIcons name="chat-bubble-outline" size={15} color={s.text.onAction} />
+              <KoolaText weight="700" style={styles.ctaText}>Nhắn tin ngay</KoolaText>
             </>
           )}
         </Pressable>
@@ -436,56 +287,52 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ item, onPress, onMessagePre
   );
 };
 
-const makeStyles = (semantic: SemanticTokens, scheme: 'light' | 'dark') =>
+const makeStyles = (s: SemanticTokens, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     card: {
       ...(scheme === 'dark' ? koolaDarkShadows.sm : koolaShadows.sm),
-      backgroundColor: semantic.surface.level1,
-      borderRadius: 14,
+      backgroundColor: s.surface.level1,
+      borderRadius: koolaRadii.md,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: semantic.border.subtle,
-      paddingHorizontal: 12,
-      paddingTop: 11,
-      paddingBottom: 10,
+      borderColor: s.border.subtle,
       marginBottom: 8,
-      gap: 0,
       overflow: 'hidden',
     },
     cardPressed: { opacity: 0.97, transform: [{ scale: 0.99 }] },
-    accentBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, backgroundColor: semantic.action.primary, opacity: scheme === 'dark' ? 0.9 : 1 },
-    divider: { height: StyleSheet.hairlineWidth, backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.08)' : '#EAECF0', marginVertical: 7 },
+    accentBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, backgroundColor: s.action.primary, opacity: scheme === 'dark' ? 0.9 : 1 },
+    body: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 },
     // Header
-    headerCompact: { flexDirection: 'row', alignItems: 'center' },
-    logoWrapSm: { width: 36, height: 36, borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, backgroundColor: semantic.surface.level2, alignItems: 'center', justifyContent: 'center' },
-    avatarSm: { width: 36, height: 36, borderRadius: 18 },
+    header: { flexDirection: 'row', alignItems: 'flex-start' },
+    logoWrap: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: s.border.subtle, backgroundColor: s.surface.level2, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 10, marginTop: 1 },
+    avatar: { width: 40, height: 40, borderRadius: 20 },
     avatarFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF6FF' },
-    nameSm: { color: '#101828', fontSize: 12.5, lineHeight: 16, fontWeight: '700' as const },
-    headerMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 3 },
-    subSm: { fontSize: 10, color: '#101828', fontWeight: '500' as const },
-    subStrong: { fontSize: 10, color: '#101828', fontWeight: '700' as const },
-    verifiedSm: { width: 13, height: 13, borderRadius: 6.5, alignItems: 'center', justifyContent: 'center', marginLeft: 4, backgroundColor: '#12B76A' },
-    flagBadgeSm: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, borderRadius: koolaRadii.pill, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: semantic.surface.level2, gap: 3, flexShrink: 0, marginLeft: 8 },
-    flagSm: { fontSize: 9, color: '#344054', fontWeight: '700' as const },
-    // Rows — text đen như demo
-    rowLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
-    rowLabel: { fontSize: 10, color: '#101828', fontWeight: '700' as const, letterSpacing: 0.2 },
-    rowValue: { fontSize: 10.5, color: '#101828', fontWeight: '600' as const, flexShrink: 1 },
-    dotDark: { width: 2.5, height: 2.5, borderRadius: 1.25, backgroundColor: '#667085', marginHorizontal: 4 },
-    // Cert row
-    certRowLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    certWrapLine: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', flex: 1 },
-    pillMore: { borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle, backgroundColor: semantic.bg.canvas, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, borderStyle: 'dashed' as const },
-    pillMoreText: { fontSize: 9, color: '#667085', fontWeight: '700' as const },
+    headerCol: { flex: 1, minWidth: 0 },
+    nameRow: { flexDirection: 'row', alignItems: 'center' },
+    name: { flexShrink: 1, color: s.text.primary, fontSize: 14, lineHeight: 18, fontWeight: '700' as const },
+    verified: { width: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center', marginLeft: 4, backgroundColor: s.status.success, flexShrink: 0 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 3 },
+    metaLoc: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginLeft: 6 },
+    metaText: { fontSize: 11.5, lineHeight: 15, color: s.text.muted, fontWeight: '500' as const, marginLeft: 3 },
+    flagBadge: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: s.border.subtle, borderRadius: koolaRadii.pill, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: s.surface.level2, flexShrink: 0, marginLeft: 8 },
+    flagText: { fontSize: 9, lineHeight: 11, color: s.text.muted, fontWeight: '700' as const, marginLeft: 3 },
+    // Field blocks — label above value, value wraps freely
+    fieldSpaced: { marginTop: 10 },
+    fieldLabel: { fontSize: 10, lineHeight: 13, color: s.text.muted, fontWeight: '700' as const, letterSpacing: 0.4 },
+    fieldValueRow: { marginTop: 3 },
+    valueText: { fontSize: 13, lineHeight: 18, color: s.text.primary, fontWeight: '600' as const },
+    certWrap: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: -2, marginRight: -5, marginBottom: -3 },
+    // Each pill sits on its own wrapper margin so wrap gaps stay even (no row `gap`).
+    pillMore: { borderWidth: StyleSheet.hairlineWidth, borderColor: s.border.subtle, backgroundColor: s.bg.canvas, borderRadius: koolaRadii.pill, paddingHorizontal: 8, height: 22, alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed' as const, marginRight: 5, marginBottom: 3 },
+    pillMoreText: { fontSize: 10.5, color: s.text.muted, fontWeight: '700' as const },
     // Footer
-    footerBarSm: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-    footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
-    footerStat: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-    footerMetaSm: { fontSize: 10, color: '#344054', fontWeight: '600' as const, fontVariant: ['tabular-nums'] as never },
-    footerMetaDark: { fontSize: 10, color: '#101828', fontWeight: '600' as const, fontVariant: ['tabular-nums'] as never },
-    ctaSm: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 30, paddingHorizontal: 10, borderRadius: 8, gap: 4, flexShrink: 0 },
+    footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 7, backgroundColor: s.surface.level2, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: s.border.subtle },
+    footerLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+    footerStat: { flexDirection: 'row', alignItems: 'center', marginRight: 14 },
+    footerMeta: { fontSize: 12, color: s.text.muted, fontWeight: '600' as const, marginLeft: 3, fontVariant: ['tabular-nums'] as never },
+    cta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 36, paddingHorizontal: 14, borderRadius: koolaRadii.xs, flexShrink: 0, marginLeft: 10 },
     ctaPressed: { opacity: 0.92, transform: [{ scale: 0.97 }] },
     ctaDisabled: { opacity: 0.5 },
-    ctaTextSm: { color: semantic.text.onAction, fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.15 },
+    ctaText: { color: s.text.onAction, fontSize: 12.5, fontWeight: '700' as const, marginLeft: 5 },
   });
 
 export default React.memo(BusinessCard);

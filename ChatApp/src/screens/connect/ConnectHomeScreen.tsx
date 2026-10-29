@@ -138,7 +138,7 @@ const ProvincePickerSheet: React.FC<{ value: string; onChange: (v: string) => vo
           <TextInput style={{ flex: 1, fontSize: 15, color: s.text.primary, paddingVertical: 0 }} placeholder="Tìm tỉnh/thành..." placeholderTextColor={s.text.faint} value={query} onChangeText={setQuery} autoFocus returnKeyType="search" />
           {query.length > 0 ? <Pressable onPress={() => setQuery('')} hitSlop={6} style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}><MaterialIcons name="close" size={20} color={s.text.faint} /></Pressable> : null}
         </View>
-        <FlatList data={filtered} keyExtractor={(item) => item} keyboardShouldPersistTaps="handled"
+        <FlatList removeClippedSubviews={false} data={filtered} keyExtractor={(item) => item} keyboardShouldPersistTaps="handled"
           ListHeaderComponent={value ? <Pressable style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: s.border.subtle }} onPress={() => onChange('')}><KoolaText tone="danger" weight="600">Xóa bộ lọc</KoolaText><MaterialIcons name="close" size={18} color={s.status.danger} /></Pressable> : null}
           renderItem={({ item }) => {
             const isSelected = item === value;
@@ -322,8 +322,10 @@ const ConnectHomeScreen: React.FC = () => {
   const toggleCategory = useCallback((slug: string) => { setActiveCategory((prev) => (prev === slug ? null : slug)); }, []);
 
   const renderItem = useCallback(({ item }: { item: BusinessAccountItem }) => (
-    <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
-  ), [navigation, handleMessage]);
+    <View style={styles.listContent}>
+      <BusinessCard item={item as any} onPress={() => (navigation as any).navigate('BusinessProfile', { businessId: item._id })} onMessagePress={() => handleMessage(item)} />
+    </View>
+  ), [navigation, handleMessage, styles]);
 
   const activeSecondaryFilterCount =
     (activeSort !== 'latest' ? 1 : 0) + (activeProvince ? 1 : 0) + (activeCategory !== null ? 1 : 0);
@@ -412,7 +414,7 @@ const ConnectHomeScreen: React.FC = () => {
           ListFooterComponent={hasMore ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color={semantic.action.primary} /> : null}
           onEndReached={loadMore} onEndReachedThreshold={0.3}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={semantic.action.primary} />}
-          contentContainerStyle={[styles.listContent, { paddingTop: listTopPad, paddingBottom: tabBarInset }]}
+          contentContainerStyle={{ paddingTop: listTopPad, paddingBottom: tabBarInset }}
           showsVerticalScrollIndicator={false} style={styles.screenTransparent}
           onScroll={handleScroll}
           scrollEventThrottle={16}
@@ -429,7 +431,7 @@ const makeStyles = () =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: 'transparent' },
     screenTransparent: { flex: 1, backgroundColor: 'transparent' },
-    listContent: { paddingHorizontal: 6 },
+    listContent: { paddingHorizontal: 12 },
     contentInset: { paddingHorizontal: 12 },
     sheetContent: { paddingHorizontal: 20, paddingTop: 4 },
     sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },

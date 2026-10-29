@@ -315,6 +315,7 @@ const ConversationCallHistorySheet: React.FC<Props> = ({ conversationId, isVisib
         </KoolaText>
       </View>
       <BottomSheetFlatList
+        removeClippedSubviews={false}
         data={logs}
         keyExtractor={(item) => item._id}
         renderItem={renderItem}

@@ -111,6 +111,50 @@ function normalizeCallLog(payload: unknown): CallLogInput | null {
   };
 }
 
+/**
+ * Handler for conversation_prefs_updated (pin / mute / clear-for-me from the
+ * user's other device). A newer clearedAt wipes the local row + its messages
+ * via clearForMe; otherwise the prefs columns are updated in place. Either
+ * path notifies subscribers so the list re-renders without a REST refetch.
+ */
+function makePrefsUpdatedHandler(): EventCallback {
+  return (data: unknown) => {
+    try {
+      const p = ((data as Record<string, unknown>) ?? {});
+      const conversationId = String(p.conversationId ?? '');
+      if (!conversationId) return;
+
+      const clearedAtMs = p.clearedAt ? new Date(String(p.clearedAt)).getTime() : 0;
+      if (clearedAtMs > 0) {
+        const local = conversationRepository.getById(conversationId);
+        const rawLocalCleared = local?.clearedAt;
+        const localClearedMs =
+          typeof rawLocalCleared === 'number'
+            ? rawLocalCleared
+            : rawLocalCleared
+              ? new Date(rawLocalCleared).getTime()
+              : 0;
+        // Only a NEWER clear point wipes; stale replays are ignored. Unknown
+        // rows have nothing to wipe (REST seed populates them on next fetch).
+        if (local && clearedAtMs > localClearedMs) {
+          conversationRepository.clearForMe(conversationId, clearedAtMs);
+        }
+        return;
+      }
+
+      const pinned = typeof p.pinned === 'boolean' ? p.pinned : undefined;
+      const mutedUntil =
+        p.mutedUntil === null || typeof p.mutedUntil === 'string' || typeof p.mutedUntil === 'number'
+          ? (p.mutedUntil as string | null)
+          : undefined;
+      if (pinned === undefined && mutedUntil === undefined) return;
+      conversationRepository.updatePrefs(conversationId, { pinned, mutedUntil });
+    } catch (err) {
+      console.warn('[socketEventRouter] conversation_prefs_updated error:', err);
+    }
+  };
+}
+
 function makeCallLogHandler(): EventCallback {
   return (data: unknown) => {
     try {
@@ -193,6 +237,8 @@ export function wireSocketEvents(): () => void {
     { event: 'post.comment', handler: makeMomentsHandler('post.comment') },
     { event: 'call_log_created', handler: makeCallLogHandler() },
     { event: 'call_log_updated', handler: makeCallLogHandler() },
+    // Same-user prefs sync (pin / mute / clear-for-me from another device)
+    { event: 'conversation_prefs_updated', handler: makePrefsUpdatedHandler() },
   ];
 
   for (const { event, handler } of _handlers) {

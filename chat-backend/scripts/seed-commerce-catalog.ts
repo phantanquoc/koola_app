@@ -1,13 +1,14 @@
 /**
- * seed-commerce-catalog.ts — seed the live Shopping catalog from the mobile mocks
+ * seed-commerce-catalog.ts — seed the live Shopping catalog from the backend
+ * fixture `scripts/fixtures/shopping-catalog.fixture.ts`
  * (openspec change `commerce-catalog-live`, design D8).
  *
- * Creates (or reuses) ONE verified retail business account per mock seller in
- * `ChatApp/src/screens/shopping/shoppingMockData.ts`, all owned by the personal
+ * Creates (or reuses) ONE verified retail business account per fixture seller
+ * in `scripts/fixtures/shopping-catalog.fixture.ts`, all owned by the personal
  * user given by `--owner-email` (so the tester can switch into them and act as
  * the seller), uploads each bundled image in `ChatApp/src/assets/mock-shopping/`
- * to MinIO once (with a matching `Media` record), and upserts every mock product
- * with its mock seller's business as `sellerId`.
+ * to MinIO once (with a matching `Media` record), and upserts every fixture
+ * product with its seller's business as `sellerId`.
  *
  * Usage (from chat-backend/):
  *   npx ts-node -r tsconfig-paths/register scripts/seed-commerce-catalog.ts --owner-email <email>
@@ -21,7 +22,7 @@
  *  • Businesses are keyed by their placeholder email
  *    `commerce-seed-biz-<slug>@koola.invalid` (re-used, never duplicated).
  *  • Media are keyed by `mediaKey` = `commerce-seed/<file>` (unique index).
- *  • Products are keyed by `seedKey` = the mock product id (`p1` … `pN`).
+ *  • Products are keyed by `seedKey` = the fixture product id (`p1` … `pN`).
  *  Re-running leaves product / business / media counts identical. `soldCount`
  *  and `createdAt` are written with `$setOnInsert` so a re-run never resets
  *  counters that `commerce-orders` has since incremented.
@@ -44,11 +45,13 @@
  * E11000. `.invalid` is the RFC 2606 reserved TLD and no `passwordHash` is set,
  * so these accounts cannot be logged into directly — only via account switch.
  *
- * ─── MOCK PARSING ────────────────────────────────────────────────────────────
- * The mock file is React Native source (`require('…jpg')` image assets), so it
- * cannot be imported in Node. It is parsed with the TypeScript compiler API and
- * only literal values are evaluated; `require('../../assets/mock-shopping/x.jpg')`
- * becomes the filename `x.jpg`. Any non-literal expression aborts the run.
+ * ─── FIXTURE PARSING ─────────────────────────────────────────────────────────
+ * The fixture is plain TypeScript data (no React Native import), but it is
+ * still parsed with the TypeScript compiler API rather than imported, so the
+ * script stays runnable without transpiling it. Only literal values are
+ * evaluated (strings, numbers, booleans, null, arrays, plain objects); any
+ * non-literal expression aborts the run. `image` is the filename inside
+ * `ChatApp/src/assets/mock-shopping/`.
  *
  * Raw driver writes bypass Mongoose defaults/timestamps, so every field
  * (incl. createdAt/updatedAt/__v) is set explicitly.
@@ -101,10 +104,9 @@ const MEDIA_PREFIX = 'commerce-seed/';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MOCK_FILE = path.join(
   REPO_ROOT,
-  'ChatApp/src/screens/shopping/shoppingMockData.ts',
+  'chat-backend/scripts/fixtures/shopping-catalog.fixture.ts',
 );
 const IMAGE_DIR = path.join(REPO_ROOT, 'ChatApp/src/assets/mock-shopping');
-const IMAGE_REQUIRE_RE = /(?:^|\/)assets\/mock-shopping\/([^/]+\.(?:jpe?g|png|webp))$/i;
 
 const MIME_BY_EXT: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -199,7 +201,7 @@ interface MockProduct {
   tags: string[];
   description?: string;
   seller: MockSeller;
-  /** Filename in ChatApp/src/assets/mock-shopping/, from `require()`. */
+  /** Filename in ChatApp/src/assets/mock-shopping/ (read from the fixture). */
   image?: string;
 }
 
@@ -267,18 +269,6 @@ function evalLiteral(node: ts.Node, file: ts.SourceFile): unknown {
       out[key] = evalLiteral(prop.initializer, file);
     }
     return out;
-  }
-  if (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'require' &&
-    node.arguments.length === 1 &&
-    ts.isStringLiteral(node.arguments[0])
-  ) {
-    const spec = node.arguments[0].text;
-    const m = IMAGE_REQUIRE_RE.exec(spec);
-    if (!m) throw new Error(`Unexpected require('${spec}') at ${pos(node, file)}`);
-    return m[1];
   }
   throw new Error(
     `Non-literal expression (${ts.SyntaxKind[node.kind]}) at ${pos(node, file)}`,
@@ -639,7 +629,7 @@ async function main() {
   // Parse + validate the mock data BEFORE touching any storage.
   const mocks = args.ownerEmail ? loadMockProducts() : [];
   if (args.ownerEmail) {
-    console.log(`Parsed ${mocks.length} mock products from shoppingMockData.ts`);
+    console.log(`Parsed ${mocks.length} products from shopping-catalog.fixture.ts`);
   }
 
   const uri = process.env.MONGODB_URI || DEFAULT_MONGODB_URI;

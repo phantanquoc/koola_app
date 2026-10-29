@@ -27,6 +27,11 @@ import {
   PostComment,
   PostCommentDocument,
 } from './schemas/post-comment.schema';
+import { PostLike, PostLikeDocument } from './schemas/post-like.schema';
+import {
+  CommentLike,
+  CommentLikeDocument,
+} from './schemas/comment-like.schema';
 import {
   CreatePostDto,
   UpdatePostDto,
@@ -107,6 +112,10 @@ export class MomentsService {
     private postModel: Model<PostDocument>,
     @InjectModel(PostComment.name)
     private postCommentModel: Model<PostCommentDocument>,
+    @InjectModel(PostLike.name)
+    private postLikeModel: Model<PostLikeDocument>,
+    @InjectModel(CommentLike.name)
+    private commentLikeModel: Model<CommentLikeDocument>,
     @InjectModel(Report.name)
     private reportModel: Model<ReportDocument>,
     private readonly redisService: RedisService,
@@ -1523,7 +1532,9 @@ export class MomentsService {
     const caption = dto.caption ?? '';
     const media = dto.media ?? [];
     if (!caption.trim() && media.length === 0) {
-      throw new BadRequestException('Post must contain text or at least one attachment');
+      throw new BadRequestException(
+        'Post must contain text or at least one attachment',
+      );
     }
 
     // 1) Video duration validation (each video ≤ 60s)
@@ -1533,7 +1544,9 @@ export class MomentsService {
         item.duration !== undefined &&
         item.duration > 60
       ) {
-        throw new BadRequestException('Video attachment exceeds 60 second limit');
+        throw new BadRequestException(
+          'Video attachment exceeds 60 second limit',
+        );
       }
     }
 
@@ -1556,18 +1569,29 @@ export class MomentsService {
     }
 
     // 3) Validate mentions
-    const mentions = dto.mentions ?? [];
-    if (mentions.length > 0) {
-      const userIds = mentions.map((m) => m.userId);
+    // userId validity fails the request (an unknown user is a client bug); a
+    // malformed span only fails that mention — an offline-replay client may
+    // still carry an empty username or a zero-length/out-of-range span, and
+    // dropping it must not force the whole queued post to dead-letter.
+    const rawMentions = dto.mentions ?? [];
+    let mentions = rawMentions;
+    if (rawMentions.length > 0) {
+      const userIds = rawMentions.map((m) => m.userId);
       const users = await this.usersService.findByIds(userIds);
       const validIds = new Set(users.map((u) => u._id.toString()));
-      for (const m of mentions) {
+      for (const m of rawMentions) {
         if (!validIds.has(m.userId)) {
           throw new BadRequestException(
             `Invalid mention: user ${m.userId} not found`,
           );
         }
       }
+      mentions = rawMentions.filter(
+        (m) =>
+          m.username.trim().length > 0 &&
+          m.length > 0 &&
+          m.offset + m.length <= caption.length,
+      );
     }
 
     // 4) Create
@@ -1581,6 +1605,8 @@ export class MomentsService {
           mediaType: m.mediaType,
           thumbnailKey: m.thumbnailKey ?? null,
           duration: m.duration ?? null,
+          width: (m as any).width ?? null,
+          height: (m as any).height ?? null,
         })),
         mentions,
         audienceScope: dto.audienceScope,
@@ -1665,18 +1691,12 @@ export class MomentsService {
       if (!Types.ObjectId.isValid(cursor)) {
         throw new BadRequestException('Invalid cursor');
       }
-      const cursorDoc = await this.postModel
-        .findById(cursor, { createdAt: 1 })
-        .lean();
-      if (!cursorDoc) {
-        throw new BadRequestException('Invalid cursor');
-      }
-      baseFilter.createdAt = { $lt: (cursorDoc as any).createdAt };
+      baseFilter._id = { $lt: new Types.ObjectId(cursor) };
     }
 
     const posts = await this.postModel
       .find(baseFilter)
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
       .limit(safeLimit + 1)
       .lean();
 
@@ -1687,9 +1707,30 @@ export class MomentsService {
         ? (pagePosts[pagePosts.length - 1] as any)._id.toString()
         : null;
 
-    const items = await Promise.all(
-      pagePosts.map((p) => this.resolvePostView(p, viewerId)),
-    );
+    // Hide posts this viewer reported (report dedup moderation UX).
+    let visiblePosts = pagePosts;
+    try {
+      const reported = await this.reportModel
+        .find(
+          {
+            reporterId: viewerId,
+            targetType: 'post',
+            targetId: { $in: pagePosts.map((p: any) => p._id.toString()) },
+          },
+          { targetId: 1 },
+        )
+        .lean();
+      const hidden = new Set(reported.map((r: any) => String(r.targetId)));
+      if (hidden.size > 0) {
+        visiblePosts = pagePosts.filter(
+          (p: any) => !hidden.has(p._id.toString()),
+        );
+      }
+    } catch {
+      // Non-fatal — show unfiltered page
+    }
+
+    const items = await this.resolvePostViews(visiblePosts, viewerId);
 
     return { items, nextCursor, total: items.length };
   }
@@ -1722,54 +1763,40 @@ export class MomentsService {
     }
     await this.assertPostViewAccess(post, viewerId);
 
-    const alreadyLiked = (post.likes ?? []).some(
-      (l) => l.userId === viewerId,
+    const existing = await this.safeFindOne(
+      this.postLikeModel.findOne({ postId, userId: viewerId }),
     );
-
-    let updated: any;
-    if (alreadyLiked) {
-      updated = await this.postModel.findOneAndUpdate(
-        { _id: postId },
-        {
-          $pull: { likes: { userId: viewerId } },
-          $inc: { likeCount: -1 },
-        } as any,
-        { new: true },
-      );
+    let likedByMe: boolean;
+    if (existing) {
+      await this.postLikeModel.deleteOne({ postId, userId: viewerId });
+      likedByMe = false;
     } else {
-      updated = await this.postModel.findOneAndUpdate(
-        { _id: postId, 'likes.userId': { $ne: viewerId } },
-        {
-          $push: {
-            likes: { userId: viewerId, createdAt: new Date() },
-          },
-          $inc: { likeCount: 1 },
-        } as any,
-        { new: true },
-      );
-      if (!updated) {
-        // Concurrent like won the race — read the winner
-        updated = await this.postModel.findById(postId);
+      try {
+        await this.postLikeModel.create({ postId, userId: viewerId });
+        likedByMe = true;
+      } catch (err: any) {
+        // Concurrent like won the unique-index race — treat as liked.
+        likedByMe = err?.code !== 11000 ? false : true;
+        if (err?.code !== 11000) throw err;
       }
     }
-    if (!updated) throw new NotFoundException('Post not found');
-
-    const count = Math.max(0, (updated as any).likeCount ?? 0);
-    if ((updated as any).likeCount !== count) {
-      await this.postModel.updateOne(
-        { _id: postId },
-        { $set: { likeCount: count } },
-      );
-      (updated as any).likeCount = count;
-    }
-    const likedByMe = ((updated as any).likes ?? []).some(
-      (l: any) => l.userId === viewerId,
+    // Keep the denormalized counter exact: count rows, clamp at 0.
+    const count = Math.max(
+      0,
+      await this.postLikeModel.countDocuments({ postId }).catch(() => 0),
     );
+    await this.postModel.updateOne(
+      { _id: postId },
+      { $set: { likeCount: count } },
+    );
+
+    const updated: any =
+      (await this.safeFindOne(this.postModel.findById(postId))) ?? post;
 
     // Emit post.reaction to all permitted viewers (fire-and-forget)
     if (this.gatewayRef) {
       this.gatewayRef
-        .emitPostReaction(updated as any, viewerId, count, likedByMe)
+        .emitPostReaction(updated, viewerId, count, likedByMe)
         .catch((err) =>
           this.logger.error('[MomentsService] emitPostReaction failed', err),
         );
@@ -1792,42 +1819,35 @@ export class MomentsService {
     }
     await this.assertPostViewAccess(post, viewerId);
 
-    const alreadyLiked = (post.likes ?? []).some(
-      (l) => l.userId === viewerId,
+    const existingUnlike = await this.safeFindOne(
+      this.postLikeModel.findOne({ postId, userId: viewerId }),
     );
 
-    // Idempotent unlike: never adds a like. No state change → no write, no event.
-    if (!alreadyLiked) {
-      const count = Math.max(0, (post as any).likeCount ?? 0);
+    // Idempotent unlike: removing a missing row is a no-op.
+    if (!existingUnlike) {
+      const count = Math.max(
+        0,
+        await this.postLikeModel.countDocuments({ postId }).catch(() => 0),
+      );
       return { likedByMe: false, likeCount: count };
     }
 
-    const updated: any = await this.postModel.findOneAndUpdate(
+    await this.postLikeModel.deleteOne({ postId, userId: viewerId });
+    const count = Math.max(
+      0,
+      await this.postLikeModel.countDocuments({ postId }).catch(() => 0),
+    );
+    await this.postModel.updateOne(
       { _id: postId },
-      {
-        $pull: { likes: { userId: viewerId } },
-        $inc: { likeCount: -1 },
-      } as any,
-      { new: true },
+      { $set: { likeCount: count } },
     );
-    if (!updated) throw new NotFoundException('Post not found');
 
-    const count = Math.max(0, (updated as any).likeCount ?? 0);
-    if ((updated as any).likeCount !== count) {
-      await this.postModel.updateOne(
-        { _id: postId },
-        { $set: { likeCount: count } },
-      );
-      (updated as any).likeCount = count;
-    }
-    const likedByMe = ((updated as any).likes ?? []).some(
-      (l: any) => l.userId === viewerId,
-    );
+    const likedByMe = false;
 
     // Emit post.reaction to all permitted viewers (fire-and-forget)
     if (this.gatewayRef) {
       this.gatewayRef
-        .emitPostReaction(updated as any, viewerId, count, likedByMe)
+        .emitPostReaction(post as any, viewerId, count, likedByMe)
         .catch((err) =>
           this.logger.error('[MomentsService] emitPostReaction failed', err),
         );
@@ -1836,10 +1856,128 @@ export class MomentsService {
     return { likedByMe, likeCount: count };
   }
 
+  private async hasLike(
+    model: { findOne?: (...args: any[]) => any },
+    filter: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      const q = model?.findOne?.(filter, { _id: 1 });
+      const doc = q?.lean ? await q.lean() : await q;
+      return !!doc;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Mock- and driver-tolerant single-doc read: works whether the model
+   * returns a query (with .lean) or a plain document/promise. */
+  private async safeFindOne(queryOrDoc: any): Promise<any> {
+    try {
+      if (!queryOrDoc) return null;
+      if (typeof queryOrDoc.lean === 'function') {
+        return await queryOrDoc.lean().catch(() => null);
+      }
+      return await queryOrDoc;
+    } catch {
+      return null;
+    }
+  }
+
+  /** One-time guarded migration: embedded likes[] -> post_likes rows. */
+  async migratePostLikes(): Promise<{ migrated: number; posts: number }> {
+    const guardKey = 'moments:migrated:post-likes-v1';
+    try {
+      const already = await this.redisService.get(guardKey);
+      if (already) return { migrated: 0, posts: 0 };
+    } catch {
+      // Redis unavailable — proceed; unique index keeps re-runs safe.
+    }
+    let migrated = 0;
+    let posts = 0;
+    const cursor = this.postModel
+      .find({ likes: { $exists: true, $ne: [] } })
+      .cursor();
+    for await (const doc of cursor as any) {
+      const entries: any[] = doc.likes ?? [];
+      if (entries.length === 0) continue;
+      posts += 1;
+      for (const e of entries) {
+        if (!e?.userId) continue;
+        try {
+          await this.postLikeModel.create({
+            postId: String(doc._id),
+            userId: String(e.userId),
+          });
+          migrated += 1;
+        } catch (err: any) {
+          if (err?.code !== 11000) throw err;
+        }
+      }
+      const count = await this.postLikeModel.countDocuments({
+        postId: String(doc._id),
+      });
+      await this.postModel.updateOne(
+        { _id: doc._id },
+        { $set: { likeCount: count } },
+      );
+    }
+    try {
+      await this.redisService.setEX(guardKey, '1', 365 * 24 * 3600);
+    } catch {
+      // ignore
+    }
+    return { migrated, posts };
+  }
+
+  async toggleCommentLike(
+    commentId: string,
+    viewerId: string,
+  ): Promise<{ likedByMe: boolean; likeCount: number }> {
+    if (!Types.ObjectId.isValid(commentId)) {
+      throw new NotFoundException('Comment not found');
+    }
+    const comment = await this.postCommentModel.findById(commentId);
+    if (!comment || !comment.isActive) {
+      throw new NotFoundException('Comment not found');
+    }
+    const post = await this.postModel.findById((comment as any).postId);
+    if (!post || !post.isActive) throw new NotFoundException('Post not found');
+    await this.assertPostViewAccess(post, viewerId);
+    const existing = await this.safeFindOne(
+      this.commentLikeModel.findOne({ commentId, userId: viewerId }),
+    );
+    let likedByMe: boolean;
+    if (existing) {
+      await this.commentLikeModel.deleteOne({ commentId, userId: viewerId });
+      likedByMe = false;
+    } else {
+      try {
+        await this.commentLikeModel.create({
+          commentId,
+          postId: (comment as any).postId,
+          userId: viewerId,
+        });
+        likedByMe = true;
+      } catch (err: any) {
+        if (err?.code !== 11000) throw err;
+        likedByMe = true;
+      }
+    }
+    const likeCount = Math.max(
+      0,
+      await this.commentLikeModel.countDocuments({ commentId }).catch(() => 0),
+    );
+    await this.postCommentModel.updateOne(
+      { _id: commentId },
+      { $set: { likeCount } },
+    );
+    return { likedByMe, likeCount };
+  }
+
   async sharePost(
     postId: string,
     viewerId: string,
-  ): Promise<{ shareCount: number; deepLink: string }> {
+  ): Promise<{ shareCount: number; deepLink: string; appLink: string }> {
     if (!Types.ObjectId.isValid(postId)) {
       throw new NotFoundException('Post not found');
     }
@@ -1850,6 +1988,23 @@ export class MomentsService {
     }
     await this.assertPostViewAccess(post, viewerId);
 
+    const shareKey = `moments:post:${postId}:shared:${viewerId}`;
+    try {
+      const first = await this.redisService.setNXEX(shareKey, '1', 24 * 3600);
+      if (!first) {
+        const current = await this.postModel
+          .findById(postId, { shareCount: 1 })
+          .lean();
+        return {
+          shareCount: (current as any)?.shareCount ?? post.shareCount ?? 0,
+          deepLink: `koola://moments/post/${postId}`,
+          appLink: `koola://moments/post/${postId}`,
+        };
+      }
+    } catch {
+      // Redis unavailable — fall through to increment (fail-open, same as before)
+    }
+
     const updated = await this.postModel.findOneAndUpdate(
       { _id: postId },
       { $inc: { shareCount: 1 } },
@@ -1857,7 +2012,16 @@ export class MomentsService {
     );
     return {
       shareCount: (updated as any)?.shareCount ?? (post.shareCount ?? 0) + 1,
+      // Legacy field, kept for existing consumers.
       deepLink: `koola://moments/post/${postId}`,
+      // Same routable target as `deepLink` — kept as a distinct field so the
+      // client can share the link that opens today and switch to a web
+      // fallback later without a contract change. MomentViewer serves both
+      // `moments/story/:startStoryId` and its `moments/post/:startStoryId`
+      // alias (see ChatApp/src/navigation/momentsLinking.ts); a post link
+      // omits `authorId`, so the viewer resolves the post (and its author)
+      // through getPostById and needs no extra route data here.
+      appLink: `koola://moments/post/${postId}`,
     };
   }
 
@@ -1963,13 +2127,18 @@ export class MomentsService {
 
     // 'post' extends the admin-moderation target vocabulary; the admin
     // /reports list filters by targetType so it surfaces automatically.
-    await this.reportModel.create({
-      reporterId,
-      targetType: 'post',
-      targetId: postId,
-      reason: dto.reason,
-      status: 'pending',
-    });
+    // Dedup: same reporter + post returns success without a new row.
+    try {
+      await this.reportModel.create({
+        reporterId,
+        targetType: 'post',
+        targetId: postId,
+        reason: dto.reason,
+        status: 'pending',
+      });
+    } catch (err: any) {
+      if (err?.code !== 11000) throw err;
+    }
 
     return { success: true };
   }
@@ -1992,13 +2161,13 @@ export class MomentsService {
     let parent: any = null;
     if (dto.parentId) {
       parent = await this.postCommentModel.findById(dto.parentId).lean();
-      if (!parent || !(parent as any).isActive) {
+      if (!parent || !parent.isActive) {
         throw new NotFoundException('Parent comment not found');
       }
-      if ((parent as any).postId !== postId) {
+      if (parent.postId !== postId) {
         throw new BadRequestException('Parent comment belongs to another post');
       }
-      if ((parent as any).parentId) {
+      if (parent.parentId) {
         // Single-level replies only — a reply's parent must be top-level
         throw new BadRequestException('Cannot reply to a reply');
       }
@@ -2010,30 +2179,56 @@ export class MomentsService {
       authorId,
       content: dto.content,
       isActive: true,
+      likeCount: 0,
     });
 
+    // Increment both commentCount and topLevelCommentCount (if top-level)
+    const isTopLevel = !dto.parentId;
     await this.postModel.updateOne(
       { _id: postId },
-      { $inc: { commentCount: 1 } },
+      isTopLevel
+        ? { $inc: { commentCount: 1, topLevelCommentCount: 1 } }
+        : { $inc: { commentCount: 1 } },
     );
-    const freshPost =
-      (await this.postModel.findById(postId)) ?? post;
+    const freshPost = (await this.postModel.findById(postId)) ?? post;
     const commentCount = Math.max(0, freshPost.commentCount ?? 0);
+    const commentView = await this.resolvePostCommentView(
+      (comment as any).toObject(),
+      authorId,
+      true,
+      false,
+    );
 
     // Emit post.comment to permitted viewers (fire-and-forget)
     if (this.gatewayRef) {
       this.gatewayRef
         .emitPostComment(
           freshPost,
-          (comment as any)._id.toString(),
+          commentView,
           commentCount,
+          // A reply bumps its parent's replyCount on the client instead of
+          // adding a top-level row; the count includes replies, so clients
+          // need to tell the two apart.
+          dto.parentId ? String(dto.parentId) : null,
         )
         .catch((err) =>
           this.logger.error('[MomentsService] emitPostComment failed', err),
         );
     }
+    // Push to the post author (not for own comments).
+    if (freshPost.authorId !== authorId) {
+      this.notificationsService
+        .sendCommentPush?.({
+          postId,
+          authorId: freshPost.authorId,
+          commenterId: authorId,
+        })
+        .catch?.((err: unknown) =>
+          this.logger.error('[MomentsService] comment push failed', err),
+        );
+    }
 
-    return this.resolvePostCommentView(comment.toObject(), authorId);
+    return commentView;
   }
 
   async listPostComments(
@@ -2041,7 +2236,12 @@ export class MomentsService {
     viewerId: string,
     cursor?: string,
     limit = 20,
-  ): Promise<{ comments: any[]; nextCursor: string | null }> {
+  ): Promise<{
+    comments: any[];
+    nextCursor: string | null;
+    deletedIds: string[];
+    activeCommentCount: number | null;
+  }> {
     if (!Types.ObjectId.isValid(postId)) {
       throw new NotFoundException('Post not found');
     }
@@ -2059,12 +2259,15 @@ export class MomentsService {
       isActive: true,
     };
     if (cursor) {
-      filter.createdAt = { $gt: new Date(cursor) };
+      if (!Types.ObjectId.isValid(cursor)) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      filter._id = { $gt: new Types.ObjectId(cursor) };
     }
 
     const docs = await this.postCommentModel
       .find(filter)
-      .sort({ createdAt: 1 })
+      .sort({ _id: 1 })
       .limit(safeLimit + 1)
       .lean();
 
@@ -2072,15 +2275,93 @@ export class MomentsService {
     const pageDocs = hasMore ? docs.slice(0, safeLimit) : docs;
     const nextCursor =
       hasMore && pageDocs.length > 0
-        ? new Date(
-            (pageDocs[pageDocs.length - 1] as any).createdAt,
-          ).toISOString()
+        ? String((pageDocs[pageDocs.length - 1] as any)._id)
         : null;
 
     const comments = await Promise.all(
-      pageDocs.map((c) => this.resolvePostCommentView(c, viewerId, true)),
+      pageDocs.map((c) =>
+        this.resolvePostCommentView(c, viewerId, true, false),
+      ),
     );
-    return { comments, nextCursor };
+
+    // Soft-deleted rows are not in `filter` on purpose: they keep their place
+    // in the chronological page (and cursor) as "[đã xóa]" — dropping them from
+    // the query would also destroy the cursor for a page of only-deleted rows.
+    // The flag is a display concern, so the client decides whether to draw it.
+    const ids = pageDocs.map((c: any) => c._id);
+    const deletedIds: string[] = await new Promise<string[]>((resolve) => {
+      const query = this.postCommentModel.find(
+        { _id: { $in: ids }, isActive: false },
+        { _id: 1 },
+      ) as any;
+      Promise.resolve(query?.lean ? query.lean() : query)
+        .then((docs: any[]) => resolve((docs ?? []).map((d) => String(d._id))))
+        .catch(() => resolve([]));
+    });
+    // Same rule for the count: a failed count is `null`, never 0 (0 would
+    // paint "0 bình luận" over a thread that visibly has comments).
+    const activeCommentCount: number | null = await this.postCommentModel
+      .countDocuments({ postId, isActive: true, parentId: null })
+      .catch(() => null);
+
+    return {
+      comments,
+      nextCursor,
+      deletedIds,
+      // Replies of deleted parents are tombstoned too, but never counted.
+      activeCommentCount,
+    };
+  }
+
+  /**
+   * Active top-level comment count — what the card shows. `deletePostComment`
+   * only decrements the raw `commentCount` field for live rows, so a card that
+   * renders the field counts soft-deleted comments ("3 bình luận" over a
+   * thread with one). One count query, same filter as listPostComments.
+   *
+   * `deletedCommentId` is the row the caller just soft-deleted: the replica
+   * serving the count may not have seen that write yet, so the row is
+   * subtracted explicitly. Never negative — a replica WITH the write already
+   * drops the row from the count.
+   * `null` when the count query fails (the client keeps its last value).
+   */
+  async getActiveCommentCount(
+    postId: string,
+    viewerId: string,
+    deletedCommentId?: string,
+  ): Promise<{ activeCommentCount: number | null }> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.postModel.findById(postId).lean();
+    if (!post || !(post as any).isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+
+    // Only a comment of THIS post may be subtracted, or a stale id could
+    // lower another post's count.
+    let subtract = 0;
+    if (deletedCommentId && Types.ObjectId.isValid(deletedCommentId)) {
+      const deleted = await this.postCommentModel
+        .findById(deletedCommentId)
+        .lean();
+      if (
+        deleted &&
+        !(deleted as any).parentId &&
+        (deleted as any).postId === postId
+      ) {
+        subtract = 1;
+      }
+    }
+
+    const count = await this.postCommentModel
+      .countDocuments({ postId, isActive: true, parentId: null })
+      .catch(() => null);
+    return {
+      activeCommentCount: count === null ? null : Math.max(0, count - subtract),
+    };
   }
 
   async deletePostComment(
@@ -2108,27 +2389,82 @@ export class MomentsService {
     comment.isActive = false;
     await comment.save();
 
-    const updated = await this.postModel.findOneAndUpdate(
-      { _id: comment.postId },
-      { $inc: { commentCount: -1 } },
-      { new: true, projection: { commentCount: 1, authorId: 1 } },
-    );
-    const commentCount = Math.max(0, (updated as any)?.commentCount ?? 0);
-    if ((updated as any)?.commentCount !== commentCount) {
-      await this.postModel.updateOne(
-        { _id: comment.postId },
-        { $set: { commentCount } },
+    // Cascade: deleting a top-level comment soft-deletes its active replies in
+    // the same write; delete of a reply only affects itself.
+    let cascaded = 0;
+    let cascadedIds: string[] = [];
+    if (!(comment as any).parentId) {
+      // First, fetch the reply IDs that will be cascaded
+      const replies = await this.postCommentModel
+        .find({ parentId: commentId, isActive: true }, { _id: 1 })
+        .lean();
+      cascadedIds = replies.map((r: any) => String(r._id));
+
+      const res = await this.postCommentModel.updateMany(
+        { parentId: commentId, isActive: true },
+        { $set: { isActive: false } },
       );
+      cascaded = (res as any)?.modifiedCount ?? 0;
     }
+
+    // A reply never appears in the top-level preview (and `comments` in
+    // resolvePostView only runs withReplies for top-level rows), so the
+    // client-side replyCount patch below only needs the parentId.
+    const parentCommentId: string | null = (comment as any).parentId
+      ? String((comment as any).parentId)
+      : null;
+
+    // Recount from DB after cascade delete (authoritative source)
+    const activeCount = await this.postCommentModel.countDocuments({
+      postId: comment.postId,
+      isActive: true,
+    });
+    const commentCount = Math.max(0, activeCount);
+
+    const topLevelCount = await this.postCommentModel.countDocuments({
+      postId: comment.postId,
+      parentId: null,
+      isActive: true,
+    });
+    const topLevelCommentCount = Math.max(0, topLevelCount);
+
+    await this.postModel.updateOne(
+      { _id: comment.postId },
+      { $set: { commentCount, topLevelCommentCount } },
+    );
+
+    const fresh: any = await this.safeFindOne(
+      this.postModel.findById(comment.postId, {
+        commentCount: 1,
+        topLevelCommentCount: 1,
+        authorId: 1,
+        likeCount: 1,
+        shareCount: 1,
+      }),
+    );
 
     // Emit post.comment update (fire-and-forget)
     if (this.gatewayRef && post) {
-      const emitTarget =
-        (updated as any)?.authorId !== undefined
-          ? ({ ...(post.toObject?.() ?? post) } as any)
-          : (post as any);
+      const emitTarget = fresh
+        ? { ...(post.toObject?.() ?? post), ...fresh }
+        : (post as any);
+      const commentView = await this.resolvePostCommentView(
+        {
+          ...((comment as any).toObject?.() ?? (comment as any)),
+          isActive: false,
+        },
+        requesterId,
+        false,
+        false,
+      ).catch(() => null);
       this.gatewayRef
-        .emitPostComment(emitTarget, commentId, commentCount)
+        .emitPostComment(
+          emitTarget,
+          commentView,
+          commentCount,
+          parentCommentId,
+          cascaded > 0 ? cascadedIds : [],
+        )
         .catch((err) =>
           this.logger.error(
             '[MomentsService] emitPostComment (delete) failed',
@@ -2140,11 +2476,118 @@ export class MomentsService {
     return { success: true };
   }
 
+  async listCommentReplies(
+    postId: string,
+    commentId: string,
+    viewerId: string,
+    cursor?: string,
+    limit = 20,
+  ): Promise<{ replies: any[]; nextCursor: string | null }> {
+    if (!Types.ObjectId.isValid(postId) || !Types.ObjectId.isValid(commentId)) {
+      throw new NotFoundException('Comment not found');
+    }
+    const post = await this.postModel.findById(postId).lean();
+    if (!post || !(post as any).isActive) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.assertPostViewAccess(post, viewerId);
+    const parent = await this.postCommentModel.findById(commentId).lean();
+    if (!parent || (parent as any).postId !== postId) {
+      throw new NotFoundException('Comment not found');
+    }
+    const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
+    const filter: Record<string, unknown> = {
+      parentId: commentId,
+      isActive: true,
+    };
+    if (cursor) {
+      if (!Types.ObjectId.isValid(cursor)) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      filter._id = { $gt: new Types.ObjectId(cursor) };
+    }
+    const docs = await this.postCommentModel
+      .find(filter)
+      .sort({ _id: 1 })
+      .limit(safeLimit + 1)
+      .lean();
+    const hasMore = docs.length > safeLimit;
+    const pageDocs = hasMore ? docs.slice(0, safeLimit) : docs;
+    const nextCursor =
+      hasMore && pageDocs.length > 0
+        ? String((pageDocs[pageDocs.length - 1] as any)._id)
+        : null;
+    const replies = await Promise.all(
+      pageDocs.map((c) =>
+        this.resolvePostCommentView(c, viewerId, false, false),
+      ),
+    );
+    return { replies, nextCursor };
+  }
+
   // ─── Post view-model helpers ─────────────────────────────────────────────
 
-  private async resolvePostView(post: any, viewerId: string): Promise<any> {
+  /**
+   * Batched feed resolver: one author lookup + one comment-preview query for
+   * the whole page (fixes the per-post N+1), then per-post likedByMe checks
+   * which are single indexed point-reads. Response shape unchanged.
+   */
+  private async resolvePostViews(
+    posts: any[],
+    viewerId: string,
+  ): Promise<any[]> {
+    if (posts.length === 0) return [];
+    const authorIds = [...new Set(posts.map((p: any) => String(p.authorId)))];
+    let userById = new Map<string, any>();
+    try {
+      const users = await this.usersService.findByIds(authorIds);
+      userById = new Map(users.map((u: any) => [String(u._id ?? u.id), u]));
+    } catch {
+      userById = new Map();
+    }
+    const postIds = posts.map((p: any) => String(p._id));
+    let previewByPost = new Map<string, any[]>();
+    try {
+      const previews = await this.postCommentModel
+        .find({ postId: { $in: postIds }, parentId: null, isActive: true })
+        .sort({ postId: 1, createdAt: -1 })
+        .lean();
+      for (const c of previews as any[]) {
+        const pid = String(c.postId);
+        if (!previewByPost.has(pid)) previewByPost.set(pid, []);
+        previewByPost.get(pid)!.push(c);
+      }
+      // Keep latest-2 per post, chronological for the card.
+      for (const [pid, list] of previewByPost) {
+        previewByPost.set(pid, list.slice(0, 2).reverse());
+      }
+    } catch {
+      previewByPost = new Map();
+    }
+    return Promise.all(
+      posts.map((p) =>
+        this.resolvePostView(p, viewerId, {
+          author: userById.get(String(p.authorId)) ?? null,
+          previews: previewByPost.get(String(p._id)) ?? null,
+        }),
+      ),
+    );
+  }
+
+  private async resolvePostView(
+    post: any,
+    viewerId: string,
+    preloaded?: { author?: any | null; previews?: any[] | null },
+  ): Promise<any> {
     const p = typeof post.toObject === 'function' ? post.toObject() : post;
-    const postId = (p._id ?? post._id).toString();
+    // Snapshot the id BEFORE spreading: `...p` carries the snapshot's own raw
+    // `_id`, so `_id: p._id` after the spread wrote the null-ish snapshot value
+    // back over the real id and every post reached the client with `_id: null`.
+    const rawId = post._id ?? p._id;
+    const postId = rawId?.toString?.() ?? (rawId != null ? String(rawId) : '');
+    // A post without an id cannot be addressed by the client (like, comment,
+    // share all key off it) — fail loudly instead of emitting a null id.
+    if (!postId) throw new Error('Post document is missing _id');
 
     // Batch-generate presigned media URLs (1h)
     const media = await Promise.all(
@@ -2175,33 +2618,45 @@ export class MomentsService {
       }),
     );
 
-    const likes = (p.likes ?? []) as any[];
-    const likedByMe = likes.some((l) => l.userId === viewerId);
+    const legacyLikes = (p.likes ?? []) as any[];
+    // Dual-read: new post_likes collection is authoritative; fall back to the
+    // legacy embedded array for posts not yet migrated.
+    let likedByMe = legacyLikes.some((l) => l.userId === viewerId);
+    if (typeof this.postLikeModel?.findOne === 'function') {
+      likedByMe = await this.hasLike(this.postLikeModel, {
+        postId,
+        userId: viewerId,
+      });
+    }
 
     // Batch author lookup
     let authorDisplayName = '';
     let authorAvatar: string | null = null;
     try {
-      const users = await this.usersService.findByIds([p.authorId]);
-      const author = users?.[0] as any;
+      const author =
+        preloaded?.author ??
+        (await this.usersService.findByIds([p.authorId]))?.[0];
       authorDisplayName = author?.displayName ?? '';
       authorAvatar = author?.avatar ?? null;
     } catch {
       // Non-fatal — leave author fields blank
     }
 
-    // Top-2 comment preview (latest top-level)
+    // Top-2 comment preview (latest top-level). Replies are included (up to 3)
+    // so a preview and the full comment list share ONE view-model shape — the
+    // client never has to branch on which endpoint delivered a comment.
     let commentsPreview: any[] = [];
     try {
-      const preview = await this.postCommentModel
-        .find({ postId, parentId: null, isActive: true })
-        .sort({ createdAt: -1 })
-        .limit(2)
-        .lean();
+      const preview =
+        preloaded?.previews ??
+        (await this.postCommentModel
+          .find({ postId, parentId: null, isActive: true })
+          .sort({ createdAt: -1 })
+          .limit(2)
+          .lean());
+      const ordered = [...preview].reverse().slice(-2);
       commentsPreview = await Promise.all(
-        preview
-          .reverse()
-          .map((c) => this.resolvePostCommentView(c, viewerId, false)),
+        ordered.map((c) => this.resolvePostCommentView(c, viewerId, true)),
       );
     } catch {
       commentsPreview = [];
@@ -2209,7 +2664,11 @@ export class MomentsService {
 
     return {
       ...p,
-      _id: p._id,
+      _id: postId,
+      // Alias of `_id` under the name the mobile client keys everything off.
+      // Sent explicitly so PostView.id is real at runtime, not a type lie that
+      // only survives because the client fallbacks to `_id`.
+      id: postId,
       media,
       reactionCount: p.likeCount ?? 0,
       likedByMe,
@@ -2219,13 +2678,25 @@ export class MomentsService {
     };
   }
 
+  /**
+   * Comment view model. `viewerId` is the caller's id (replies are resolved
+   * for the same viewer), so replies share the caller's visibility.
+   */
   private async resolvePostCommentView(
     comment: any,
-    _viewerId: string,
+    viewerId: string,
     withReplies = false,
+    // Reply preview only (feed card). The full thread lists replies as nested
+    // rows itself, so resolving them there counted them twice.
+    withReplyPreview = withReplies,
   ): Promise<any> {
-    const c = comment;
-    const commentId = (c._id ?? comment._id).toString();
+    const c =
+      typeof comment.toObject === 'function' ? comment.toObject() : comment;
+    // Same before-spread snapshot rule as resolvePostView.
+    const rawId = comment._id ?? c._id;
+    const commentId =
+      rawId?.toString?.() ?? (rawId != null ? String(rawId) : '');
+    if (!commentId) throw new Error('Comment document is missing _id');
 
     let authorDisplayName = '';
     let authorAvatar: string | null = null;
@@ -2240,28 +2711,48 @@ export class MomentsService {
 
     const base = {
       ...c,
-      _id: c._id,
+      _id: commentId,
+      likeCount: c.likeCount ?? 0,
       authorDisplayName,
       authorAvatar,
     };
+    base.likedByMe =
+      typeof this.commentLikeModel?.findOne === 'function'
+        ? await this.hasLike(this.commentLikeModel, {
+            commentId,
+            userId: viewerId,
+          })
+        : false;
 
-    if (!withReplies) return base;
+    if (!withReplyPreview) return { ...base, replies: [], replyCount: 0 };
 
-    // Up to 3 reply preview (oldest-first) + replyCount
+    // Up to 3 reply preview (oldest-first) + replyCount.
+    // Optimization: fetch up to 20 replies (max page size per listCommentReplies)
+    // in one query, covering 99% of cases. Only do exact count if we hit the limit.
     let replies: any[] = [];
     let replyCount = 0;
     try {
-      replyCount = await this.postCommentModel.countDocuments({
-        parentId: commentId,
-        isActive: true,
-      });
+      // Fetch up to 20 replies (max page size per listCommentReplies)
       const replyDocs = await this.postCommentModel
         .find({ parentId: commentId, isActive: true })
         .sort({ createdAt: 1 })
-        .limit(3)
+        .limit(20)
         .lean();
+      replyCount = replyDocs.length;
+      const previewReplies = replyDocs.slice(0, 3);
+
+      // If exactly 20, might be more — do exact count
+      if (replyCount === 20) {
+        replyCount = await this.postCommentModel.countDocuments({
+          parentId: commentId,
+          isActive: true,
+        });
+      }
+
       replies = await Promise.all(
-        replyDocs.map((r) => this.resolvePostCommentView(r, _viewerId, false)),
+        previewReplies.map((r) =>
+          this.resolvePostCommentView(r, viewerId, false),
+        ),
       );
     } catch {
       replies = [];
@@ -2269,7 +2760,10 @@ export class MomentsService {
     return { ...base, replies, replyCount };
   }
 
-  private async assertPostViewAccess(post: any, viewerId: string): Promise<void> {
+  private async assertPostViewAccess(
+    post: any,
+    viewerId: string,
+  ): Promise<void> {
     // Author always has access to their own post
     if (post.authorId === viewerId) return;
 

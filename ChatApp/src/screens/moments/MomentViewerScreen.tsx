@@ -28,7 +28,6 @@ import {
   PanResponder,
   ActivityIndicator,
   Animated,
-  Modal,
   FlatList,
   Alert,
   Image,
@@ -40,10 +39,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { ChatTabStackParamList } from '../../navigation/types';
-import { KoolaText, koolaColors, koolaRadii, useTheme } from '../../ui';
+import { KoolaOverlay, KoolaText, koolaColors, koolaRadii, useTheme } from '../../ui';
 import type { Palette } from '../../ui/theme';
 import { storiesApi } from '../../services/moments/momentsApi';
 import { momentsService } from '../../services/moments/momentsService';
+import { postsApi } from '../../services/moments/postsApi';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Story, ViewerEntry, MusicTrack } from '../../services/moments/momentsApi';
 import { viewsApi } from '../../services/moments/momentsApi';
@@ -61,14 +61,28 @@ const MomentViewerScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<ViewerRouteProp>();
   const insets = useSafeAreaInsets();
-  const { authorId, startStoryId } = route.params;
+  // `startStoryId` doubles as a story id OR a post id: a shared post link
+  // (koola://moments/post/<id>) lands here because MomentViewer is the only
+  // registered route under the moments path. `authorId` is optional so the
+  // share target does not have to embed it.
+  const { authorId: routeAuthorId, startStoryId } = route.params;
+  // Shared post links carry no author — the story player is never rendered for
+  // them, so the author falls back to '' (only used by story-only paths).
+  const authorId = routeAuthorId ?? '';
+  // Set when the id resolved to a POST rather than a story.
+  const [savedPost, setSavedPost] = useState<{ id: string } | null>(null);
   const { user } = useAuth();
   const { palette } = useTheme();
   const modalStyles = useMemo(() => makeModalStyles(palette), [palette]);
 
   const [stories, setStories] = useState<Story[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [viewerState, setViewerState] = useState<ViewerState>('loading');
+  const [viewerState, setViewerState] = useState<ViewerState>(
+    // A post link (no author) resolves through the post API instead of the story
+    // API; starting at 'loaded' keeps the story player from painting one empty
+    // frame ("Text strings must be rendered within a <Text>") on the way in.
+    route.params.authorId ? 'loading' : 'loaded',
+  );
   const [isPaused, setIsPaused] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showComment, setShowComment] = useState(false);
@@ -87,7 +101,8 @@ const MomentViewerScreen: React.FC = () => {
   const viewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pausedValueRef = useRef(0);
   const audioRef = useRef<React.ElementRef<typeof Video> | null>(null);
-  const isOwnStory = user?._id === authorId;
+  // Post links carry no author, so this is only meaningful on the story path.
+  const isOwnStory = routeAuthorId != null && user?._id === routeAuthorId;
 
   const currentStory = stories[currentIndex];
 
@@ -172,10 +187,54 @@ const MomentViewerScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, [currentStory?._id, currentStory?.mediaKey, currentStory?.mediaUrl]);
 
-  // --- Load stories for author ---
+  // --- Load the target id: a story (ring tap) or a post (shared link) ---
+  //
+  // THE TARGET IS THE ROUTE PARAM, never a React prop captured across
+  // renders. A shared post link lands on this SAME mounted screen instance
+  // (`?`/singleTask: the app is already running, Android re-delivers the URI
+  // to the existing navigator), which pushes MomentViewer with new params
+  // while the old instance keeps rendering. Every effect below therefore
+  // depends on `routeAuthorId` / `startStoryId` and nothing derived.
   useEffect(() => {
     let cancelled = false;
-    const cached = momentsService.getStoriesForAuthor(authorId);
+    if (!routeAuthorId) {
+      // Reached from a shared POST link: a post id can never be a story id,
+      // so skip the story lookup entirely (it would surface a misleading
+      // error). A re-targeted route (post A → post B) must not keep A's
+      // "saved" screen visible while B loads.
+      setSavedPost(null);
+      setViewerState('loaded');
+      postsApi.getPostById(startStoryId).then(
+        (post) => {
+          if (cancelled) return;
+          const postId = post.id ?? post._id;
+          if (!postId) {
+            setViewerState('error');
+            return;
+          }
+          // Cache it so the Moments feed can render it without a refetch.
+          momentsService.cachePost({ ...post, id: postId });
+          setSavedPost({ id: postId });
+          setStories([]);
+          setCurrentIndex(0);
+          setViewerState('loaded');
+        },
+        () => {
+          if (!cancelled) setViewerState('error');
+        },
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Story target (ring tap or `moments/story/<id>?authorId=`), author known.
+    setSavedPost(null);
+    setViewerState('loading');
+    // Read here, not above: on a re-target this is the NEW story, and it is
+    // deliberately not a dependency (getStoriesForAuthor builds a new array
+    // per call, which would re-run this effect on every render).
+    const cached = momentsService.getStoriesForAuthor(routeAuthorId);
     const startIdx = cached.findIndex((s) => s._id === startStoryId);
     if (cached.length > 0) {
       setStories(cached);
@@ -193,20 +252,20 @@ const MomentViewerScreen: React.FC = () => {
           else next.unshift(detail);
           return next;
         });
-        setCurrentIndex((prev) => {
-          if (cached.length === 0) return 0;
-          return prev;
-        });
+        setCurrentIndex((prev) => (cached.length === 0 ? 0 : prev));
         setViewerState('loading');
       })
-      .catch((err) => {
+      .catch((err: { response?: { status?: number } } | undefined) => {
         if (cancelled) return;
         if (err?.response?.status === 410) setViewerState('expired');
         else if (err?.response?.status === 403) setViewerState('blocked');
         else setViewerState('error');
       });
-    return () => { cancelled = true; };
-  }, [authorId, startStoryId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeAuthorId, startStoryId]);
 /* VIEWER_PROGRESS_PLACEHOLDER */
 
   // --- Progress animation ---
@@ -414,6 +473,20 @@ const MomentViewerScreen: React.FC = () => {
     }
     return <View style={styles.captionRow}>{parts}</View>;
   }, [navigation]);
+
+  /**
+   * Leave this screen even when there is nothing below it. A cold-start deep
+   * link has no previous screen, and `goBack()` there is a no-op that traps
+   * the user on an error/loading screen. `navigate('ChatHome')` targets the
+   * ChatTab stack, so it lands on the feed from any tab.
+   */
+  const exitViewer = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate('ChatHome');
+  }, [navigation]);
 /* VIEWER_RENDER_PLACEHOLDER */
 
   // --- Special states ---
@@ -424,7 +497,7 @@ const MomentViewerScreen: React.FC = () => {
         {message}
       </KoolaText>
       <TouchableOpacity
-        onPress={() => navigation.goBack()}
+        onPress={exitViewer}
         style={[styles.dismissButton, { marginTop: 16 }]}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         accessibilityRole="button"
@@ -441,7 +514,54 @@ const MomentViewerScreen: React.FC = () => {
     return renderSpecialState('lock-outline', 'Bạn không có quyền xem khoảnh khắc này');
   }
   if (viewerState === 'error') {
-    return renderSpecialState('error-outline', 'Đã xảy ra lỗi khi tải khoảnh khắc');
+    return renderSpecialState(
+      'error-outline',
+      routeAuthorId
+        ? 'Đã xảy ra lỗi khi tải khoảnh khắc'
+        : 'Không mở được bài viết này',
+    );
+  }
+  // Reached from a shared post link (koola://moments/post/<id>): the post is a
+  // feed card, not a story, so the story player must never render for it — not
+  // even while the post fetch is in flight (stories is empty then, and the
+  // player would paint an empty frame). The link flow ends here, always.
+  if (!routeAuthorId) {
+    // A post is a feed card, not a story: the story player must never render
+    // for it — not even while the fetch is in flight (stories is empty then and
+    // the player would paint an empty frame). The link flow ends here.
+    return (
+      <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
+        {savedPost ? (
+          <>
+            <MaterialIcons name="photo-library" size={48} color={koolaColors.faint} />
+            <KoolaText tone="surface" align="center" variant="body" style={{ marginTop: 16 }}>
+              Bài viết đã được lưu. Mở tab Khoảnh khắc để xem.
+            </KoolaText>
+            <TouchableOpacity
+              // Open the feed ON THIS post instead of asking the user to hunt.
+              onPress={exitViewer}
+              style={[styles.dismissButton, { marginTop: 16 }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Mở bảng tin">
+              <KoolaText tone="primary">Xem trong bảng tin</KoolaText>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <ActivityIndicator color={koolaColors.primary} accessibilityLabel="Đang tải" />
+        )}
+        {/* Always escapable: a cold-start link has no screen to go back to, so
+            a fetch that never settles must still leave a way out. */}
+        <TouchableOpacity
+          onPress={exitViewer}
+          style={{ marginTop: 24 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại">
+          <KoolaText tone="primary">Quay lại</KoolaText>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   return (
@@ -477,7 +597,7 @@ const MomentViewerScreen: React.FC = () => {
       {/* Close button — proper icon with hitSlop */}
       <TouchableOpacity
         style={[styles.closeButton, { top: insets.top + 16 }]}
-        onPress={() => navigation.goBack()}
+        onPress={exitViewer}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         accessibilityRole="button"
         accessibilityLabel="Đóng xem khoảnh khắc">
@@ -499,7 +619,7 @@ const MomentViewerScreen: React.FC = () => {
           repeat={false}
           accessibilityLabel="Video khoảnh khắc"
         />
-      ) : resolvedMediaUri ? (
+      ) : currentStory && resolvedMediaUri ? (
         <Image
           source={{ uri: resolvedMediaUri }}
           style={styles.media}
@@ -508,6 +628,12 @@ const MomentViewerScreen: React.FC = () => {
           onError={() => setViewerState('error')}
           accessibilityLabel="Ảnh khoảnh khắc"
         />
+      ) : currentStory ? (
+        // mediaKey present but neither the cache nor a presigned URL produced
+        // a source — leaving this branch empty painted a blank black screen.
+        <View style={styles.loadingOverlay} accessibilityLabel="Không tải được ảnh">
+          <MaterialIcons name="broken-image" size={44} color="#FFFFFF" />
+        </View>
       ) : null}
 
       {/* Parallel audio player (compose-at-playback). Hidden, audio-only. */}
@@ -661,51 +787,52 @@ const MomentViewerScreen: React.FC = () => {
           <KoolaText tone="surface">{toastMsg}</KoolaText>
         </View>
       ) : null}
-/* VIEWER_MODAL_PLACEHOLDER */
 
-      {/* Viewers sheet — palette-aware */}
-      <Modal
+      {/* Viewers sheet — palette-aware. In-tree overlay, NOT a native <Modal>:
+          the Dialog window is a separate Fabric surface; opening/closing it
+          while this screen mounts/unmounts crashes with
+          "Cannot remove child at index 0 … childCount may be incorrect". */}
+      <KoolaOverlay
         visible={showViewers}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowViewers(false)}>
-        <View style={modalStyles.viewersModal} accessibilityViewIsModal>
-          <View style={modalStyles.viewersHeader}>
-            <KoolaText variant="label" weight="700">
-              Người đã xem
-            </KoolaText>
-            <TouchableOpacity
-              onPress={() => setShowViewers(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Đóng">
-              <KoolaText tone="primary">Đóng</KoolaText>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={viewers}
-            keyExtractor={(item) => item.viewerId}
-            renderItem={({ item }) => (
-              <View
-                style={modalStyles.viewerItem}
-                accessibilityLabel={`${item.displayName} đã xem`}>
-                <KoolaText variant="body" tone="ink">
-                  {item.displayName}
-                </KoolaText>
-                <KoolaText variant="caption" tone="muted">
-                  {new Date(item.viewedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                </KoolaText>
-              </View>
-            )}
-            ListEmptyComponent={
-              <View style={modalStyles.viewersEmpty}>
-                <KoolaText tone="muted" align="center">
-                  Chưa có ai xem khoảnh khắc này.
-                </KoolaText>
-              </View>
-            }
-          />
+        onRequestClose={() => setShowViewers(false)}
+        animate
+        style={modalStyles.viewersModal}>
+        <View style={modalStyles.viewersHeader}>
+          <KoolaText variant="label" weight="700">
+            Người đã xem
+          </KoolaText>
+          <TouchableOpacity
+            onPress={() => setShowViewers(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Đóng">
+            <KoolaText tone="primary">Đóng</KoolaText>
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <FlatList
+          removeClippedSubviews={false}
+          data={viewers}
+          keyExtractor={(item) => item.viewerId}
+          renderItem={({ item }) => (
+            <View
+              style={modalStyles.viewerItem}
+              accessibilityLabel={`${item.displayName} đã xem`}>
+              <KoolaText variant="body" tone="ink">
+                {item.displayName}
+              </KoolaText>
+              <KoolaText variant="caption" tone="muted">
+                {new Date(item.viewedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              </KoolaText>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={modalStyles.viewersEmpty}>
+              <KoolaText tone="muted" align="center">
+                Chưa có ai xem khoảnh khắc này.
+              </KoolaText>
+            </View>
+          }
+        />
+      </KoolaOverlay>
     </Animated.View>
   );
 };

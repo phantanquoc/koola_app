@@ -16,12 +16,11 @@ import { warmMemoryCache } from '../../services/media/mediaCacheService';
 import { useAuth } from '../../contexts/AuthContext';
 import ConversationListItem from '../../components/ConversationListItem';
 import LoadingFooter from '../../components/LoadingFooter';
-import GroupCreateModal from '../../components/GroupCreateModal';
 import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { offlineQueueService } from '../../services/OfflineQueueService';
 import OfflineBanner from '../../components/OfflineBanner';
-import { useTabBarBottomInset } from '../../navigation/MainNavigator';
+import { useTabBarBottomInset, useTabDockSuppression } from '../../navigation/MainNavigator';
 import {
   KoolaEmptyState,
   KoolaErrorState,
@@ -30,6 +29,10 @@ import {
   useTheme,
 } from '../../ui';
 import { useLocalFirstFlag } from '../../config/featureFlags';
+import {
+  conversationFingerprint,
+  sortConversations,
+} from './conversationListPrefs';
 import * as conversationRepository from '../../services/db/conversationRepository';
 import type { ConversationInput } from '../../services/db/conversationRepository';
 import { syncOnForeground } from '../../services/sync/syncOrchestrator';
@@ -43,6 +46,13 @@ import {
   type PaginationState,
 } from './conversationPagination';
 import type { SemanticTokens } from '../../ui/tokens/semantic';
+import ConversationActionSheet, {
+  type MuteDurationChoice,
+} from '../../components/ConversationActionSheet';
+import {
+  useConversationQuickActions,
+  type QuickAction,
+} from './useConversationQuickActions';
 import Animated, {
   type SharedValue,
   useAnimatedScrollHandler,
@@ -53,28 +63,15 @@ import { prefersReducedMotion } from '../../ui/tokens/motion';
 import { CHAT_CHROME_LIFT_DISTANCE, ChatSubTabVisibilityContext } from './ChatSubTabVisibilityContext';
 import { ChatHomeHeaderInsetContext } from './ChatHomeHeaderInsetContext';
 
+// Rows are detached cards — the canvas gap between them is the 1px top + 1px
+// bottom card margins, so the separator only needs to paint nothing visible.
 const Separator = ({ tokens: t }: { tokens: SemanticTokens }) => (
-  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.border.subtle }} />
+  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.bg.canvas }} />
 );
 
-/**
- * Fingerprint of exactly the fields that drive a conversation row's render.
- * The row-reference cache compares this across SQLite reads so unchanged rows
- * keep the SAME object reference and React.memo(ConversationListItem) hits.
- */
-function conversationFingerprint(c: Conversation): string {
-  const members = (c.members || [])
-    .map(
-      (m) =>
-        `${m.userId}|${m.user?.displayName ?? ''}|${m.user?.avatar ?? ''}|${
-          m.user?.isOnline ? 1 : 0
-        }`,
-    )
-    .join(';');
-  return `${c.type}|${c.name ?? ''}|${c.avatar ?? ''}|${c.lastMessagePreview ?? ''}|${
-    c.lastMessageAt ?? ''
-  }|${c.unreadCount ?? 0}||${members}`;
-}
+// sortConversations is re-exported from ./conversationListPrefs so existing
+// import sites keep working; the canonical implementation lives there.
+export { sortConversations };
 
 /** Spring nhẹ có chút nảy khi sub-tab bar hiện lại / ẩn hẳn sau khi thả tay. */
 const SUB_TAB_SNAP_SPRING = { damping: 18, stiffness: 220, mass: 0.6 };
@@ -169,7 +166,6 @@ const ConversationListScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showGroupModal, setShowGroupModal] = useState(false);
   const fetchingRef = useRef(false);
   const paginationRef = useRef<PaginationState>(INITIAL_PAGINATION_STATE);
   const lastFetchAtRef = useRef(0);
@@ -227,6 +223,9 @@ const ConversationListScreen: React.FC = () => {
         lastMessagePreview: r.lastMessagePreview ?? '',
         lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt as number).toISOString() : null,
         unreadCount: r.unreadCount ?? 0,
+        pinned: r.pinned ?? false,
+        mutedUntil: r.mutedUntil ? new Date(r.mutedUntil as number).toISOString() : null,
+        clearedAt: r.clearedAt ? new Date(r.clearedAt as number).toISOString() : null,
         createdAt: new Date().toISOString(),
         updatedAt: r.updatedAt ? new Date(r.updatedAt as number).toISOString() : new Date().toISOString(),
       })) as unknown as Conversation[];
@@ -319,8 +318,10 @@ const ConversationListScreen: React.FC = () => {
               lastMessagePreview: c.lastMessagePreview ?? null,
               lastMessageAt: c.lastMessageAt ?? 0,
               unreadCount: c.unreadCount ?? 0,
-              pinned: false,
+              pinned: c.pinned ?? false,
               archived: false,
+              mutedUntil: c.mutedUntil ?? null,
+              clearedAt: c.clearedAt ?? null,
               updatedAt: c.updatedAt,
             }));
             conversationRepository.upsertMany(inputs);
@@ -446,7 +447,8 @@ const ConversationListScreen: React.FC = () => {
           conv.unreadCount = (conv.unreadCount || 0) + 1;
         }
         updated.splice(idx, 1);
-        return [conv, ...updated];
+        // Pinned rows stay on top even after an unpinned bump (flag-off path).
+        return sortConversations([conv, ...updated]);
       });
     };
 
@@ -473,18 +475,53 @@ const ConversationListScreen: React.FC = () => {
       });
     };
 
+    // Cross-device prefs sync for the flag-off (in-memory) path: the
+    // local-first router covers flag-on via SQLite; here the event patches
+    // memory directly so the second device converges without a REST refetch.
+    const handlePrefsUpdated = (data: {
+      conversationId: string;
+      pinned?: boolean;
+      mutedUntil?: string | null;
+      clearedAt?: string | null;
+    }) => {
+      if (localFirstEnabled) return; // SQLite subscription handles this path
+      if (!data?.conversationId) return;
+      if (data.clearedAt) {
+        setConversations((prev) => prev.filter((c) => c._id !== data.conversationId));
+        return;
+      }
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c._id === data.conversationId
+              ? {
+                  ...c,
+                  pinned: data.pinned ?? c.pinned,
+                  mutedUntil: data.mutedUntil !== undefined ? data.mutedUntil : c.mutedUntil,
+                }
+              : c,
+          ),
+        ),
+      );
+    };
+
     socketService.on('new_message', handleNewMessage as (...args: unknown[]) => void);
     socketService.on('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
+    socketService.on('conversation_prefs_updated', handlePrefsUpdated as (...args: unknown[]) => void);
 
     return () => {
       socketService.off('new_message', handleNewMessage as (...args: unknown[]) => void);
       socketService.off('presence_update', handlePresenceUpdate as (...args: unknown[]) => void);
+      socketService.off('conversation_prefs_updated', handlePrefsUpdated as (...args: unknown[]) => void);
     };
   }, [localFirstEnabled]);
 
   const handleRefresh = useCallback(() => {
     fetchConversations(true);
   }, [fetchConversations]);
+  // Earlier trigger (0.2 instead of 0.5): fires when the fling is nearly done
+  // rather than while it is still decelerating, so the fetch and the resulting
+  // re-render land after motion has settled.
   const handleLoadMore = () => { if (hasMore && !loading) fetchConversations(false); };
 
   const handleConversationPress = useCallback((conv: Conversation) => {
@@ -507,45 +544,92 @@ const ConversationListScreen: React.FC = () => {
   // ONE stable handler for every row (no per-item closure): the row component
   // calls onPress(conversation) itself. With the row-reference cache above,
   // this is what lets React.memo on ConversationListItem hit for stable rows.
-  const renderConversation = useCallback(
-    ({ item }: { item: Conversation }) => (
-      <ConversationListItem conversation={item} onPress={handleConversationPress} />
-    ),
-    [handleConversationPress],
+  // The same pattern holds for onLongPress / onQuickAction below — every
+  // function pulled out of the hook is itself a stable useCallback, so the
+  // row handlers below never change identity across renders. (Never depend on
+  // the hook's returned object itself: it is a fresh object every render.)
+  // The tab dock lives outside the screen tree, so the in-tree action sheet
+  // can never overlay it. Suppression runs synchronously inside the quick
+  // action hook's openSheet (not in an effect after render) so the dock hides
+  // the moment the popup appears, even under JS load. Every close path (X,
+  // backdrop, Back, action completion) funnels through closeSheet, which
+  // releases exactly once; unmount with the sheet open releases too.
+  const suppressTabDock = useTabDockSuppression();
+  const {
+    sheetTarget,
+    sheetView,
+    openSheet,
+    closeSheet,
+    togglePin,
+    unmute,
+    muteFor,
+    clearConversation,
+    quickAction,
+  } = useConversationQuickActions({
+    localFirstEnabled,
+    setConversations,
+    suppressTabDock,
+  });
+
+  const handleConversationLongPress = React.useCallback(
+    (conv: Conversation) => {
+      openSheet(conv, 'main');
+    },
+    [openSheet],
   );
 
-  const handleGroupCreated = (conv: Conversation) => {
-    if (localFirstEnabled) {
-      // When flag ON: SQLite is the single source of truth.
-      // Upsert the new conversation so the subscription fires loadFromDb()
-      // and updates the UI — do NOT write to in-memory state directly.
-      try {
-        const input: ConversationInput = {
-          id: conv._id,
-          type: conv.type,
-          name: conv.name ?? null,
-          avatarKey: conv.avatar ?? null,
-          members: conv.members,
-          lastMessageId: null,
-          lastMessagePreview: conv.lastMessagePreview ?? null,
-          lastMessageAt: conv.lastMessageAt ?? 0,
-          unreadCount: conv.unreadCount ?? 0,
-          pinned: false,
-          archived: false,
-          updatedAt: conv.updatedAt,
-        };
-        conversationRepository.upsertMany([input]);
-      } catch (e) {
-        console.warn('[ConversationListScreen] handleGroupCreated: SQLite upsert failed', e);
-      }
-    } else {
-      setConversations((prev) => [conv, ...prev]);
-    }
-  };
+  const handleQuickAction = React.useCallback(
+    (conv: Conversation, action: QuickAction) => {
+      quickAction(conv, action);
+    },
+    [quickAction],
+  );
+
+  const handleSheetTogglePin = React.useCallback(() => {
+    if (!sheetTarget) return;
+    togglePin(sheetTarget);
+    closeSheet();
+  }, [sheetTarget, togglePin, closeSheet]);
+
+  const handleSheetUnmute = React.useCallback(() => {
+    if (!sheetTarget) return;
+    unmute(sheetTarget);
+    closeSheet();
+  }, [sheetTarget, unmute, closeSheet]);
+
+  const handleSheetMuteDuration = React.useCallback(
+    (duration: MuteDurationChoice) => {
+      if (!sheetTarget) return;
+      muteFor(sheetTarget, duration);
+      closeSheet();
+    },
+    [sheetTarget, muteFor, closeSheet],
+  );
+
+  const handleSheetClear = React.useCallback(() => {
+    if (!sheetTarget) return;
+    // Clear asks for confirm first; the sheet closes only after a confirmed
+    // successful clear (see the hook) so a cancelled dialog keeps context.
+    clearConversation(sheetTarget);
+  }, [sheetTarget, clearConversation]);
+
+  const renderConversation = useCallback(
+    ({ item }: { item: Conversation }) => (
+      <ConversationListItem
+        conversation={item}
+        onPress={handleConversationPress}
+        onLongPress={handleConversationLongPress}
+        onQuickAction={handleQuickAction}
+      />
+    ),
+    [handleConversationPress, handleConversationLongPress, handleQuickAction],
+  );
 
   const handleStartChat = () => {
-    // Contacts are now a sub-tab within ChatHomeScreen (ChatSubTabParamList)
-    navigation.getParent()?.navigate('Contacts');
+    // ConversationListScreen IS the 'Messages' tab, so its `navigation` is
+    // already the TopTab navigator — navigate directly. getParent() reaches
+    // ChatTabStack which has no 'Contacts' route → NAVIGATE not handled.
+    navigation.navigate('Contacts');
   };
 
   const SeparatorComponent = useCallback(() => <Separator tokens={tokens.semantic} />, [tokens.semantic]);
@@ -584,7 +668,7 @@ const ConversationListScreen: React.FC = () => {
         keyExtractor={(item) => item._id}
         renderItem={renderConversation}
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.2}
         // The list starts at y=0 behind Chat Home's glass header + overlaid
         // sub-tab bar; reserve exactly that resting chrome (incl. the gap) so
         // the first row sits just below it and later rows scroll behind it.
@@ -628,7 +712,13 @@ const ConversationListScreen: React.FC = () => {
           )
         }
         ListFooterComponent={
-          hasMore && loading ? <LoadingFooter /> : null
+          // Slot is ALWAYS mounted at a fixed height; only its inner content
+          // toggles. Swapping `null` → <LoadingFooter/> would insert a new cell
+          // while the list is still decelerating, forcing a full re-measure
+          // mid-momentum — that is the jerk near the end of the fling.
+          <View style={screenStyles.footerSlot}>
+            {hasMore && loading ? <LoadingFooter /> : null}
+          </View>
         }
         refreshControl={
           <RefreshControl
@@ -642,10 +732,17 @@ const ConversationListScreen: React.FC = () => {
         ItemSeparatorComponent={SeparatorComponent}
       />
 
-      <GroupCreateModal
-        visible={showGroupModal}
-        onClose={() => setShowGroupModal(false)}
-        onCreated={handleGroupCreated}
+      {/* Long-press quick actions (pin / mute / clear-for-me). In-tree
+          absolute overlay — additive only, the list chrome is untouched. */}
+      <ConversationActionSheet
+        visible={sheetTarget !== null}
+        conversation={sheetTarget}
+        initialView={sheetView}
+        onClose={closeSheet}
+        onTogglePin={handleSheetTogglePin}
+        onUnmute={handleSheetUnmute}
+        onPickMuteDuration={handleSheetMuteDuration}
+        onClear={handleSheetClear}
       />
     </SafeAreaView>
   );
@@ -657,6 +754,8 @@ function makeScreenStyles(semantic: SemanticTokens) {
     container: { flex: 1, backgroundColor: semantic.bg.canvas },
     errorContainer: { flex: 1 },
     listContent: { flexGrow: 1 },
+    // Fixed-height footer slot (LoadingFooter's 18/18 padding + 20px spinner).
+    footerSlot: { height: 56 },
     stateContainer: { flex: 1 },
   });
 }

@@ -31,10 +31,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
       ttlSeconds,
     );
     const isBlocked = totalHits > limit;
-    const bdSeconds = Math.max(
-      1,
-      Math.ceil((blockDuration || ttl) / 1000),
-    );
+    const bdSeconds = Math.max(1, Math.ceil((blockDuration || ttl) / 1000));
     return {
       totalHits,
       // ThrottlerGuard sets the Reset header to this value (seconds).

@@ -79,11 +79,12 @@ const ORDER_CODE_MAX_RETRIES = 5;
 /**
  * Order lifecycle service (commerce-orders D1/D2/D5/D6/D7/D9).
  *
- * Placement is a coordinated create-then-reconcile write: the order is created
- * first (idempotencyKey unique index is the backstop), then the conversation,
- * card message, system line and push happen. A retry with the same key returns
- * the existing order; card/system posting checks for an existing card first so
- * duplicates are impossible.
+ * Placement is a coordinated conversation-then-create write: the direct
+ * conversation is found-or-created first (the schema requires conversationId),
+ * then the order is created (idempotencyKey unique index is the backstop),
+ * then card message, system line and push happen. A retry with the same key
+ * returns the existing order; card/system posting checks for an existing card
+ * first so duplicates are impossible.
  */
 @Injectable()
 export class OrdersService {
@@ -110,6 +111,16 @@ export class OrdersService {
   ): Promise<OrderCardResponse> {
     if (buyerId === dto.sellerId) {
       throw new BadRequestException('Cannot order from your own shop');
+    }
+
+    // (0) Fast-path idempotent retry: the same key returns the existing order
+    // with zero side effects (no conversation/card/push work repeated).
+    const retry = await this.findByIdempotencyKey(dto.idempotencyKey);
+    if (retry) {
+      return {
+        order: this.toPublic(retry),
+        conversationId: retry.conversationId,
+      };
     }
 
     // (1) Validate seller: verified, non-banned business.
@@ -145,7 +156,16 @@ export class OrdersService {
       subtotal += p.price * line.qty;
     }
 
-    // (3) Create the order (duplicate idempotencyKey → return existing 200).
+    // (3) Find-or-create the buyer↔seller direct conversation FIRST — the
+    // schema requires conversationId ('' fails `required`), and createDirect
+    // is idempotent so retries reuse the same conversation.
+    const { conversation } = await this.conversations.createDirect(
+      buyerId,
+      dto.sellerId,
+    );
+    const conversationId = String(conversation._id);
+
+    // (4) Create the order (duplicate idempotencyKey → return existing 200).
     const now = new Date();
     let order: LeanOrder;
     let alreadyExisted = false;
@@ -163,15 +183,24 @@ export class OrdersService {
           note: dto.buyerInfo.note?.trim() ? dto.buyerInfo.note : null,
         },
         payment: dto.payment,
-        shipping: { fee: null, carrier: null, trackingCode: null, expectedDeliveryDate: null },
+        shipping: {
+          fee: null,
+          carrier: null,
+          trackingCode: null,
+          expectedDeliveryDate: null,
+        },
         status: 'PENDING',
-        statusHistory: [{ status: 'PENDING', at: now, by: buyerId, note: null }],
-        conversationId: '',
+        statusHistory: [
+          { status: 'PENDING', at: now, by: buyerId, note: null },
+        ],
+        conversationId,
         idempotencyKey: dto.idempotencyKey,
         lastReminderAt: null,
         soldCountApplied: false,
       });
-      order = created.toObject ? (created.toObject() as LeanOrder) : (created as unknown as LeanOrder);
+      order = created.toObject
+        ? (created.toObject() as LeanOrder)
+        : (created as unknown as LeanOrder);
     } catch (err: unknown) {
       const existing = await this.findByIdempotencyKey(dto.idempotencyKey);
       if (!existing) throw err;
@@ -182,21 +211,11 @@ export class OrdersService {
     // Idempotent retry: the order already exists — its conversation/card were
     // (or are being) posted. Return it without creating anything new.
     if (alreadyExisted) {
-      return { order: this.toPublic(order), conversationId: order.conversationId };
+      return {
+        order: this.toPublic(order),
+        conversationId: order.conversationId,
+      };
     }
-
-    // (4) Find-or-create the buyer↔seller direct conversation, then persist it
-    // on the order so retries and reads always find it.
-    const { conversation } = await this.conversations.createDirect(
-      buyerId,
-      dto.sellerId,
-    );
-    const conversationId = String(conversation._id);
-    await this.orderModel.updateOne(
-      { _id: order._id },
-      { $set: { conversationId } },
-    );
-    order = { ...order, conversationId };
 
     // (5) Card message + (6) system line, both idempotent (D2 reconcile).
     await this.postOrderCardIfMissing(order, buyerId);
@@ -609,8 +628,7 @@ export class OrdersService {
     order: LeanOrder,
     names?: Map<string, string>,
   ): Record<string, unknown> {
-    const total =
-      order.subtotal + (order.shipping?.fee ?? 0);
+    const total = order.subtotal + (order.shipping?.fee ?? 0);
     return {
       id: String(order._id),
       orderCode: order.orderCode,
@@ -722,13 +740,17 @@ export class OrdersService {
     if (!isObjectIdString(orderId)) {
       throw new NotFoundException('Order not found');
     }
-    const order = await this.orderModel.findById(orderId).lean<LeanOrder | null>();
+    const order = await this.orderModel
+      .findById(orderId)
+      .lean<LeanOrder | null>();
     if (!order) throw new NotFoundException('Order not found');
     return order;
   }
 
   private async findByIdempotencyKey(key: string): Promise<LeanOrder | null> {
-    return this.orderModel.findOne({ idempotencyKey: key }).lean<LeanOrder | null>();
+    return this.orderModel
+      .findOne({ idempotencyKey: key })
+      .lean<LeanOrder | null>();
   }
 
   private requireSeller(caller: OrderCaller, order: LeanOrder): void {
@@ -774,7 +796,12 @@ export class OrdersService {
         {
           $set,
           $push: {
-            statusHistory: { status: patch.status, at: now, by: patch.by, note: patch.note },
+            statusHistory: {
+              status: patch.status,
+              at: now,
+              by: patch.by,
+              note: patch.note,
+            },
           },
         },
         { returnDocument: 'after' },
@@ -845,12 +872,13 @@ export class OrdersService {
     order: LeanOrder,
     senderId: string,
   ): Promise<void> {
-    const exists =
-      await this.messagesService.findOrderCard(order.conversationId, String(order._id));
+    const exists = await this.messagesService.findOrderCard(
+      order.conversationId,
+      String(order._id),
+    );
     if (exists) return;
     const itemCount = order.items.reduce((n, i) => n + i.qty, 0);
-    const content =
-      `Đơn #${order.orderCode} · ${itemCount} sản phẩm · ${formatVnd(order.subtotal)}`;
+    const content = `Đơn #${order.orderCode} · ${itemCount} sản phẩm · ${formatVnd(order.subtotal)}`;
     await this.messagesService.sendMessageWithOrderCard(
       order.conversationId,
       senderId,
@@ -888,7 +916,10 @@ export class OrdersService {
   }
 
   /** Seller push on placement (D4). Push failures never fail placement. */
-  private async notifySeller(sellerId: string, order: LeanOrder): Promise<void> {
+  private async notifySeller(
+    sellerId: string,
+    order: LeanOrder,
+  ): Promise<void> {
     try {
       const itemCount = order.items.reduce((n, i) => n + i.qty, 0);
       await this.notificationsService.sendOrderPush({

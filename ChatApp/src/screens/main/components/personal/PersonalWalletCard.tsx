@@ -18,6 +18,10 @@ export interface PersonalWalletCardProps {
   onPointsHistory?: () => void;
   onRedeemPoints?: () => void;
   onComingSoon?: () => void;
+  /** Renders the "Đơn hàng của tôi" row when provided (buyer order entry). */
+  onOrders?: () => void;
+  /** PENDING buyer orders — shown as a count badge when > 0. */
+  ordersPending?: number;
 }
 
 /**
@@ -86,6 +90,8 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
   onPointsHistory,
   onRedeemPoints,
   onComingSoon,
+  onOrders,
+  ordersPending = 0,
 }) => {
   const { tokens, resolvedScheme } = useTheme();
   const styles = useMemo(() => makeStyles(tokens.semantic, resolvedScheme), [tokens.semantic, resolvedScheme]);
@@ -208,6 +214,41 @@ export const PersonalWalletCard: React.FC<PersonalWalletCardProps> = ({
           </Pressable>
         </View>
       </View>
+
+      {/* Buyer order entry — the only UI path to PersonalOrders. Rendered only
+          when the host screen supplies a handler, so cards that don't own the
+          orders stack stay unchanged. */}
+      {onOrders ? (
+        <>
+          <View style={styles.ordersDivider} />
+          <Pressable
+            onPress={onOrders}
+            accessibilityRole="button"
+            accessibilityLabel={
+              ordersPending > 0
+                ? `Đơn hàng của tôi, ${ordersPending} đơn chờ xử lý`
+                : 'Đơn hàng của tôi'
+            }
+            style={({ pressed }) => [styles.ordersRow, pressed && styles.pressed]}>
+            <MaterialIcons name="receipt-long" size={18} color={tokens.semantic.action.primary} />
+            <KoolaText variant="body" weight="600" style={styles.ordersLabel}>
+              Đơn hàng của tôi
+            </KoolaText>
+            {ordersPending > 0 ? (
+              <View style={styles.ordersBadge}>
+                <KoolaText
+                  variant="caption"
+                  weight="800"
+                  style={styles.ordersBadgeText}
+                  numberOfLines={1}>
+                  {ordersPending > 99 ? '99+' : String(ordersPending)}
+                </KoolaText>
+              </View>
+            ) : null}
+            <MaterialIcons name="chevron-right" size={16} color={tokens.semantic.text.muted} />
+          </Pressable>
+        </>
+      ) : null}
     </PersonalCard>
   );
 };
@@ -250,5 +291,32 @@ function makeStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     pillPressable: { flex: 1 },
     pill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: koolaRadii.pill, paddingHorizontal: koolaSpacing.sm, paddingVertical: koolaSpacing.sm - 1, backgroundColor: scheme === 'light' ? semantic.surface.level1 : semantic.surface.level2, borderWidth: StyleSheet.hairlineWidth, borderColor: semantic.border.subtle },
     pillText: { color: semantic.text.primary, marginRight: koolaSpacing.xs, textAlign: 'center' },
+    // ── "Đơn hàng của tôi" row (buyer order entry) ──
+    // Sits inside PersonalCard's `lg` padding, so no extra horizontal inset:
+    // the divider and the row keep the same width as every block above.
+    ordersRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 44,
+    },
+    // sm - 1 matches starGem's marginRight, so this label lines up with
+    // "Điểm tích lũy" even though the leading glyphs differ (18dp both).
+    ordersLabel: { flex: 1, color: semantic.text.primary, marginLeft: koolaSpacing.sm - 1 },
+    // Same visual language as the cart badge (danger fill, onAction text,
+    // 99+ cap) but inline in the row rather than pinned to an icon corner.
+    ordersBadge: {
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: 5,
+      borderRadius: koolaRadii.pill,
+      backgroundColor: semantic.status.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: koolaSpacing.xs,
+    },
+    ordersBadgeText: { color: semantic.text.onAction, fontSize: 10, lineHeight: 12 },
+    // Own rule (not `divider`, which carries a bottom margin meant to open the
+    // gap BELOW it) — here the gap belongs above, before the row.
+    ordersDivider: { height: 1, backgroundColor: semantic.border.subtle, marginTop: koolaSpacing.md },
   });
 }

@@ -360,6 +360,16 @@ export class MessagesService {
 
     if (recipientIds.length === 0) return;
 
+    // Users who muted this conversation still receive the message and socket
+    // events normally — only the FCM push is suppressed. (Call pushes and
+    // Moments mention pushes are conversation-scoped out; untouched.)
+    const mutedIds = await this.conversationsService.getMutedUserIds(
+      conversationId,
+      recipientIds,
+    );
+    const pushRecipientIds = recipientIds.filter((id) => !mutedIds.has(id));
+    if (pushRecipientIds.length === 0) return;
+
     // Fire-and-forget: don't block message response on FCM
     this.notificationsService
       .sendPushNotification({
@@ -371,7 +381,7 @@ export class MessagesService {
         messageId: message._id.toString(),
         messageType: message.type,
         messageContent: message.content,
-        recipientIds,
+        recipientIds: pushRecipientIds,
       })
       .catch((err) => {
         console.error('[MessagesService] Push notification error:', err);
@@ -394,11 +404,23 @@ export class MessagesService {
       deletedFor: { $ne: userId },
     };
 
+    // A caller who cleared the conversation only sees messages created after
+    // their clear point; other members see the full history.
+    const clearedAt = await this.conversationsService.getClearedAt(
+      conversationId,
+      userId,
+    );
+
+    const createdAtCond: Record<string, unknown> = {};
     if (cursor) {
       const cursorDate = new Date(cursor);
       if (!isNaN(cursorDate.getTime())) {
-        query['createdAt'] = { $lt: cursorDate };
+        createdAtCond.$lt = cursorDate;
       }
+    }
+    if (clearedAt) createdAtCond.$gt = clearedAt;
+    if (Object.keys(createdAtCond).length > 0) {
+      query['createdAt'] = createdAtCond;
     }
 
     // senderId is a plain String (no ref) — no populate; clients resolve
@@ -469,12 +491,30 @@ export class MessagesService {
       );
     }
 
+    // The caller's clear point hides everything at or before it: a target in
+    // the cleared range reads as gone (same 404 as a deleted-for-me message),
+    // and the before/after windows stop at the boundary.
+    const clearedAt = await this.conversationsService.getClearedAt(
+      conversationId,
+      userId,
+    );
+    if (clearedAt && (target as any).createdAt <= clearedAt) {
+      throw new NotFoundException(
+        'Target message not found in this conversation',
+      );
+    }
+
     const half = Math.floor(limit / 2);
 
     // Query messages BEFORE target (older), sorted descending
     const beforeQuery: Record<string, unknown> = {
       conversationId,
-      createdAt: { $lt: (target as any).createdAt },
+      createdAt: clearedAt
+        ? {
+            $lt: (target as any).createdAt,
+            $gt: clearedAt,
+          }
+        : { $lt: (target as any).createdAt },
       deleted: false,
       deletedFor: { $ne: userId },
     };
@@ -521,11 +561,13 @@ export class MessagesService {
       // Need more before messages — already fetched all available
       finalBeforeSlice = beforeSlice;
     } else if (afterDeficit > 0 && hasBefore) {
-      // Fetch additional before messages to fill the deficit
+      // Fetch additional before messages to fill the deficit (keeps the
+      // clear-point lower bound — the spread alone would drop it)
       const extraBefore = await this.messageModel
         .find({
           ...beforeQuery,
           createdAt: {
+            ...(beforeQuery.createdAt as Record<string, unknown>),
             $lt: (beforeSlice[beforeSlice.length - 1] as any).createdAt,
           },
         })
@@ -893,6 +935,17 @@ export class MessagesService {
     // Base query: all messages in user's conversations updated since `since`.
     // Includes tombstones (deleted: true) and per-user deletions so clients
     // can converge their local copy. Membership is enforced via conversationIds.
+    // Conversations the caller cleared contribute a per-conversation clause
+    // (createdAt > clearedAt) so pre-clear history — including late edits or
+    // reactions of pre-clear messages — never syncs to the clearer.
+    const clearedMap = await this.conversationsService.getClearedMap(userId);
+    const hasCleared = [...clearedMap.keys()].some((id) =>
+      conversationIds.includes(id),
+    );
+
+    // Base query: all messages in user's conversations updated since `since`.
+    // Includes tombstones (deleted: true) and per-user deletions so clients
+    // can converge their local copy. Membership is enforced via conversationIds.
     let query: Record<string, unknown> = {
       conversationId: { $in: conversationIds },
       updatedAt: { $gt: sinceDate },
@@ -912,6 +965,36 @@ export class MessagesService {
           ],
         };
       }
+    }
+
+    if (hasCleared) {
+      // Conversations the caller cleared contribute a per-conversation clause
+      // (createdAt > clearedAt) so pre-clear history — including late edits or
+      // reactions of pre-clear messages — never syncs to the clearer. The
+      // updatedAt / cursor conditions are preserved as an outer $and.
+      const unclearedIds = conversationIds.filter((id) => !clearedMap.has(id));
+      const convClauses: Record<string, unknown>[] = [];
+      if (unclearedIds.length > 0) {
+        convClauses.push({ conversationId: { $in: unclearedIds } });
+      }
+      for (const [convId, clearedAt] of clearedMap) {
+        if (conversationIds.includes(convId)) {
+          convClauses.push({
+            conversationId: convId,
+            createdAt: { $gt: clearedAt },
+          });
+        }
+      }
+      const convFilter: Record<string, unknown> =
+        convClauses.length === 1 ? convClauses[0] : { $or: convClauses };
+      const timeConds: Record<string, unknown>[] = [
+        { updatedAt: { $gt: sinceDate } },
+      ];
+      const cursorCond = (
+        query.$and as Record<string, unknown>[] | undefined
+      )?.[1];
+      if (cursorCond) timeConds.push(cursorCond);
+      query = { $and: [convFilter, ...timeConds] };
     }
 
     const messages = await this.messageModel
@@ -1050,19 +1133,26 @@ export class MessagesService {
       'metadata.order.orderId': orderId,
     });
     if (!msg) return;
-    const cur = (msg as unknown as { metadata?: { order?: Record<string, unknown> } }).metadata
-      ?.order;
+    const cur = (
+      msg as unknown as { metadata?: { order?: Record<string, unknown> } }
+    ).metadata?.order;
     if (!cur) return;
-    (msg as unknown as { metadata: { order: Record<string, unknown> } }).metadata.order = {
+    (
+      msg as unknown as { metadata: { order: Record<string, unknown> } }
+    ).metadata.order = {
       ...cur,
       orderId,
       code,
       status,
     };
     await (msg as unknown as { save: () => Promise<void> }).save();
-    this.messageUpdatedEmitCallback?.(conversationId, String((msg as unknown as { _id: unknown })._id), {
-      order: { orderId, code, status },
-    });
+    this.messageUpdatedEmitCallback?.(
+      conversationId,
+      String((msg as unknown as { _id: unknown })._id),
+      {
+        order: { orderId, code, status },
+      },
+    );
   }
 
   private messageUpdatedEmitCallback?: (
@@ -1072,7 +1162,11 @@ export class MessagesService {
   ) => void;
 
   setMessageUpdatedEmitCallback(
-    cb: (conversationId: string, messageId: string, metadata: Record<string, unknown>) => void,
+    cb: (
+      conversationId: string,
+      messageId: string,
+      metadata: Record<string, unknown>,
+    ) => void,
   ): void {
     this.messageUpdatedEmitCallback = cb;
   }

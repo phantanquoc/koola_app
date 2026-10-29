@@ -30,6 +30,9 @@ describe('MessagesService — order card metadata (commerce-orders 3.1)', () => 
     findByIdOrFail: jest.fn(),
     updateLastMessage: jest.fn(),
     getSharedConversationIds: jest.fn(),
+    getClearedAt: jest.fn().mockResolvedValue(null),
+    getClearedMap: jest.fn().mockResolvedValue(new Map()),
+    getMutedUserIds: jest.fn().mockResolvedValue(new Set()),
   };
   const mockMembershipService = { verifyMember: jest.fn() };
   const mockUnreadService = { incrementUnreadCount: jest.fn() };

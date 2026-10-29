@@ -103,6 +103,7 @@ const PostMediaViewerScreen: React.FC = () => {
         <View style={{ width: 28 }} />
       </View>
       <FlatList
+        removeClippedSubviews={false}
         data={items}
         horizontal
         pagingEnabled

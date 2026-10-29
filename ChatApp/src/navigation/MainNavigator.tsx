@@ -62,12 +62,12 @@ function useIsTabDockSuppressed(): boolean {
 }
 
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
-const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true };
-const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail: true, ShoppingStorefront: true, ShoppingCart: true };
+const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true, PersonalOrders: true, PersonalOrderDetail: true };
+const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail: true, ShoppingStorefront: true, ShoppingCart: true, ShoppingCheckout: true, ShoppingOrders: true, ShoppingOrderDetail: true };
 const FULLSCREEN_CONNECT_ROUTES: Record<string, true> = { BusinessProfile: true, BusinessSearch: true };
 export const TAB_BAR_FLOATING_INSET = 86;
 
-const TAB_DOCK_HEIGHT = 52; // slim capsule — nothing crammed at 52
+const TAB_DOCK_HEIGHT = 32; // minimal height matching icon box
 // Extra clearance ABOVE the floating dock so scrollable lists can't push their
 // last item into the area covered by the dock.
 const TAB_DOCK_BOTTOM_BUFFER = 12;
@@ -568,13 +568,21 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
     return rest as typeof koolaShadows.xl;
   }, [resolvedScheme]);
 
-  // Small one-shot reveal so the dock doesn't pop in after a fullscreen route
-  // finishes closing. It is not a perpetual loop, so it remains unmount-safe.
+  // Fade-only reveal so the dock doesn't pop in after a fullscreen route
+  // finishes closing. The un-hide is gated by the pop's own `transitionEnd`
+  // (see ChatScreen's dock-release effect), so it starts on the frame the card
+  // stops moving — 80ms is short enough to read as "already there" at that
+  // moment and long enough to avoid a hard cut. It is intentionally below
+  // `koolaDurations.fast` (120ms), so the value is inlined rather than added to
+  // the token set. There is no translate: vertical travel would read as a
+  // second arrival after the card has cleared. Hiding still snaps to 0 so
+  // entering a fullscreen route never shows a visible fade-out, and this is a
+  // one-shot value (not a perpetual loop), so it stays unmount-safe.
   const reveal = useSharedValue(isHidden ? 0 : 1);
   React.useEffect(() => {
     reveal.value = isHidden
       ? 0
-      : withTiming(1, { duration: 110, easing: Easing.out(Easing.cubic) });
+      : withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) });
   }, [isHidden, reveal]);
 
   const routeCount = state.routes.length || TAB_COUNT;
@@ -749,10 +757,11 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
 
   // Ghost fix: don't unmount on fullscreen — that resets dockWidth to 0
   // for one frame after pop, so travelBorder mis-computes itemWidth and
-  // flashes at the left edge. Keep mounted but hidden; width stays measured.
+  // flashes at the left edge. Keep mounted but hidden; width stays measured,
+  // which is also why the reveal is opacity-only (no translate offset that
+  // would need a resting position measured while hidden).
   const hiddenStyle = useAnimatedStyle(() => ({
     opacity: isHidden ? 0 : reveal.value,
-    transform: [{ translateY: isHidden ? 12 : 8 * (1 - reveal.value) }],
   }));
 
   return (
@@ -760,7 +769,7 @@ const CustomKoolaTabBar: React.FC<BottomTabBarProps> = ({
       pointerEvents={isHidden ? 'none' : 'box-none'}
       style={[
         styles.tabBarHost,
-        { paddingBottom: Math.max(insets.bottom, 4) + 6 },
+        { paddingBottom: Math.max(insets.bottom, 4) + 2 },
         hiddenStyle,
       ]}
       accessibilityElementsHidden={isHidden}
@@ -953,11 +962,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    // Headroom for the dock's drop shadow, which spreads ~12px above the dock
-    // (xl radius 24 minus its +12 downward offset). The host is anchored to
-    // bottom:0, so this only grows the top edge — the dock does not move, and
-    // `useTabBarBottomInset()` stays correct.
-    paddingTop: 10,
+    // Reduced shadow headroom for tighter dock spacing
+    paddingTop: 4,
     backgroundColor: 'transparent',
     zIndex: 20,
   },
@@ -983,7 +989,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: TAB_DOCK_PAD_X,
-    paddingVertical: 6,
+    paddingVertical: 3,
   },
   // BlurView glass fill — when wrapping dock content it must be a normal
   // (non-absolute) flex child so it contributes to tabDock's height.
@@ -1044,7 +1050,7 @@ const styles = StyleSheet.create({
   },
   travelBorder: {
     position: 'absolute',
-    top: 6,
+    top: 3,
     left: 0,
     width: TAB_ICON_BOX_W,
     height: TAB_ICON_BOX_H,

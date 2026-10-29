@@ -32,9 +32,16 @@ export type ChatTabStackParamList = {
   LogoLab: undefined;
   // Moments screens
   MomentComposer: undefined;
-  PostComposer: undefined;
+  /** Pass `postId` to edit an existing post instead of creating a new one. */
+  PostComposer: { postId?: string } | undefined;
   PostMediaViewer: { items: import('../components/moments/PostMediaGrid').PostMediaItem[]; initialIndex?: number };
-  MomentViewer: { authorId: string; startStoryId: string };
+  /**
+   * `startStoryId` is a story id (ring tap) OR a post id when the route was
+   * reached from a shared post link — the viewer resolves which one it is.
+   * `authorId` is required by the story player; a shared post link omits it and
+   * the viewer derives the author from the post.
+   */
+  MomentViewer: { authorId?: string; startStoryId: string };
   Highlights: { userId: string; isOwn: boolean };
   AudienceListEditor: { listId?: string };
 };

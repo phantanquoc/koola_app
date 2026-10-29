@@ -224,6 +224,7 @@ const MomentsFeedHeader: React.FC<Props> = ({
         </View>
       ) : (
         <FlatList
+          removeClippedSubviews={false}
           data={rings}
           keyExtractor={(item) => item.authorId}
           horizontal

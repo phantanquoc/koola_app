@@ -88,6 +88,9 @@ describe('makeSemanticTokens', () => {
     expect(lightTokens.status.success).toBeDefined();
     expect(lightTokens.status.warning).toBeDefined();
     expect(lightTokens.status.danger).toBeDefined();
+    expect(lightTokens.status.successSoft).toBeDefined();
+    expect(lightTokens.status.warningSoft).toBeDefined();
+    expect(lightTokens.status.dangerSoft).toBeDefined();
     // border
     expect(lightTokens.border.subtle).toBeDefined();
     expect(lightTokens.border.strong).toBeDefined();
@@ -119,6 +122,9 @@ describe('makeSemanticTokens', () => {
     expect(darkTokens.status.success).toBeDefined();
     expect(darkTokens.status.warning).toBeDefined();
     expect(darkTokens.status.danger).toBeDefined();
+    expect(darkTokens.status.successSoft).toBeDefined();
+    expect(darkTokens.status.warningSoft).toBeDefined();
+    expect(darkTokens.status.dangerSoft).toBeDefined();
     expect(darkTokens.border.subtle).toBeDefined();
     expect(darkTokens.border.strong).toBeDefined();
     expect(darkTokens.focus.ring).toBeDefined();

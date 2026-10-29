@@ -6,10 +6,7 @@ import {
   CommerceOrder,
   CommerceOrderDocument,
 } from './schemas/commerce-order.schema';
-import {
-  OrdersService,
-  type OrderCaller,
-} from './orders.service';
+import { OrdersService, type OrderCaller } from './orders.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { RedisService } from '../../common/redis/redis.service';
 
@@ -73,10 +70,7 @@ export class OrdersCronService {
       .find({
         status: 'PENDING',
         createdAt: { $lt: cutoff },
-        $or: [
-          { lastReminderAt: null },
-          { lastReminderAt: { $lt: cutoff } },
-        ],
+        $or: [{ lastReminderAt: null }, { lastReminderAt: { $lt: cutoff } }],
       })
       .select('_id orderCode sellerId buyerId conversationId')
       .lean<
@@ -122,11 +116,9 @@ export class OrdersCronService {
 
     for (const o of stale) {
       try {
-        await this.ordersService.receiveOrder(
-          SYSTEM_CALLER,
-          String(o._id),
-          { bySystem: true },
-        );
+        await this.ordersService.receiveOrder(SYSTEM_CALLER, String(o._id), {
+          bySystem: true,
+        });
       } catch (err: unknown) {
         // 409 = raced out of SHIPPING (buyer received first); anything else is
         // a real failure worth one log line, never a tick crash.

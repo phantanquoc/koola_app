@@ -49,12 +49,6 @@ const PersonalTabStack: React.FC = () => {
             navigationBarTranslucent: true,
             statusBarStyle: isDark ? 'light' : 'dark',
             contentStyle: { backgroundColor: 'transparent' } as never,
-            // @ts-expect-error cardStyle is valid for native-stack but types lag
-            cardStyle: { backgroundColor: 'transparent' },
-            // Fabric fix (parity with ChatTabStack): popping while the previous
-            // screen is detached desyncs Fabric's ViewGroup child count →
-            // "Cannot remove child at index N" on logout reset. Keep mounted.
-            ...( { detachPreviousScreen: false } as object),
           }}>
           <Stack.Screen name="PersonalHome" component={SettingsScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
