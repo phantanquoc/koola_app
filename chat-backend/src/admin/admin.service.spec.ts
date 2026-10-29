@@ -6,6 +6,8 @@ import { getModelToken } from '@nestjs/mongoose';
 import { AdminService } from './admin.service';
 import { User } from '../users/user.schema';
 import { RefreshToken } from '../auth/refresh-token.schema';
+import { Report } from './schemas/report.schema';
+import { CommerceOrder } from '../commerce/orders/schemas/commerce-order.schema';
 import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
 
 // Stub the MediaService module so the uuid ESM import in media.service.ts
@@ -54,6 +56,13 @@ const mockMediaService = {
   generatePresignedGetUrl: jest.fn(),
 };
 
+// getUserById đọc tín hiệu mua/bán + số báo cáo. Mặc định trả rỗng để các test
+// cũ không phải quan tâm tới hai model này.
+const orderAggregate = jest.fn().mockResolvedValue([]);
+const mockOrderModel = { aggregate: orderAggregate };
+const reportAggregate = jest.fn().mockResolvedValue([]);
+const mockReportModel = { aggregate: reportAggregate };
+
 const mockSellerVisibility = {
   syncSellers: jest.fn().mockResolvedValue({ modified: 0 }),
 };
@@ -65,6 +74,10 @@ describe('AdminService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // clearAllMocks chỉ xoá call history, không khôi phục implementation —
+    // test nào override aggregate phải trả về mặc định ở test kế tiếp.
+    orderAggregate.mockResolvedValue([]);
+    reportAggregate.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminService,
@@ -75,6 +88,8 @@ describe('AdminService', () => {
         },
         { provide: MediaService, useValue: mockMediaService },
         { provide: SellerVisibilityService, useValue: mockSellerVisibility },
+        { provide: getModelToken(CommerceOrder.name), useValue: mockOrderModel },
+        { provide: getModelToken(Report.name), useValue: mockReportModel },
       ],
     }).compile();
 
@@ -722,6 +737,69 @@ describe('AdminService', () => {
       expect(res.owner).toBeNull();
       // Không có ownerUserId thì không được query thêm lần nào.
       expect(mockUserModel.findById).toHaveBeenCalledTimes(1);
+    });
+
+    // Không có đơn / báo cáo nào là trạng thái bình thường của phần lớn tài
+    // khoản — phải trả số 0, không phải undefined (UI hiện "undefined đơn").
+    it('trả 0 cho tín hiệu mua/bán và báo cáo khi chưa có dữ liệu', async () => {
+      mockUserModel.findById.mockReturnValue(makeLeanQuery({ _id: uid }));
+      mockOwned([]);
+
+      const res = await service.getUserById(uid);
+
+      expect(res.commerceStats).toEqual({
+        ordersAsBuyer: 0,
+        ordersAsSeller: 0,
+        gmvAsSeller: 0,
+      });
+      expect(res.reportStats).toEqual({ pending: 0, total: 0 });
+      expect(res.avatarUrl).toBeNull();
+    });
+
+    it('GMV chỉ cộng đơn DELIVERED mà user là người bán', async () => {
+      mockUserModel.findById.mockReturnValue(makeLeanQuery({ _id: uid }));
+      mockOwned([]);
+      orderAggregate.mockResolvedValue([
+        { ordersAsBuyer: 3, ordersAsSeller: 7, gmvAsSeller: 1_250_000 },
+      ]);
+      reportAggregate.mockResolvedValue([{ pending: 2, total: 9 }]);
+
+      const res = await service.getUserById(uid);
+
+      expect(res.commerceStats).toEqual({
+        ordersAsBuyer: 3,
+        ordersAsSeller: 7,
+        gmvAsSeller: 1_250_000,
+      });
+      expect(res.reportStats).toEqual({ pending: 2, total: 9 });
+
+      // Pipeline phải lọc DELIVERED ở nhánh GMV — nếu chỉ đếm sellerId, doanh
+      // thu sẽ gồm cả đơn đang chờ và đơn huỷ.
+      const pipeline = orderAggregate.mock.calls[0][0] as Record<string, unknown>[];
+      expect(JSON.stringify(pipeline)).toContain('DELIVERED');
+    });
+
+    it('presign avatar khi là media key, giữ nguyên khi đã là URL', async () => {
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: uid, avatar: 'avatars/u1.jpg' }),
+      );
+      mockOwned([]);
+      mockMediaService.generatePresignedGetUrl.mockResolvedValue('https://cdn/signed');
+
+      const keyRes = await service.getUserById(uid);
+      expect(keyRes.avatarUrl).toBe('https://cdn/signed');
+
+      jest.clearAllMocks();
+      orderAggregate.mockResolvedValue([]);
+      reportAggregate.mockResolvedValue([]);
+      mockUserModel.findById.mockReturnValue(
+        makeLeanQuery({ _id: uid, avatar: 'https://cdn/already.jpg' }),
+      );
+      mockOwned([]);
+
+      const urlRes = await service.getUserById(uid);
+      expect(urlRes.avatarUrl).toBe('https://cdn/already.jpg');
+      expect(mockMediaService.generatePresignedGetUrl).not.toHaveBeenCalled();
     });
   });
 

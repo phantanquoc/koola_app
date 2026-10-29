@@ -9,15 +9,16 @@ import apiClient from '../apiClient';
 import { MaskedPII } from './MaskedPII';
 import { StatusBadge, VerificationBadge } from './StatusBadge';
 import { ConfirmDialog } from './ConfirmDialog';
-import { apiErrorMessage, banStatusLabel, formatDateTime, initials } from './formatters';
+import { apiErrorMessage, banStatusLabel, formatDateTime } from './formatters';
 import { isInternalIp, normalizeIp } from './audit-labels';
 import { useToast } from './Toast';
 import { BanDialog } from './UserModeration';
 import { useViolationHistory } from '../hooks/useViolationHistory';
-import { accountTypeLabel, banBadge } from './user-labels';
+import { accountTypeLabel } from './user-labels';
 import { PhoneInput } from './StructuredInput';
 import { isValidVnPhone, normalizeVnPhone } from './input-masks';
 import { UserDevices } from './UserDevices';
+import { UserDetailRail } from './UserDetailRail';
 import { TwoFactorPanel } from './TwoFactorPanel';
 import {
   ADMIN_ROLES, ADMIN_ROLE_LABELS, adminRoleTone, resolveAdminRole, type AdminRole,
@@ -65,6 +66,26 @@ export interface AdminUser {
   deletedAt?: string | null;
   createdAt?: string;
   lastSeen?: string;
+  // ─── GET /admin/users/:id enrich (chỉ route chi tiết) ─────────────────────
+  /** Tín hiệu mua/bán — 0 khi chưa đặt/chưa bán đơn nào. */
+  commerceStats?: {
+    ordersAsBuyer: number;
+    ordersAsSeller: number;
+    /** Tổng `subtotal` đơn đã giao, đơn vị VND. */
+    gmvAsSeller: number;
+  };
+  /** Báo cáo nhắm vào tài khoản này. */
+  reportStats?: { pending: number; total: number };
+  /** Avatar/logo đã presign; null khi chưa đặt ảnh. */
+  avatarUrl?: string | null;
+  // ─── Hồ sơ cá nhân / telemetry (có trong schema, trước đây không hiện) ────
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  lastAppPlatform?: 'ios' | 'android' | 'web' | null;
+  lastAppVersion?: string | null;
+  lastAppVersionAt?: string | null;
+  settings?: { preferredLanguage?: string; notificationsEnabled?: boolean };
+  commissionRate?: number;
 }
 
 /** Field admin được sửa — khớp `USER_PATCH_KEYS` ở AdminService. */
@@ -81,6 +102,14 @@ const FIELD_LABELS: Record<EditableKey, string> = {
 
 /** Field dài dùng textarea; còn lại input một dòng. */
 const MULTILINE: ReadonlySet<EditableKey> = new Set(['bio', 'internalNote']);
+
+/** Enum giới thiệu trong schema — UI không được hiện 'prefer_not' thô. */
+const GENDER_LABEL: Record<string, string> = {
+  male: 'Nam',
+  female: 'Nữ',
+  other: 'Khác',
+  prefer_not: 'Không muốn nêu',
+};
 
 /**
  * Chi tiết người dùng — component inline ở route `/users/:id` (§3B), KHÔNG drawer.
@@ -308,31 +337,14 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
 
   return (
     <section className="table-shell detail-card" aria-label="Chi tiết người dùng">
-      <div className="detail-header">
-        <div className="detail-avatar" aria-hidden="true">{initials(data.displayName, 'U')}</div>
-        <div className="detail-heading">
-          <div className="detail-title-row">
-            <h2 className="detail-title">{data.displayName}</h2>
-            {isDeleted
-              ? <StatusBadge tone="muted" label="Đã xoá" />
-              : banBadge(data)}
-            {data.isPlatformAdmin && <StatusBadge tone="primary" label="Quản trị nền tảng" />}
-          </div>
-          <div className="detail-subline">
-            <span>{accountTypeLabel(data.accountType)}</span>
-            <span className="detail-dot" aria-hidden>·</span>
-            <span>Tham gia {formatDateTime(data.createdAt)}</span>
-            {data.lastSeen && (
-              <>
-                <span className="detail-dot" aria-hidden>·</span>
-                <span>Hoạt động {formatDateTime(data.lastSeen)}</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Bố cục 2 cột: rail trái giữ danh tính + tín hiệu tin cậy (những gì
+          moderator cần để quyết định), cột phải giữ nguyên thứ tự nghiệp vụ cũ.
+          Header cũ bị bỏ vì rail đã mang avatar + tên + badge — giữ cả hai là
+          lặp danh tính hai lần trên cùng một màn. */}
+      <div className="user-detail-layout">
+        <UserDetailRail user={data} />
 
-      <div className="detail-card-body page-stack">
+        <div className="detail-card-body page-stack">
         {isDeleted && (
           <div className="alert alert--warning" role="status">
             <div>
@@ -411,6 +423,41 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
             )}
           </dl>
         </section>
+
+        {/* Hồ sơ cá nhân: các field có trong schema nhưng trước đây không hiện.
+            Tự ẩn khi rỗng — dev DB hiện chưa có bản ghi nào điền ngày sinh hay
+            giới tính, nên hiện một khối toàn dấu "—" chỉ làm trang dài thêm. */}
+        {(data.dateOfBirth || data.gender || data.commissionRate || data.settings?.preferredLanguage) && (
+          <section className="detail-section" aria-label="Hồ sơ cá nhân">
+            <h3 className="detail-section-title">Hồ sơ cá nhân</h3>
+            <dl className="description-list">
+              {data.dateOfBirth && (
+                <div className="inline-field">
+                  <dt className="cell-meta">Ngày sinh</dt>
+                  <dd>{formatDateTime(data.dateOfBirth)}</dd>
+                </div>
+              )}
+              {data.gender && (
+                <div className="inline-field">
+                  <dt className="cell-meta">Giới tính</dt>
+                  <dd>{GENDER_LABEL[data.gender] ?? data.gender}</dd>
+                </div>
+              )}
+              {data.settings?.preferredLanguage && (
+                <div className="inline-field">
+                  <dt className="cell-meta">Ngôn ngữ</dt>
+                  <dd>{data.settings.preferredLanguage}</dd>
+                </div>
+              )}
+              {typeof data.commissionRate === 'number' && data.commissionRate > 0 && (
+                <div className="inline-field">
+                  <dt className="cell-meta">Hoa hồng nền tảng</dt>
+                  <dd>{Math.round(data.commissionRate * 100)}% GMV</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+        )}
 
         {/* Chiều xuôi của quan hệ sở hữu: mở hồ sơ một người phải thấy ngay họ
             đang sở hữu doanh nghiệp nào. Trước đây chỉ chiều ngược tồn tại
@@ -563,8 +610,8 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
         <details className="detail-section">
           <summary className="detail-section-title">Chi tiết kỹ thuật</summary>
           <dl className="description-list">
-            <dt>Mã tài khoản</dt>
-            <dd className="k-mono">{data._id}</dd>
+            {/* Mã tài khoản đã nằm ở rail (có nút sao chép) — lặp lại ở đây chỉ
+                làm moderator phải đọc cùng một chuỗi hex hai lần. */}
             {data.ownerUserId && (
               <>
                 <dt>Mã chủ sở hữu</dt>
@@ -577,8 +624,12 @@ export function UserDetail({ id, backTo }: { id: string; backTo: string }) {
                 <dd>{formatDateTime(data.deletedAt)}</dd>
               </>
             )}
+            {!data.ownerUserId && !data.deletedAt && (
+              <dd className="cell-meta">Không có thông tin kỹ thuật bổ sung.</dd>
+            )}
           </dl>
         </details>
+        </div>
       </div>
 
       <div className="detail-bottombar">

@@ -13,6 +13,11 @@ import {
 } from '../auth/refresh-token.schema';
 import { MediaService } from '../media/media.service';
 import { SellerVisibilityService } from '../commerce/seller-visibility/seller-visibility.service';
+import { Report, ReportDocument } from './schemas/report.schema';
+import {
+  CommerceOrder,
+  CommerceOrderDocument,
+} from '../commerce/orders/schemas/commerce-order.schema';
 import { ListUsersDto } from './dto/list-users.dto';
 import { ListPendingBusinessesDto } from './dto/list-pending-businesses.dto';
 import { ExportBusinessesDto } from './dto/export-businesses.dto';
@@ -41,6 +46,20 @@ export interface OwnedBusinessSummary {
   deletedAt?: Date | null;
 }
 
+/** Tín hiệu mua/bán của một tài khoản (GET /admin/users/:id). */
+export interface UserCommerceStats {
+  ordersAsBuyer: number;
+  ordersAsSeller: number;
+  /** Tổng `subtotal` của đơn đã giao mà họ là người bán (VND). */
+  gmvAsSeller: number;
+}
+
+/** Số báo cáo nhắm vào tài khoản (GET /admin/users/:id). */
+export interface UserReportStats {
+  pending: number;
+  total: number;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -51,6 +70,12 @@ export class AdminService {
     // commerce-catalog D1: every verification/ban mutator re-syncs the
     // denormalized `CommerceProduct.sellerActive` flag of the affected seller(s).
     private readonly sellerVisibility: SellerVisibilityService,
+    // Hồ sơ người dùng hiện tín hiệu mua/bán + số báo cáo nhắm vào tài khoản.
+    // Đọc-only, chỉ dùng ở getUserById.
+    @InjectModel(CommerceOrder.name)
+    private readonly orderModel: Model<CommerceOrderDocument>,
+    @InjectModel(Report.name)
+    private readonly reportModel: Model<ReportDocument>,
   ) {}
 
   // ─── GET /admin/me ──────────────────────────────────────────────────────────
@@ -632,6 +657,9 @@ export class AdminService {
     UserDocument & {
       ownedBusinesses: OwnedBusinessSummary[];
       owner: { _id: string; displayName: string; email?: string } | null;
+      commerceStats: UserCommerceStats;
+      reportStats: UserReportStats;
+      avatarUrl: string | null;
     }
   > {
     // Id sai định dạng → Mongoose CastError → 500 lộ stack. UI chỉ cần 404.
@@ -646,7 +674,7 @@ export class AdminService {
       throw new NotFoundException('User not found');
     }
 
-    const [ownedBusinesses, owner] = await Promise.all([
+    const [ownedBusinesses, owner, commerceStats, reportStats, avatarUrl] = await Promise.all([
       // Danh sách business cùng chủ. Giữ cả hồ sơ đã xoá mềm — câu hỏi "người
       // này sở hữu những gì" không được trả lời thiếu, nhưng UI phải đánh dấu.
       this.userModel
@@ -671,12 +699,95 @@ export class AdminService {
                 : null,
             )
         : Promise.resolve(null),
+
+      // Tín hiệu mua/bán: một query, hai nhánh đếm, cộng GMV đơn đã giao. Chỉ
+      // số đơn đã giao được tính vào GMV — đơn đang chờ/huỷ không phải doanh
+      // thu thực nhận, cộng vào là thổi phồng con số moderator dùng để đánh giá.
+      this.orderModel
+        .aggregate<UserCommerceStats>([
+          { $match: { $or: [{ buyerId: id }, { sellerId: id }] } },
+          {
+            $group: {
+              _id: null,
+              ordersAsBuyer: {
+                $sum: { $cond: [{ $eq: ['$buyerId', id] }, 1, 0] },
+              },
+              ordersAsSeller: {
+                $sum: { $cond: [{ $eq: ['$sellerId', id] }, 1, 0] },
+              },
+              gmvAsSeller: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$sellerId', id] },
+                        { $eq: ['$status', 'DELIVERED'] },
+                      ],
+                    },
+                    '$subtotal',
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ])
+        .then(
+          (rows): UserCommerceStats =>
+            rows[0] ?? { ordersAsBuyer: 0, ordersAsSeller: 0, gmvAsSeller: 0 },
+        ),
+
+      // Báo cáo nhắm vào tài khoản: `pending` là hàng đợi moderator phải xử lý,
+      // `total` là tiền sử. `$facet` để lấy cả hai trong một lượt.
+      this.reportModel
+        .aggregate<{ pending: number; total: number }>([
+          { $match: { targetType: 'user', targetId: id } },
+          {
+            $facet: {
+              pending: [{ $match: { status: 'pending' } }, { $count: 'n' }],
+              total: [{ $count: 'n' }],
+            },
+          },
+          {
+            $project: {
+              pending: { $ifNull: [{ $arrayElemAt: ['$pending.n', 0] }, 0] },
+              total: { $ifNull: [{ $arrayElemAt: ['$total.n', 0] }, 0] },
+            },
+          },
+        ])
+        .then(
+          (rows): UserReportStats => rows[0] ?? { pending: 0, total: 0 },
+        ),
+
+      // Avatar có hai dạng: URL sẵn (mobile đã resolve) hoặc key MinIO. Chỉ
+      // presign khi là key — presign một URL http sẽ trả 400 từ MinIO.
+      (user.avatar || user.logoKey)
+        ? this.presignMediaKey(user.avatar || user.logoKey)
+        : Promise.resolve(null),
     ]);
 
-    return { ...user, ownedBusinesses, owner } as unknown as UserDocument & {
+    return { ...user, ownedBusinesses, owner, commerceStats, reportStats, avatarUrl } as unknown as UserDocument & {
       ownedBusinesses: OwnedBusinessSummary[];
       owner: { _id: string; displayName: string; email?: string } | null;
+      commerceStats: UserCommerceStats;
+      reportStats: UserReportStats;
+      avatarUrl: string | null;
     };
+  }
+
+  /**
+   * Presign một media key nếu nó thật sự là key. Giá trị đã là http(s) (mobile
+   * resolve sẵn) thì trả nguyên — đưa URL vào presign sẽ ra 400 từ MinIO.
+   * Lỗi MinIO trả null thay vì làm hỏng cả hồ sơ: ảnh là phụ, dữ liệu là chính.
+   */
+  private async presignMediaKey(value?: string | null): Promise<string | null> {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    try {
+      return await this.mediaService.generatePresignedGetUrl(value);
+    } catch {
+      return null;
+    }
   }
 
   // ─── PATCH /admin/users/:id ─────────────────────────────────────────────────

@@ -314,6 +314,92 @@ describe('UserDetailPage', () => {
     expect(await screen.findByRole('button', { name: /Bỏ cấm/ })).toBeTruthy();
   });
 
+  // Rail: tín hiệu tin cậy phải đọc được mà không phải cuộn xuống thân trang.
+  it('rail hiện số báo cáo và trạng thái 2FA', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1')
+        return Promise.resolve({
+          data: {
+            ...user,
+            twoFactorEnabled: false,
+            reportStats: { pending: 2, total: 9 },
+          },
+        });
+      return Promise.resolve({ data: [] });
+    });
+
+    renderAt('/users/u1');
+    const rail = await screen.findByRole('complementary', { name: 'Tóm tắt tài khoản' });
+
+    expect(rail.textContent).toContain('Báo cáo');
+    expect(rail.textContent).toContain('2');
+    expect(rail.textContent).toContain('/ 9 tổng');
+    expect(rail.textContent).toContain('Chưa bật');
+  });
+
+  // Không có đơn nào là trạng thái mặc định — hiện "0 / 0" + "0₫" chỉ làm rối.
+  it('rail ẩn khối mua bán khi chưa có đơn nào', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1')
+        return Promise.resolve({
+          data: { ...user, commerceStats: { ordersAsBuyer: 0, ordersAsSeller: 0, gmvAsSeller: 0 } },
+        });
+      return Promise.resolve({ data: [] });
+    });
+
+    renderAt('/users/u1');
+    const rail = await screen.findByRole('complementary', { name: 'Tóm tắt tài khoản' });
+
+    expect(rail.textContent).not.toContain('Đơn mua / bán');
+    expect(rail.textContent).not.toContain('Doanh thu đã giao');
+  });
+
+  it('rail hiện đơn mua/bán + doanh thu đã giao khi có dữ liệu', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1')
+        return Promise.resolve({
+          data: {
+            ...user,
+            commerceStats: { ordersAsBuyer: 3, ordersAsSeller: 7, gmvAsSeller: 1250000 },
+          },
+        });
+      return Promise.resolve({ data: [] });
+    });
+
+    renderAt('/users/u1');
+    const rail = await screen.findByRole('complementary', { name: 'Tóm tắt tài khoản' });
+
+    expect(rail.textContent).toContain('Đơn mua / bán');
+    expect(rail.textContent).toContain('3 / 7');
+    // 1.250.000 theo vi-VN là "1.250.000₫"
+    expect(rail.textContent).toContain('1.250.000₫');
+  });
+
+  it('section Hồ sơ cá nhân ẩn khi mọi field đều trống', async () => {
+    renderAt('/users/u1');
+    await screen.findByRole('heading', { name: 'Nguyễn Văn A' });
+
+    expect(screen.queryByRole('region', { name: 'Hồ sơ cá nhân' })).toBeNull();
+  });
+
+  it('section Hồ sơ cá nhân hiện và dịch enum giới tính', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/users/u1')
+        return Promise.resolve({
+          data: { ...user, dateOfBirth: '1995-03-12T00:00:00.000Z', gender: 'prefer_not' },
+        });
+      return Promise.resolve({ data: [] });
+    });
+
+    renderAt('/users/u1');
+    const section = await screen.findByRole('region', { name: 'Hồ sơ cá nhân' });
+
+    expect(section.textContent).toContain('Ngày sinh');
+    // Enum thô 'prefer_not' không được lộ ra UI.
+    expect(section.textContent).toContain('Không muốn nêu');
+    expect(section.textContent).not.toContain('prefer_not');
+  });
+
   // Sửa hồ sơ: mỗi field một lần, PATCH đúng key, cập nhật cache không refetch.
   it('sửa tên hiển thị gửi PATCH và hiện giá trị mới', async () => {
     mockedGet.mockImplementation((url: string) => {

@@ -54,6 +54,10 @@ import {
   MusicTrackSchema,
 } from '../moments/schemas/music-track.schema';
 import {
+  CommerceOrder,
+  CommerceOrderSchema,
+} from '../commerce/orders/schemas/commerce-order.schema';
+import {
   AudienceList,
   AudienceListSchema,
 } from '../moments/schemas/audience-list.schema';
@@ -73,6 +77,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: AudienceList.name, schema: AudienceListSchema },
       { name: BroadcastLog.name, schema: BroadcastLogSchema },
       { name: Appeal.name, schema: AppealSchema },
+      // Đọc-only: hồ sơ người dùng hiện đơn mua/bán + GMV. Chỉ đăng ký schema,
+      // KHÔNG import CommerceModule (nó import AdminModule → vòng lặp, cùng lý
+      // do CommerceSellerVisibilityModule ở trên).
+      { name: CommerceOrder.name, schema: CommerceOrderSchema },
     ]),
     MediaModule,
     // Dependency-free (User + CommerceProduct models only) — NOT CommerceModule,

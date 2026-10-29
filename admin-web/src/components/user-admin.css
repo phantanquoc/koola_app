@@ -1,6 +1,193 @@
 /* Trang Người dùng — vai trò quản trị, phiên thiết bị, 2FA.
    File riêng để không đụng index.css; chỉ dùng token trong :root. */
 
+/* ─── Hồ sơ người dùng: 2 cột, rail trái dính ────────────────────────────────
+   Trước đây trang bị khoá ở 760px giữa vùng nội dung 1176px → trống 208px mỗi
+   bên, và mọi tín hiệu (báo cáo, phiên, 2FA) nằm rải trong thân trang nên phải
+   cuộn mới thấy. Rail gom chúng lại, cột phải giữ nguyên thứ tự nghiệp vụ. */
+.detail-page.detail-page--split {
+  max-width: 1128px;
+}
+
+.user-detail-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  align-items: start;
+  position: relative;
+}
+
+/* Nền + vách ngăn của rail vẽ trên container, không trên chính rail.
+   Rail là `sticky` nên cao đúng bằng nội dung của nó — đổ nền lên rail thì
+   nửa dưới cột trái trắng trơn (đo được: rail 340×323, card cao 978), trông
+   như khối bị cắt. Chỉ áp ở bố cục 2 cột; dưới 1100px rail tự mang nền. */
+@media (min-width: 1101px) {
+  .user-detail-layout::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 340px;
+    border-right: 1px solid var(--koola-line);
+    background: var(--koola-surface-soft);
+    pointer-events: none;
+  }
+}
+
+.user-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  /* Rail dài hơn viewport trên laptop thấp → tự cuộn, nếu không sticky sẽ cắt
+     mất phần đuôi (mã tài khoản, client). `sticky` + `align-self: start` để nó
+     đi theo khi cột phải dài. */
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.user-rail-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.user-rail-avatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+  background: var(--koola-primary-soft);
+}
+
+.user-rail-avatar--initial {
+  display: grid;
+  place-items: center;
+  color: var(--koola-primary-dark);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.user-rail-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-rail-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--koola-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Badge xuống hàng riêng: tên dài + 3 badge trên 340px sẽ bóp tên còn 2 chữ. */
+.user-rail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-basis: 100%;
+}
+
+.user-rail-signals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--koola-line);
+}
+
+.user-rail-signal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.user-rail-signal dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--koola-muted);
+  font-size: 12.5px;
+}
+
+.user-rail-signal dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.user-rail-client {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.user-rail-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--koola-line);
+}
+
+.user-rail-id .k-mono {
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* Dưới 1100px: rail 340px + cột phải không còn đủ chỗ cho bảng field 150px +
+   giá trị. Về 1 cột, rail thành card đầu trang và bỏ sticky. */
+/* Bottom bar dính đáy: hành động (cấm/xoá/thu hồi phiên) là lý do người ta mở
+   hồ sơ, không được bắt cuộn hết 978px mới thấy.
+   `.table-shell` đặt `overflow: clip` để bo góc — chính nó biến card thành
+   scroll container không cuộn, nên `sticky` bên trong không bao giờ bám. Mở
+   clip trên riêng trang này rồi tự bo góc ở hai chỗ từng nhờ clip. */
+.detail-page--split .detail-card {
+  overflow: visible;
+}
+
+.detail-page--split .detail-bottombar {
+  position: sticky;
+  bottom: 0;
+  /* Nằm trên nền rail (::before) và trên nội dung cuộn qua nó. */
+  z-index: 2;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.05);
+}
+
+/* Nền rail chạy hết chiều cao cột trái; góc trên-trái phải tự bo vì card không
+   còn clip. Góc dưới-trái nằm dưới bottombar nên không lộ. */
+.detail-page--split .user-detail-layout::before {
+  border-radius: var(--radius-lg) 0 0 0;
+}
+
+@media (max-width: 1100px) {
+  .user-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Một cột: rail là card đầu trang, tự mang nền + vách ngăn dưới. */
+  .user-rail {
+    position: static;
+    max-height: none;
+    border-bottom: 1px solid var(--koola-line);
+    background: var(--koola-surface-soft);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
 .device-list {
   display: flex;
   flex-direction: column;
