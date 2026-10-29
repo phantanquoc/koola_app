@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Check, X, Ban, RotateCcw, Copy, AlertTriangle, Plus, PauseCircle } from 'lucide-react';
+import { Pencil, Check, X, Ban, RotateCcw, AlertTriangle, Plus, PauseCircle } from 'lucide-react';
 import apiClient from '../apiClient';
 import { useToast } from './Toast';
-import { VerificationBadge, StatusBadge } from './StatusBadge';
 import { MaskedPII } from './MaskedPII';
-import { initials, formatDateTime, ageLabel, ageTone, apiErrorMessage, banStatusLabel } from './formatters';
-import { categoryVi, relationshipVi, PROVINCES, CATEGORY_OPTIONS } from './vn-data';
+import { formatDateTime, apiErrorMessage, banStatusLabel } from './formatters';
+import { categoryVi, PROVINCES, CATEGORY_OPTIONS } from './vn-data';
 import LicensePreview from './LicensePreview';
 import { BusinessCreateForm } from './BusinessCreateForm';
+import { BusinessDetailRail } from './BusinessDetailRail';
 import { PhoneInput, IntegerInput } from './StructuredInput';
 import { isValidVnPhone, normalizeVnPhone } from './input-masks';
 import StateBlock from './StateBlock';
 import { useAdminRole } from '../useAuth';
+import './user-admin.css';
 
 export interface BusinessDetail {
   _id: string;
@@ -47,6 +47,10 @@ export interface BusinessDetail {
   coverUrl?: string | null;
   owner?: { _id: string; displayName: string; email?: string } | null;
   ownerBusinessCount?: number;
+  /** Tín hiệu bán hàng — 0 khi chưa bán đơn nào. GET /admin/businesses/:id. */
+  commerceStats?: { ordersAsBuyer: number; ordersAsSeller: number; gmvAsSeller: number };
+  /** Báo cáo nhắm vào hồ sơ này. */
+  reportStats?: { pending: number; total: number };
   verificationHistory?: Array<{ status: string; at: string; actorId?: string; reason?: string }>;
 }
 
@@ -119,11 +123,6 @@ const EDIT_ORDER: EditableKey[] = [
 /** Hoa hồng là tiền — chỉ super được sửa (xem canEditCommission). */
 const SUPER_ONLY_KEYS: ReadonlySet<EditableKey> = new Set<EditableKey>(['commissionRate']);
 
-/** ID rút gọn cho header — đủ để đối chiếu, không chiếm cả dòng. */
-function shortId(id: string) {
-  return id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
-}
-
 /** 4 nhóm thông tin liên quan — render theo section có tiêu đề.
  *  stack: true = xếp dọc 1 cột (field dài như email/SĐT/địa chỉ). */
 const FIELD_GROUPS: Array<{ title: string; keys: EditableKey[]; stack?: boolean }> = [
@@ -135,7 +134,11 @@ const FIELD_GROUPS: Array<{ title: string; keys: EditableKey[]; stack?: boolean 
   { title: 'Vận hành', keys: ['internalNote', 'assignee', 'commissionRate'] },
 ];
 
-/** 0.125 → "12,5%" — người vận hành nghĩ theo %, DB lưu tỉ lệ. */
+/** Section chỉ hiện khi có ít nhất một field có giá trị — trang người dùng
+ *  cũng tự ẩn khối rỗng thay vì vẽ hàng loạt dấu "—". */
+function groupVisible(data: BusinessDetail, keys: EditableKey[]): boolean {
+  return keys.some((k) => displayValue(data, k) !== '—');
+}
 function pctText(rate: number | null | undefined): string {
   if (rate == null) return '0%';
   const pct = Math.round(rate * 10000) / 100;
@@ -523,9 +526,13 @@ export function BusinessDetailDrawer({
           )}
 
           {data && (
-            <div className="page-stack">
-              {/* P0: bằng chứng + tín hiệu đối chiếu đặt TRƯỚC sections, ngay dưới header */}
-              <section className="verify-block" aria-label="Đối chiếu nhanh">
+            <div className="user-detail-layout">
+              <BusinessDetailRail data={data} />
+              <div className="detail-card-body page-stack">
+              {/* Có ảnh mới vẽ khối — trang người dùng cũng tự ẩn khối rỗng
+                  thay vì để khung xám "Không có giấy phép" chiếm spotlight. */}
+              {(data.licenseImageUrl || data.logoUrl || data.coverUrl) && (
+              <section className="verify-block verify-block--media-only" aria-label="Đối chiếu nhanh">
                 <div className="verify-media">
                   <LicensePreview url={data.licenseImageUrl} businessName={data.displayName} />
                   {/* Logo/bìa cũng là bằng chứng nhận diện: hồ sơ mạo danh thường
@@ -537,32 +544,8 @@ export function BusinessDetailDrawer({
                     <LicensePreview url={data.coverUrl} businessName={data.displayName} label="Ảnh bìa" />
                   )}
                 </div>
-                <dl className="verify-facts">
-                  <div>
-                    <dt>Mã số thuế</dt>
-                    <dd className="k-mono">{data.taxCode || '— chưa có —'}</dd>
-                  </div>
-                  <div>
-                    <dt>Giấy phép hết hạn</dt>
-                    <dd>{data.licenseExpiresAt ? formatDateTime(data.licenseExpiresAt) : '—'}</dd>
-                  </div>
-                  <div>
-                    {/* Chỉ gọi là "Chờ duyệt" khi hồ sơ còn pending — hồ sơ đã duyệt
-                        thì đây chỉ là tuổi hồ sơ, gọi sai sẽ khiến moderator tưởng còn nợ việc. */}
-                    <dt>{data.verificationStatus === 'pending' ? 'Đã chờ' : 'Tuổi hồ sơ'}</dt>
-                    <dd>
-                      <StatusBadge
-                        tone={data.verificationStatus === 'pending' ? ageTone(data.createdAt) : 'muted'}
-                        label={ageLabel(data.createdAt)}
-                      />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Đăng ký</dt>
-                    <dd>{formatDateTime(data.createdAt)}</dd>
-                  </div>
-                </dl>
               </section>
+              )}
 
               {duplicates && duplicates.length > 0 && (
                 <div className="alert alert--warning" role="alert">
@@ -617,40 +600,11 @@ export function BusinessDetailDrawer({
                 </div>
               )}
 
-              {(data.owner !== undefined || data.relationshipType) && (
-                <section className="detail-section" aria-label="Nguồn hồ sơ">
-                  <h3 className="detail-section-title">Nguồn hồ sơ</h3>
-                  <dl className="description-list">
-                    <div className="inline-field">
-                      <dt className="cell-meta">Chủ tài khoản</dt>
-                      <dd>
-                        {data.owner ? (
-                          <>
-                            <Link className="cell-link" to={`/users?search=${data.owner._id}`}>
-                              {data.owner.displayName}
-                            </Link>
-                            {data.owner.email && (
-                              <span className="cell-meta"> · {data.owner.email}</span>
-                            )}
-                            {typeof data.ownerBusinessCount === 'number' && data.ownerBusinessCount > 1 && (
-                              <span className="cell-meta"> · sở hữu {data.ownerBusinessCount} doanh nghiệp</span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="cell-meta">Tạo trực tiếp bởi admin — chưa gắn chủ tài khoản</span>
-                        )}
-                      </dd>
-                    </div>
-                    <div className="inline-field">
-                      <dt className="cell-meta">Loại quan hệ</dt>
-                      <dd>{relationshipVi(data.relationshipType)}</dd>
-                    </div>
-                  </dl>
-                </section>
-              )}
+              {/* Chủ tài khoản + loại quan hệ đã dời lên rail (kèm tín hiệu
+                  farm: số hồ sơ cùng chủ). Giữ cột phải cho field sửa được. */}
 
               <div className="detail-sections edit-all-list">
-                {FIELD_GROUPS.map((g) => (
+                {FIELD_GROUPS.filter((g) => editAll || groupVisible(data, g.keys)).map((g) => (
                   <section className={`detail-section${g.stack ? ' detail-section--stack' : ''}`} key={g.title} aria-label={g.title}>
                     <h3 className="detail-section-title">{g.title}</h3>
                     <dl className="description-list">
@@ -740,59 +694,20 @@ export function BusinessDetailDrawer({
                 </details>
               )}
 
-            </div>
+              </div>
+              </div>
           )}
     </>
   );
 
   const changedCount = editAll ? Object.keys(pendingChanges()).length : 0;
 
-  // Header dùng chung: danh tính hồ sơ nằm ở đây, thân form không lặp lại
-  // tên doanh nghiệp nữa.
+  // Khi có data, rail trái đã mang avatar + tên + badge + nút sao chép mã —
+  // giữ header danh tính là lặp hai lần. Chỉ giữ header cho form tạo mới
+  // (không có data nên không có rail) và nút đóng.
   const header = (
     <div className="detail-header">
-      {data ? (
-        <>
-          <div className="detail-avatar" aria-hidden="true">{initials(data.displayName, 'B')}</div>
-          <div className="detail-heading">
-            <div className="detail-title-row">
-              <h2 id="business-drawer-title" className="detail-title">
-                {data.displayName}
-              </h2>
-              <VerificationBadge status={data.verificationStatus} />
-              {data.suspended && <span className="badge badge-muted">Tạm ngưng bán</span>}
-              {data.isBanned && <span className="badge badge-danger">Đang bị cấm</span>}
-            </div>
-            <div className="detail-subline">
-              <span>{data.businessCategory ? categoryVi(data.businessCategory) : 'Chưa rõ danh mục'}</span>
-              <span className="detail-dot" aria-hidden>·</span>
-              <span>{data.province || 'Chưa rõ tỉnh thành'}</span>
-              {data.relationshipType && (
-                <>
-                  <span className="detail-dot" aria-hidden>·</span>
-                  <span>{relationshipVi(data.relationshipType)}</span>
-                </>
-              )}
-              <span className="detail-dot" aria-hidden>·</span>
-              <button
-                className="detail-id"
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(data._id).then(
-                    () => addToast('success', 'Đã sao chép ID.'),
-                    () => addToast('error', 'Sao chép thất bại.'),
-                  );
-                }}
-                title={`Sao chép ID · ${data._id}`}
-                aria-label="Sao chép ID hồ sơ"
-              >
-                <span className="k-mono">{shortId(data._id)}</span>
-                <Copy size={11} aria-hidden />
-              </button>
-            </div>
-          </div>
-        </>
-      ) : (
+      {!data && (
         <>
           {isNew && (
             <div className="detail-avatar" aria-hidden="true">
@@ -876,10 +791,13 @@ export function BusinessDetailDrawer({
 
   return (
     <section className="table-shell detail-card" aria-label={isNew ? 'Thêm doanh nghiệp' : 'Hồ sơ doanh nghiệp'}>
-      {header}
-      <div className="detail-card-body">
-        {body}
-      </div>
+      {/* Form tạo mới không có rail nên giữ header; hồ sơ có data thì rail đã là
+          header — nút X đóng trùng với "Quay lại/Về danh sách" nên bỏ hẳn. */}
+      {!data && header}
+      {/* Có data thì body đã là layout 2 cột, cột phải tự mang padding —
+          bọc thêm detail-card-body ngoài nữa là padding chồng padding,
+          rail thụt vào không sát viền như trang người dùng. */}
+      {data ? body : <div className="detail-card-body">{body}</div>}
       {bottomBar}
     </section>
   );

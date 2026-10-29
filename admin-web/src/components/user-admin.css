@@ -147,18 +147,16 @@
   overflow-wrap: anywhere;
 }
 
-/* Dưới 1100px: rail 340px + cột phải không còn đủ chỗ cho bảng field 150px +
-   giá trị. Về 1 cột, rail thành card đầu trang và bỏ sticky. */
-/* Bottom bar dính đáy: hành động (cấm/xoá/thu hồi phiên) là lý do người ta mở
-   hồ sơ, không được bắt cuộn hết 978px mới thấy.
+/* Bottom bar dính đáy: hành động (duyệt/cấm/xoá) là lý do người ta mở
+   hồ sơ, không được bắt cuộn hết trang mới thấy.
    `.table-shell` đặt `overflow: clip` để bo góc — chính nó biến card thành
    scroll container không cuộn, nên `sticky` bên trong không bao giờ bám. Mở
-   clip trên riêng trang này rồi tự bo góc ở hai chỗ từng nhờ clip. */
+   clip trên riêng trang split rồi tự bo góc ở hai chỗ từng nhờ clip. */
 .detail-page--split .detail-card {
   overflow: visible;
 }
 
-.detail-page--split .detail-bottombar {
+.detail-page--split .detail-card .detail-bottombar {
   position: sticky;
   bottom: 0;
   /* Nằm trên nền rail (::before) và trên nội dung cuộn qua nó. */
@@ -171,6 +169,23 @@
    còn clip. Góc dưới-trái nằm dưới bottombar nên không lộ. */
 .detail-page--split .user-detail-layout::before {
   border-radius: var(--radius-lg) 0 0 0;
+}
+
+/* Hồ sơ doanh nghiệp: ảnh bằng chứng giữ ở cột phải đầu trang, nhưng facts
+   (MST/hạn/tuổi) đã dời lên rail. Không còn grid 2 cột media+facts nữa — ảnh
+   xếp ngang để đọc được chữ trên giấy phép mà không tốn chiều cao. */
+.verify-block--media-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.verify-block--media-only .verify-media {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.verify-block--media-only .verify-media > * {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 @media (max-width: 1100px) {

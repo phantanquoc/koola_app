@@ -31,7 +31,7 @@ export default function BusinessDetailPage() {
   });
 
   return (
-    <div className="page-stack detail-page">
+    <div className="page-stack detail-page detail-page--split">
       <button className="btn btn-ghost btn-sm detail-back" type="button" onClick={back}>
         <ArrowLeft size={14} aria-hidden /> Quay lại danh sách
       </button>
