@@ -368,6 +368,25 @@ describe('AdminService', () => {
       mockUserModel.findOne.mockReturnValue(makeLeanQuery(null));
       await expect(service.getBusiness('nope')).rejects.toThrow('Business account not found');
     });
+
+    it('tra them commerceStats + reportStats', async () => {
+      mockUserModel.findOne.mockReturnValue(
+        makeLeanQuery({ _id: 'biz-1', accountType: 'business' }),
+      );
+      orderAggregate.mockResolvedValue([
+        { ordersAsBuyer: 0, ordersAsSeller: 4, gmvAsSeller: 800000 },
+      ]);
+      reportAggregate.mockResolvedValue([{ pending: 1, total: 3 }]);
+
+      const res = await service.getBusiness('biz-1');
+
+      expect(res.commerceStats).toEqual({
+        ordersAsBuyer: 0,
+        ordersAsSeller: 4,
+        gmvAsSeller: 800000,
+      });
+      expect(res.reportStats).toEqual({ pending: 1, total: 3 });
+    });
   });
 
   // ─── approveBusiness ─────────────────────────────────────────────────────

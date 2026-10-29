@@ -444,6 +444,8 @@ export class AdminService {
         email?: string;
       } | null;
       ownerBusinessCount: number;
+      commerceStats: UserCommerceStats;
+      reportStats: UserReportStats;
     }
   > {
     const business = await this.userModel
@@ -503,6 +505,15 @@ export class AdminService {
       }
     }
 
+    // Bán hàng + báo cáo nhắm vào hồ sơ: cùng pipeline với hồ sơ người dùng.
+    // Business `_id` chính là sellerId trong CommerceOrder nên không cần query
+    // riêng. Promise.all với owner ở trên? Không — owner đã await xong, hai
+    // query này độc lập nên chạy song song với nhau.
+    const [commerceStats, reportStats] = await Promise.all([
+      this.userCommerceStats(id),
+      this.userReportStats(id),
+    ]);
+
     return {
       ...business,
       licenseImageUrl,
@@ -510,12 +521,16 @@ export class AdminService {
       coverUrl,
       owner,
       ownerBusinessCount,
+      commerceStats,
+      reportStats,
     } as unknown as UserDocument & {
       licenseImageUrl: string | null;
       logoUrl: string | null;
       coverUrl: string | null;
       owner: { _id: string; displayName: string; email?: string } | null;
       ownerBusinessCount: number;
+      commerceStats: UserCommerceStats;
+      reportStats: UserReportStats;
     };
   }
 
@@ -700,64 +715,10 @@ export class AdminService {
             )
         : Promise.resolve(null),
 
-      // Tín hiệu mua/bán: một query, hai nhánh đếm, cộng GMV đơn đã giao. Chỉ
-      // số đơn đã giao được tính vào GMV — đơn đang chờ/huỷ không phải doanh
-      // thu thực nhận, cộng vào là thổi phồng con số moderator dùng để đánh giá.
-      this.orderModel
-        .aggregate<UserCommerceStats>([
-          { $match: { $or: [{ buyerId: id }, { sellerId: id }] } },
-          {
-            $group: {
-              _id: null,
-              ordersAsBuyer: {
-                $sum: { $cond: [{ $eq: ['$buyerId', id] }, 1, 0] },
-              },
-              ordersAsSeller: {
-                $sum: { $cond: [{ $eq: ['$sellerId', id] }, 1, 0] },
-              },
-              gmvAsSeller: {
-                $sum: {
-                  $cond: [
-                    {
-                      $and: [
-                        { $eq: ['$sellerId', id] },
-                        { $eq: ['$status', 'DELIVERED'] },
-                      ],
-                    },
-                    '$subtotal',
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        ])
-        .then(
-          (rows): UserCommerceStats =>
-            rows[0] ?? { ordersAsBuyer: 0, ordersAsSeller: 0, gmvAsSeller: 0 },
-        ),
-
-      // Báo cáo nhắm vào tài khoản: `pending` là hàng đợi moderator phải xử lý,
-      // `total` là tiền sử. `$facet` để lấy cả hai trong một lượt.
-      this.reportModel
-        .aggregate<{ pending: number; total: number }>([
-          { $match: { targetType: 'user', targetId: id } },
-          {
-            $facet: {
-              pending: [{ $match: { status: 'pending' } }, { $count: 'n' }],
-              total: [{ $count: 'n' }],
-            },
-          },
-          {
-            $project: {
-              pending: { $ifNull: [{ $arrayElemAt: ['$pending.n', 0] }, 0] },
-              total: { $ifNull: [{ $arrayElemAt: ['$total.n', 0] }, 0] },
-            },
-          },
-        ])
-        .then(
-          (rows): UserReportStats => rows[0] ?? { pending: 0, total: 0 },
-        ),
+      // Tín hiệu mua/bán + báo cáo nhắm vào tài khoản — helper dùng chung với
+      // getBusiness để không copy pipeline aggregate hai nơi.
+      this.userCommerceStats(id),
+      this.userReportStats(id),
 
       // Avatar có hai dạng: URL sẵn (mobile đã resolve) hoặc key MinIO. Chỉ
       // presign khi là key — presign một URL http sẽ trả 400 từ MinIO.
@@ -773,6 +734,74 @@ export class AdminService {
       reportStats: UserReportStats;
       avatarUrl: string | null;
     };
+  }
+
+  /**
+   * Tín hiệu mua/bán của một tài khoản: đếm đơn mua, đơn bán, cộng GMV.
+   *
+   * Dùng chung cho getUserById + getBusiness — business `_id` cũng là sellerId
+   * trong CommerceOrder, cùng một pipeline không cần nhánh riêng.
+   * Chỉ đơn DELIVERED được cộng vào GMV: đơn chờ/huỷ không phải doanh thu thực
+   * nhận, cộng vào là thổi phồng con số moderator dùng để đánh giá.
+   */
+  private async userCommerceStats(id: string): Promise<UserCommerceStats> {
+    const rows = await this.orderModel.aggregate<UserCommerceStats>([
+      { $match: { $or: [{ buyerId: id }, { sellerId: id }] } },
+      {
+        $group: {
+          _id: null,
+          ordersAsBuyer: {
+            $sum: { $cond: [{ $eq: ['$buyerId', id] }, 1, 0] },
+          },
+          ordersAsSeller: {
+            $sum: { $cond: [{ $eq: ['$sellerId', id] }, 1, 0] },
+          },
+          gmvAsSeller: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$sellerId', id] },
+                    { $eq: ['$status', 'DELIVERED'] },
+                  ],
+                },
+                '$subtotal',
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    return (
+      rows[0] ?? { ordersAsBuyer: 0, ordersAsSeller: 0, gmvAsSeller: 0 }
+    );
+  }
+
+  /**
+   * Số báo cáo nhắm vào một tài khoản: `pending` là hàng đợi cần xử lý,
+   * `total` là tiền sử. `$facet` lấy cả hai trong một lượt.
+   */
+  private async userReportStats(id: string): Promise<UserReportStats> {
+    const rows = await this.reportModel.aggregate<{
+      pending: number;
+      total: number;
+    }>([
+      { $match: { targetType: 'user', targetId: id } },
+      {
+        $facet: {
+          pending: [{ $match: { status: 'pending' } }, { $count: 'n' }],
+          total: [{ $count: 'n' }],
+        },
+      },
+      {
+        $project: {
+          pending: { $ifNull: [{ $arrayElemAt: ['$pending.n', 0] }, 0] },
+          total: { $ifNull: [{ $arrayElemAt: ['$total.n', 0] }, 0] },
+        },
+      },
+    ]);
+    return rows[0] ?? { pending: 0, total: 0 };
   }
 
   /**
