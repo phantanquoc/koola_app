@@ -9,11 +9,18 @@ import { dayToIso } from '../components/date-range';
 import apiClient from '../apiClient';
 
 vi.mock('../apiClient', () => ({
-  default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 
 const mockedGet = apiClient.get as unknown as ReturnType<typeof vi.fn>;
 const mockedPost = apiClient.post as unknown as ReturnType<typeof vi.fn>;
+const mockedPatch = apiClient.patch as unknown as ReturnType<typeof vi.fn>;
+const mockedDelete = apiClient.delete as unknown as ReturnType<typeof vi.fn>;
 
 const CONV_ID = '507f1f77bcf86cd799439030';
 const RAW_KEY = 'bucket/secret-photo.png';
@@ -52,6 +59,7 @@ const detailResponse = {
       lastMessageAt: '2026-10-20T00:00:00.000Z',
       avatar: 'https://koola.local/conv-avatar.png',
       createdBy: '69cf33318ebc501e439e722a',
+      internalNote: 'ghi chú cũ',
     },
     members: [
       {
@@ -149,6 +157,22 @@ function stubApi() {
   mockedGet.mockImplementation(
     (url: string, config?: { params?: Record<string, unknown> }) => {
       if (url === '/admin/reports') {
+        // Báo cáo của một tin (badge trên dòng) khác hàng đợi cấp hội thoại.
+        if (config?.params?.targetType === 'message') {
+          return Promise.resolve({
+            data: {
+              data: [
+                {
+                  _id: 'rm1',
+                  reason: 'tin spam',
+                  status: 'pending',
+                  reporterName: 'Lan',
+                  createdAt: '2026-10-22T00:00:00.000Z',
+                },
+              ],
+            },
+          });
+        }
         // Pending queue truyền status; lịch sử thì không (tách hai hàng đợi).
         if (config?.params?.status === 'pending') return Promise.resolve(reportsResponse);
         return Promise.resolve({ data: { data: [resolvedReport] } });
@@ -797,5 +821,321 @@ describe('Task 8 — export bản ghi từ chi tiết hội thoại', () => {
       (c) => c[0] === `/admin/conversations/${CONV_ID}/export`,
     );
     expect(call?.[1]).toBeUndefined();
+  });
+});
+
+describe('admin-conversation-detail-ops — thao tác vận hành', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+    mockedPost.mockResolvedValue({ data: {} });
+    mockedPatch.mockResolvedValue({ data: {} });
+    mockedDelete.mockResolvedValue({ data: {} });
+  });
+
+  /** Hội thoại trực tiếp — dùng để kiểm nút thành viên bị ẩn. */
+  function stubDirectConversation() {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/reports') return Promise.resolve({ data: { data: [] } });
+      if (url === `/admin/conversations/${CONV_ID}`) {
+        const direct = {
+          ...detailResponse.data,
+          conversation: { ...detailResponse.data.conversation, type: 'direct' },
+          pinnedMessages: [],
+          reportedMessageCounts: {},
+          recentMessages: [detailResponse.data.recentMessages[0]],
+        };
+        return Promise.resolve({ data: direct });
+      }
+      return Promise.resolve({ data: {} });
+    });
+  }
+
+  it('4.1 badge tin nhắn mở panel lười scoped theo tin; chưa xác nhận thì chưa POST, sau đó invalidate', async () => {
+    const { client } = renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    const badge = await screen.findByRole('button', { name: /2 báo cáo/ });
+    // Mở panel mới fetch — trước đó chưa có request targetType=message.
+    expect(
+      mockedGet.mock.calls.some(
+        (c) =>
+          c[0] === '/admin/reports' &&
+          (c[1] as { params?: { targetType?: string } } | undefined)?.params
+            ?.targetType === 'message',
+      ),
+    ).toBe(false);
+
+    fireEvent.click(badge);
+
+    await waitFor(() => {
+      expect(mockedGet).toHaveBeenCalledWith('/admin/reports', {
+        params: {
+          targetType: 'message',
+          targetId: 'm3',
+          status: 'pending',
+          limit: 50,
+        },
+      });
+    });
+
+    const panel = await screen.findByLabelText('Báo cáo của tin nhắn này');
+    fireEvent.click(within(panel).getByRole('button', { name: /Giải quyết/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Đánh dấu báo cáo đã xử lý?' }),
+    ).toBeTruthy();
+    // Confirm trước, POST sau.
+    expect(mockedPost).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu xử lý' }));
+    await waitFor(() => {
+      expect(mockedPost).toHaveBeenCalledWith('/admin/reports/rm1/resolve');
+    });
+    await waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversation'] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['reports'] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversations-stats'] });
+    });
+  });
+
+  it('4.2 copy đã sửa: bottombar nêu hoàn tác được, confirm gỡ không còn "không thể hoàn tác"', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    expect(document.querySelector('.detail-bottombar-note')?.textContent).toContain(
+      'có thể hoàn tác',
+    );
+    expect(screen.queryByText(/Mở tin nhắn để gỡ nội dung vi phạm/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gỡ tin nhắn này' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Gỡ tin nhắn vi phạm?' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Có thể hoàn tác/)).toBeTruthy();
+    expect(screen.queryByText(/không thể hoàn tác/i)).toBeNull();
+  });
+
+  it('4.3 thẻ báo cáo có link "Xem báo cáo" tới /reports/:id', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const pendingRegion = await screen.findByRole('region', {
+      name: 'Báo cáo chờ xử lý',
+    });
+    const pendingLink = within(pendingRegion).getByRole('link', {
+      name: 'Xem báo cáo',
+    });
+    expect(pendingLink.getAttribute('href')).toBe('/reports/r1');
+
+    const historyRegion = await screen.findByRole('region', {
+      name: 'Lịch sử báo cáo',
+    });
+    const historyLink = within(historyRegion).getByRole('link', {
+      name: 'Xem báo cáo',
+    });
+    expect(historyLink.getAttribute('href')).toBe('/reports/r0');
+  });
+
+  it('5.1 nhảy giữa tin bị báo cáo, quấn vòng ở hai đầu', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/reports') return Promise.resolve({ data: { data: [] } });
+      if (url === `/admin/conversations/${CONV_ID}`)
+        return Promise.resolve({
+          data: {
+            ...detailResponse.data,
+            reportedMessageCounts: { m1: 1, m3: 2 },
+          },
+        });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const next = screen.getByRole('button', { name: 'Tin bị báo cáo tiếp' });
+    fireEvent.click(next);
+    expect(screen.getByText('Tin bị báo cáo: 1/2')).toBeTruthy();
+    fireEvent.click(next);
+    expect(screen.getByText('Tin bị báo cáo: 2/2')).toBeTruthy();
+    // Quấn về đầu danh sách.
+    fireEvent.click(next);
+    expect(screen.getByText('Tin bị báo cáo: 1/2')).toBeTruthy();
+    // Lùi một bước từ đầu → về cuối.
+    fireEvent.click(screen.getByRole('button', { name: 'Tin bị báo cáo trước' }));
+    expect(screen.getByText('Tin bị báo cáo: 2/2')).toBeTruthy();
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it('5.2 lọc theo người gửi gửi senderId + tải lại đúng nguồn; xoá lọc trả lại luồng đầy đủ', async () => {
+    mockedGet.mockImplementation(
+      (url: string, config?: { params?: Record<string, unknown> }) => {
+        if (url === '/admin/reports') return Promise.resolve({ data: { data: [] } });
+        if (url === `/admin/conversations/${CONV_ID}`) {
+          if (config?.params?.senderId === 'u1') {
+            return Promise.resolve({
+              data: {
+                ...detailResponse.data,
+                // Đã lọc: chỉ còn tin của u1.
+                recentMessages: [detailResponse.data.recentMessages[0]],
+                reportedMessageCounts: {},
+              },
+            });
+          }
+          return Promise.resolve(detailResponse);
+        }
+        return Promise.resolve({ data: {} });
+      },
+    );
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    expect(screen.getByText('tin bị báo cáo')).toBeTruthy();
+
+    const select = screen.getByLabelText('Lọc tin nhắn theo người gửi');
+    fireEvent.change(select, { target: { value: 'u1' } });
+
+    await waitFor(() => {
+      expect(mockedGet).toHaveBeenCalledWith(
+        `/admin/conversations/${CONV_ID}`,
+        { params: { senderId: 'u1' } },
+      );
+    });
+    // Luồng đã bị thu hẹp: tin không phải của u1 biến mất.
+    await waitFor(() => {
+      expect(screen.queryByText('tin bị báo cáo')).toBeNull();
+    });
+
+    // Xoá lọc → query key không senderId (placeholderData giữ ô chọn ổn định).
+    const selectAfter = await screen.findByLabelText('Lọc tin nhắn theo người gửi');
+    fireEvent.change(selectAfter, { target: { value: '' } });
+    await waitFor(() => {
+      expect(screen.getByText('tin bị báo cáo')).toBeTruthy();
+    });
+  });
+
+  it('6.1 bỏ ghim qua confirm — chưa xác nhận chưa DELETE, xác nhận mới gọi', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const region = await screen.findByRole('region', { name: 'Tin đã ghim' });
+    fireEvent.click(within(region).getByRole('button', { name: /Bỏ ghim/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Bỏ ghim tin nhắn?' })).toBeTruthy();
+    expect(mockedDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Bỏ ghim' }).at(-1)!);
+    await waitFor(() => {
+      expect(mockedDelete).toHaveBeenCalledWith(
+        `/admin/conversations/${CONV_ID}/pin/m1`,
+      );
+    });
+  });
+
+  it('6.2 ghi chú nội bộ: lưu qua PATCH, xoá bằng chuỗi rỗng, chặn > 500 ký tự', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const box = screen.getByLabelText('Ghi chú nội bộ của hội thoại') as HTMLTextAreaElement;
+    expect(box.value).toBe('ghi chú cũ');
+    fireEvent.change(box, { target: { value: 'đang theo dõi spam' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu ghi chú' }));
+    await waitFor(() => {
+      expect(mockedPatch).toHaveBeenCalledWith(
+        `/admin/conversations/${CONV_ID}/note`,
+        { note: 'đang theo dõi spam' },
+      );
+    });
+
+    // Trần 500 ký tự chặn ở client: maxLength trên textarea.
+    expect(box.getAttribute('maxLength')).toBe('500');
+
+    // Xoá ghi chú = lưu chuỗi rỗng.
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu ghi chú' }));
+    await waitFor(() => {
+      expect(mockedPatch).toHaveBeenLastCalledWith(
+        `/admin/conversations/${CONV_ID}/note`,
+        { note: '' },
+      );
+    });
+  });
+
+  it('6.3 chip thành viên: hành động là sibling của link; hội thoại trực tiếp ẩn hẳn', async () => {
+    const { container } = renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const chip = container.querySelector('.conv-member-chip') as HTMLElement;
+    expect(chip).toBeTruthy();
+    // Không lồng button trong <a> — link và nút là sibling.
+    expect(chip.querySelector('a button')).toBeNull();
+    const link = within(chip).getByRole('link', { name: /Minh/ });
+    expect(link.getAttribute('href')).toBe('/users/u1');
+    expect(within(chip).getByRole('button', { name: /Đổi vai trò Minh/ })).toBeTruthy();
+    expect(within(chip).getByRole('button', { name: /Mời Minh ra khỏi nhóm/ })).toBeTruthy();
+
+    // Kick qua confirm.
+    fireEvent.click(within(chip).getByRole('button', { name: /Mời Minh ra khỏi nhóm/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Mời Minh ra khỏi nhóm?' }),
+    ).toBeTruthy();
+    expect(mockedDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Mời ra khỏi nhóm' }));
+    await waitFor(() => {
+      expect(mockedDelete).toHaveBeenCalledWith(
+        `/admin/conversations/${CONV_ID}/members/u1`,
+      );
+    });
+
+    // Đổi vai trò cũng qua confirm → POST role với vai trò đảo.
+    fireEvent.click(within(chip).getByRole('button', { name: /Đổi vai trò Minh/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Chuyển Minh về thành viên?' }),
+    ).toBeTruthy();
+    expect(mockedPost).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }));
+    await waitFor(() => {
+      expect(mockedPost).toHaveBeenCalledWith(
+        `/admin/conversations/${CONV_ID}/members/u1/role`,
+        { role: 'member' },
+      );
+    });
+
+    // Hội thoại trực tiếp: không render điều khiển thành viên.
+    vi.clearAllMocks();
+    stubDirectConversation();
+    const direct = renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    expect(direct.container.querySelector('.conv-member-actions')).toBeNull();
+  });
+
+  it('6.4 hoàn tác gỡ: confirm nêu đảo ngược, POST restore rồi tải lại hội thoại', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    // Gỡ trước để dòng chuyển sang trạng thái deleted (state local).
+    fireEvent.click(screen.getByRole('button', { name: 'Gỡ tin nhắn này' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Xác nhận gỡ' }));
+    await waitFor(() => {
+      expect(mockedPost).toHaveBeenCalledWith('/admin/messages/m1/soft-delete');
+    });
+
+    const restoreBtn = await screen.findByRole('button', {
+      name: 'Khôi phục tin nhắn này',
+    });
+    fireEvent.click(restoreBtn);
+    expect(
+      await screen.findByRole('heading', { name: 'Khôi phục tin nhắn này?' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/có thể đảo ngược bằng cách gỡ lại/)).toBeTruthy();
+    expect(mockedPost).not.toHaveBeenCalledWith('/admin/messages/m1/restore');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Khôi phục' }));
+    await waitFor(() => {
+      expect(mockedPost).toHaveBeenCalledWith('/admin/messages/m1/restore');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Gỡ tin nhắn này' })).toBeTruthy();
+    });
   });
 });

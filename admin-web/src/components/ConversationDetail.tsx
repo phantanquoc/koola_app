@@ -8,12 +8,17 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Flag,
   Search,
   Trash2,
+  Undo2,
+  UserMinus,
+  UserCog,
   X,
 } from 'lucide-react';
 import apiClient from '../apiClient';
 import { StatusBadge } from './StatusBadge';
+import { MessageReportPanel } from './MessageReportPanel';
 import { reportStatusLabel, reportStatusTone } from './report-labels';
 import { initials, formatDateTime, apiErrorMessage } from './formatters';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -84,6 +89,8 @@ export interface ConversationDetailPayload {
     lastMessageAt?: string | null;
     avatar?: string | null;
     createdBy?: string;
+    /** Ghi chú nội bộ của đội kiểm duyệt — document cũ đọc ra undefined. */
+    internalNote?: string | null;
   };
   members: ConversationMember[];
   recentMessages: DetailMessage[];
@@ -269,13 +276,27 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
   const findInputRef = useRef<HTMLInputElement>(null);
   const msgRowRefs = useRef(new Map<string, HTMLDivElement>());
   const scrolledIdRef = useRef<string | null>(null);
+  // Lọc theo người gửi chạy ở server (design D6): đổi giá trị là đổi query key
+  // → tải lại đúng nguồn thay vì lọc mảng chỉ có trang đầu.
+  const [senderId, setSenderId] = useState('');
+  /** Panel báo cáo của một tin, mở lười theo badge (design D1 — single-open). */
+  const [reportPanelId, setReportPanelId] = useState<string | null>(null);
 
   const detailQuery = useQuery({
-    queryKey: ['conversation', id],
+    queryKey: ['conversation', id, senderId],
     queryFn: async () => {
-      const res = await apiClient.get<ConversationDetailPayload>(`/admin/conversations/${id}`);
+      // Filter phải đi kèm request — chỉ đổi cache key mà không gửi param sẽ
+      // hiển thị nguyên luồng dưới một key "đã lọc".
+      const url = `/admin/conversations/${id}`;
+      const res = await (senderId
+        ? apiClient.get<ConversationDetailPayload>(url, {
+            params: { senderId },
+          })
+        : apiClient.get<ConversationDetailPayload>(url));
       return res.data;
     },
+    // Giữ dữ liệu cũ trong lúc đổi bộ lọc — tránh nháy skeleton và mất focus ô chọn.
+    placeholderData: (prev) => prev,
     enabled: Boolean(id),
   });
 
@@ -314,7 +335,10 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
 
   const detail = detailQuery.data?.conversation;
   const members = detailQuery.data?.members ?? [];
-  const reportedCounts = detailQuery.data?.reportedMessageCounts ?? {};
+  const reportedCounts = useMemo(
+    () => detailQuery.data?.reportedMessageCounts ?? {},
+    [detailQuery.data],
+  );
   const reports = reportsQuery.data ?? [];
   const reportHistory = historyQuery.data ?? [];
   const pinned = detailQuery.data?.pinnedMessages ?? [];
@@ -423,7 +447,7 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
     const prevHeight = box?.scrollHeight ?? 0;
     try {
       const res = await apiClient.get<ConversationDetailPayload>(`/admin/conversations/${id}`, {
-        params: { before: oldest, limit: MSG_PAGE },
+        params: { before: oldest, limit: MSG_PAGE, ...(senderId ? { senderId } : {}) },
       });
       const older: DetailMessage[] = (res.data.recentMessages ?? []).slice().reverse();
       setOlderMessages((prev) => [...older, ...prev]);
@@ -436,7 +460,7 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
     } finally {
       setMoreLoading(false);
     }
-  }, [id, messages, moreLoading, addToast]);
+  }, [id, messages, moreLoading, addToast, senderId]);
 
   // Gỡ tin nhắn: luôn qua hộp xác nhận (§0.5).
   const [confirmMsg, setConfirmMsg] = useState<{ id: string; preview: string } | null>(null);
@@ -455,6 +479,142 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
     } finally {
       setMsgBusy(false);
     }
+  }
+
+  // ── Hoàn tác gỡ (restore) — đảo chiều soft-delete, cũng qua confirm ──
+  const [restoreMsg, setRestoreMsg] = useState<{ id: string } | null>(null);
+
+  async function executeRestore() {
+    if (!restoreMsg || msgBusy) return;
+    setMsgBusy(true);
+    try {
+      await apiClient.post(`/admin/messages/${restoreMsg.id}/restore`);
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(restoreMsg.id);
+        return next;
+      });
+      addToast('success', 'Đã khôi phục tin nhắn.');
+      setRestoreMsg(null);
+      // Row hiển thị dữ liệu từ payload chi tiết; tải lại để nội dung gốc trở về.
+      await queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    } catch {
+      addToast('error', 'Khôi phục tin nhắn thất bại. Vui lòng thử lại.');
+    } finally {
+      setMsgBusy(false);
+    }
+  }
+
+  // ── Bỏ ghim ──
+  const [unpinTarget, setUnpinTarget] = useState<PinnedMessagePreview | null>(null);
+  const [unpinBusy, setUnpinBusy] = useState(false);
+
+  async function executeUnpin() {
+    if (!unpinTarget || unpinBusy) return;
+    setUnpinBusy(true);
+    try {
+      await apiClient.delete(
+        `/admin/conversations/${id}/pin/${unpinTarget.messageId}`,
+      );
+      addToast('success', 'Đã bỏ ghim tin nhắn.');
+      setUnpinTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    } catch {
+      // 404 = người khác vừa bỏ ghim; refetch để card biến mất theo sự thật.
+      addToast('error', 'Bỏ ghim thất bại. Tin có thể đã được bỏ ghim trước đó.');
+      await queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    } finally {
+      setUnpinBusy(false);
+    }
+  }
+
+  // ── Ghi chú nội bộ ──
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const noteValue = noteDraft ?? detail?.internalNote ?? '';
+  const noteDirty = noteValue !== (detail?.internalNote ?? '');
+
+  async function saveNote() {
+    if (noteBusy) return;
+    if (noteValue.length > 500) {
+      addToast('error', 'Ghi chú tối đa 500 ký tự.');
+      return;
+    }
+    setNoteBusy(true);
+    try {
+      await apiClient.patch(`/admin/conversations/${id}/note`, {
+        note: noteValue,
+      });
+      addToast('success', 'Đã lưu ghi chú nội bộ.');
+      setNoteDraft(null);
+      await queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    } catch {
+      addToast('error', 'Lưu ghi chú thất bại. Vui lòng thử lại.');
+    } finally {
+      setNoteBusy(false);
+    }
+  }
+
+  // ── Thành viên: đổi vai trò / mời ra khỏi nhóm (chỉ hội thoại nhóm) ──
+  const [memberAction, setMemberAction] = useState<{
+    member: ConversationMember;
+    action: 'role' | 'kick';
+  } | null>(null);
+  const [memberBusy, setMemberBusy] = useState(false);
+  const isGroup = detail?.type === 'group';
+
+  async function executeMemberAction() {
+    if (!memberAction || memberBusy) return;
+    const { member, action } = memberAction;
+    setMemberBusy(true);
+    try {
+      if (action === 'role') {
+        const nextRole = member.role === 'admin' ? 'member' : 'admin';
+        await apiClient.post(
+          `/admin/conversations/${id}/members/${member.userId}/role`,
+          { role: nextRole },
+        );
+        addToast(
+          'success',
+          nextRole === 'admin'
+            ? 'Đã đặt làm quản trị nhóm.'
+            : 'Đã chuyển về thành viên.',
+        );
+      } else {
+        await apiClient.delete(`/admin/conversations/${id}/members/${member.userId}`);
+        addToast('success', 'Đã mời thành viên ra khỏi nhóm.');
+      }
+      setMemberAction(null);
+      await queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    } catch {
+      addToast(
+        'error',
+        action === 'role'
+          ? 'Đổi vai trò thất bại. Vui lòng thử lại.'
+          : 'Mời ra khỏi nhóm thất bại. Vui lòng thử lại.',
+      );
+    } finally {
+      setMemberBusy(false);
+    }
+  }
+
+  // ── Nhảy tới tin bị báo cáo — chỉ trong tập đang hiển thị (design D7) ──
+  const reportedIds = useMemo(
+    () => messages.filter((m) => (reportedCounts[m._id] ?? 0) > 0).map((m) => m._id),
+    [messages, reportedCounts],
+  );
+  const [reportedIdx, setReportedIdx] = useState(-1);
+
+  function stepReported(dir: 1 | -1) {
+    if (reportedIds.length === 0) return;
+    const next =
+      reportedIdx < 0
+        ? dir > 0
+          ? 0
+          : reportedIds.length - 1
+        : (reportedIdx + dir + reportedIds.length) % reportedIds.length;
+    setReportedIdx(next);
+    msgRowRefs.current.get(reportedIds[next])?.scrollIntoView({ block: 'center' });
   }
 
   const [reportBusy, setReportBusy] = useState<string | null>(null);
@@ -552,7 +712,8 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
       // List mang pendingReportCount/oldestPendingReportAt → phải lấy lại số mới.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['conversation-reports', id] }),
-        queryClient.invalidateQueries({ queryKey: ['conversation', id] }),
+        queryClient.invalidateQueries({ queryKey: ['reports'] }),
+        queryClient.invalidateQueries({ queryKey: ['conversation'] }),
         queryClient.invalidateQueries({ queryKey: ['conversations'] }),
         queryClient.invalidateQueries({ queryKey: ['conversations-stats'] }),
       ]);
@@ -734,6 +895,34 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
           </div>
         </dl>
 
+        <section aria-label="Ghi chú nội bộ" className="conv-note">
+          <h2 className="panel-title">Ghi chú nội bộ</h2>
+          <p className="cell-meta">
+            Chỉ đội kiểm duyệt đọc được — không gửi cho thành viên hội thoại.
+          </p>
+          <textarea
+            id="conv-internal-note"
+            className="input conv-note-input"
+            rows={3}
+            maxLength={500}
+            value={noteValue}
+            aria-label="Ghi chú nội bộ của hội thoại"
+            placeholder="Ví dụ: đang theo dõi spam…"
+            onChange={(e) => setNoteDraft(e.target.value)}
+          />
+          <div className="conv-note-actions">
+            <span className="cell-meta">{noteValue.length}/500</span>
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              disabled={noteBusy || !noteDirty}
+              onClick={() => void saveNote()}
+            >
+              {noteBusy ? 'Đang lưu…' : 'Lưu ghi chú'}
+            </button>
+          </div>
+        </section>
+
         {pinned.length > 0 && (
           <section aria-label="Tin đã ghim" className="conv-reports">
             <h2 className="panel-title">Đã ghim ({pinned.length})</h2>
@@ -749,9 +938,18 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                 {p.found && !p.deleted && p.mediaUrlSigned && p.type === 'image' && (
                   <img src={p.mediaUrlSigned} alt="" className="conv-msg-img conv-pinned-img" loading="lazy" />
                 )}
-                <div className="cell-meta">
-                  Đã ghim bởi {p.pinnedByName ?? 'Không rõ'}
-                  {p.senderName ? ` · tin của ${p.senderName}` : ''} · {formatDateTime(p.pinnedAt)}
+                <div className="conv-report-history-head">
+                  <div className="cell-meta">
+                    Đã ghim bởi {p.pinnedByName ?? 'Không rõ'}
+                    {p.senderName ? ` · tin của ${p.senderName}` : ''} · {formatDateTime(p.pinnedAt)}
+                  </div>
+                  <button
+                    className="btn btn-danger-ghost btn-sm"
+                    type="button"
+                    onClick={() => setUnpinTarget(p)}
+                  >
+                    <X size={14} strokeWidth={2} aria-hidden /> Bỏ ghim
+                  </button>
                 </div>
               </div>
             ))}
@@ -761,31 +959,104 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
         <section aria-label="Thành viên" className="conv-members-section">
           <h2 className="panel-title">Thành viên ({members.length})</h2>
           <div className="conv-members">
-            {members.map((m) => (
-              <Link
-                key={String(m.userId)}
-                to={`/users/${m.userId}`}
-                className="conv-member-chip"
-                title={m.displayName ?? DELETED_NAME}
-              >
-                <span className="conv-member-avatar" aria-hidden="true">
-                  {initials(m.displayName ?? '?', '?')}
-                </span>
-                {m.displayName ?? DELETED_NAME}
-                {m.accountType === 'business' ? (
-                  <span className="badge badge-muted conv-member-biz">Doanh nghiệp</span>
-                ) : null}
-                {m.role === 'admin' ? <span className="badge badge-primary">Quản trị</span> : null}
-                {m.joinedAt ? (
-                  <span className="conv-member-since">tham gia {shortDate(m.joinedAt)}</span>
-                ) : null}
-              </Link>
-            ))}
+            {members.map((m) => {
+              const name = m.displayName ?? DELETED_NAME;
+              return (
+                <div key={String(m.userId)} className="conv-member-chip">
+                  <Link
+                    to={`/users/${m.userId}`}
+                    className="conv-member-identity"
+                    title={name}
+                  >
+                    <span className="conv-member-avatar" aria-hidden="true">
+                      {initials(m.displayName ?? '?', '?')}
+                    </span>
+                    {name}
+                    {m.accountType === 'business' ? (
+                      <span className="badge badge-muted conv-member-biz">Doanh nghiệp</span>
+                    ) : null}
+                    {m.role === 'admin' ? <span className="badge badge-primary">Quản trị</span> : null}
+                    {m.joinedAt ? (
+                      <span className="conv-member-since">tham gia {shortDate(m.joinedAt)}</span>
+                    ) : null}
+                  </Link>
+                  {/* Nút hành động là sibling của Link — không lồng interactive
+                      trong <a> (a11y), chỉ hiện với hội thoại nhóm. */}
+                  {isGroup ? (
+                    <span className="conv-member-actions">
+                      <button
+                        className="btn btn-ghost btn-sm conv-member-action"
+                        type="button"
+                        aria-label={`Đổi vai trò ${name}`}
+                        title={m.role === 'admin' ? 'Chuyển về thành viên' : 'Đặt làm quản trị'}
+                        onClick={() => setMemberAction({ member: m, action: 'role' })}
+                      >
+                        <UserCog size={14} strokeWidth={2} aria-hidden />
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm conv-member-action conv-member-kick"
+                        type="button"
+                        aria-label={`Mời ${name} ra khỏi nhóm`}
+                        title="Mời ra khỏi nhóm"
+                        onClick={() => setMemberAction({ member: m, action: 'kick' })}
+                      >
+                        <UserMinus size={14} strokeWidth={2} aria-hidden />
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </section>
 
         <section aria-label="Tin nhắn">
           <h2 className="panel-title">Tin nhắn gần đây</h2>
+          <div className="conv-msg-toolbar">
+            <label className="conv-sender-filter">
+              <span className="cell-meta">Người gửi</span>
+              <select
+                className="input"
+                name="senderId"
+                value={senderId}
+                aria-label="Lọc tin nhắn theo người gửi"
+                onChange={(e) => setSenderId(e.target.value)}
+              >
+                <option value="">Tất cả thành viên</option>
+                {members.map((m) => (
+                  <option key={String(m.userId)} value={String(m.userId)}>
+                    {m.displayName ?? DELETED_NAME}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {reportedIds.length > 0 && (
+              <div className="conv-reported-jump" role="group" aria-label="Nhảy tới tin bị báo cáo">
+                <span className="cell-meta">
+                  Tin bị báo cáo:{' '}
+                  {reportedIdx >= 0 ? `${reportedIdx + 1}/${reportedIds.length}` : `0/${reportedIds.length}`}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm conv-icon-btn"
+                  type="button"
+                  aria-label="Tin bị báo cáo trước"
+                  title="Tin bị báo cáo trước"
+                  onClick={() => stepReported(-1)}
+                >
+                  <ChevronUp size={16} strokeWidth={2} aria-hidden />
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm conv-icon-btn"
+                  type="button"
+                  aria-label="Tin bị báo cáo tiếp"
+                  title="Tin bị báo cáo tiếp"
+                  onClick={() => stepReported(1)}
+                >
+                  <ChevronDown size={16} strokeWidth={2} aria-hidden />
+                </button>
+              </div>
+            )}
+          </div>
           <div className="conv-chat" ref={msgScrollRef} role="log">
             <div className="conv-more-wrap">
               {hasMore && (
@@ -829,7 +1100,18 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                       </span>
                       <span className={`conv-msg-name conv-sender-${senderColorIdx(String(m.senderId))}`}>{nameOf(m.senderId)}</span>
                       {reportedCount > 0 && (
-                        <StatusBadge tone="warning" label={`${reportedCount} báo cáo`} />
+                        <button
+                          className="conv-report-badge"
+                          type="button"
+                          aria-expanded={reportPanelId === m._id}
+                          onClick={() =>
+                            setReportPanelId((prev) => (prev === m._id ? null : m._id))
+                          }
+                          title="Xem báo cáo của tin nhắn này"
+                        >
+                          <Flag size={12} strokeWidth={2} aria-hidden />
+                          {reportedCount} báo cáo
+                        </button>
                       )}
                     </div>
                   )}
@@ -860,10 +1142,32 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                         <div className="conv-bubble-foot">
                           <span>{formatClock(m.createdAt) || formatDateTime(m.createdAt)}</span>
                           {grouped && reportedCount > 0 ? (
-                            <StatusBadge tone="warning" label={`${reportedCount} báo cáo`} />
+                            <button
+                              className="conv-report-badge"
+                              type="button"
+                              aria-expanded={reportPanelId === m._id}
+                              onClick={() =>
+                                setReportPanelId((prev) => (prev === m._id ? null : m._id))
+                              }
+                              title="Xem báo cáo của tin nhắn này"
+                            >
+                              <Flag size={12} strokeWidth={2} aria-hidden />
+                              {reportedCount} báo cáo
+                            </button>
                           ) : null}
                           {m.deleted ? (
-                            <StatusBadge tone="muted" label="Đã gỡ" />
+                            <>
+                              <StatusBadge tone="muted" label="Đã gỡ" />
+                              <button
+                                className="conv-del conv-restore"
+                                onClick={() => setRestoreMsg({ id: m._id })}
+                                type="button"
+                                aria-label="Khôi phục tin nhắn này"
+                                title="Khôi phục tin nhắn này"
+                              >
+                                <Undo2 size={13} strokeWidth={2} aria-hidden />
+                              </button>
+                            </>
                           ) : (
                             <button
                               className="conv-del"
@@ -879,6 +1183,12 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                       )}
                     </div>
                   </div>
+                  {reportPanelId === m._id && (
+                    <MessageReportPanel
+                      messageId={m._id}
+                      onClose={() => setReportPanelId(null)}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -913,6 +1223,9 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   >
                     <X size={16} strokeWidth={2} aria-hidden /> Bỏ qua
                   </button>
+                  <Link className="btn btn-ghost btn-sm" to={`/reports/${r._id}`}>
+                    Xem báo cáo
+                  </Link>
                 </div>
               </div>
             ))}
@@ -936,6 +1249,11 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   {r.resolvedByName ? ` · xử lý bởi ${r.resolvedByName}` : ''}
                   {r.resolvedAt ? ` ${formatDateTime(r.resolvedAt)}` : ''}
                 </div>
+                <div className="table-actions conv-report-actions">
+                  <Link className="btn btn-ghost btn-sm" to={`/reports/${r._id}`}>
+                    Xem báo cáo
+                  </Link>
+                </div>
               </div>
             ))}
           </section>
@@ -945,7 +1263,9 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
       <div className="detail-bottombar">
         <Link className="btn btn-secondary btn-sm" to={backTo}>Về danh sách</Link>
         <span className="detail-bottombar-spacer" />
-        <span className="detail-bottombar-note">Mở tin nhắn để gỡ nội dung vi phạm</span>
+        <span className="detail-bottombar-note">
+          Gỡ tin nhắn trên dòng tin — có thể hoàn tác bằng nút khôi phục.
+        </span>
       </div>
 
       <ConfirmDialog
@@ -990,13 +1310,62 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
         title="Gỡ tin nhắn vi phạm?"
         description={
           confirmMsg
-            ? `Tin nhắn "${confirmMsg.preview || '(không nội dung)'}" sẽ bị gỡ khỏi hội thoại. Hành động này không thể hoàn tác.`
+            ? `Tin nhắn "${confirmMsg.preview || '(không nội dung)'}" sẽ bị gỡ khỏi hội thoại. Có thể hoàn tác bằng nút khôi phục trên dòng tin.`
             : undefined
         }
         confirmLabel="Xác nhận gỡ"
         onConfirm={() => void executeSoftDelete()}
         busy={msgBusy}
         variant="danger"
+      />
+
+      <ConfirmDialog
+        open={restoreMsg !== null}
+        onClose={() => {
+          if (!msgBusy) setRestoreMsg(null);
+        }}
+        title="Khôi phục tin nhắn này?"
+        description="Tin nhắn sẽ hiển thị lại với mọi thành viên. Hành động này có thể đảo ngược bằng cách gỡ lại."
+        confirmLabel="Khôi phục"
+        variant="primary"
+        onConfirm={() => void executeRestore()}
+        busy={msgBusy}
+      />
+
+      <ConfirmDialog
+        open={unpinTarget !== null}
+        onClose={() => {
+          if (!unpinBusy) setUnpinTarget(null);
+        }}
+        title="Bỏ ghim tin nhắn?"
+        description="Tin nhắn sẽ rời khỏi mục Đã ghim của hội thoại. Nội dung tin nhắn không bị ảnh hưởng."
+        confirmLabel="Bỏ ghim"
+        variant="primary"
+        onConfirm={() => void executeUnpin()}
+        busy={unpinBusy}
+      />
+
+      <ConfirmDialog
+        open={memberAction !== null}
+        onClose={() => {
+          if (!memberBusy) setMemberAction(null);
+        }}
+        title={
+          memberAction?.action === 'kick'
+            ? `Mời ${memberAction.member.displayName ?? DELETED_NAME} ra khỏi nhóm?`
+            : memberAction?.member.role === 'admin'
+              ? `Chuyển ${memberAction.member.displayName ?? DELETED_NAME} về thành viên?`
+              : `Đặt ${memberAction?.member.displayName ?? DELETED_NAME} làm quản trị nhóm?`
+        }
+        description={
+          memberAction?.action === 'kick'
+            ? 'Người này mất quyền xem và gửi tin trong nhóm ngay lập tức. Họ không được thông báo trong ứng dụng.'
+            : 'Vai trò mới có hiệu lực ở lần tải tiếp theo của các thành viên.'
+        }
+        confirmLabel={memberAction?.action === 'kick' ? 'Mời ra khỏi nhóm' : 'Xác nhận'}
+        variant={memberAction?.action === 'kick' ? 'danger' : 'primary'}
+        onConfirm={() => void executeMemberAction()}
+        busy={memberBusy}
       />
     </section>
   );
