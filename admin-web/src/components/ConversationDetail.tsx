@@ -536,7 +536,8 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
           <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={() => stepFind(1)} type="button" aria-label="Kết quả tiếp" title="Kết quả tiếp" disabled={findMatches.length === 0}><ChevronDown size={16} strokeWidth={2} aria-hidden /></button>
           <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={closeFind} type="button" aria-label="Đóng tìm kiếm" title="Đóng tìm kiếm"><X size={16} strokeWidth={2} aria-hidden /></button>
         </div>
-        {findHint && findQ ? <p className="cell-meta conv-find-hint">Tải thêm để tìm tiếp</p> : null}
+        {/* Server fallback hoặc còn tin ngoài trang đầu — gợi ý tải thêm (khớp drawer cũ). */}
+        {(findHint || hasMore) && findQ ? <p className="cell-meta conv-find-hint">Tải thêm để tìm tiếp</p> : null}
 
         <dl className="description-list conv-desc">
           <div>

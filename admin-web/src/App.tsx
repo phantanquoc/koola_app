@@ -13,6 +13,7 @@ import BusinessDetailPage from './pages/BusinessDetailPage';
 import UsersPage from './pages/UsersPage';
 import UserDetailPage from './pages/UserDetailPage';
 import ConversationsPage from './pages/ConversationsPage';
+import ConversationsDetailPage from './pages/ConversationsDetailPage';
 import MessageSearchPage from './pages/MessageSearchPage';
 import ReportsPage from './pages/ReportsPage';
 import ReportDetailPage from './pages/ReportDetailPage';
@@ -58,6 +59,7 @@ export default function App() {
                 <Route path="users" element={<UsersPage />} />
                 <Route path="users/:id" element={<UserDetailPage />} />
                 <Route path="conversations" element={<ConversationsPage />} />
+                <Route path="conversations/:id" element={<ConversationsDetailPage />} />
                 <Route path="messages" element={<MessageSearchPage />} />
                 <Route path="moments" element={<MomentsModerationPage />} />
                 <Route path="music" element={<MusicCatalogPage />} />

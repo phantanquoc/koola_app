@@ -27,6 +27,8 @@ interface Conversation {
   name?: string | null;
   displayName?: string | null;
   type: string;
+  /** List row gọn từ backend 1.4 — `members` chỉ có ở detail. */
+  memberCount?: number;
   members?: unknown[];
   pendingReportCount?: number;
   lastMessageAt?: string | null;
@@ -750,7 +752,7 @@ export default function ConversationsPage() {
                         </div>
                       </div>
                     </td>
-                    <td><span className="cell-title">{c.members?.length ?? 0}</span></td>
+                    <td><span className="cell-title">{c.memberCount ?? c.members?.length ?? 0}</span></td>
                     <td><div className="cell-meta" title={formatTime(c.lastMessageAt)}>{formatRelative(c.lastMessageAt)}</div></td>
                     <td>
                       {(c.pendingReportCount ?? 0) > 0 || pendingIds.has(c._id) ? (
