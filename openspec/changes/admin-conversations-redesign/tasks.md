@@ -1,5 +1,11 @@
 # Tasks
 
+> **2026-11-02 — verify widths xong (dev-browser headless):** 1440/1024/860/390 + 1440x800
+> không scroll ngang; ladder cột đúng (Tuổi ẩn ≤1099 + `.show-under-1100` block, Tạo lúc/Media
+> ẩn ≤860 + `.show-under-860` block, min-width 760→520→0); thead sticky; scroller duy nhất
+> `.admin-content-scroll`; row→detail→Back giữ `?sort=reported`; `?focus=` redirect; tab count;
+> export dialog; phím j/`?`; 0 console error.
+
 > **Thứ tự thực hành (hard dependencies — đọc trước khi làm §3/§4):**
 > `4.1→4.5 (code đã có trong working tree, untracked — chỉ verify + thêm vitest)` → `4.6` → `3.1` → `3.4` → `3.2/3.3/3.5/3.6` → `3.7` → `3.8` → `3.9` → `3.10` & `4.7` → `5.1` → `6.x`
 >
@@ -38,7 +44,7 @@
 - [x] 3.7 Add keyboard navigation (`j`/`k` move a highlight index, `Enter` opens, `?` opens a shortcut help dialog) while keeping `/` focus-search; verify with a vitest simulating the key events
 - [x] 3.8 **⛔ Đặt sau 4.6.** Make row activation call `navigate('/conversations/' + id, { state: { from: pathname + search } })`, and translate a non-empty `focus` param into a `replace` redirect to that route — **redirect một lần duy nhất**: KHÔNG gọi thêm `set({ focus: '' })` (`useUrlFilters.set` tự navigate `replace` → double navigation); `state.from` tính bằng URLSearchParams **bỏ `focus`**, giữ param khác (`?focus=x&tab=pending` → back về list có filter). Ghi đè design.md D6 (dòng 87). Source duy nhất: `report-labels.ts:56` → `ReportDetail.tsx:145`; verify with a vitest asserting the navigation state carries the full list URL minus `focus` and that `?focus=<id>` resolves to `/conversations/<id>` ← (verify: report→conversation mở đúng hội thoại cũ, Back trả về list có filter; không loop)
 - [x] 3.9 **⛔ Đặt sau 4.2/4.3, cùng commit với 3.8.** Delete the drawer invocation (`ConversationsPage.tsx:794-998`), the inline-styled filter popover (`:622-635`), the disabled "Xóa hội thoại" control (`:982-992`), and the raw `<p class="alert">` error (`:679`); **sweep dead code kéo theo** để `no-unused-vars`/`noUnusedLocals` xanh: import `Dialog`/`ConfirmDialog`/`useToast`/icon lucide/`moderation-media.css`, toàn bộ detail state + find machinery (`:265-470`), `openDetail/loadOlder/executeSoftDelete/actOnReport`, helper `escapeFind/hi/MessageBody/...` (`:122-247`); `Conversation.members` → `memberCount`. Verify by grep that `variant="drawer"`, `style={{`, and "Xóa hội thoại" are gone from the page
-- [ ] 3.10 *(code + docs xong 2026-11-02; còn nợ verify widths 1440/860/390 — làm cùng 6.2)* **⛔ Đặt sau 3.9.** Prune `ConversationsPage.css` drawer-only rules (`:192-209` `.conv-drawer*`, `:248-255` `.conv-drawer-body`; GIỮ `.conv-findbar*`, `.conv-members*`, `.conv-chat`/`.conv-msg-*`, `.conv-reports*` — `ConversationDetail.tsx:1` vẫn import file này) và xoá block `.drawer-header/.drawer-body` chết ở `index.css:2127-2140` (không trang nào khác dùng); cập nhật `admin-web/AGENTS.md`: dòng `/conversations` + mục §6 "`variant="drawer"` chỉ còn ở 3 trang legacy" (thực tế 1 → 0); verify với gate changed-files (`npx tsc -b` + `npm run lint` không phát sinh lỗi mới) và loading 1440 / 860 / 390 widths không scroll ngang
+- [x] 3.10 **⛔ Đặt sau 3.9.** Prune `ConversationsPage.css` drawer-only rules (`:192-209` `.conv-drawer*`, `:248-255` `.conv-drawer-body`; GIỮ `.conv-findbar*`, `.conv-members*`, `.conv-chat`/`.conv-msg-*`, `.conv-reports*` — `ConversationDetail.tsx:1` vẫn import file này) và xoá block `.drawer-header/.drawer-body` chết ở `index.css:2127-2140` (không trang nào khác dùng); cập nhật `admin-web/AGENTS.md`: dòng `/conversations` + mục §6 "`variant="drawer"` chỉ còn ở 3 trang legacy" (thực tế 1 → 0); verify với gate changed-files (`npx tsc -b` + `npm run lint` không phát sinh lỗi mới) và loading 1440 / 860 / 390 widths không scroll ngang
 
 ## 4. Frontend — detail as a shareable route
 
@@ -59,6 +65,6 @@
 ## 6. Integration verification
 
 - [x] 6.1 Run the full gates: `cd admin-web && npx vitest run && npx tsc -b && npm run lint` (tsc -b, **không** `--noEmit` — tsconfig solution-style nên `--noEmit` check 0 file; pass = không có lỗi mới trong file đã sửa của change, 12 tsc + 7 lint pre-existing ngoài conversations được ghi nhận), then `cd chat-backend && npx jest src/admin && ./node_modules/.bin/tsc --noEmit`
-- [ ] 6.2 *(còn nợ — cần browser)* Manual pass at 1440 / 1024 / 860 / 390 widths and at ≤820 px height, confirming the single-scroller rule, sticky header, and column-ladder fallbacks
+- [x] 6.2 Manual pass at 1440 / 1024 / 860 / 390 widths and at ≤820 px height, confirming the single-scroller rule, sticky header, and column-ladder fallbacks
 - [x] 6.3 Walk the `admin-web/DESIGN.md` §8 list checklist line by line and the §10 copy table, confirming each item is observable on this page ← (verify: every checklist row is grep-able or demonstrable, not asserted by feel)
 - [x] 6.4 Run `openspec validate admin-conversations-redesign` and confirm each spec scenario in `specs/` maps to a passing test or a demonstrable behavior
