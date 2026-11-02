@@ -23,6 +23,10 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { PaginationDto } from './dto/pagination.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ConversationDetailDto } from './dto/conversation-detail.dto';
+import {
+  UpdateConversationNoteDto,
+  UpdateMemberRoleDto,
+} from './dto/conversation-ops.dto';
 import { SearchMessagesDto } from './dto/search-messages.dto';
 import { ListStoriesDto } from './dto/list-stories.dto';
 import {
@@ -32,6 +36,7 @@ import {
 import { escapeRegExp } from '../common/utils/escape-regexp';
 import { applyCreatedAtRange } from '../common/utils/date-range';
 import { ConversationDoc } from '../conversations/conversation.schema';
+import { ConversationsService } from '../conversations/conversations.service';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
@@ -83,6 +88,7 @@ export class AdminModerationController {
     private readonly chatGateway: ChatGateway,
     private readonly reportService: AdminReportService,
     private readonly moderationMedia: ModerationMediaService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   private displayNameFor(conv: any, members: any[]): string {
@@ -653,6 +659,7 @@ export class AdminModerationController {
     const msgLimit = dto.limit ?? 20;
     const msgFilter: Record<string, unknown> = { conversationId: id };
     if (dto.before) msgFilter['createdAt'] = { $lt: new Date(dto.before) };
+    if (dto.senderId) msgFilter['senderId'] = dto.senderId;
     // Fetch one extra to know whether older messages remain.
     const fetched = await this.msgModel
       .find(msgFilter)
@@ -916,6 +923,153 @@ export class AdminModerationController {
       ip: req.ip ?? null,
     });
     return { message: 'deleted' };
+  }
+
+  /**
+   * Đảo chiều soft-delete. Idempotent: tin chưa bị gỡ trả về thành công mà
+   * không đổi state, không ghi audit lần hai. Socket chỉ phát SAU khi DB ghi
+   * xong; client cũ bỏ qua event lạ và tự hội tụ qua sync `updatedAt`.
+   */
+  @Post('messages/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async restoreMessage(
+    @Param('id') id: string,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Message not found');
+    }
+    const msg = await this.msgModel.findById(id).lean();
+    if (!msg) throw new NotFoundException('Message not found');
+    if (!msg.deleted) return { message: 'restored', changed: false };
+
+    const updated = await this.msgModel
+      .findByIdAndUpdate(id, { $set: { deleted: false } }, { new: true })
+      .lean();
+    if (!updated) throw new NotFoundException('Message not found');
+
+    const convId = updated.conversationId;
+    try {
+      this.chatGateway.io
+        ?.to(`conversation:${convId}`)
+        .emit('message_restored', { messageId: id, conversationId: convId });
+    } catch {
+      // Socket chỉ là best-effort; sync theo updatedAt mới là đường đúng.
+    }
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'restore_message',
+      targetType: 'message',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return { message: 'restored', changed: true };
+  }
+
+  // ─── Thao tác vận hành trên hội thoại (detail workbench) ────────────────────
+  // Mọi thao tác ghi do ConversationsService xử lý luật membership; controller
+  // chỉ audit + map mã lỗi. Audit KHÔNG chứa nội dung ghi chú (D4).
+
+  @Patch('conversations/:id/note')
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async updateConversationNote(
+    @Param('id') id: string,
+    @Body() dto: UpdateConversationNoteDto,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const conv = await this.conversations.setInternalNote(id, dto.note);
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'update_conversation_note',
+      targetType: 'conversation',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return conv;
+  }
+
+  @Delete('conversations/:id/pin/:messageId')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async unpinConversationMessage(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const removed = await this.conversations.adminUnpinMessage(id, messageId);
+    if (!removed) throw new NotFoundException('Pin not found');
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'unpin_message',
+      targetType: 'conversation',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return { message: 'Message unpinned' };
+  }
+
+  @Post('conversations/:id/members/:userId/role')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async setConversationMemberRole(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateMemberRoleDto,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const conv = await this.conversations.adminSetMemberRole(
+      id,
+      userId,
+      dto.role,
+    );
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'change_member_role',
+      targetType: 'conversation',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return conv;
+  }
+
+  @Delete('conversations/:id/members/:userId')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async removeConversationMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    await this.conversations.adminRemoveMember(id, userId);
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'remove_member',
+      targetType: 'conversation',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return { message: 'Member removed' };
   }
 
   @Get('stories')

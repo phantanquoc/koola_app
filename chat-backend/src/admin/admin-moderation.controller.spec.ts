@@ -11,10 +11,16 @@ import { AdminOpsController } from './admin-ops.controller';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminReportService } from './admin-report.service';
 import { ModerationMediaService } from './moderation-media.service';
+import { ConversationsService } from '../conversations/conversations.service';
+import {
+  UpdateConversationNoteDto,
+  UpdateMemberRoleDto,
+} from './dto/conversation-ops.dto';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { ConversationDoc } from '../conversations/conversation.schema';
+import { MemberRole } from '../conversations/conversation.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
@@ -46,6 +52,8 @@ const convModel = {
 };
 const msgModel = {
   find: jest.fn(),
+  findById: jest.fn(),
+  findByIdAndUpdate: jest.fn(),
   countDocuments: jest.fn(),
   distinct: jest.fn(),
 };
@@ -59,6 +67,12 @@ const reportModel = {
 const musicTrackModel = {};
 const audienceListModel = {};
 const audit = { log: jest.fn() };
+const conversations = {
+  setInternalNote: jest.fn(),
+  adminUnpinMessage: jest.fn(),
+  adminSetMemberRole: jest.fn(),
+  adminRemoveMember: jest.fn(),
+};
 const chatGateway = { io: { emit: jest.fn(), sockets: new Map([['s1', {}]]) } };
 
 describe('AdminModerationController — enrich + filter', () => {
@@ -85,6 +99,7 @@ describe('AdminModerationController — enrich + filter', () => {
           provide: ModerationMediaService,
           useValue: { presignMany: jest.fn().mockResolvedValue(new Map()) },
         },
+        { provide: ConversationsService, useValue: conversations },
         { provide: ChatGateway, useValue: chatGateway },
       ],
     }).compile();
@@ -235,6 +250,7 @@ describe('AdminModerationController — conversation list/stats/export', () => {
           provide: ModerationMediaService,
           useValue: { presignMany: jest.fn().mockResolvedValue(new Map()) },
         },
+        { provide: ConversationsService, useValue: conversations },
         { provide: ChatGateway, useValue: chatGateway },
       ],
     }).compile();
@@ -621,6 +637,243 @@ describe('AdminModerationController — conversation list/stats/export', () => {
     const guards: unknown[] =
       Reflect.getMetadata('__guards__', AdminModerationController) ?? [];
     expect(guards).toEqual(expect.arrayContaining([JwtAuthGuard, AdminGuard]));
+  });
+});
+
+describe('AdminModerationController — thao tác hội thoại (restore/note/unpin/members)', () => {
+  const CONV_ID = '507f1f77bcf86cd799439060';
+  const MSG_ID = '507f1f77bcf86cd799439061';
+  const TARGET = '507f1f77bcf86cd799439062';
+
+  let controller: AdminModerationController;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AdminModerationController,
+        { provide: getModelToken(ConversationDoc.name), useValue: convModel },
+        { provide: getModelToken(User.name), useValue: userModel },
+        { provide: getModelToken(Message.name), useValue: msgModel },
+        { provide: getModelToken(Story.name), useValue: storyModel },
+        { provide: getModelToken(Report.name), useValue: reportModel },
+        { provide: getModelToken(MusicTrack.name), useValue: musicTrackModel },
+        {
+          provide: getModelToken(AudienceList.name),
+          useValue: audienceListModel,
+        },
+        { provide: AdminAuditService, useValue: audit },
+        { provide: AdminReportService, useValue: {} },
+        {
+          provide: ModerationMediaService,
+          useValue: { presignMany: jest.fn().mockResolvedValue(new Map()) },
+        },
+        { provide: ConversationsService, useValue: conversations },
+        { provide: ChatGateway, useValue: chatGateway },
+      ],
+    }).compile();
+    controller = moduleRef.get(AdminModerationController);
+  });
+
+  const req = { ip: '127.0.0.1' } as never;
+  const actor = { actorId: 'a1' };
+
+  it('restore: tin đang gỡ → deleted=false, emit sau khi ghi, audit restore_message', async () => {
+    const roomEmit = jest.fn();
+    const to = jest.fn().mockReturnValue({ emit: roomEmit });
+    (chatGateway.io as unknown as { to: jest.Mock }).to = to;
+    msgModel.findById.mockReturnValue(
+      leanQuery({ _id: MSG_ID, conversationId: CONV_ID, deleted: true }),
+    );
+    msgModel.findByIdAndUpdate.mockReturnValue(
+      leanQuery({ _id: MSG_ID, conversationId: CONV_ID, deleted: false }),
+    );
+
+    const res = await controller.restoreMessage(MSG_ID, actor, req);
+
+    expect(msgModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      MSG_ID,
+      { $set: { deleted: false } },
+      { new: true },
+    );
+    expect(to).toHaveBeenCalledWith(`conversation:${CONV_ID}`);
+    expect(roomEmit).toHaveBeenCalledWith(
+      'message_restored',
+      expect.objectContaining({ messageId: MSG_ID, conversationId: CONV_ID }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'restore_message',
+        targetType: 'message',
+        targetId: MSG_ID,
+      }),
+    );
+    expect(res).toMatchObject({ changed: true });
+  });
+
+  it('restore idempotent: tin chưa gỡ → 200, không ghi state, không audit lần hai', async () => {
+    audit.log.mockClear();
+    msgModel.findById.mockReturnValue(
+      leanQuery({ _id: MSG_ID, conversationId: CONV_ID, deleted: false }),
+    );
+
+    const res = await controller.restoreMessage(MSG_ID, actor, req);
+
+    expect(res).toMatchObject({ changed: false });
+    expect(msgModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('restore: id không tồn tại hoặc sai định dạng → 404', async () => {
+    msgModel.findById.mockReturnValue(leanQuery(null));
+    await expect(controller.restoreMessage(MSG_ID, actor, req)).rejects.toThrow(
+      'Message not found',
+    );
+    await expect(
+      controller.restoreMessage('not-an-id', actor, req),
+    ).rejects.toThrow('Message not found');
+  });
+
+  it('note: persist + audit KHÔNG mang nội dung ghi chú', async () => {
+    conversations.setInternalNote.mockResolvedValue({
+      _id: CONV_ID,
+      internalNote: 'đang theo dõi spam',
+    });
+
+    const res = await controller.updateConversationNote(
+      CONV_ID,
+      { note: 'đang theo dõi spam' },
+      actor,
+      req,
+    );
+
+    expect(conversations.setInternalNote).toHaveBeenCalledWith(
+      CONV_ID,
+      'đang theo dõi spam',
+    );
+    expect(res).toMatchObject({ internalNote: 'đang theo dõi spam' });
+    const entry = (audit.log.mock.calls[0] as unknown[])[0] as Record<
+      string,
+      unknown
+    >;
+    expect(entry).toMatchObject({
+      action: 'update_conversation_note',
+      targetType: 'conversation',
+      targetId: CONV_ID,
+    });
+    expect(entry['payload']).toBeUndefined();
+  });
+
+  it('note: chuỗi rỗng vẫn ghi audit (xoá ghi chú)', async () => {
+    conversations.setInternalNote.mockResolvedValue({
+      _id: CONV_ID,
+      internalNote: '',
+    });
+    await controller.updateConversationNote(CONV_ID, { note: '' }, actor, req);
+    expect(conversations.setInternalNote).toHaveBeenCalledWith(CONV_ID, '');
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'update_conversation_note' }),
+    );
+  });
+
+  it('note: quá 500 ký tự bị DTO từ chối', async () => {
+    const bad = await validate(
+      plainToInstance(UpdateConversationNoteDto, { note: 'x'.repeat(501) }),
+    );
+    expect(bad.some((e) => e.property === 'note')).toBe(true);
+    const ok = await validate(
+      plainToInstance(UpdateConversationNoteDto, { note: 'x'.repeat(500) }),
+    );
+    expect(ok).toHaveLength(0);
+  });
+
+  it('vai trò ngoài member|admin bị DTO từ chối', async () => {
+    const bad = await validate(
+      plainToInstance(UpdateMemberRoleDto, { role: 'owner' }),
+    );
+    expect(bad.some((e) => e.property === 'role')).toBe(true);
+    const ok = await validate(
+      plainToInstance(UpdateMemberRoleDto, { role: 'member' }),
+    );
+    expect(ok).toHaveLength(0);
+  });
+
+  it('unpin: gỡ được → audit; pin không tồn tại → 404', async () => {
+    conversations.adminUnpinMessage.mockResolvedValueOnce(true);
+    await controller.unpinConversationMessage(CONV_ID, MSG_ID, actor, req);
+    expect(conversations.adminUnpinMessage).toHaveBeenCalledWith(
+      CONV_ID,
+      MSG_ID,
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'unpin_message',
+        targetType: 'conversation',
+        targetId: CONV_ID,
+      }),
+    );
+
+    conversations.adminUnpinMessage.mockResolvedValueOnce(false);
+    await expect(
+      controller.unpinConversationMessage(CONV_ID, MSG_ID, actor, req),
+    ).rejects.toThrow('Pin not found');
+  });
+
+  it('member role: uỷ quyền service + audit change_member_role', async () => {
+    conversations.adminSetMemberRole.mockResolvedValue({ _id: CONV_ID });
+    await controller.setConversationMemberRole(
+      CONV_ID,
+      TARGET,
+      { role: MemberRole.ADMIN },
+      actor,
+      req,
+    );
+    expect(conversations.adminSetMemberRole).toHaveBeenCalledWith(
+      CONV_ID,
+      TARGET,
+      MemberRole.ADMIN,
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'change_member_role' }),
+    );
+  });
+
+  it('kick: uỷ quyền service + audit remove_member', async () => {
+    conversations.adminRemoveMember.mockResolvedValue({ _id: CONV_ID });
+    await controller.removeConversationMember(CONV_ID, TARGET, actor, req);
+    expect(conversations.adminRemoveMember).toHaveBeenCalledWith(
+      CONV_ID,
+      TARGET,
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'remove_member' }),
+    );
+  });
+
+  it('detail: senderId đi vào filter tin nhắn; vắng mặt thì giữ nguyên', async () => {
+    convModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: CONV_ID,
+        type: 'group',
+        name: 'Nhóm',
+        members: [{ userId: SENDER, role: 'admin' }],
+      }),
+    });
+    const chain = leanQuery([]);
+    msgModel.find.mockReturnValue(chain);
+
+    await controller.getConversation(CONV_ID, { senderId: SENDER });
+    expect(msgModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, senderId: SENDER }),
+    );
+
+    msgModel.find.mockClear();
+    await controller.getConversation(CONV_ID, {});
+    const filter = (msgModel.find.mock.calls[0] as unknown[])[0] as Record<
+      string,
+      unknown
+    >;
+    expect(filter).not.toHaveProperty('senderId');
   });
 });
 

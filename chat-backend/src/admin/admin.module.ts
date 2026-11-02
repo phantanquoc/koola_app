@@ -47,6 +47,7 @@ import {
   ConversationDoc,
   ConversationDocSchema,
 } from '../conversations/conversation.schema';
+import { ConversationsModule } from '../conversations/conversations.module';
 import { Message, MessageSchema } from '../messages/message.schema';
 import { Story, StorySchema } from '../moments/schemas/story.schema';
 import {
@@ -83,6 +84,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: CommerceOrder.name, schema: CommerceOrderSchema },
     ]),
     MediaModule,
+    // Dùng lại luật membership/ghim của ConversationsService cho các thao tác
+    // admin (unpin, kick, đổi vai trò) thay vì chép logic vào controller.
+    ConversationsModule,
     // Dependency-free (User + CommerceProduct models only) — NOT CommerceModule,
     // which imports AdminModule and would form a cycle (commerce-catalog D1).
     CommerceSellerVisibilityModule,
