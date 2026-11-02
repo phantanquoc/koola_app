@@ -496,6 +496,7 @@ describe('ConversationDetail (4.2–4.5)', () => {
     mockedPost.mockResolvedValue({ data: {} });
     const { client } = renderPage(`/conversations/${CONV_ID}`);
     await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
 
     await waitFor(() => {
       expect(mockedGet).toHaveBeenCalledWith('/admin/reports', {
@@ -503,10 +504,19 @@ describe('ConversationDetail (4.2–4.5)', () => {
       });
     });
 
-    const invalidate = vi.spyOn(client, 'invalidateQueries');
     const reportsSection = screen.getByRole('region', { name: 'Báo cáo chờ xử lý' });
     fireEvent.click(within(reportsSection).getByRole('button', { name: /Giải quyết/ }));
 
+    // Resolve/dismiss phải qua ConfirmDialog (task 4.5) — chưa bấm xác nhận
+    // thì KHÔNG được gọi API.
+    expect(
+      await screen.findByRole('heading', { name: 'Đánh dấu báo cáo đã xử lý?' }),
+    ).toBeTruthy();
+    // reason hiện ở card VÀ trong mô tả dialog confirm
+    expect(screen.getAllByText(/spam/).length).toBeGreaterThanOrEqual(2);
+    expect(mockedPost).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu xử lý' }));
     await waitFor(() => {
       expect(mockedPost).toHaveBeenCalledWith(`/admin/reports/r1/resolve`);
     });

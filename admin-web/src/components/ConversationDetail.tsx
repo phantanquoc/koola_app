@@ -409,11 +409,19 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
   }
 
   const [reportBusy, setReportBusy] = useState<string | null>(null);
+  // Resolve/dismiss luôn qua confirm (task 4.5) — cùng copy với ReportDetail,
+  // vì hai nơi xử lý đúng một hàng đợi báo cáo.
+  const [reportConfirm, setReportConfirm] = useState<{
+    id: string;
+    action: 'resolve' | 'dismiss';
+    reason: string;
+  } | null>(null);
 
   async function actOnReport(reportId: string, action: 'resolve' | 'dismiss') {
     setReportBusy(reportId);
     try {
       await apiClient.post(`/admin/reports/${reportId}/${action}`);
+      setReportConfirm(null);
       addToast('success', action === 'resolve' ? 'Đã giải quyết báo cáo.' : 'Đã bỏ qua báo cáo.');
       // List mang pendingReportCount/oldestPendingReportAt → phải lấy lại số mới.
       await Promise.all([
@@ -686,7 +694,7 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                 <div className="table-actions conv-report-actions">
                   <button
                     className="btn btn-primary btn-sm"
-                    onClick={() => void actOnReport(r._id, 'resolve')}
+                    onClick={() => setReportConfirm({ id: r._id, action: 'resolve', reason: r.reason })}
                     type="button"
                     disabled={reportBusy === r._id}
                   >
@@ -694,7 +702,7 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => void actOnReport(r._id, 'dismiss')}
+                    onClick={() => setReportConfirm({ id: r._id, action: 'dismiss', reason: r.reason })}
                     type="button"
                     disabled={reportBusy === r._id}
                     aria-label="Bỏ qua báo cáo"
@@ -713,6 +721,27 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
         <span className="detail-bottombar-spacer" />
         <span className="detail-bottombar-note">Mở tin nhắn để gỡ nội dung vi phạm</span>
       </div>
+
+      <ConfirmDialog
+        open={reportConfirm !== null}
+        onClose={() => {
+          if (!reportBusy) setReportConfirm(null);
+        }}
+        title={reportConfirm?.action === 'resolve' ? 'Đánh dấu báo cáo đã xử lý?' : 'Bỏ qua báo cáo này?'}
+        description={
+          reportConfirm
+            ? reportConfirm.action === 'resolve'
+              ? `“${reportConfirm.reason}” — đóng báo cáo khỏi hàng đợi. Không gỡ nội dung; muốn gỡ thì dùng nút gỡ tin nhắn trên dòng tin.`
+              : `“${reportConfirm.reason}” — báo cáo bị bỏ qua và rời khỏi hàng đợi. Người dùng không nhận được phản hồi nào.`
+            : undefined
+        }
+        confirmLabel={reportConfirm?.action === 'resolve' ? 'Đánh dấu xử lý' : 'Bỏ qua'}
+        variant={reportConfirm?.action === 'resolve' ? 'primary' : 'danger'}
+        busy={reportBusy !== null}
+        onConfirm={() => {
+          if (reportConfirm) void actOnReport(reportConfirm.id, reportConfirm.action);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmMsg !== null}
