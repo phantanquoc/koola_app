@@ -670,13 +670,17 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
 - Chưa có guard chống ghi đè: hai moderator sửa cùng hồ sơ, người sau thắng im lặng
   (không `updatedAt`/version). Khi làm: PATCH gửi `updatedAt` đã đọc, server trả 409
   nếu lệch, trang chi tiết hiện "Hồ sơ vừa được người khác sửa".
-- **1 trang còn dùng drawer** (`variant="drawer"`) trái quyết định §3B — chuyển sang
-  route/component chi tiết: `ConversationsPage` (hội thoại). `UsersPage` đã chuyển sang
-  `/users/:id` + `UserDetail`.
-- **Trang Hội thoại & Tin nhắn chưa đọc param `focus`**: `ReportTargetLink` cũ trỏ tới
-  `/conversations?focus=<id>` và `/messages?focus=<id>` nhưng hai trang bỏ qua param →
-  moderator bấm vào thấy trang trống. Đã bỏ link chết (`reportTargetHref` trả null);
-  khi thêm `focus` thì bật lại một dòng ở đó.
+- *(đã xong — admin-conversations-redesign)* **Không còn trang nào dùng
+  `variant="drawer"`**: `ConversationsPage` chuyển sang route `/conversations/:id`
+  (`ConversationsDetailPage` + `ConversationDetail`), `UsersPage` đã chuyển sang
+  `/users/:id` + `UserDetail`. CSS `.drawer*` đã xoá ở `index.css`; kit giữ
+  `Dialog variant="drawer"` chỉ như lối thoát, không trang nào dùng.
+- **`focus` đang hoạt động và bắt buộc giữ**: `report-labels.ts#reportTargetHref`
+  trả `/conversations?focus=<id>`, `/messages?focus=<id>` (commit `0fd222a` bật lại
+  2026-10-28 — không phải "link chết"). Trang Hội thoại redirect `replace` sang
+  `/conversations/<id>` (`state.from` = list URL bỏ `focus`); Tin nhắn và Khoảnh
+  khắc tự tải object qua `?focus=`. Bỏ cơ chế này là tạo link chết — vi phạm §0.7,
+  phải sửa `report-labels.ts` cùng lúc.
 - **Báo cáo story không xem được ảnh**: report targetType story chỉ resolve được caption,
   ảnh cần presigned URL + lightbox (`LicensePreview` đã có, chỉ thiếu presign ở server).
 - **Seed data `_id` dạng chuỗi** (`scripts/seed-admin-reports.ts` tạo `seed-report-1`):

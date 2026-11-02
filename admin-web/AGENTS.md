@@ -59,7 +59,7 @@ ChatGateway đã inject trong controller; admin-web chỉ gọi REST + refetch/p
 | `/analytics` | `GET /api/admin/analytics?range=7d\|30d\|90d` (recharts) |
 | `/businesses` | **trang mẫu** — `GET /api/admin/businesses/pending` với tabs `all/pending/verified/rejected/expiring/archived`, search server-side (tên/email/SĐT/MST/ID), lọc category/province/relationship/banned/suspended/sla, sort whitelist, export CSV (cap 500). Actions: duyệt/từ chối đơn + bulk (per-item result), tạm ngưng bán, ban, xoá mềm, khôi phục, nhận hồ sơ (`bulk-assign`), PATCH inline edit |
 | `/users` | `GET /api/admin/users` (search theo displayName/email/phone + `accountType`), detail, `POST .../ban {reason?, durationDays? 1-365}` / `unban` |
-| `/conversations` + detail | list (search tên + member, filter type/hasPendingReport/minReports/hasMedia/activeAfter/minMembers/maxMembers, sort recent/reported/created), detail = conversation + members + recentMessages (limit 1-50, mặc định 20, `before` để load thêm, `hasMore`, `reportedMessageCounts`) |
+| `/conversations` + `/conversations/:id` | list archetype §3A: filter/sort/page/pageSize sống trong URL (`useUrlFilters` + `useAdminList`), 6 tab count lấy từ `GET /admin/conversations/stats`, filter còn lại trong `FilterPopover` + chip, bảng `data-table--compact` có cột Tuổi (SLA) + Media, export CSV cap 500. Map param URL → DTO: `q→search`, `size→minMembers/maxMembers`, `media→hasMedia`, `since→activeAfter`, `from/to→createdFrom/To`, `pageSize→limit`; **`focus` chỉ là đích redirect** (KHÔNG gửi lên API — `forbidNonWhitelisted` → 400). Detail = route riêng: conversation + members + recentMessages (limit 1-50, mặc định 20, `before` để load thêm, `hasMore`, `reportedMessageCounts`), báo cáo fetch theo `targetId`, `?focus=<id>` redirect `replace` sang route |
 | `/messages` | `GET /api/admin/messages/search` (`q` bắt buộc, lọc `conversationId`) + soft-delete có confirm |
 | `/moments` | `GET /api/admin/stories` (lọc authorId) + takedown |
 | `/music` | CRUD `/api/admin/music-tracks` (xóa mềm giữ toàn vẹn story) |
@@ -122,7 +122,9 @@ thiếu là CORS gãy toàn bộ. Vite chỉ đọc env lúc khởi động → 
   (`?status=pending&page=2&q=...`); reload giữ nguyên view; detail route (`/users/:id`,
   `/conversations/:id`, `/audit-logs/:id`) mở trực tiếp được, copy link chia sẻ cho moderator khác được.
 - [ ] **Chi tiết là route/component, không drawer:** hàng → `navigate('/x/'+id, { state: { from } })`,
-  component `<XDetail>` render `detail-card`. `variant="drawer"` chỉ còn ở 3 trang legacy (DESIGN §9).
+  component `<XDetail>` render `detail-card`. `variant="drawer"` không còn trang nào dùng
+  (tính cả `ConversationsPage` — đã chuyển route trong admin-conversations-redesign);
+  các trang legacy có overlay kiểu drawer thì là modal 720px (`dialog--wide`), không phải `variant="drawer"` (DESIGN §9).
 - [ ] **Destructive-action guard:** ban / takedown / soft-delete / bulk-reject / broadcast đều qua
   Dialog confirm nêu rõ hậu quả + ô lý do bắt buộc khi backend yêu cầu (`reason`,
   `rejectionReason`); broadcast confirm 2 bước.

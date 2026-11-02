@@ -2115,16 +2115,10 @@ th.sortable:hover {
   padding: var(--space-5);
 }
 
-.drawer {
-  width: min(480px, 100%);
-  height: 100%;
-  overflow-y: auto;
-  border-left: 1px solid var(--koola-line);
-  background: var(--koola-surface);
-  box-shadow: var(--shadow-lift);
-}
+/* .drawer/.drawer-header/.drawer-body đã xoá cùng task 3.10 (admin-conversations-
+   redesign): không trang nào còn dùng Dialog variant="drawer" — kit giữ variant
+   như lối thoát, nhưng CSS chỉ sống khi thật sự có người dùng. */
 
-.drawer-header,
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -2134,7 +2128,6 @@ th.sortable:hover {
   padding: var(--space-5);
 }
 
-.drawer-body,
 .dialog-body {
   padding: var(--space-5);
 }
