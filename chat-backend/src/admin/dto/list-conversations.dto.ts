@@ -43,12 +43,13 @@ export class ListConversationsDto extends PaginationDto {
   maxMembers?: number;
 
   @ApiPropertyOptional({
-    description: 'Sort: recent | created | reported | members',
-    enum: ['recent', 'created', 'reported', 'members'],
+    description:
+      'Sort: recent | created | reported | members | reportAge (báo cáo chờ cũ nhất trước)',
+    enum: ['recent', 'created', 'reported', 'members', 'reportAge'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['recent', 'created', 'reported', 'members'])
+  @IsIn(['recent', 'created', 'reported', 'members', 'reportAge'])
   sort?: string;
 
   @ApiPropertyOptional({

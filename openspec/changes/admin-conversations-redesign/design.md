@@ -109,6 +109,26 @@ useAdminList(['conversations', ...everyValue], '/admin/conversations', params)
 
 `.col-hide-mobile` (860px) for "Tạo lúc" and media, `.col-hide-xs` (1099px) for report age, each with a `.show-under-*` duplicate in the first cell so no datum disappears (DESIGN §6). Table `min-width` steps down 760 → 520 → 0.
 
+### D10 — Mở rộng sau audit (2026-11-02): dữ liệu đã fetch phải được dùng
+
+Audit sau khi verify widths chỉ ra data backend đã trả mà UI bỏ qua, và 2 capability
+DTO có sẵn chưa có lối vào UI. Quyết định:
+
+- **`sort=reportAge`** vào allow-list (cùng họ `reported`): chỉ liệt kê hàng có báo cáo
+  chờ, sắp `oldest` asc, tiebreak `_id` để phân trang ổn định — cùng nhánh code với
+  `sort=reported`, không thêm pipeline mới.
+- **`pinnedMessages` resolve lúc đọc** ở detail (như `targetName` của báo cáo): messageId
+  trần là dữ liệu thô cấm hiển thị (§B2); một query messages + members-map là đủ.
+- **Lịch sử báo cáo = query thứ hai** (`targetId`, KHÔNG truyền `status`) thay vì nới
+  lỏng query pending: tách hai hàng đợi, không bao giờ đẩy báo cáo cũ vào queue chờ
+  xử lý.
+- **Khoảng ngày hoạt động `afrom/ato`** (chuỗi ngày, cùng quy ước `from/to` tạo lúc):
+  DTO `activeFrom/activeTo` có từ task 1.2 nhưng UI chỉ có preset `since` — thêm cặp
+  ô日期 thứ hai trong FilterPopover thay vì biến `since` thành range.
+- **Context render trong bong bóng tin nhắn** (reply quote + reaction tally) đặt ở
+  wrapper `.conv-bubble` của component cha — không đụng signature `MessageBody`,
+  không sửa logic find/grouping đã port.
+
 ## Risks / Trade-offs
 
 - **Filter builder is `async` and does report aggregation per call** → stats calls it 6×. Mitigation: build the shared `_id` intersection **once** in the stats handler and pass the prepared filter into each count, so the expensive `distinct`/aggregate runs a single time per stats request.

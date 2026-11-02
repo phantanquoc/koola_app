@@ -4,7 +4,7 @@
 
 ### Requirement: Admin can list and inspect conversations
 
-The system SHALL expose admin-only `GET /admin/conversations` (paginated, optional `search` on name, optional `type` filter, optional `hasPendingReport` filter, optional `minMembers`/`maxMembers` filters, ordered by `lastMessageAt` desc) and `GET /admin/conversations/:id` (detail with members, createdAt, lastMessageAt, recent messages preview) using safe projections. List rows SHALL carry `memberCount` and SHALL NOT carry the raw `members` array; the detail response SHALL keep returning full member summaries.
+The system SHALL expose admin-only `GET /admin/conversations` (paginated, optional `search` on name, optional `type` filter, optional `hasPendingReport` filter, optional `minMembers`/`maxMembers` filters, ordered by `lastMessageAt` desc) and `GET /admin/conversations/:id` (detail with members, createdAt, lastMessageAt, recent messages preview, and pinned messages resolved to content + pinner name rather than bare ids) using safe projections. List rows SHALL carry `memberCount` and SHALL NOT carry the raw `members` array; the detail response SHALL keep returning full member summaries.
 
 #### Scenario: Paginated conversation list
 - **WHEN** an admin calls `GET /admin/conversations?page=1&limit=20`
@@ -34,7 +34,7 @@ The system SHALL expose admin-only `GET /admin/conversations` (paginated, option
 
 ### Requirement: Conversation list filtering, sorting and date range
 
-The conversation list SHALL accept `hasMedia`, `minReports`, `activeFrom`/`activeTo`, and `createdFrom`/`createdTo` filters, and SHALL accept only allow-listed `sort` values `recent`, `created`, `reported`, and `members`. Unknown `sort` values SHALL be rejected with 400. Stats and export SHALL apply the same filter set as the list.
+The conversation list SHALL accept `hasMedia`, `minReports`, `activeFrom`/`activeTo`, and `createdFrom`/`createdTo` filters, and SHALL accept only allow-listed `sort` values `recent`, `created`, `reported`, `members`, and `reportAge` (oldest pending report first, for SLA triage). Unknown `sort` values SHALL be rejected with 400. Stats and export SHALL apply the same filter set as the list.
 
 #### Scenario: Media filter
 - **WHEN** an admin calls `GET /admin/conversations?hasMedia=true`
@@ -47,6 +47,10 @@ The conversation list SHALL accept `hasMedia`, `minReports`, `activeFrom`/`activ
 #### Scenario: Allow-listed sort applied
 - **WHEN** an admin calls `GET /admin/conversations?sort=members`
 - **THEN** results SHALL be ordered by member count descending and pagination SHALL remain stable across pages
+
+#### Scenario: Sort by oldest pending report (SLA)
+- **WHEN** an admin calls `GET /admin/conversations?sort=reportAge`
+- **THEN** conversations SHALL be ordered by their oldest pending report ascending (oldest waiting first) and pagination SHALL remain stable across pages
 
 #### Scenario: Unknown sort rejected
 - **WHEN** an admin calls `GET /admin/conversations?sort=password`

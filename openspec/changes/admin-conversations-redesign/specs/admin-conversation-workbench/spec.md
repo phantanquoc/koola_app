@@ -18,6 +18,11 @@ The system SHALL let an admin browse all conversations with text search on name,
 - **WHEN** an admin calls `GET /admin/conversations?minMembers=10&maxMembers=50`
 - **THEN** only conversations whose member count falls in the range SHALL be returned
 
+#### Scenario: Filter by last-activity range
+- **WHEN** an admin calls `GET /admin/conversations?activeFrom=2026-10-01&activeTo=2026-10-31`
+- **THEN** only conversations whose `lastMessageAt` falls in that inclusive range SHALL be returned
+- **AND** the range SHALL be settable from the list UI (not only via hand-edited URLs)
+
 #### Scenario: Sort by last message
 - **WHEN** an admin calls `GET /admin/conversations`
 - **THEN** results SHALL be ordered by `lastMessageAt` desc with nulls last
@@ -52,7 +57,7 @@ The system SHALL let an admin browse all conversations with text search on name,
 
 ### Requirement: Conversation detail route for moderation
 
-The admin panel SHALL provide a shareable route `/conversations/:id` containing a header with type, member, and pending-report badges, a description list with technical details behind a disclosure, member list with role badges linking to member profiles, recent messages read-only with soft-deleted messages dimmed and badged, per-message pending-report badges, message soft-delete behind confirmation, related pending reports loaded by `targetId` with inline resolve/dismiss, and no control that has no effect.
+The admin panel SHALL provide a shareable route `/conversations/:id` containing a header with type, member, and pending-report badges (using the conversation avatar when it has a valid http(s) URL), a description list with technical details (including the creator id) behind a disclosure, member list with role badges, joined-at date, and account-type hint linking to member profiles, a pinned-messages section resolved to content and pinner name when the conversation has pins, recent messages read-only with soft-deleted messages dimmed and badged, reply quotes and reaction tallies rendered as moderation context, per-message pending-report badges, message soft-delete behind confirmation, related pending reports loaded by `targetId` with inline resolve/dismiss **behind a confirmation dialog**, a report history section (already-resolved/dismissed reports of the same `targetId`), and no control that has no effect.
 
 #### Scenario: Route shows members and messages
 - **WHEN** an admin opens `/conversations/:id`
@@ -70,7 +75,19 @@ The admin panel SHALL provide a shareable route `/conversations/:id` containing 
 #### Scenario: Reports are scoped to this conversation
 - **WHEN** an admin opens a conversation with pending reports
 - **THEN** the page SHALL fetch reports with `targetType=conversation` and `targetId=<id>` rather than a page of all conversation reports
-- **AND** resolving or dismissing SHALL update in place with a toast and no navigation
+- **AND** resolving or dismissing SHALL require a confirmation dialog before the POST, then update in place with a toast and no navigation
+
+#### Scenario: Report history of this conversation is visible
+- **WHEN** an admin opens a conversation that previously had resolved or dismissed reports
+- **THEN** a history section SHALL list those reports (status label, reason, resolver, time), scoped by the same `targetId`, without mixing them into the pending queue
+
+#### Scenario: Pinned messages resolve to content
+- **WHEN** the detail response contains `pinnedMessages`
+- **THEN** the page SHALL show each pin's content (or a deleted/unavailable note), pinner display name, and pinned time — never a bare messageId
+
+#### Scenario: Reply and reaction context renders
+- **WHEN** a shown message has `replyToPreview` or `reactions`
+- **THEN** the page SHALL render the quoted reply (sender + snippet) and an emoji tally with counts as part of the message bubble
 
 #### Scenario: Reported message is badged
 - **WHEN** the detail response reports pending message reports for a shown message

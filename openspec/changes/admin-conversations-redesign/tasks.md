@@ -62,6 +62,17 @@
 
 - [x] 5.1 Wire `ExportButton` to a confirm dialog stating scope, the 500-row cap, and that conversation names are user content, plus `ExportDateRange` for the export-only date range; verify with a vitest asserting the dialog copy and that export params carry the current filters and range
 
+## 7. Mở rộng sau audit (2026-11-02 — làm toàn bộ nhóm (a)+(b))
+
+- [x] 7.1 Backend: sort allow-list + `reportAge` (báo cáo chờ cũ nhất trước, tiebreak _id) + cột Tuổi sort được — jest 1.7
+- [x] 7.2 Backend: detail resolve `pinnedMessages` → nội dung + tên ghim/người gửi (không trả messageId trần) — jest 1.8
+- [x] 7.3 Frontend detail: render `reactions` tally + `replyToPreview` quote trong bong bóng tin nhắn (ngữ cảnh báo cáo)
+- [x] 7.4 Frontend detail: section "Đã ghim", avatar hội thoại (chỉ http(s), fallback initials), `createdBy` vào "Chi tiết kỹ thuật", member chip hiện joinedAt + accountType
+- [x] 7.5 Frontend detail: section "Lịch sử báo cáo" (resolved/dismissed, scoped `targetId`, tách khỏi hàng đợi pending)
+- [x] 7.6 Frontend list: khoảng ngày hoạt động `afrom/ato` trong FilterPopover + chip + params (DTO `activeFrom/activeTo` đã có từ 1.2)
+- [x] 7.7 Spec delta cập nhật (moderation: reportAge + pinned preview; workbench: activity-range scenario, confirm resolve, history/pinned/reply-reaction scenarios) + design D10
+- [x] 7.8 Gates: `npx jest src/admin` + `npx vitest run` + `tsc`/`tsc -b` + eslint delta ≤0 + browser spot-check
+
 ## 6. Integration verification
 
 - [x] 6.1 Run the full gates: `cd admin-web && npx vitest run && npx tsc -b && npm run lint` (tsc -b, **không** `--noEmit` — tsconfig solution-style nên `--noEmit` check 0 file; pass = không có lỗi mới trong file đã sửa của change, 12 tsc + 7 lint pre-existing ngoài conversations được ghi nhận), then `cd chat-backend && npx jest src/admin && ./node_modules/.bin/tsc --noEmit`

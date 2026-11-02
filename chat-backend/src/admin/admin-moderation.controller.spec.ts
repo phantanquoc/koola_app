@@ -375,40 +375,129 @@ describe('AdminModerationController — conversation list/stats/export', () => {
   it('2.5 resolve/dismiss nhận _id chuỗi (seed data) — fallback collection, không CastError 500', async () => {
     // findById ném CastError với seed-report-N (DESIGN §9) — bản cũ ném thẳng
     // ra ngoài → 500 trong khi list/findOne vẫn hiển thị được báo cáo đó.
-    reportModel.findById.mockRejectedValueOnce(new Error('Cast to ObjectId failed'));
+    reportModel.findById.mockRejectedValueOnce(
+      new Error('Cast to ObjectId failed'),
+    );
     reportModel.collection.findOne.mockResolvedValueOnce({
       _id: 'seed-report-1',
       status: 'pending',
       targetType: 'conversation',
       targetId: '6ad17a57c4379c1016089d18',
     });
-    reportModel.collection.updateOne.mockResolvedValueOnce({ modifiedCount: 1 });
+    reportModel.collection.updateOne.mockResolvedValueOnce({
+      modifiedCount: 1,
+    });
 
-    const res = await controller.resolveReport('seed-report-1', { actorId: 'a1' }, {
-      ip: '127.0.0.1',
-    } as never);
+    const res = await controller.resolveReport(
+      'seed-report-1',
+      { actorId: 'a1' },
+      {
+        ip: '127.0.0.1',
+      } as never,
+    );
 
     expect(res.status).toBe('resolved');
     expect(reportModel.collection.updateOne).toHaveBeenCalledWith(
       { _id: 'seed-report-1' },
-      expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ status: 'resolved' }),
+      }),
     );
     expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'resolve_report', targetId: 'seed-report-1' }),
+      expect.objectContaining({
+        action: 'resolve_report',
+        targetId: 'seed-report-1',
+      }),
     );
 
     // Idempotent: báo cáo đã resolved → trả về nguyên trạng, không audit lần 2.
-    reportModel.findById.mockRejectedValueOnce(new Error('Cast to ObjectId failed'));
+    reportModel.findById.mockRejectedValueOnce(
+      new Error('Cast to ObjectId failed'),
+    );
     reportModel.collection.findOne.mockResolvedValueOnce({
       _id: 'seed-report-1',
       status: 'resolved',
     });
-    const again = await controller.resolveReport('seed-report-1', { actorId: 'a1' }, {
-      ip: '127.0.0.1',
-    } as never);
+    const again = await controller.resolveReport(
+      'seed-report-1',
+      { actorId: 'a1' },
+      {
+        ip: '127.0.0.1',
+      } as never,
+    );
     expect(again.status).toBe('resolved');
     expect(reportModel.collection.updateOne).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledTimes(1);
+  });
+
+  it('1.7 sort=reportAge: báo cáo chờ CŨNHẤT trước (SLA), có trong allow-list', async () => {
+    reportModel.aggregate.mockResolvedValue([
+      { _id: ROW_DIRECT, n: 1, oldest: new Date('2026-10-20T00:00:00Z') },
+      { _id: ROW_GROUP, n: 2, oldest: new Date('2026-10-01T00:00:00Z') },
+    ]);
+    convModel.distinct.mockResolvedValue([ROW_GROUP, ROW_DIRECT]);
+    convModel.find.mockReturnValue(
+      leanQuery([
+        { ...groupRow(), _id: ROW_GROUP },
+        { ...directRow(), _id: ROW_DIRECT },
+      ]),
+    );
+
+    const res = await controller.listConversations({
+      page: 1,
+      limit: 20,
+      sort: 'reportAge',
+    });
+
+    // oldest (1/10) xếp trước newer (20/10) dù n nhỏ hơn
+    expect(res.data.map((r: { _id: unknown }) => String(r._id))).toEqual([
+      ROW_GROUP,
+      ROW_DIRECT,
+    ]);
+
+    const ok = await validate(
+      plainToInstance(ListConversationsDto, { sort: 'reportAge' }),
+    );
+    expect(ok).toHaveLength(0);
+  });
+
+  it('1.8 detail resolve pinnedMessages: nội dung + tên ghim, không trả messageId trần', async () => {
+    const PIN = '507f1f77bcf86cd799439050';
+    convModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        ...groupRow(),
+        pinnedMessages: [
+          {
+            messageId: PIN,
+            pinnedBy: SENDER,
+            pinnedAt: new Date('2026-10-20T01:00:00Z'),
+          },
+        ],
+      }),
+    });
+    msgModel.find.mockReturnValue(
+      leanQuery([
+        {
+          _id: PIN,
+          senderId: AUTHOR,
+          content: 'GHIM QUAN TRỌNG',
+          type: 'text',
+          createdAt: new Date('2026-10-19T00:00:00Z'),
+          deleted: false,
+        },
+      ]),
+    );
+
+    const detail = await controller.getConversation(ROW_GROUP, {});
+
+    expect(detail.pinnedMessages).toHaveLength(1);
+    expect(detail.pinnedMessages[0]).toMatchObject({
+      messageId: PIN,
+      pinnedByName: 'Minh',
+      senderName: 'Lan',
+      content: 'GHIM QUAN TRỌNG',
+      found: true,
+    });
   });
 
   it('2.1 stats: all bằng total của list dưới cùng filter, sáu count', async () => {

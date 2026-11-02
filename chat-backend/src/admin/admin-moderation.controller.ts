@@ -137,12 +137,26 @@ export class AdminModerationController {
     const skip = (page - 1) * limit;
     const ctx = await this.conversationFilterContext(dto);
     const filter = await this.buildConversationFilter(dto, ctx);
-    // sort=reported: order by pending-report count desc via single aggregation,
-    // paginate the ordered ids so pages stay stable.
-    if (dto.sort === 'reported') {
-      const grouped = [...ctx.reportCounts.entries()]
-        .map(([id, r]) => ({ _id: id, n: r.n }))
-        .sort((a, b) => b.n - a.n);
+    // sort=reported: số báo cáo desc. sort=reportAge: báo cáo chờ CŨNHẤT trước
+    // (SLA triage) — cả hai chỉ liệt kê hàng có báo cáo chờ (grouped = pending set),
+    // paginate theo id để trang không nhảy. Tiebreak _id cho ổn định phân trang
+    // khi bằng nhau (Map order từ aggregate không đảm bảo giữa các lần gọi).
+    if (dto.sort === 'reported' || dto.sort === 'reportAge') {
+      const grouped = [...ctx.reportCounts.entries()].map(([id, r]) => ({
+        _id: id,
+        n: r.n,
+        oldest: r.oldest,
+      }));
+      grouped.sort((a, b) => {
+        const primary =
+          dto.sort === 'reported'
+            ? b.n - a.n
+            : (a.oldest?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+              (b.oldest?.getTime() ?? Number.MAX_SAFE_INTEGER);
+        return primary !== 0
+          ? primary
+          : String(a._id).localeCompare(String(b._id));
+      });
       const matchingIds: unknown[] = await this.convModel.distinct(
         '_id',
         filter as any,
@@ -330,7 +344,8 @@ export class AdminModerationController {
     const needReports =
       dto.hasPendingReport === 'true' ||
       dto.minReports != null ||
-      dto.sort === 'reported';
+      dto.sort === 'reported' ||
+      dto.sort === 'reportAge';
     const [reportCounts, mediaIds] = await Promise.all([
       needReports
         ? this.pendingReportCounts()
@@ -584,6 +599,7 @@ export class AdminModerationController {
           { $group: { _id: '$targetId', n: { $sum: 1 } } },
         ])
       : [];
+    const pinnedMessages = await this.withPinnedPreview(conv, members);
     return {
       conversation: {
         ...(conv as any),
@@ -591,11 +607,105 @@ export class AdminModerationController {
       },
       members,
       recentMessages: signedMessages,
+      pinnedMessages,
       hasMore,
       reportedMessageCounts: Object.fromEntries(
         msgCounts.map((r: any) => [String(r._id), r.n]),
       ),
     };
+  }
+
+  /**
+   * Ghim: messageId trần vô nghĩa với moderator — resolve nội dung + tên người
+   * ghim/người gửi (members là nguồn chính, thiếu thì lookup một lần).
+   */
+  private async withPinnedPreview(
+    conv: {
+      pinnedMessages?: Array<{
+        messageId: string;
+        pinnedBy: string;
+        pinnedAt: Date;
+      }>;
+    },
+    members: Array<{ userId: unknown; displayName?: string | null }>,
+  ) {
+    type PinnedMsg = {
+      _id: unknown;
+      content?: string;
+      type?: string;
+      senderId?: unknown;
+      deleted?: boolean;
+      mediaUrlSigned?: string;
+    };
+    const pinnedRaw =
+      conv.pinnedMessages ??
+      ([] as Array<{ messageId: string; pinnedBy: string; pinnedAt: Date }>);
+    if (pinnedRaw.length === 0) return [];
+    const pinnedIds = pinnedRaw
+      .map((p) => String(p.messageId))
+      .filter((mid) => Types.ObjectId.isValid(mid));
+    const pinnedDocs: PinnedMsg[] =
+      pinnedIds.length === 0
+        ? []
+        : ((await this.msgModel
+            .find({ _id: { $in: pinnedIds } })
+            .select('content type senderId createdAt deleted mediaUrl')
+            .lean()) as PinnedMsg[]);
+    const signedPinned = (await this.withSignedMedia(
+      pinnedDocs as unknown[],
+    )) as PinnedMsg[];
+    const msgById = new Map<string, PinnedMsg>(
+      signedPinned.map((m) => [String(m._id), m]),
+    );
+    const nameById = new Map<string, string | null>(
+      members.map((m) => [String(m.userId), m.displayName ?? null]),
+    );
+    const needIds = new Set<string>();
+    const consider = (uid: unknown) => {
+      const s =
+        uid instanceof Types.ObjectId
+          ? uid.toString()
+          : typeof uid === 'string'
+            ? uid
+            : '';
+      if (s && !nameById.has(s)) needIds.add(s);
+    };
+    for (const p of pinnedRaw) {
+      consider(p.pinnedBy);
+      const m = msgById.get(String(p.messageId));
+      if (m) consider(m.senderId);
+    }
+    const lookupIds = [...needIds].filter((x) => Types.ObjectId.isValid(x));
+    if (lookupIds.length > 0) {
+      const users: Array<{ _id: unknown; displayName: string | null }> =
+        await this.userModel
+          .find({ _id: { $in: lookupIds } })
+          .select('displayName')
+          .lean();
+      for (const u of users) nameById.set(String(u._id), u.displayName);
+    }
+    return pinnedRaw.map((p) => {
+      const m = msgById.get(String(p.messageId));
+      return {
+        messageId: String(p.messageId),
+        pinnedBy: String(p.pinnedBy),
+        pinnedByName: nameById.get(String(p.pinnedBy)) ?? null,
+        pinnedAt: p.pinnedAt,
+        // Message bị xoá khỏi DB (hội thoại bị dọn) → vẫn hiện ai ghim, khi nào.
+        found: Boolean(m),
+        ...(m
+          ? {
+              content: m.content ?? '',
+              type: m.type,
+              deleted: Boolean(m.deleted),
+              senderName: nameById.get(String(m.senderId)) ?? null,
+              ...(m.mediaUrlSigned
+                ? { mediaUrlSigned: m.mediaUrlSigned }
+                : {}),
+            }
+          : {}),
+      };
+    });
   }
 
   @Get('messages/search')
@@ -863,7 +973,7 @@ export class AdminModerationController {
     return this.reportService.findOne(id);
   }
 
-/**
+  /**
    * pending → resolved/dismissed. Fallback cho `_id` dạng chuỗi (seed data
    * `seed-report-N`, DESIGN §9): `findById` ném CastError → trước đây resolve/
    * dismiss trả 500 trong khi `findOne` có fallback. `changed=false` nghĩa là
