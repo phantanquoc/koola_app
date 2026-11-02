@@ -95,3 +95,18 @@ The system SHALL expose admin-only `GET /admin/conversations/export` applying th
 #### Scenario: Non-admin blocked
 - **WHEN** a non-admin calls `GET /admin/conversations/export`
 - **THEN** the system SHALL return 403
+### Requirement: Conversation transcript export
+
+The system SHALL expose admin-only `GET /admin/conversations/:id/export` returning `{ data, total, truncated }` for that conversation's messages, newest first, capped at 500 rows, each row carrying creation time, sender id + display name, type, content, deleted flag, media flag, reply target, and the message's pending-report count. The response SHALL NOT contain presigned URLs (they expire; CSV uses a `hasMedia` flag instead).
+
+#### Scenario: Transcript capped at 500 newest messages
+- **WHEN** an admin exports a conversation with 1200 messages
+- **THEN** the system SHALL return at most 500 rows ordered newest-first, `total` of 1200, and `truncated: true`
+
+#### Scenario: Sender names resolved for departed members
+- **WHEN** a message sender is no longer a conversation member
+- **THEN** the row SHALL still carry the sender's display name when the user exists, otherwise an empty name (never a bare id in the name column; the id has its own column)
+
+#### Scenario: Non-admin blocked
+- **WHEN** a non-admin calls `GET /admin/conversations/:id/export`
+- **THEN** the system SHALL return 403

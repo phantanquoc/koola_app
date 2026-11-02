@@ -125,6 +125,26 @@ const resolvedReport = {
 
 const reportsResponse = { data: { data: [pendingReport] } };
 
+const transcriptResponse = {
+  data: {
+    data: [
+      {
+        createdAt: '2026-10-20T00:00:00.000Z',
+        senderId: 'u1',
+        senderName: 'Minh',
+        type: 'text',
+        content: 'xin chào',
+        deleted: false,
+        hasMedia: false,
+        replyTo: '',
+        pendingReportCount: 0,
+      },
+    ],
+    total: 1,
+    truncated: false,
+  },
+};
+
 function stubApi() {
   mockedGet.mockImplementation(
     (url: string, config?: { params?: Record<string, unknown> }) => {
@@ -135,6 +155,8 @@ function stubApi() {
       }
       if (url === '/admin/conversations/stats')
         return Promise.resolve({ data: statsResponse });
+      if (url === `/admin/conversations/${CONV_ID}/export`)
+        return Promise.resolve(transcriptResponse);
       if (url === `/admin/conversations/${CONV_ID}`)
         return Promise.resolve(detailResponse);
       if (url === '/admin/conversations/export')
@@ -745,5 +767,35 @@ describe('Mở rộng sau audit (task 7) — detail context', () => {
     // Hàng đợi pending không chứa báo cáo đã xử lý
     const pendingRegion = screen.getByRole('region', { name: 'Báo cáo chờ xử lý' });
     expect(within(pendingRegion).queryByText('spam cũ đã xử lý')).toBeNull();
+  });
+});
+
+describe('Task 8 — export bản ghi từ chi tiết hội thoại', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('8.2 dialog nêu cap 500 + user content; xác nhận mới GET export (không phân trang)', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Xuất CSV/ }));
+    expect(await screen.findByRole('heading', { name: /Xuất bản ghi/ })).toBeTruthy();
+    expect(screen.getByText(/500 tin nhắn gần nhất/)).toBeTruthy();
+    expect(screen.getByText(/dữ liệu người dùng tạo/)).toBeTruthy();
+    // Chưa xác nhận thì chưa gọi export
+    expect(mockedGet).not.toHaveBeenCalledWith(`/admin/conversations/${CONV_ID}/export`);
+
+    const buttons = screen.getAllByRole('button', { name: 'Xuất CSV' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => {
+      expect(mockedGet).toHaveBeenCalledWith(`/admin/conversations/${CONV_ID}/export`);
+    });
+    // Export không bao giờ mang phân trang
+    const call = mockedGet.mock.calls.find(
+      (c) => c[0] === `/admin/conversations/${CONV_ID}/export`,
+    );
+    expect(call?.[1]).toBeUndefined();
   });
 });

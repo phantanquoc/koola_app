@@ -500,6 +500,60 @@ describe('AdminModerationController — conversation list/stats/export', () => {
     });
   });
 
+  it('2.6 export bản ghi một hội thoại: cap 500 mới nhất trước, senderName + báo cáo chờ', async () => {
+    const chain = leanQuery([
+      {
+        _id: '507f1f77bcf86cd799439070',
+        senderId: SENDER,
+        content: 'bản ghi 1',
+        type: 'text',
+        createdAt: new Date('2026-10-20T02:00:00Z'),
+        deleted: false,
+        mediaUrl: '',
+        replyTo: null,
+      },
+      {
+        _id: '507f1f77bcf86cd799439071',
+        senderId: AUTHOR,
+        content: 'bị report',
+        type: 'text',
+        createdAt: new Date('2026-10-20T01:00:00Z'),
+        deleted: true,
+        mediaUrl: 'some/key.png',
+        replyTo: '507f1f77bcf86cd799439070',
+      },
+    ]);
+    convModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(groupRow()),
+    });
+    msgModel.find.mockReturnValue(chain);
+    msgModel.countDocuments.mockResolvedValue(1200);
+    reportModel.aggregate.mockResolvedValue([
+      { _id: '507f1f77bcf86cd799439071', n: 2 },
+    ]);
+
+    const res = await controller.exportConversationMessages(ROW_GROUP);
+
+    expect(chain.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(chain.limit).toHaveBeenCalledWith(500);
+    expect(res.total).toBe(1200);
+    expect(res.truncated).toBe(true);
+    expect(res.data[0]).toMatchObject({
+      senderName: 'Minh',
+      content: 'bản ghi 1',
+      deleted: false,
+      hasMedia: false,
+      pendingReportCount: 0,
+    });
+    expect(res.data[1]).toMatchObject({
+      senderName: 'Lan',
+      deleted: true,
+      hasMedia: true,
+      replyTo: '507f1f77bcf86cd799439070',
+      pendingReportCount: 2,
+    });
+  });
+
   it('2.1 stats: all bằng total của list dưới cùng filter, sáu count', async () => {
     mockList([groupRow()], 7);
     // Thứ tự count: all, pendingReport, group, direct, hasMedia, active24h.

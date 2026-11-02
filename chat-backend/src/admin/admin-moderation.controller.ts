@@ -507,6 +507,85 @@ export class AdminModerationController {
     return { data, total, truncated: total > data.length };
   }
 
+  /**
+   * Export CSV bản ghi một hội thoại — cap 500 tin MỚI NHẤT (mới nhất trước,
+   * cùng hướng với luồng xem ở detail), `{ data, total, truncated }` như list
+   * export. Không presign media: CSV không chứa URL (URL hết hạn 60 phút),
+   * chỉ cờ `hasMedia` — presign 500 key cho file text là lãng phí.
+   */
+  @Get('conversations/:id/export')
+  async exportConversationMessages(@Param('id') id: string) {
+    const conv = await this.convModel.findById(id).lean();
+    if (!conv) throw new NotFoundException('Conversation not found');
+    const [raw, total] = await Promise.all([
+      this.msgModel
+        .find({ conversationId: id })
+        .sort({ createdAt: -1 })
+        .limit(CONVERSATION_EXPORT_MAX)
+        .lean(),
+      this.msgModel.countDocuments({ conversationId: id }),
+    ]);
+    const members = await this.memberSummaries(conv);
+    const nameById = new Map<string, string | null>(
+      members.map((m: { userId: unknown; displayName?: string | null }) => [
+        String(m.userId),
+        m.displayName ?? null,
+      ]),
+    );
+    // Sender đã rời hội thoại → lookup thêm một lần (không N+1).
+    const extraIds = [
+      ...new Set(
+        (raw as Array<{ senderId?: unknown }>)
+          .map((m) => String(m.senderId ?? ''))
+          .filter((sid) => Types.ObjectId.isValid(sid) && !nameById.has(sid)),
+      ),
+    ];
+    if (extraIds.length > 0) {
+      const users: Array<{ _id: unknown; displayName: string | null }> =
+        await this.userModel
+          .find({ _id: { $in: extraIds } })
+          .select('displayName')
+          .lean();
+      for (const u of users) nameById.set(String(u._id), u.displayName);
+    }
+    // Báo cáo chờ theo tin — cùng pattern với reportedMessageCounts của detail.
+    const shownIds = (raw as Array<{ _id: unknown }>).map((m) => String(m._id));
+    const msgReportCounts = shownIds.length
+      ? await this.reportModel.aggregate([
+          {
+            $match: {
+              targetType: 'message',
+              status: 'pending',
+              targetId: { $in: shownIds },
+            },
+          },
+          { $group: { _id: '$targetId', n: { $sum: 1 } } },
+        ])
+      : [];
+    const countById = new Map(
+      (msgReportCounts as Array<{ _id: unknown; n: unknown }>).map((r) => [
+        String(r._id),
+        Number(r.n ?? 0),
+      ]),
+    );
+    // createdAt đến từ `timestamps: true` — không khai trên class Message nên
+    // phải bổ sung vào type (không là TS2339); _id có sẵn ở doc nhưng khai rõ
+    // để dùng khi map.
+    type ExportMsg = Message & { _id: unknown; createdAt?: Date | null };
+    const data = (raw as ExportMsg[]).map((m) => ({
+      createdAt: m.createdAt ?? null,
+      senderId: String(m.senderId ?? ''),
+      senderName: nameById.get(String(m.senderId ?? '')) ?? null,
+      type: m.type ?? 'text',
+      content: m.content ?? '',
+      deleted: Boolean(m.deleted),
+      hasMedia: Boolean(m.mediaUrl),
+      replyTo: m.replyTo ?? '',
+      pendingReportCount: countById.get(String(m._id)) ?? 0,
+    }));
+    return { data, total, truncated: total > data.length };
+  }
+
   // ponytail: batch member-displayName lookup shared by both list branches; N+1 if called per-row
   private async withDisplayNames(data: any[]) {
     // Batch-populate member displayNames once for all rows so direct

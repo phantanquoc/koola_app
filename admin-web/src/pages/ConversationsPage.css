@@ -391,6 +391,14 @@
   border-radius: inherit;
 }
 
+/* Nhóm nút phải của header chi tiết (Xuất CSV + tìm) */
+.detail-header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* Quote trả lời + tally phản ứng trong bong bóng tin nhắn (ngữ cảnh báo cáo) */
 .conv-reply-quote {
   display: flex;

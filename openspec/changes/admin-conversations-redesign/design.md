@@ -129,6 +129,16 @@ DTO có sẵn chưa có lối vào UI. Quyết định:
   wrapper `.conv-bubble` của component cha — không đụng signature `MessageBody`,
   không sửa logic find/grouping đã port.
 
+### D11 — Export bản ghi hội thoại từ trang chi tiết (task 8)
+
+- **CSV, không xlsx**: giữ quy ước repo (CSV + BOM mở Excel thẳng, không thêm
+  thư viện); dialog confirm nêu cap 500 + "nội dung người dùng tạo".
+- **`GET conversations/:id/export`** cap 500 tin MỚI NHẤT, sort desc đúng hướng
+  với luồng xem detail; `{ data, total, truncated }` như mọi export khác.
+- **Không presign trong CSV** — URL hết hạn 60 phút vô nghĩa trong file; thay bằng
+  cờ `hasMedia`. `senderName` resolve qua members-map + một lần lookup cho người
+  đã rời hội thoại; báo cáo chờ/tin aggregate theo đúng tập id đã tải.
+
 ## Risks / Trade-offs
 
 - **Filter builder is `async` and does report aggregation per call** → stats calls it 6×. Mitigation: build the shared `_id` intersection **once** in the stats handler and pass the prepared filter into each count, so the expensive `distinct`/aggregate runs a single time per stats request.

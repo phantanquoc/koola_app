@@ -73,6 +73,12 @@
 - [x] 7.7 Spec delta cập nhật (moderation: reportAge + pinned preview; workbench: activity-range scenario, confirm resolve, history/pinned/reply-reaction scenarios) + design D10
 - [x] 7.8 Gates: `npx jest src/admin` + `npx vitest run` + `tsc`/`tsc -b` + eslint delta ≤0 + browser spot-check
 
+## 8. Export bản ghi hội thoại từ chi tiết (2026-11-02 — CSV, chỉ trang chi tiết)
+
+- [x] 8.1 Backend `GET /admin/conversations/:id/export`: cap 500 mới nhất trước, `{data,total,truncated}`, senderName (members-map + lookup người đã rời), cờ hasMedia (không presign), báo cáo chờ theo id — jest 2.6
+- [x] 8.2 Frontend detail: ExportButton + ConfirmDialog (cap 500 + user content) → CSV BOM tải về, toast truncated; vitest 8.2 (chưa confirm thì chưa GET)
+- [x] 8.3 Spec (moderation: transcript export requirement + 3 scenario) + design D11 + gates + browser spot-check
+
 ## 6. Integration verification
 
 - [x] 6.1 Run the full gates: `cd admin-web && npx vitest run && npx tsc -b && npm run lint` (tsc -b, **không** `--noEmit` — tsconfig solution-style nên `--noEmit` check 0 file; pass = không có lỗi mới trong file đã sửa của change, 12 tsc + 7 lint pre-existing ngoài conversations được ghi nhận), then `cd chat-backend && npx jest src/admin && ./node_modules/.bin/tsc --noEmit`

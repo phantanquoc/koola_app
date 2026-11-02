@@ -15,8 +15,9 @@ import {
 import apiClient from '../apiClient';
 import { StatusBadge } from './StatusBadge';
 import { reportStatusLabel, reportStatusTone } from './report-labels';
-import { initials, formatDateTime } from './formatters';
+import { initials, formatDateTime, apiErrorMessage } from './formatters';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ExportButton } from './ExportButton';
 import { useToast } from './Toast';
 
 export interface ConversationMember {
@@ -465,6 +466,83 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
     reason: string;
   } | null>(null);
 
+  // ── Export bản ghi hội thoại (task 8.2) — cùng pattern list export ──
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  function toCsvCell(v: unknown) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await apiClient.get<{
+        data: Array<{
+          createdAt: string | null;
+          senderId: string;
+          senderName: string | null;
+          type: string;
+          content: string;
+          deleted: boolean;
+          hasMedia: boolean;
+          replyTo: string;
+          pendingReportCount: number;
+        }>;
+        total: number;
+        truncated: boolean;
+      }>(`/admin/conversations/${id}/export`);
+      if (res.data.truncated) {
+        addToast(
+          'warning',
+          `Xuất 500/${res.data.total} tin gần nhất (mới nhất trước). Hội thoại còn tin cũ hơn chưa vào file.`,
+        );
+      }
+      const header = [
+        'Thời gian',
+        'Người gửi',
+        'Mã người gửi',
+        'Loại',
+        'Nội dung',
+        'Đã gỡ',
+        'Có media',
+        'Tin trả lời',
+        'Báo cáo chờ',
+      ];
+      const lines = res.data.data.map((r) =>
+        [
+          r.createdAt ?? '',
+          r.senderName ?? '',
+          r.senderId,
+          typeLabel(r.type),
+          r.content,
+          r.deleted ? 'Có' : '',
+          r.hasMedia ? 'Có' : '',
+          r.replyTo,
+          r.pendingReportCount,
+        ]
+          .map(toCsvCell)
+          .join(','),
+      );
+      // BOM để Excel đọc đúng tiếng Việt.
+      const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `hoi-thoai-${id}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('success', `Đã xuất ${lines.length} tin nhắn.`);
+      setExportOpen(false);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại. Vui lòng thử lại.'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function actOnReport(reportId: string, action: 'resolve' | 'dismiss') {
     setReportBusy(reportId);
     try {
@@ -567,20 +645,23 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
             <span>Hoạt động cuối {formatDateTime(detail.lastMessageAt)}</span>
           </div>
         </div>
-        {!findOpen && (
-          <button
-            className="btn btn-ghost btn-sm conv-icon-btn"
-            onClick={() => {
-              setFindOpen(true);
-              requestAnimationFrame(() => findInputRef.current?.focus());
-            }}
-            type="button"
-            aria-label="Tìm trong hội thoại"
-            title="Tìm trong hội thoại"
-          >
-            <Search size={16} strokeWidth={2} aria-hidden />
-          </button>
-        )}
+        <div className="detail-header-actions">
+          <ExportButton onExport={() => setExportOpen(true)} />
+          {!findOpen && (
+            <button
+              className="btn btn-ghost btn-sm conv-icon-btn"
+              onClick={() => {
+                setFindOpen(true);
+                requestAnimationFrame(() => findInputRef.current?.focus());
+              }}
+              type="button"
+              aria-label="Tìm trong hội thoại"
+              title="Tìm trong hội thoại"
+            >
+              <Search size={16} strokeWidth={2} aria-hidden />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="detail-card-body conv-detail-body">
@@ -866,6 +947,19 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
         <span className="detail-bottombar-spacer" />
         <span className="detail-bottombar-note">Mở tin nhắn để gỡ nội dung vi phạm</span>
       </div>
+
+      <ConfirmDialog
+        open={exportOpen}
+        onClose={() => {
+          if (!exporting) setExportOpen(false);
+        }}
+        title={`Xuất bản ghi "${convName(detail)}" ra CSV?`}
+        description="File chứa tối đa 500 tin nhắn gần nhất (mới nhất trước) kèm người gửi, trạng thái gỡ và báo cáo chờ; vượt cap sẽ báo trong toast. Nội dung là dữ liệu người dùng tạo — không chia sẻ ra ngoài. Mở trực tiếp bằng Excel/LibreOffice."
+        confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
+        variant="primary"
+        busy={exporting}
+        onConfirm={() => void handleExport()}
+      />
 
       <ConfirmDialog
         open={reportConfirm !== null}
