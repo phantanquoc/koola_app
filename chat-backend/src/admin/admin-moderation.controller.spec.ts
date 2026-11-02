@@ -349,6 +349,24 @@ describe('AdminModerationController — conversation list/stats/export', () => {
     expect(clean).not.toHaveProperty('oldestPendingReportAt');
   });
 
+  it('1.6 row có cột hasMedia — distinct scoped theo id của trang hiện tại', async () => {
+    mockList([groupRow(), directRow()]);
+    // Chỉ hội thoại nhóm có media (mock trả về đúng tập id trang).
+    msgModel.distinct.mockResolvedValue([ROW_GROUP]);
+
+    const res = await controller.listConversations({ page: 1, limit: 20 });
+
+    // Thứ tự data theo thứ tự mockList: [nhóm, trực tiếp].
+    expect(res.data[0]).toMatchObject({ _id: ROW_GROUP, hasMedia: true });
+    expect(res.data[1]).toMatchObject({ _id: ROW_DIRECT, hasMedia: false });
+    expect(msgModel.distinct).toHaveBeenCalledWith(
+      'conversationId',
+      expect.objectContaining({
+        conversationId: { $in: [expect.anything(), expect.anything()] },
+      }),
+    );
+  });
+
   it('2.1 stats: all bằng total của list dưới cùng filter, sáu count', async () => {
     mockList([groupRow()], 7);
     // Thứ tự count: all, pendingReport, group, direct, hasMedia, active24h.

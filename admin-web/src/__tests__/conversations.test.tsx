@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ConversationsPage from '../pages/ConversationsPage';
 import ConversationsDetailPage from '../pages/ConversationsDetailPage';
 import { ToastProvider } from '../components/Toast';
+import { dayToIso } from '../components/date-range';
 import apiClient from '../apiClient';
 
 vi.mock('../apiClient', () => ({
@@ -17,18 +18,29 @@ const mockedPost = apiClient.post as unknown as ReturnType<typeof vi.fn>;
 const CONV_ID = '507f1f77bcf86cd799439030';
 const RAW_KEY = 'bucket/secret-photo.png';
 
-/** List row theo hợp đồng backend 1.4: có memberCount, KHÔNG có members. */
+/** List row theo hợp đồng backend 1.4+: có memberCount/hasMedia, KHÔNG có members. */
 const listRow = {
   _id: CONV_ID,
   type: 'group',
   displayName: 'Nhóm Koola',
   memberCount: 5,
   pendingReportCount: 0,
+  hasMedia: true,
   lastMessageAt: new Date().toISOString(),
   lastMessagePreview: 'xin chào',
+  createdAt: '2026-10-01T00:00:00.000Z',
 };
 
 const listResponse = { data: { data: [listRow], total: 1, page: 1, limit: 20 } };
+
+const statsResponse = {
+  all: 1,
+  pendingReport: 0,
+  group: 1,
+  direct: 0,
+  hasMedia: 1,
+  active24h: 1,
+};
 
 const detailResponse = {
   data: {
@@ -71,8 +83,16 @@ const reportsResponse = { data: { data: [pendingReport] } };
 function stubApi() {
   mockedGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
     if (url === '/admin/reports') return Promise.resolve(reportsResponse);
-    if (url === `/admin/conversations/${CONV_ID}`) return Promise.resolve(detailResponse);
-    if (url.startsWith('/admin/conversations')) return Promise.resolve(listResponse);
+    if (url === '/admin/conversations/stats')
+      return Promise.resolve({ data: statsResponse });
+    if (url === `/admin/conversations/${CONV_ID}`)
+      return Promise.resolve(detailResponse);
+    if (url === '/admin/conversations/export')
+      return Promise.resolve({
+        data: { data: [listRow], total: 1, truncated: false },
+      });
+    if (url === '/admin/conversations') return Promise.resolve(listResponse);
+    void config;
     return Promise.resolve({ data: {} });
   });
 }
@@ -95,7 +115,14 @@ function renderPage(entry: InitialEntry = '/conversations') {
   return { ...utils, client };
 }
 
-describe('ConversationsPage', () => {
+/** Lấy tham số list đã gửi (call cuối cùng tới '/admin/conversations'). */
+function lastListParams(): Record<string, unknown> {
+  const calls = mockedGet.mock.calls.filter((c) => c[0] === '/admin/conversations');
+  const last = calls[calls.length - 1];
+  return (last?.[1] as { params: Record<string, unknown> })?.params ?? {};
+}
+
+describe('ConversationsPage — 3.1 URL → request params', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubApi();
@@ -107,13 +134,281 @@ describe('ConversationsPage', () => {
     const row = name.closest('tr');
     expect(row).toBeTruthy();
     expect(row?.textContent).toContain('5');
-    expect(mockedGet).toHaveBeenCalledWith(
-      expect.stringContaining('/admin/conversations?'),
+  });
+
+  it('3.1 mọi filter dịch 1-1 sang DTO; tên URL không rò vào request', async () => {
+    renderPage(
+      '/conversations?tab=all&q=koola&sort=created&type=group&size=medium&minReports=3&media=true&since=7d&from=2026-10-01&to=2026-10-31&page=1&pageSize=50',
     );
+    await screen.findByText('Nhóm Koola');
+
+    const params = lastListParams();
+    expect(params).toMatchObject({
+      search: 'koola',
+      sort: 'created',
+      type: 'group',
+      minMembers: 10,
+      maxMembers: 99,
+      minReports: 3,
+      hasMedia: 'true',
+      page: 1,
+      limit: 50,
+    });
+    expect(typeof params.activeAfter).toBe('string');
+    // Biên ngày sinh từ chuỗi ngày theo quy ước 00:00 / 23:59:59.999 (dayToIso)
+    expect(params.createdFrom).toBe(dayToIso('2026-10-01', 'from'));
+    expect(params.createdTo).toBe(dayToIso('2026-10-31', 'to'));
+    // focus/tab/q/pageSize là tên URL, không phải tên DTO (forbidNonWhitelisted → 400)
+    expect(params).not.toHaveProperty('focus');
+    expect(params).not.toHaveProperty('tab');
+    expect(params).not.toHaveProperty('q');
+    expect(params).not.toHaveProperty('pageSize');
+  });
+
+  it('3.1 focus nằm trong URL nhưng KHÔNG BAO GIỜ trong params gọi API', async () => {
+    renderPage(`/conversations?focus=${CONV_ID}`);
+
+    // Đã redirect sang route chi tiết
+    expect(await screen.findByRole('heading', { name: 'Nhóm Koola' })).toBeTruthy();
+    for (const call of mockedGet.mock.calls) {
+      const params = (call[1] as { params?: Record<string, unknown> } | undefined)?.params;
+      if (params) expect(params).not.toHaveProperty('focus');
+    }
+  });
+
+  it('3.1 tab dịch sang param và override filter cùng trục; stats strip phần tab', async () => {
+    renderPage('/conversations?tab=group&type=direct&media=true');
+    await screen.findByText('Nhóm Koola');
+
+    const listParams = lastListParams();
+    // tab thắng type ở list
+    expect(listParams.type).toBe('group');
+    expect(listParams.hasMedia).toBe('true');
+
+    await waitFor(() => {
+      const statsCall = mockedGet.mock.calls.find((c) => c[0] === '/admin/conversations/stats');
+      expect(statsCall).toBeTruthy();
+      const statsParams = (statsCall![1] as { params: Record<string, unknown> }).params;
+      // stats phải bỏ type (tab đang đếm group/direct) nhưng giữ media của popover
+      expect(statsParams.type).toBeUndefined();
+      expect(statsParams.hasMedia).toBe('true');
+      expect(statsParams.page).toBeUndefined();
+      expect(statsParams.limit).toBeUndefined();
+    });
+  });
+
+  it('3.1 tab=pendingReport gửi hasPendingReport=true', async () => {
+    renderPage('/conversations?tab=pendingReport');
+    await screen.findByText('Nhóm Koola');
+    expect(lastListParams().hasPendingReport).toBe('true');
+  });
+
+  it('3.8 ?focus= redirect replace sang route chi tiết, state.from bỏ focus', async () => {
+    renderPage('/conversations?tab=pendingReport&focus=' + CONV_ID);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Nhóm Koola' }),
+    ).toBeTruthy();
+    // Không còn ở list nữa
+    expect(screen.queryByLabelText('Danh sách hội thoại')).toBeNull();
+    expect(mockedGet).toHaveBeenCalledWith(`/admin/conversations/${CONV_ID}`);
   });
 });
 
-describe('ConversationsDetailPage — route /conversations/:id (4.1, 4.6)', () => {
+describe('ConversationsPage — 3.2/3.3/3.6 header, tabs, chips, pagination', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('3.2 tab hiện count từ stats, 0 thì ẩn count', async () => {
+    renderPage();
+    await screen.findByText('Nhóm Koola');
+
+    const tablist = screen.getByRole('tablist');
+    const tabs = within(tablist).getAllByRole('tab');
+    const byLabel = (label: string) => tabs.find((t) => t.textContent?.startsWith(label));
+    // stats: all=1, group=1 → có count; pendingReport=0 → ẩn count
+    expect(byLabel('Tất cả')?.querySelector('.tab-count')?.textContent).toBe('1');
+    expect(byLabel('Nhóm')?.querySelector('.tab-count')?.textContent).toBe('1');
+    expect(byLabel('Chờ báo cáo')?.querySelector('.tab-count')).toBeNull();
+  });
+
+  it('3.3 chip hiện điều kiện đang bật và gỡ chip thì xoá param', async () => {
+    renderPage('/conversations?type=group');
+    await screen.findByText('Nhóm Koola');
+
+    const chip = screen.getByRole('button', { name: /Loại: Nhóm/ });
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(lastListParams().type).toBeUndefined();
+    });
+    expect(screen.queryByRole('button', { name: /Loại: Nhóm/ })).toBeNull();
+  });
+
+  it('3.6 đổi page-size reset về trang 1 và nằm trong URL', async () => {
+    renderPage('/conversations?page=3&pageSize=20');
+    await screen.findByText('Nhóm Koola');
+
+    const select = screen.getByLabelText('Số dòng mỗi trang');
+    fireEvent.change(select, { target: { value: '50' } });
+
+    await waitFor(() => {
+      const params = lastListParams();
+      expect(params.limit).toBe(50);
+      expect(params.page).toBe(1);
+    });
+  });
+});
+
+describe('ConversationsPage — 3.4 bảng + 3.8 row navigate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('3.4 aria-sort đổi khi bấm cột sort và sort nằm trong URL', async () => {
+    renderPage();
+    await screen.findByText('Nhóm Koola');
+
+    const membersHeader = screen.getByRole('columnheader', { name: /Thành viên/ });
+    expect(membersHeader.getAttribute('aria-sort')).toBe('none');
+
+    fireEvent.click(within(membersHeader).getByRole('button'));
+
+    await waitFor(() => {
+      expect(lastListParams().sort).toBe('members');
+    });
+    // Bảng refetch theo key mới → chờ row hiện lại trước khi đọc aria-sort
+    await screen.findByText('Nhóm Koola');
+    const after = screen.getByRole('columnheader', { name: /Thành viên/ });
+    expect(after.getAttribute('aria-sort')).toBe('descending');
+    const recentHeader = screen.getByRole('columnheader', { name: /Hoạt động cuối/ });
+    expect(recentHeader.getAttribute('aria-sort')).toBe('none');
+  });
+
+  it('3.4 cột Tuổi/Media có dữ liệu thật (ageTone + hasMedia)', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations')
+        return Promise.resolve({
+          data: {
+            data: [
+              {
+                ...listRow,
+                pendingReportCount: 3,
+                oldestPendingReportAt: '2026-10-01T02:00:00.000Z',
+              },
+            ],
+            total: 1,
+            page: 1,
+            limit: 20,
+          },
+        });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+    await screen.findByText('Nhóm Koola');
+
+    expect(screen.getByText('3 báo cáo')).toBeTruthy();
+    // Tuổi >72h → có nhãn tuổi (cột Tuổi + dòng .show-under-1100 trùng nhau)
+    expect(screen.getAllByText(/\d+ ngày/).length).toBeGreaterThan(0);
+    const row = (await screen.findByText('Nhóm Koola')).closest('tr');
+    expect(row).toBeTruthy();
+    // Badge media nằm trong hàng, không phải tab
+    expect(within(row as HTMLElement).getByText('Có media')).toBeTruthy();
+    // Row không có members → không rớt về 0 giả
+    expect(within(row as HTMLElement).getByText('5')).toBeTruthy();
+  });
+
+  it('3.8 bấm hàng navigate tới /conversations/:id kèm state.from là list URL', async () => {
+    renderPage('/conversations?tab=group&q=koola');
+    await screen.findByText('Nhóm Koola');
+
+    const name = screen.getByText('Nhóm Koola');
+    fireEvent.click(name);
+
+    expect(await screen.findByRole('heading', { name: 'Nhóm Koola' })).toBeTruthy();
+    expect(mockedGet).toHaveBeenCalledWith(`/admin/conversations/${CONV_ID}`);
+  });
+});
+
+describe('ConversationsPage — 3.5 trạng thái', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('3.5 lỗi hiện StateBlock error + Thử lại gọi refetch', async () => {
+    let fail = true;
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations' && fail) {
+        fail = false;
+        return Promise.reject({ response: { data: { message: 'Server sập' } } });
+      }
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations') return Promise.resolve(listResponse);
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Không tải được danh sách hội thoại')).toBeTruthy();
+    expect(screen.getByText('Server sập')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(await screen.findByText('Nhóm Koola')).toBeTruthy();
+  });
+
+  it('3.5 rỗng do lọc khác rỗng thật — có nút Xoá bộ lọc khi đang lọc', async () => {
+    stubApi();
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations')
+        return Promise.resolve({ data: { data: [], total: 0, page: 1, limit: 20 } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/conversations?q=khong-ton-tai');
+
+    expect(await screen.findByText('Không khớp hội thoại nào')).toBeTruthy();
+    // Nút Xoá bộ lọc có ở cả chip row lẫn empty-state action
+    expect(screen.getAllByRole('button', { name: 'Xoá bộ lọc' }).length).toBeGreaterThan(0);
+  });
+
+  it('3.5 rỗng thật hiện copy theo tab, không nút Xoá bộ lọc', async () => {
+    stubApi();
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations')
+        return Promise.resolve({ data: { data: [], total: 0, page: 1, limit: 20 } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/conversations?tab=pendingReport');
+
+    expect(await screen.findByText('Hàng đợi trống')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Xoá bộ lọc' })).toBeNull();
+  });
+});
+
+describe('ConversationsPage — 3.7 bàn phím', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('3.7 J/K chuyển highlight, ? mở bảng phím tắt', async () => {
+    renderPage();
+    await screen.findByText('Nhóm Koola');
+
+    fireEvent.keyDown(document, { key: 'j' });
+    await waitFor(() => {
+      expect(document.querySelector('.row-highlight')).toBeTruthy();
+    });
+
+    fireEvent.keyDown(document, { key: '?' });
+    expect(await screen.findByRole('heading', { name: 'Phím tắt' })).toBeTruthy();
+  });
+});
+
+describe('ConversationDetail route /conversations/:id (4.1–4.6)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubApi();
@@ -128,16 +423,19 @@ describe('ConversationsDetailPage — route /conversations/:id (4.1, 4.6)', () =
   it('4.1 Quay lại đưa về đúng list URL trong location.state.from', async () => {
     renderPage({
       pathname: `/conversations/${CONV_ID}`,
-      state: { from: '/conversations?tab=pending&page=2' },
+      state: { from: '/conversations?tab=pendingReport&page=2' },
     });
     await screen.findByRole('heading', { name: 'Nhóm Koola' });
 
     fireEvent.click(screen.getByRole('button', { name: /Quay lại danh sách/ }));
 
     expect(await screen.findByText(/1 hội thoại/)).toBeTruthy();
-    expect(mockedGet).toHaveBeenCalledWith(
-      expect.stringContaining('/admin/conversations?page=1'),
-    );
+    // state.from có page=2 → clamp kẹp về trang 1, chờ lần fetch đó
+    await waitFor(() => {
+      expect(mockedGet).toHaveBeenCalledWith('/admin/conversations', {
+        params: expect.objectContaining({ page: 1 }),
+      });
+    });
   });
 
   it('4.1 mở trực tiếp (không state) thì Quay lại về list trơn', async () => {
@@ -160,7 +458,6 @@ describe('ConversationDetail (4.2–4.5)', () => {
     const { container } = renderPage(`/conversations/${CONV_ID}`);
     await screen.findByRole('heading', { name: 'Nhóm Koola' });
 
-    // Mọi phần tử có nguyên văn ObjectId phải nằm trong <details>
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT);
     const hits: Element[] = [];
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -170,7 +467,6 @@ describe('ConversationDetail (4.2–4.5)', () => {
     expect(hits.length).toBeGreaterThan(0);
     for (const el of hits) expect(el.closest('details')).toBeTruthy();
 
-    // Thành viên là link tới trang người dùng
     const memberLink = screen.getByRole('link', { name: /Minh/ });
     expect(memberLink.getAttribute('href')).toBe('/users/u1');
   });
@@ -193,7 +489,6 @@ describe('ConversationDetail (4.2–4.5)', () => {
     await screen.findByRole('heading', { name: 'Nhóm Koola' });
 
     expect(await screen.findByText('2 báo cáo')).toBeTruthy();
-    // Header cũng đếm báo cáo chờ từ query reports
     expect(screen.getByText('1 báo cáo')).toBeTruthy();
   });
 
@@ -218,6 +513,45 @@ describe('ConversationDetail (4.2–4.5)', () => {
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversations'] });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversations-stats'] });
+    });
+  });
+});
+
+describe('ConversationsPage — 5.1 export dialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('5.1 dialog nêu phạm vi + cap 500, exportParams bỏ phân trang', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations') return Promise.resolve(listResponse);
+      if (url === '/admin/conversations/export')
+        return Promise.resolve({ data: { data: [listRow], total: 1, truncated: false } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/conversations?tab=group');
+    await screen.findByText('Nhóm Koola');
+
+    fireEvent.click(screen.getByRole('button', { name: /Xuất CSV/ }));
+    expect(
+      await screen.findByRole('heading', { name: 'Xuất 1 hội thoại ra CSV?' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Tối đa 500 dòng/)).toBeTruthy();
+    expect(screen.getByText(/nội dung do người dùng tạo/)).toBeTruthy();
+
+    // Nút confirm cùng tên với nút mở dialog — bấm nút cuối (trong dialog)
+    const exportButtons = screen.getAllByRole('button', { name: 'Xuất CSV' });
+    fireEvent.click(exportButtons[exportButtons.length - 1]);
+
+    await waitFor(() => {
+      const call = mockedGet.mock.calls.find((c) => c[0] === '/admin/conversations/export');
+      expect(call).toBeTruthy();
+      const params = (call![1] as { params: Record<string, unknown> }).params;
+      expect(params).not.toHaveProperty('page');
+      expect(params).not.toHaveProperty('limit');
+      expect(params.type).toBe('group');
     });
   });
 });

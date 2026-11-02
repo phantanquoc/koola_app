@@ -392,13 +392,41 @@ export class AdminModerationController {
       // sort=reported đã có cả trang trong map — khỏi aggregate thêm lần nữa.
       for (const [id, pending] of knownCounts) pendingById.set(id, pending);
     }
-    return rows.map((c: any) => {
+    // Cột "Media" trên hàng: distinct scoped đúng trang hiện tại — một query,
+    // không N+1 và không tính cả nền tảng như filter hasMedia của list.
+    // Chuỗi id hợp lệ — mongoose tự cast sang ObjectId khi query; truyền thẳng
+    // ObjectId[] vào sẽ va type Condition<ApplyBasicQueryCasting<string>>.
+    const validRowIds = rowIds.filter((id) => Types.ObjectId.isValid(id));
+    const mediaConvIds =
+      validRowIds.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              (await this.msgModel.distinct('conversationId', {
+                conversationId: { $in: validRowIds },
+                $or: [
+                  { mediaUrl: { $exists: true, $ne: '' } },
+                  { type: { $in: ['image', 'voice', 'video', 'file'] } },
+                ],
+              })) as unknown[]
+            )
+              .map((t) =>
+                t instanceof Types.ObjectId
+                  ? t.toString()
+                  : typeof t === 'string'
+                    ? t
+                    : '',
+              )
+              .filter((id) => Types.ObjectId.isValid(id)),
+          );
+    return rows.map((c: { _id: string; members?: unknown[] }) => {
       const { members, ...rest } = c;
       const pending = pendingById.get(String(c._id));
       return {
         ...rest,
         memberCount: Array.isArray(members) ? members.length : 0,
         pendingReportCount: pending?.n ?? 0,
+        hasMedia: mediaConvIds.has(String(c._id)),
         // Không có báo cáo pending → không có tuổi SLA để hiển thị.
         ...(pending?.oldest ? { oldestPendingReportAt: pending.oldest } : {}),
       };

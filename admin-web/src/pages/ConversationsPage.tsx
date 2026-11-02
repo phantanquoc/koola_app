@@ -1,294 +1,339 @@
 import './ConversationsPage.css';
-import './moderation-media.css';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Funnel,
-  Inbox,
-  Search,
-  Trash2,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Eye, Search, User, Users, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import apiClient from '../apiClient';
+import { ListHeader } from '../components/ListHeader';
+import { StatusTabs } from '../components/StatusTabs';
+import { TableShell } from '../components/TableShell';
+import { ColumnHeader } from '../components/ColumnHeader';
+import { FilterPopover } from '../components/FilterPopover';
+import { Pagination } from '../components/Pagination';
+import StateBlock from '../components/StateBlock';
+import { EmptyState } from '../components/EmptyState';
 import { StatusBadge } from '../components/StatusBadge';
-import { initials } from '../components/formatters';
 import Dialog from '../components/Dialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ExportButton } from '../components/ExportButton';
+import { ExportDateRange } from '../components/ExportDateRange';
 import { useToast } from '../components/Toast';
+import {
+  ageLabel,
+  ageTone,
+  apiErrorMessage,
+  formatDateTime,
+  initials,
+} from '../components/formatters';
+import { dayLabel, dayToIso } from '../components/date-range';
+import { useUrlFilters } from '../hooks/useUrlFilters';
+import { useAdminList } from '../hooks/useAdminList';
 
+/** List row theo hợp đồng backend 1.4+: memberCount/hasMedia, KHÔNG có members. */
 interface Conversation {
   _id: string;
   name?: string | null;
   displayName?: string | null;
   type: string;
-  /** List row gọn từ backend 1.4 — `members` chỉ có ở detail. */
   memberCount?: number;
-  members?: unknown[];
   pendingReportCount?: number;
+  oldestPendingReportAt?: string;
   lastMessageAt?: string | null;
   lastMessagePreview?: string | null;
-}
-
-interface MemberSummary {
-  userId: string;
-  role?: string;
-  displayName?: string | null;
-  avatar?: string | null;
-  accountType?: string | null;
-}
-
-interface DetailMessage {
-  _id: string;
-  senderId: string;
-  content?: string;
-  type?: string;
-  /** MinIO key thô — không phát được trực tiếp trên web. */
-  mediaUrl?: string;
-  /** URL đã ký; null nghĩa là presign thất bại (khác với field không tồn tại). */
-  mediaUrlSigned?: string | null;
-  mediaMimeType?: string;
-  mediaSize?: number;
   createdAt?: string;
-  deleted?: boolean;
+  hasMedia?: boolean;
 }
 
-interface RelatedReport {
-  _id: string;
-  reason: string;
-  status: string;
-  targetId?: string;
-  createdAt?: string;
+interface ConversationStats {
+  all: number;
+  pendingReport: number;
+  group: number;
+  direct: number;
+  hasMedia: number;
+  active24h: number;
 }
 
-const LIMIT = 20;
-const MSG_PAGE = 20;
-const DELETED_NAME = 'Người dùng đã xóa';
-const GROUP_GAP_MS = 5 * 60 * 1000;
+const PAGE_SIZES = [10, 20, 50];
 
-function senderColorIdx(senderId: string) {
-  let h = 0;
-  for (let i = 0; i < senderId.length; i++) h = (h * 31 + senderId.charCodeAt(i)) >>> 0;
-  return h % 8;
-}
+const TAB_KEYS = ['all', 'pendingReport', 'group', 'direct', 'hasMedia', 'active24h'] as const;
+type TabKey = (typeof TAB_KEYS)[number];
 
-function msgTimeMs(m: DetailMessage) {
-  const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
-  return Number.isNaN(t) ? null : t;
+const SORT_VALUES = ['recent', 'created', 'reported', 'members'] as const;
+
+/** Sort allow-list của backend — URL giữ dạng thô, không `field:dir` (server chỉ desc). */
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'recent', label: 'Mới hoạt động' },
+  { value: 'created', label: 'Mới tạo' },
+  { value: 'reported', label: 'Nhiều báo cáo' },
+  { value: 'members', label: 'Nhiều thành viên' },
+];
+
+const SIZE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Mọi quy mô' },
+  { value: 'small', label: 'Nhỏ (<10)' },
+  { value: 'medium', label: 'Vừa (10–99)' },
+  { value: 'large', label: 'Lớn (100+)' },
+];
+
+const SINCE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Mọi thời điểm' },
+  { value: '24h', label: '24 giờ qua' },
+  { value: '7d', label: '7 ngày qua' },
+  { value: '30d', label: '30 ngày qua' },
+];
+
+const MIN_REPORT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Mọi mức' },
+  { value: '1', label: 'Từ 1 báo cáo' },
+  { value: '3', label: 'Từ 3 báo cáo' },
+  { value: '5', label: 'Từ 5 báo cáo' },
+  { value: '10', label: 'Từ 10 báo cáo' },
+];
+
+const SINCE_HOURS: Record<string, number> = { '24h': 24, '7d': 24 * 7, '30d': 24 * 30 };
+
+const FILTER_DEFAULTS = {
+  tab: 'all',
+  q: '',
+  sort: 'recent',
+  type: '',
+  size: '',
+  minReports: '',
+  media: '',
+  since: '',
+  // `from`/`to` là chuỗi ngày `YYYY-MM-DD` của `type="date"` — input bind thẳng,
+  // chip hiện dayLabel; ISO (biên đầu 00:00 / biên cuối 23:59:59.999) chỉ sinh
+  // lúc request qua dayToIso, không lưu trong URL.
+  from: '',
+  to: '',
+  page: '1',
+  pageSize: '20',
+  // Chỉ là đích redirect (D6) — KHÔNG BAO GIỜ gửi lên API (forbidNonWhitelisted → 400).
+  focus: '',
+};
+
+/** `activeAfter` ISO cho một bucket "hoạt động trong N giờ"; '' = bỏ lọc. */
+function activeAfterOf(since: string): string | undefined {
+  const hours = SINCE_HOURS[since];
+  if (!hours) return undefined;
+  return new Date(Date.now() - hours * 3_600_000).toISOString();
 }
 
 function typeLabel(type: string) {
   return type === 'group' ? 'Nhóm' : type === 'direct' ? 'Trực tiếp' : type;
 }
 
-function convName(c: Conversation | null | undefined) {
+function convName(c: Pick<Conversation, 'displayName' | 'name'> | null | undefined) {
   return c?.displayName || c?.name || '(Không tên)';
 }
 
-function formatTime(value?: string | null) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('vi-VN');
-}
-
-function formatRelative(value?: string | null) {
-  if (!value) return '—';
-  const t = new Date(value).getTime();
-  if (Number.isNaN(t)) return '—';
-  const diff = Date.now() - t;
-  if (diff < 0) return formatTime(value);
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'vừa xong';
-  if (m < 60) return `${m}p`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}g`;
-  const d = Math.floor(h / 24);
-  if (d === 1) return 'hôm qua';
-  if (d < 7) return `${d}ng`;
-  return formatTime(value);
-}
-
-function formatClock(value?: string | null) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatSize(bytes?: number | null) {
-  if (bytes == null || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function fileNameOf(url?: string) {
-  if (!url) return 'Tệp đính kèm';
-  try {
-    const tail = new URL(url).pathname.split('/').pop();
-    return decodeURIComponent(tail || 'Tệp đính kèm');
-  } catch {
-    const tail = url.split('/').pop();
-    return tail || 'Tệp đính kèm';
-  }
-}
-
-function escapeFind(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function hi(text: string, q: string) {
-  if (!q) return text;
-  const parts = text.split(new RegExp(`(${escapeFind(q)})`, 'gi'));
-  if (parts.length <= 1) return text;
-  return (
-    <>
-      {parts.map((p, i) =>
-        i % 2 === 1 ? (
-          <mark key={i} className="conv-mark">
-            {p}
-          </mark>
-        ) : (
-          p
-        ),
-      )}
-    </>
-  );
-}
-
-function MessageBody({
-  m,
-  find,
-  onRetry,
-}: {
-  m: DetailMessage;
-  find?: string;
-  onRetry?: () => void;
-}) {
-  if (m.deleted) return <p className="conv-msg-text conv-msg-deleted">(Nội dung đã gỡ)</p>;
-  // mediaUrl là MinIO key, chỉ mediaUrlSigned mở được trên web. Signed = null
-  // (khác undefined) là presign thất bại — báo lỗi thay vì render key hỏng.
-  const url = m.mediaUrlSigned ?? m.mediaUrl ?? '';
-  const presignFailed = Boolean(m.mediaUrl) && m.mediaUrlSigned === null;
-  const kind = m.type ?? 'text';
-  if (kind === 'image' && url) {
-    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
-    return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="conv-msg-media">
-        <img src={url} alt={m.content || 'Ảnh'} loading="lazy" className="conv-msg-img" />
-        {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
-      </a>
-    );
-  }
-  if (kind === 'voice' && url) {
-    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
-    return (
-      <div className="conv-msg-media">
-        {/* ponytail: native player, add custom waveform if moderators need scrubbing */}
-        <audio controls preload="none" src={url} className="conv-msg-audio" />
-        {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
-      </div>
-    );
-  }
-  if (kind === 'video' && url) {
-    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
-    return (
-      <div className="conv-msg-media">
-        <video controls preload="metadata" src={url} className="conv-msg-video" />
-        {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
-      </div>
-    );
-  }
-  if (kind === 'file' && url) {
-    if (presignFailed) return <MediaUnavailable m={m} find={find} onRetry={onRetry} />;
-    return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="conv-msg-file">
-        <span className="conv-msg-file-icon" aria-hidden="true"><FileText size={16} strokeWidth={2} /></span>
-        <span className="conv-msg-file-meta">
-          <span className="conv-msg-file-name">{m.content ? hi(m.content, find ?? '') : fileNameOf(url)}</span>
-          {formatSize(m.mediaSize) ? (
-            <span className="conv-msg-file-size">{formatSize(m.mediaSize)}</span>
-          ) : null}
-        </span>
-      </a>
-    );
-  }
-  return <p className="conv-msg-text">{hi(m.content || '(tin nhắn trống)', find ?? '')}</p>;
-}
-
-/** Presign thất bại — cho moderator thử ký lại URL thay vì phải đóng/mở drawer. */
-function MediaUnavailable({
-  m,
-  find,
-  onRetry,
-}: {
-  m: DetailMessage;
-  find?: string;
-  onRetry?: () => void;
-}) {
-  return (
-    <div className="conv-msg-media">
-      <div className="mod-media-error">
-        <span>Không tải được media</span>
-        {onRetry && (
-          <button className="btn btn-secondary btn-sm" type="button" onClick={onRetry}>
-            Thử lại
-          </button>
-        )}
-      </div>
-      {/* Vẫn giữ phần chữ để moderator đọc được ngữ cảnh khi media hỏng. */}
-      {m.content ? <p className="conv-msg-text">{hi(m.content, find ?? '')}</p> : null}
-    </div>
-  );
-}
-
+/**
+ * Trang Hội thoại — archetype list §3A, chi tiết là route `/conversations/:id`.
+ *
+ * Trước đây: useState filter + fetch tay, tab không có count, chi tiết là drawer
+ * (trái §3B) và `?focus=` mở drawer. Nay mọi trạng thái nằm trong URL
+ * (`useUrlFilters`), fetch qua `useAdminList`, count tab lấy từ
+ * `/admin/conversations/stats`, `?focus=` redirect `replace` sang route chi tiết.
+ */
 export default function ConversationsPage() {
   const { addToast } = useToast();
-  const [rows, setRows] = useState<Conversation[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const { values, set, reset } = useUrlFilters(FILTER_DEFAULTS);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [searchInput, setSearchInput] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [filter, setFilter] = useState({ type: '', size: '', pending: false, media: false, recent: false, sort: 'recent' });
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [requestedPage, setRequestedPage] = useState(1);
-  const [reloadToken, setReloadToken] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const page = Math.max(1, Number(values.page) || 1);
+  const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  const tab = (TAB_KEYS as readonly string[]).includes(values.tab) ? (values.tab as TabKey) : 'all';
+  const sort = (SORT_VALUES as readonly string[]).includes(values.sort) ? values.sort : 'recent';
+  const isTypeTab = tab === 'group' || tab === 'direct';
+
+  const sizeFilter = useMemo(() => {
+    if (values.size === 'small') return { maxMembers: 9 };
+    if (values.size === 'medium') return { minMembers: 10, maxMembers: 99 };
+    if (values.size === 'large') return { minMembers: 100 };
+    return {};
+  }, [values.size]);
+
+  // Filter nền = mọi điều kiện KHÔNG do tab đảm nhiệm.
+  const baseParams = useMemo(
+    () => ({
+      search: values.q.trim() || undefined,
+      minReports: values.minReports ? Number(values.minReports) : undefined,
+      ...(values.from ? { createdFrom: dayToIso(values.from, 'from') } : {}),
+      ...(values.to ? { createdTo: dayToIso(values.to, 'to') } : {}),
+      ...sizeFilter,
+    }),
+    [values.q, values.minReports, values.from, values.to, sizeFilter],
+  );
+
+  // Stats: tab cùng trục phải được strip, nếu không sáu count sẽ bị giới hạn
+  // bởi chính tiêu chí chúng đang đếm (vd. tab=group mà vẫn gửi type=group
+  // thì count direct = 0 thay vì tổng thật).
+  const statsParams = useMemo(
+    () => ({
+      ...baseParams,
+      type: isTypeTab ? undefined : values.type || undefined,
+      hasMedia: tab === 'hasMedia' ? undefined : values.media || undefined,
+      activeAfter: activeAfterOf(tab === 'active24h' ? '' : values.since),
+    }),
+    [baseParams, isTypeTab, tab, values.type, values.media, values.since],
+  );
+
+  // Filter cho list + export: tab đã dịch sang param, KHÔNG có phân trang —
+// export cap 500 ở server nên không bao giờ được gửi page/limit theo.
+  const filterParams = useMemo(
+    () => ({
+      ...baseParams,
+      type: isTypeTab ? tab : values.type || undefined,
+      hasPendingReport: tab === 'pendingReport' ? 'true' : undefined,
+      hasMedia: tab === 'hasMedia' ? 'true' : values.media || undefined,
+      activeAfter: activeAfterOf(tab === 'active24h' ? '24h' : values.since),
+    }),
+    [baseParams, isTypeTab, tab, values.type, values.media, values.since],
+  );
+
+  const listParams = useMemo(
+    () => ({ ...filterParams, page, limit: pageSize, sort }),
+    [filterParams, page, pageSize, sort],
+  );
+
+  // Query key chứa MỌI giá trị filter (DESIGN §8) — thiếu filter trong key là
+  // không refetch. `focus` không gửi lên API nhưng vẫn giữ để key khớp URL.
+  const { rows, total, isLoading, isError, error, refetch } = useAdminList<Conversation>(
+    [
+      'conversations',
+      tab,
+      values.q,
+      values.sort,
+      values.type,
+      values.size,
+      values.minReports,
+      values.media,
+      values.since,
+      values.from,
+      values.to,
+      page,
+      pageSize,
+      values.focus,
+    ],
+    '/admin/conversations',
+    listParams,
+  );
+
+  const { data: stats } = useQuery({
+    queryKey: [
+      'conversations-stats',
+      tab,
+      values.q,
+      values.type,
+      values.size,
+      values.minReports,
+      values.media,
+      values.since,
+      values.from,
+      values.to,
+    ],
+    queryFn: async () =>
+      (await apiClient.get<ConversationStats>('/admin/conversations/stats', { params: statsParams }))
+        .data,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Deep-link từ trang báo cáo: `?focus=<id>` → redirect `replace` sang route
+  // chi tiết. Một lần navigate duy nhất (KHÔNG kèm set({focus:''})) — double
+  // navigate sẽ đua nhau nuốt history. `state.from` = list URL bỏ focus.
+  useEffect(() => {
+    if (!values.focus) return;
+    const next = new URLSearchParams(location.search);
+    next.delete('focus');
+    const qs = next.toString();
+    navigate(`/conversations/${values.focus}`, {
+      replace: true,
+      state: { from: `${location.pathname}${qs ? `?${qs}` : ''}` },
+    });
+  }, [values.focus, location.pathname, location.search, navigate]);
+
+  // Ô tìm kiếm: debounce 400ms + Enter chốt ngay (D7).
+  const [searchInput, setSearchInput] = useState(values.q);
   const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setSearchInput(values.q), [values.q]);
+  useEffect(() => {
+    if (searchInput.trim() === values.q) return;
+    const t = setTimeout(() => set({ q: searchInput.trim(), page: '1' }), 400);
+    return () => clearTimeout(t);
+    // Chỉ theo input người dùng gõ; values.q đã có effect riêng ở trên.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
 
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [detailConv, setDetailConv] = useState<Conversation | null>(null);
-  const [detailMembers, setDetailMembers] = useState<MemberSummary[]>([]);
-  const [detailMessages, setDetailMessages] = useState<DetailMessage[]>([]);
-  const [detailHasMore, setDetailHasMore] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [moreLoading, setMoreLoading] = useState(false);
-  const [detailReports, setDetailReports] = useState<RelatedReport[]>([]);
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const msgScrollRef = useRef<HTMLDivElement>(null);
-  const findInputRef = useRef<HTMLInputElement>(null);
-  const msgRowRefs = useRef(new Map<string, HTMLDivElement>());
+  // Deep-link trang vượt tổng số trang (vd. `?page=99`): kẹp về trang cuối
+  // thay vì hiện empty-state "không khớp" sai.
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    if (!isLoading && total > 0 && page > totalPages) set({ page: String(totalPages) });
+  }, [isLoading, total, page, totalPages, set]);
 
-  // In-drawer message find: server search + client fallback
-  const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState('');
-  const [findIdx, setFindIdx] = useState(0);
-  const [serverIds, setServerIds] = useState<Set<string> | null>(null);
-  const [findHint, setFindHint] = useState(false);
+  /** Filter trong popover cùng trục với tab → gỡ tab đi, để một nguồn sự thật. */
+  function setFilter(patch: Partial<typeof FILTER_DEFAULTS>) {
+    const next: Partial<typeof FILTER_DEFAULTS> = { ...patch, page: '1' };
+    if ('type' in patch && isTypeTab) next.tab = 'all';
+    if ('media' in patch && tab === 'hasMedia') next.tab = 'all';
+    if ('since' in patch && tab === 'active24h') next.tab = 'all';
+    set(next);
+  }
 
-  const [confirmMsg, setConfirmMsg] = useState<{ id: string; preview: string } | null>(null);
-  const [msgBusy, setMsgBusy] = useState(false);
-  const [reportBusy, setReportBusy] = useState<string | null>(null);
+  /** Đổi tab: xoá filter của cùng trục để tab và popover không cùng giữ một điều kiện. */
+  function switchTab(nextTab: string) {
+    const patch: Partial<typeof FILTER_DEFAULTS> = { tab: nextTab, page: '1' };
+    if (nextTab === 'group' || nextTab === 'direct') patch.type = '';
+    if (nextTab === 'hasMedia') patch.media = '';
+    if (nextTab === 'active24h') patch.since = '';
+    set(patch);
+  }
 
-  // "/" focuses search
+  function openDetail(id: string) {
+    navigate(`/conversations/${id}`, {
+      state: { from: `${location.pathname}${location.search}` },
+    });
+  }
+
+  // Sort allow-list: click cột đang active quay về mặc định (recent).
+  // URL luôn giữ giá trị thô; ColumnHeader nhận `field:desc` vì server chỉ desc.
+  function toggleSort(field: string) {
+    set({ sort: sort === field && field !== 'recent' ? 'recent' : field, page: '1' });
+  }
+  const sortDisplay = `${sort}:desc`;
+
+  // Bàn phím (D8, mẫu BusinessesPage): j/k di chuyển, Enter mở, ? trợ giúp.
+  const [highlight, setHighlight] = useState(-1);
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => {
+    setHighlight((h) => (rows.length === 0 ? -1 : Math.min(h, rows.length - 1)));
+  }, [rows.length]);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (helpOpen) return;
+      if (e.key === 'j' || e.key === 'J') {
+        setHighlight((h) => Math.min(h + 1, rows.length - 1));
+      } else if (e.key === 'k' || e.key === 'K') {
+        setHighlight((h) => Math.max(h - 1, -1));
+      } else if (e.key === 'Enter') {
+        // Dòng/nút đang focus tự xử lý Enter — tránh mở chi tiết lần hai.
+        if (typeof t.closest === 'function' && t.closest('button, a, tr[tabindex="0"]')) return;
+        const c = rows[highlight];
+        if (c) openDetail(c._id);
+      } else if (e.key === '?') {
+        setHelpOpen(true);
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, highlight, helpOpen]);
+
+  // "/" tập trung ô tìm kiếm.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -301,393 +346,388 @@ export default function ConversationsPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Search debounce ~300ms; filter commits reset to page 1
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebouncedSearch(searchInput.trim());
-      setRequestedPage(1);
-    }, 300);
-    return () => clearTimeout(id);
-  }, [searchInput]);
+  // ── Export CSV (5.1) — cùng filter với list, khoảng ngày riêng cho file ──
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportRange, setExportRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({ page: String(requestedPage), limit: String(LIMIT) });
-    if (debouncedSearch) params.set('search', debouncedSearch);
-    if (filter.type) params.set('type', filter.type);
-    if (filter.pending) params.set('hasPendingReport', 'true');
-    if (filter.size === 'small') params.set('maxMembers', '9');
-    else if (filter.size === 'medium') {
-      params.set('minMembers', '10');
-      params.set('maxMembers', '99');
-    } else if (filter.size === 'large') params.set('minMembers', '100');
-    if (filter.media) params.set('hasMedia', 'true');
-    if (filter.recent) params.set('activeAfter', new Date(Date.now() - 3600_000).toISOString());
-    if (filter.sort === 'created') params.set('sort', 'created');
-    apiClient
-      .get(`/admin/conversations?${params.toString()}`)
-      .then((res) => {
-        if (cancelled) return;
-        setRows(res.data.data ?? []);
-        setTotal(res.data.total ?? 0);
-        setPage(res.data.page ?? requestedPage);
-      })
-      .catch(() => {
-        if (!cancelled) setError('Không thể tải danh sách hội thoại.');
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [requestedPage, debouncedSearch, filter, reloadToken]);
-
-  function setFilterAndReset(next: Partial<typeof filter>) {
-    setRequestedPage(1);
-    setFilter((f) => ({ ...f, ...next }));
+  /**
+   * Mở dialog export với khoảng ngày mặc định = bộ lọc ngày của bảng
+   * (`createdFrom/To` là bắt buộc theo spec — export phải cùng filter với list),
+   * để phần tóm tắt trong dialog nói đúng phạm vi file và người dùng đổi được.
+   */
+  function openExport() {
+    setExportRange({
+      from: values.from ? dayToIso(values.from, 'from') : '',
+      to: values.to ? dayToIso(values.to, 'to') : '',
+    });
+    setExportOpen(true);
   }
 
-  function clearFilters() {
-    setSearchInput('');
-    setDebouncedSearch('');
-    setFilter({ type: '', size: '', pending: false, media: false, recent: false, sort: 'recent' });
-    setRequestedPage(1);
+  function toCsvCell(v: unknown) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
 
-  const closeDetail = useCallback(() => {
-    setDetailId(null);
-    openedIdRef.current = null;
-    setFindOpen(false);
-    setFindQuery('');
-    setFindIdx(0);
-    setServerIds(null);
-    setFindHint(false);
-  }, []);
-
-  // Deep-link `?focus=<conversationId>` từ trang báo cáo: mở sẵn drawer.
-  // Xoá param khi đóng để reload không bật lại drawer người dùng vừa tắt.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const focusId = searchParams.get('focus');
-  const closeDetailAndClearFocus = useCallback(() => {
-    closeDetail();
-    if (focusId) {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('focus');
-          return next;
+  async function handleExport() {
+    setExporting(true);
+    try {
+      // Export tự cap 500 ở server — filterParams không có phân trang,
+      // chỉ cần cộng sort cho output ổn định.
+      const res = await apiClient.get<{
+        data: Conversation[];
+        total: number;
+        truncated: boolean;
+      }>('/admin/conversations/export', {
+        params: {
+          ...filterParams,
+          sort,
+          ...(exportRange.from ? { createdFrom: exportRange.from } : {}),
+          ...(exportRange.to ? { createdTo: exportRange.to } : {}),
         },
-        { replace: true },
-      );
-    }
-  }, [closeDetail, focusId, setSearchParams]);
-
-  useEffect(() => {
-    if (focusId) void openDetail(focusId);
-    // Chỉ chạy khi param đổi — openDetail đọc state khác nên không đưa vào deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId]);
-
-  const findQ = findOpen ? findQuery.trim() : '';
-
-  // Server search scoped to open conversation (debounced 300ms).
-  useEffect(() => {
-    if (!findOpen || !detailId || !findQ) {
-      setServerIds(null);
-      setFindHint(false);
-      return;
-    }
-    const id = setTimeout(() => {
-      apiClient
-        .get('/admin/messages/search', {
-          params: { q: findQ, conversationId: detailId, limit: 100 },
-        })
-        .then((res) => {
-          const data: { _id: string; conversationId?: string }[] = res.data.data ?? [];
-          // Fallback client-side nếu kết quả lẫn hội thoại khác.
-          if (data.some((d) => d.conversationId && String(d.conversationId) !== detailId)) {
-            setServerIds(null);
-            setFindHint(true);
-            return;
-          }
-          setServerIds(new Set(data.map((d) => String(d._id))));
-          setFindHint(false);
-        })
-        .catch(() => {
-          setServerIds(null);
-          setFindHint(true);
-        });
-    }, 300);
-    return () => clearTimeout(id);
-  }, [findOpen, detailId, findQ]);
-
-  const findMatches = !findQ
-    ? []
-    : serverIds
-      ? detailMessages.filter((m) => serverIds.has(m._id))
-      : detailMessages.filter((m) => (m.content ?? '').toLowerCase().includes(findQ.toLowerCase()));
-
-  const activeMatchId = findMatches.length > 0 ? findMatches[findIdx % findMatches.length]._id : null;
-
-  function stepFind(dir: 1 | -1) {
-    if (findMatches.length === 0) return;
-    setFindIdx((i) => (i + dir + findMatches.length) % findMatches.length);
-  }
-
-  // Scroll current match into view
-  useEffect(() => {
-    if (!activeMatchId) return;
-    msgRowRefs.current.get(activeMatchId)?.scrollIntoView({ block: 'center' });
-  }, [activeMatchId, findIdx]);
-
-  // Reset index on new query
-  useEffect(() => {
-    setFindIdx(0);
-  }, [findQ]);
-
-  // Ctrl/Cmd+F focuses drawer find when drawer open
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!detailId) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setFindOpen(true);
-        requestAnimationFrame(() => findInputRef.current?.focus());
+      });
+      if (res.data.truncated) {
+        addToast('warning', `Xuất 500/${res.data.total} dòng đầu tiên. Thu hẹp bộ lọc để xuất hết.`);
       }
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [detailId]);
-
-  function closeFind() {
-    setFindOpen(false);
-    setFindQuery('');
-    setFindIdx(0);
-    setServerIds(null);
-    setFindHint(false);
-  }
-
-  async function openDetail(id: string) {
-    setDetailId(id);
-    setDetailConv(null);
-    setDetailMembers([]);
-    setDetailMessages([]);
-    setDetailHasMore(false);
-    setDetailReports([]);
-    setFindOpen(false);
-    setFindQuery('');
-    setFindIdx(0);
-    setServerIds(null);
-    setFindHint(false);
-    setDetailLoading(true);
-    try {
-      const [detail, reports] = await Promise.all([
-        apiClient.get(`/admin/conversations/${id}`),
-        apiClient.get('/admin/reports', { params: { targetType: 'conversation', limit: 50 } }),
-      ]);
-      setDetailConv(detail.data.conversation);
-      setDetailMembers(detail.data.members ?? []);
-      setDetailMessages((detail.data.recentMessages ?? []).slice().reverse());
-      setDetailHasMore(Boolean(detail.data.hasMore));
-      const pending = (reports.data.data ?? []).filter(
-        (r: RelatedReport) => String(r.targetId ?? '') === id && r.status === 'pending',
+      const header = [
+        'ID',
+        'Tên hội thoại',
+        'Loại',
+        'Thành viên',
+        'Báo cáo chờ',
+        'Tuổi báo cáo cũ nhất',
+        'Có media',
+        'Hoạt động cuối',
+        'Tạo lúc',
+      ];
+      const lines = res.data.data.map((c) =>
+        [
+          c._id,
+          convName(c),
+          typeLabel(c.type),
+          c.memberCount ?? 0,
+          c.pendingReportCount ?? 0,
+          c.oldestPendingReportAt ? ageLabel(c.oldestPendingReportAt) : '',
+          c.hasMedia ? 'Có' : '',
+          c.lastMessageAt ?? '',
+          c.createdAt ?? '',
+        ]
+          .map(toCsvCell)
+          .join(','),
       );
-      setDetailReports(pending);
-      if (pending.length > 0) setPendingIds((prev) => new Set(prev).add(id));
-    } catch {
-      addToast('error', 'Không thể tải chi tiết hội thoại.');
-      setDetailId(null);
-    } finally {
-      setDetailLoading(false);
-    }
-  }
-
-  // Auto-scroll to bottom ONLY on first open of a conversation.
-  // loadOlder preserves scroll itself; no scroll on prepend.
-  const openedIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (detailLoading || !detailId) return;
-    if (openedIdRef.current === detailId) return;
-    openedIdRef.current = detailId;
-    const box = msgScrollRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [detailId, detailLoading, detailMessages.length]);
-
-  async function loadOlder() {
-    if (!detailId || moreLoading || detailMessages.length === 0) return;
-    const oldest = detailMessages[0].createdAt;
-    if (!oldest) return;
-    setMoreLoading(true);
-    const box = msgScrollRef.current;
-    const prevHeight = box?.scrollHeight ?? 0;
-    try {
-      const res = await apiClient.get(`/admin/conversations/${detailId}`, {
-        params: { before: oldest, limit: MSG_PAGE },
+      // BOM để Excel đọc đúng tiếng Việt.
+      const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], {
+        type: 'text/csv;charset=utf-8',
       });
-      const older: DetailMessage[] = (res.data.recentMessages ?? []).slice().reverse();
-      setDetailMessages((prev) => [...older, ...prev]);
-      setDetailHasMore(Boolean(res.data.hasMore));
-      requestAnimationFrame(() => {
-        if (box) box.scrollTop = box.scrollHeight - prevHeight;
-      });
-    } catch {
-      addToast('error', 'Không tải thêm được tin nhắn.');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `hoi-thoai-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('success', `Đã xuất ${lines.length} dòng CSV.`);
+      setExportOpen(false);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại. Vui lòng thử lại.'));
     } finally {
-      setMoreLoading(false);
+      setExporting(false);
     }
   }
 
-  async function executeSoftDelete() {
-    if (!confirmMsg || msgBusy) return;
-    setMsgBusy(true);
-    try {
-      await apiClient.post(`/admin/messages/${confirmMsg.id}/soft-delete`);
-      setDetailMessages((prev) =>
-        prev.map((m) => (m._id === confirmMsg.id ? { ...m, deleted: true } : m)),
-      );
-      addToast('success', 'Đã gỡ tin nhắn vi phạm.');
-      setConfirmMsg(null);
-    } catch {
-      addToast('error', 'Gỡ tin nhắn thất bại. Vui lòng thử lại.');
-    } finally {
-      setMsgBusy(false);
+  const advancedCount =
+    (values.type ? 1 : 0) +
+    (values.size ? 1 : 0) +
+    (values.media === 'true' ? 1 : 0) +
+    (values.minReports ? 1 : 0) +
+    (values.since ? 1 : 0) +
+    (values.from || values.to ? 1 : 0);
+  // Tab không phải "bộ lọc đang bật" — nó đã hiện active trên thanh tab.
+  const hasFilter = Boolean(values.q || advancedCount);
+  const loadError = apiErrorMessage(error, 'Không tải được danh sách hội thoại.');
+
+  function emptyCopy(): { title: string; copy: string } {
+    if (hasFilter)
+      return {
+        title: 'Không khớp hội thoại nào',
+        copy: 'Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm.',
+      };
+    switch (tab) {
+      case 'pendingReport':
+        return {
+          title: 'Hàng đợi trống',
+          copy: 'Không còn hội thoại nào chờ báo cáo — chuyển sang tab khác để kiểm tra.',
+        };
+      case 'group':
+        return { title: 'Chưa có hội thoại nhóm nào', copy: 'Hội thoại nhóm sẽ xuất hiện ở đây.' };
+      case 'direct':
+        return {
+          title: 'Chưa có hội thoại trực tiếp nào',
+          copy: 'Hội thoại 1-1 sẽ xuất hiện ở đây.',
+        };
+      case 'hasMedia':
+        return {
+          title: 'Không có hội thoại nào chứa media',
+          copy: 'Ảnh, voice, video hoặc tệp đính kèm sẽ nằm ở đây.',
+        };
+      case 'active24h':
+        return {
+          title: 'Không có hoạt động trong 24 giờ qua',
+          copy: 'Chưa có tin nhắn mới trong ngày hôm nay.',
+        };
+      default:
+        return {
+          title: 'Chưa có hội thoại nào',
+          copy: 'Hội thoại sẽ xuất hiện khi người dùng bắt đầu trò chuyện.',
+        };
     }
   }
-
-  async function actOnReport(id: string, action: 'resolve' | 'dismiss') {
-    setReportBusy(id);
-    try {
-      await apiClient.post(`/admin/reports/${id}/${action}`);
-      setDetailReports((prev) => prev.filter((r) => r._id !== id));
-      setPendingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(detailId ?? '');
-        return next;
-      });
-      addToast('success', action === 'resolve' ? 'Đã giải quyết báo cáo.' : 'Đã bỏ qua báo cáo.');
-      setReloadToken((t) => t + 1);
-    } catch {
-      addToast('error', 'Thao tác báo cáo thất bại.');
-    } finally {
-      setReportBusy(null);
-    }
-  }
-
-  const totalPages = Math.ceil(total / LIMIT);
-  const nameOf = (userId: string) =>
-    detailMembers.find((m) => String(m.userId) === String(userId))?.displayName || DELETED_NAME;
 
   return (
-    <div className="conv-page">
-      <header className="conv-head">
-        <h1 className="conv-title">
-          Danh sách các cuộc hội thoại <span className="conv-count">{loading && rows.length === 0 ? '…' : total.toLocaleString('vi-VN')}</span>
-        </h1>
-        <div className="conv-toolbar">
-          <div className="conv-search-wrap">
-            <Search size={16} strokeWidth={2} aria-hidden className="conv-search-icon" />
-            <input
-              ref={searchRef}
-              className="input conv-search conv-search--with-icon"
-              type="search"
-              placeholder="Tìm theo tên…  ( / )"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              aria-label="Tìm kiếm hội thoại"
-            />
-          </div>
-          <select
-            className="select conv-sort"
-            value={filter.sort}
-            onChange={(e) => setFilterAndReset({ sort: e.target.value })}
-            aria-label="Sắp xếp"
-          >
-            <option value="recent">Mới hoạt động</option>
-            <option value="created">Mới tạo</option>
-          </select>
-          <div className="conv-filter">
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setFilterOpen((o) => !o)}
-              type="button"
-              aria-expanded={filterOpen}
-              aria-label="Lọc"
-              title="Lọc"
-            >
-              <Funnel size={16} strokeWidth={2} aria-hidden />
+    <div className="page-stack">
+      <ListHeader
+        title="Hội thoại"
+        count={total}
+        actions={(
+          <>
+            <ExportButton onExport={openExport} />
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>
+              Làm mới
             </button>
-            {filterOpen && (
-              <div className="surface-card" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 10, padding: 'var(--space-3)', display: 'grid', gap: 'var(--space-2)', minWidth: 180 }}>
-                <label className="cell-meta" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                  <input type="checkbox" checked={filter.type === 'direct'} onChange={(e) => setFilterAndReset({ type: e.target.checked ? 'direct' : '' })} />
-                  Trực tiếp
-                </label>
-                <label className="cell-meta" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                  <input type="checkbox" checked={filter.type === 'group'} onChange={(e) => setFilterAndReset({ type: e.target.checked ? 'group' : '' })} />
-                  Nhóm
-                </label>
-                <label className="cell-meta" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                  <input type="checkbox" checked={filter.media} onChange={(e) => setFilterAndReset({ media: e.target.checked })} />
-                  Có media
-                </label>
-                <label className="cell-meta" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                  Quy mô
-                  <select
-                    className="select"
-                    value={filter.size}
-                    onChange={(e) => setFilterAndReset({ size: e.target.value })}
-                    aria-label="Lọc theo quy mô"
-                  >
-                    <option value="">Tất cả</option>
-                    <option value="small">Nhỏ (&lt;10)</option>
-                    <option value="medium">Vừa (10–99)</option>
-                    <option value="large">Lớn (100+)</option>
-                  </select>
-                </label>
-              </div>
-            )}
-          </div>
+          </>
+        )}
+      >
+        <div className="filter-search-wrap">
+          <Search size={15} className="filter-search-icon" aria-hidden />
+          <input
+            ref={searchRef}
+            className="input filter-search filter-search--icon"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') set({ q: searchInput.trim(), page: '1' });
+            }}
+            placeholder="Tên hội thoại hoặc thành viên ( / )"
+            aria-label="Tìm hội thoại theo tên hoặc tên thành viên"
+          />
         </div>
-        <div className="table-actions">
-          <button
-            className="filter-chip"
-            onClick={() => setFilterAndReset({ pending: !filter.pending })}
-            type="button"
-            aria-pressed={filter.pending}
-          >
-            Chờ xử lý{filter.pending ? <X size={14} strokeWidth={2.5} aria-hidden className="filter-chip-x" /> : null}
-          </button>
-          <button
-            className="filter-chip"
-            onClick={() => setFilterAndReset({ recent: !filter.recent })}
-            type="button"
-            aria-pressed={filter.recent}
-          >
-            Mới hoạt động{filter.recent ? <X size={14} strokeWidth={2.5} aria-hidden className="filter-chip-x" /> : null}
-          </button>
-          {(debouncedSearch || filter.type || filter.size || filter.pending || filter.media || filter.recent) && (
-            <button className="btn btn-ghost btn-sm" onClick={clearFilters} type="button" aria-label="Xóa lọc" title="Xóa lọc">
-              <X size={16} strokeWidth={2} aria-hidden />
+
+        <FilterPopover
+          activeCount={advancedCount}
+          onClear={() =>
+            setFilter({ type: '', size: '', media: '', minReports: '', since: '', from: '', to: '' })
+          }
+        >
+          <label className="form-field">
+            <span className="form-label">Loại hội thoại</span>
+            <select
+              className="select"
+              value={values.type}
+              onChange={(e) => setFilter({ type: e.target.value })}
+            >
+              <option value="">Mọi loại</option>
+              <option value="group">Nhóm</option>
+              <option value="direct">Trực tiếp</option>
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Quy mô</span>
+            <select
+              className="select"
+              value={values.size}
+              onChange={(e) => setFilter({ size: e.target.value })}
+            >
+              {SIZE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Hoạt động trong</span>
+            <select
+              className="select"
+              value={values.since}
+              onChange={(e) => setFilter({ since: e.target.value })}
+            >
+              {SINCE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Báo cáo chờ tối thiểu</span>
+            <select
+              className="select"
+              value={values.minReports}
+              onChange={(e) => setFilter({ minReports: e.target.value })}
+            >
+              {MIN_REPORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="cell-meta filter-checkbox">
+            <input
+              type="checkbox"
+              checked={values.media === 'true'}
+              onChange={(e) => setFilter({ media: e.target.checked ? 'true' : '' })}
+            />
+            Có media (ảnh, voice, video, tệp)
+          </label>
+          <div className="form-field">
+            <span className="form-label">Ngày tạo</span>
+            <div className="export-date-row">
+              <input
+                className="input input-sm"
+                type="date"
+                value={values.from}
+                max={values.to || undefined}
+                onChange={(e) => setFilter({ from: e.target.value })}
+                aria-label="Từ ngày tạo"
+              />
+              <span className="cell-meta" aria-hidden>
+                →
+              </span>
+              <input
+                className="input input-sm"
+                type="date"
+                value={values.to}
+                min={values.from || undefined}
+                onChange={(e) => setFilter({ to: e.target.value })}
+                aria-label="Đến ngày tạo"
+              />
+            </div>
+          </div>
+          <label className="form-field">
+            <span className="form-label">Sắp xếp</span>
+            <select
+              className="select"
+              value={sort}
+              onChange={(e) => set({ sort: e.target.value, page: '1' })}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </FilterPopover>
+      </ListHeader>
+
+      <div className="filter-bar">
+        <StatusTabs
+          tabs={[
+            { key: 'all', label: 'Tất cả', count: stats?.all },
+            { key: 'pendingReport', label: 'Chờ báo cáo', count: stats?.pendingReport },
+            { key: 'group', label: 'Nhóm', count: stats?.group },
+            { key: 'direct', label: 'Trực tiếp', count: stats?.direct },
+            { key: 'hasMedia', label: 'Có media', count: stats?.hasMedia },
+            { key: 'active24h', label: '24 giờ qua', count: stats?.active24h },
+          ]}
+          active={tab}
+          onChange={switchTab}
+        />
+        <span className="cell-meta">Nhấn dòng để xem chi tiết · phím ? để xem phím tắt</span>
+      </div>
+
+      {hasFilter && (
+        <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
+          {values.q && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => set({ q: '', page: '1' })}
+            >
+              Từ khoá: {values.q} <X size={12} aria-hidden />
             </button>
           )}
+          {values.type && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ type: '' })}
+            >
+              Loại: {typeLabel(values.type)} <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.size && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ size: '' })}
+            >
+              Quy mô: {SIZE_OPTIONS.find((s) => s.value === values.size)?.label}{' '}
+              <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.media === 'true' && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ media: '' })}
+            >
+              Có media <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.minReports && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ minReports: '' })}
+            >
+              Báo cáo ≥ {values.minReports} <X size={12} aria-hidden />
+            </button>
+          )}
+          {values.since && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ since: '' })}
+            >
+              Hoạt động: {SINCE_OPTIONS.find((s) => s.value === values.since)?.label}{' '}
+              <X size={12} aria-hidden />
+            </button>
+          )}
+          {(values.from || values.to) && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ from: '', to: '' })}
+            >
+              Ngày tạo: {values.from ? dayLabel(values.from) : '…'} → {values.to ? dayLabel(values.to) : '…'}{' '}
+              <X size={12} aria-hidden />
+            </button>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            onClick={() => {
+              setSearchInput('');
+              reset();
+            }}
+          >
+            Xoá bộ lọc
+          </button>
         </div>
-      </header>
+      )}
 
-      <section className="table-shell conv-shell" aria-label="Danh sách hội thoại">
-        {error && <p className="alert" role="alert" style={{ margin: 'var(--space-4)' }}>{error}</p>}
-
-        {loading && rows.length > 0 && (
-          <div className="conv-reloading" role="status" aria-label="Đang tải">
-            <span className="conv-spinner" aria-hidden="true" />
-          </div>
+      <TableShell>
+        {isError && (
+          <StateBlock variant="error" title="Không tải được danh sách hội thoại" copy={loadError}>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>
+              Thử lại
+            </button>
+          </StateBlock>
         )}
 
-        {loading && rows.length === 0 && !error ? (
-          <div className="conv-skeleton" aria-label="Đang tải">
+        {isLoading && (
+          <div className="conv-skeleton" aria-label="Đang tải danh sách hội thoại">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="conv-skel-row">
                 <div className="skeleton-card conv-skel-avatar" />
@@ -698,39 +738,93 @@ export default function ConversationsPage() {
               </div>
             ))}
           </div>
-        ) : rows.length === 0 && !error ? (
-          <div className="empty-state">
-            <div>
-              <div className="state-icon" aria-hidden="true"><Inbox size={24} strokeWidth={2} /></div>
-              <div className="state-title">Không tìm thấy hội thoại</div>
-              <p className="state-copy">Thử đổi từ khóa hoặc xóa bộ lọc.</p>
-            </div>
-          </div>
-        ) : (
-          <div className={`table-scroll${loading ? ' conv-stale' : ''}`}>
-            <table className="data-table conv-table" aria-label="Danh sách hội thoại">
+        )}
+
+        {!isLoading && !isError && (
+          <div className="table-scroll table-scroll--fit">
+            <table className="data-table data-table--compact" aria-label="Danh sách hội thoại">
               <thead>
                 <tr>
-                  <th scope="col">Hội thoại</th>
-                  <th scope="col">TV</th>
-                  <th scope="col">Hoạt động cuối</th>
-                  <th scope="col">Báo cáo</th>
+                  <ColumnHeader label="Hội thoại" />
+                  <ColumnHeader
+                    label="Thành viên"
+                    className="col-num"
+                    sortField="members"
+                    sort={sortDisplay}
+                    onSort={toggleSort}
+                  />
+                  <ColumnHeader
+                    label="Hoạt động cuối"
+                    sortField="recent"
+                    sort={sortDisplay}
+                    onSort={toggleSort}
+                  />
+                  <ColumnHeader
+                    label="Tạo lúc"
+                    className="col-hide-mobile"
+                    sortField="created"
+                    sort={sortDisplay}
+                    onSort={toggleSort}
+                  />
+                  <ColumnHeader
+                    label="Báo cáo"
+                    sortField="reported"
+                    sort={sortDisplay}
+                    onSort={toggleSort}
+                  />
+                  {/* Tuổi báo cáo (SLA): ẩn ≤1099px, có dòng .show-under-1100 ở ô đầu */}
+                  <ColumnHeader label="Tuổi" className="col-hide-xs" />
+                  <ColumnHeader label="Media" className="col-hide-mobile" />
+                  <th scope="col" className="th-center col-sticky">
+                    Hành động
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c) => (
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={8}>
+                      <EmptyState
+                        title={emptyCopy().title}
+                        copy={emptyCopy().copy}
+                        action={
+                          hasFilter ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              type="button"
+                              onClick={() => {
+                                setSearchInput('');
+                                reset();
+                              }}
+                            >
+                              Xoá bộ lọc
+                            </button>
+                          ) : undefined
+                        }
+                      />
+                    </td>
+                  </tr>
+                )}
+                {rows.map((c, i) => (
                   <tr
                     key={c._id}
-                    className="conv-row"
-                    onClick={() => openDetail(c._id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') openDetail(c._id);
-                    }}
+                    className={`${i === highlight ? 'row-highlight' : ''} conv-row`.trim()}
                     tabIndex={0}
+                    aria-label={`Xem chi tiết ${convName(c)}`}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('a,button,input')) return;
+                      openDetail(c._id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      if ((e.target as HTMLElement).closest('a,button,input,textarea,select')) return;
+                      e.preventDefault();
+                      openDetail(c._id);
+                    }}
                   >
                     <td>
                       <div className="cell-primary">
-                        <div className="cell-avatar" aria-hidden="true">
+                        <div className="cell-avatar conv-avatar" aria-hidden="true">
                           {initials(convName(c), 'H')}
                           <span
                             className={`conv-type-dot${c.type === 'group' ? ' conv-type-group' : ''}`}
@@ -749,17 +843,67 @@ export default function ConversationsPage() {
                           <div className="cell-meta conv-preview">
                             {c.lastMessagePreview ? c.lastMessagePreview.slice(0, 80) : '—'}
                           </div>
+                          {/* Dữ liệu của cột Tuổi khi ẩn ở ≤1099px (DESIGN §6) */}
+                          {(c.pendingReportCount ?? 0) > 0 && c.oldestPendingReportAt && (
+                            <div className="cell-meta show-under-1100">
+                              Chờ báo cáo {ageLabel(c.oldestPendingReportAt)}
+                            </div>
+                          )}
+                          {/* Dữ liệu của cột Tạo lúc + Media khi ẩn ở ≤860px */}
+                          <div className="cell-meta show-under-860">
+                            {typeLabel(c.type)} · Tạo {formatDateTime(c.createdAt)}
+                            {c.hasMedia ? ' · Có media' : ''}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td><span className="cell-title">{c.memberCount ?? c.members?.length ?? 0}</span></td>
-                    <td><div className="cell-meta" title={formatTime(c.lastMessageAt)}>{formatRelative(c.lastMessageAt)}</div></td>
+                    <td className="col-num">
+                      <span className="cell-title">{c.memberCount ?? 0}</span>
+                    </td>
                     <td>
-                      {(c.pendingReportCount ?? 0) > 0 || pendingIds.has(c._id) ? (
-                        <StatusBadge tone="warning" label="Chờ xử lý" />
+                      <span className="cell-date" title={formatDateTime(c.lastMessageAt)}>
+                        {formatDateTime(c.lastMessageAt)}
+                      </span>
+                    </td>
+                    <td className="col-hide-mobile">
+                      <span className="cell-date">{formatDateTime(c.createdAt)}</span>
+                    </td>
+                    <td>
+                      {(c.pendingReportCount ?? 0) > 0 ? (
+                        <StatusBadge tone="warning" label={`${c.pendingReportCount} báo cáo`} />
                       ) : (
                         <span className="cell-meta">—</span>
                       )}
+                    </td>
+                    <td className="col-hide-xs">
+                      {(c.pendingReportCount ?? 0) > 0 && c.oldestPendingReportAt ? (
+                        <StatusBadge tone={ageTone(c.oldestPendingReportAt)} label={ageLabel(c.oldestPendingReportAt)} />
+                      ) : (
+                        <span className="cell-meta">—</span>
+                      )}
+                    </td>
+                    <td className="col-hide-mobile">
+                      {c.hasMedia ? (
+                        <span className="badge badge-muted">Có media</span>
+                      ) : (
+                        <span className="cell-meta">—</span>
+                      )}
+                    </td>
+                    <td className="col-sticky">
+                      <div className="table-actions table-actions--end">
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDetail(c._id);
+                          }}
+                          aria-label={`Xem ${convName(c)}`}
+                          title="Chi tiết"
+                        >
+                          <Eye size={16} aria-hidden />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -768,252 +912,84 @@ export default function ConversationsPage() {
           </div>
         )}
 
-        <div className="table-footer">
-          <span className="cell-meta">
-            Trang {page} / {Math.max(totalPages, 1)} · {total.toLocaleString('vi-VN')} hội thoại
-          </span>
-          <div className="pagination-controls">
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={page <= 1 || loading}
-              onClick={() => setRequestedPage((p) => Math.max(1, p - 1))}
-              type="button"
-            >
-              Trước
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={page >= totalPages || loading}
-              onClick={() => setRequestedPage((p) => p + 1)}
-              type="button"
-            >
-              Sau
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          unit="hội thoại"
+          onPageChange={(p) => set({ page: String(p) })}
+          showGoto
+          pageSize={pageSize}
+          pageSizes={PAGE_SIZES}
+          onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
+        />
+      </TableShell>
+
+      <Dialog
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        labelId="conv-shortcuts-title"
+        variant="dialog"
+      >
+        <div className="dialog">
+          <div className="dialog-header">
+            <h2 id="conv-shortcuts-title" className="panel-title">
+              Phím tắt
+            </h2>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setHelpOpen(false)}>
+              Đóng
             </button>
           </div>
+          <div className="dialog-body">
+            <dl className="description-list">
+              <div>
+                <dt>
+                  <kbd>J</kbd> / <kbd>K</kbd>
+                </dt>
+                <dd>Di chuyển dòng</dd>
+              </div>
+              <div>
+                <dt>
+                  <kbd>Enter</kbd>
+                </dt>
+                <dd>Mở chi tiết hội thoại</dd>
+              </div>
+              <div>
+                <dt>
+                  <kbd>/</kbd>
+                </dt>
+                <dd>Tìm hội thoại</dd>
+              </div>
+              <div>
+                <dt>
+                  <kbd>?</kbd>
+                </dt>
+                <dd>Mở bảng này</dd>
+              </div>
+            </dl>
+          </div>
         </div>
-      </section>
-
-      <Dialog open={detailId !== null} onClose={closeDetailAndClearFocus} labelId="conv-detail-title" variant="drawer">
-        {detailId && (
-          <aside className="drawer conv-drawer">
-            <div className="drawer-header conv-drawer-head">
-              <div className="cell-primary">
-                <div className="cell-avatar" aria-hidden="true">
-                  {initials(convName(detailConv), 'H')}
-                </div>
-                <div>
-                  <h2 id="conv-detail-title" className="conv-drawer-title">{convName(detailConv)}</h2>
-                  <p className="cell-meta">
-                    {detailConv ? typeLabel(detailConv.type) : ''} · {detailMembers.length} thành viên · Esc để đóng
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                {!findOpen && !detailLoading && (
-                  <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={() => { setFindOpen(true); requestAnimationFrame(() => findInputRef.current?.focus()); }} type="button" aria-label="Tìm trong hội thoại" title="Tìm trong hội thoại"><Search size={16} strokeWidth={2} aria-hidden /></button>
-                )}
-                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={closeDetailAndClearFocus} type="button" aria-label="Đóng" title="Đóng"><X size={16} strokeWidth={2} aria-hidden /></button>
-              </div>
-            </div>
-            {detailId && !detailLoading && (
-              <div className="conv-findbar" hidden={!findOpen}>
-                <input
-                  ref={findInputRef}
-                  className="input conv-find-input"
-                  type="search"
-                  placeholder="Tìm trong hội thoại…"
-                  value={findQuery}
-                  onChange={(e) => setFindQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      stepFind(e.shiftKey ? -1 : 1);
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      stepFind(1);
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      stepFind(-1);
-                    } else if (e.key === 'Escape') {
-                      e.stopPropagation();
-                      closeFind();
-                    }
-                  }}
-                  aria-label="Tìm tin nhắn trong hội thoại"
-                />
-                <span className="cell-meta conv-find-count" aria-live="polite">
-                  {findQ ? `${findMatches.length > 0 ? (findIdx % findMatches.length) + 1 : 0}/${findMatches.length}` : ''}
-                </span>
-                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={() => stepFind(-1)} type="button" aria-label="Kết quả trước" title="Kết quả trước" disabled={findMatches.length === 0}><ChevronUp size={16} strokeWidth={2} aria-hidden /></button>
-                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={() => stepFind(1)} type="button" aria-label="Kết quả tiếp" title="Kết quả tiếp" disabled={findMatches.length === 0}><ChevronDown size={16} strokeWidth={2} aria-hidden /></button>
-                <button className="btn btn-ghost btn-sm conv-icon-btn" onClick={closeFind} type="button" aria-label="Đóng tìm kiếm" title="Đóng tìm kiếm"><X size={16} strokeWidth={2} aria-hidden /></button>
-              </div>
-            )}
-            {(findHint || detailHasMore) && findOpen && findQ ? (
-              <p className="cell-meta conv-find-hint">Tải thêm để tìm tiếp</p>
-            ) : null}
-            <div className="drawer-body conv-drawer-body">
-              {detailLoading ? (
-                <div className="conv-skeleton" aria-label="Đang tải chi tiết">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="skeleton-line conv-skel-msg" />
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <div className="conv-members" aria-label="Thành viên">
-                    {detailMembers.map((m) => (
-                      <span key={String(m.userId)} className="conv-member-chip" title={m.displayName ?? DELETED_NAME}>
-                        <span className="conv-member-avatar" aria-hidden="true">
-                          {initials(m.displayName ?? '?', '?')}
-                        </span>
-                        {m.displayName ?? DELETED_NAME}
-                        {m.role === 'admin' ? <span className="badge badge-primary">QT</span> : null}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="conv-chat" ref={msgScrollRef} aria-label="Tin nhắn" role="log">
-                    <div className="conv-more-wrap">
-                    {detailHasMore && (
-                      <button
-                        className="btn btn-secondary btn-sm conv-more"
-                        onClick={loadOlder}
-                        disabled={moreLoading}
-                        type="button"
-                      >
-                        {moreLoading ? 'Đang tải…' : <><ChevronUp size={16} strokeWidth={2} aria-hidden /> Tải thêm tin nhắn</>}
-                      </button>
-                    )}
-                    </div>
-                    {detailMessages.map((m, i) => {
-                      const prev = detailMessages[i - 1];
-                      const next = detailMessages[i + 1];
-                      const sameSender = prev && String(prev.senderId) === String(m.senderId);
-                      const t = msgTimeMs(m);
-                      const pt = prev ? msgTimeMs(prev) : null;
-                      const grouped = Boolean(sameSender && t != null && pt != null && t - pt < GROUP_GAP_MS);
-                      const nextSame = next && String(next.senderId) === String(m.senderId);
-                      const nt = next ? msgTimeMs(next) : null;
-                      const showTime = !(nextSame && t != null && nt != null && nt - t < GROUP_GAP_MS);
-                      const isActiveMatch = activeMatchId === m._id;
-                      return (
-                        <div
-                          key={m._id}
-                          ref={(el) => {
-                            if (el) msgRowRefs.current.set(m._id, el);
-                            else msgRowRefs.current.delete(m._id);
-                          }}
-                          className={`conv-msg-row${grouped ? ' conv-msg-grouped' : ''}${isActiveMatch ? ' conv-match-active' : ''}`}
-                        >
-                          {!grouped && (
-                            <div className="conv-msg-head">
-                              <span className="conv-msg-avatar" aria-hidden="true">
-                                {initials(nameOf(m.senderId), '?')}
-                              </span>
-                              <span className={`conv-msg-name conv-sender-${senderColorIdx(String(m.senderId))}`}>{nameOf(m.senderId)}</span>
-                            </div>
-                          )}
-                          <div className="conv-msg-line">
-                            <span className="conv-msg-gutter" aria-hidden="true" />
-                            <div className="conv-bubble">
-                              <MessageBody
-                                m={m}
-                                find={findQ}
-                                onRetry={detailId ? () => void openDetail(detailId) : undefined}
-                              />
-                              {showTime && (
-                                <div className="conv-bubble-foot">
-                                  <span>{formatClock(m.createdAt) || formatTime(m.createdAt)}</span>
-                                  {m.deleted ? (
-                                    <StatusBadge tone="muted" label="Đã gỡ" />
-                                  ) : (
-                                    <button
-                                      className="conv-del"
-                                      onClick={() => setConfirmMsg({ id: m._id, preview: (m.content ?? '').slice(0, 80) })}
-                                      type="button"
-                                      aria-label="Gỡ tin nhắn này"
-                                      title="Gỡ tin nhắn này"
-                                    >
-                                      <Trash2 size={13} strokeWidth={2} aria-hidden />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {detailMessages.length === 0 && (
-                      <p className="cell-meta">Chưa có tin nhắn nào.</p>
-                    )}
-                  </div>
-
-                  {detailReports.length > 0 && (
-                    <section aria-label="Báo cáo chờ xử lý" className="conv-reports">
-                      <h3 className="panel-title">Báo cáo chờ xử lý ({detailReports.length})</h3>
-                      {detailReports.map((r) => (
-                        <div key={r._id} className="surface-card conv-report">
-                          <p className="cell-title">{r.reason}</p>
-                          <div className="cell-meta">{formatTime(r.createdAt)}</div>
-                          <div className="table-actions conv-report-actions">
-                            <button
-                              className="btn btn-primary btn-sm"
-                              onClick={() => actOnReport(r._id, 'resolve')}
-                              type="button"
-                              disabled={reportBusy === r._id}
-                            >
-                              {reportBusy === r._id ? 'Đang xử lý…' : <><Check size={16} strokeWidth={2} aria-hidden /> Giải quyết</>}
-                            </button>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => actOnReport(r._id, 'dismiss')}
-                              type="button"
-                              disabled={reportBusy === r._id}
-                              aria-label="Bỏ qua báo cáo"
-                            >
-                              <X size={16} strokeWidth={2} aria-hidden /> Bỏ qua
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </section>
-                  )}
-
-                  <section aria-label="Vùng nguy hiểm" className="conv-reports">
-                    <h3 className="panel-title">Vùng nguy hiểm</h3>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      type="button"
-                      disabled
-                      title="Sắp có — xóa hội thoại chưa được hỗ trợ"
-                    >
-                      <Trash2 size={16} strokeWidth={2} aria-hidden /> Xóa hội thoại
-                    </button>
-                  </section>
-                </>
-              )}
-            </div>
-          </aside>
-        )}
       </Dialog>
 
       <ConfirmDialog
-        open={confirmMsg !== null}
+        open={exportOpen}
         onClose={() => {
-          if (!msgBusy) setConfirmMsg(null);
+          setExportOpen(false);
+          setExportRange({ from: '', to: '' });
         }}
-        title="Gỡ tin nhắn vi phạm?"
-        description={
-          confirmMsg
-            ? `Tin nhắn "${confirmMsg.preview || '(không nội dung)'}" sẽ bị gỡ khỏi hội thoại. Hành động này không thể hoàn tác.`
-            : undefined
+        title={`Xuất ${total.toLocaleString('vi-VN')} hội thoại ra CSV?`}
+        description="File chứa tên hội thoại và tin nhắn xem trước — đây là nội dung do người dùng tạo, không che. Tối đa 500 dòng theo bộ lọc hiện tại; khoảng ngày dưới đây là phạm vi của file (mặc định lấy từ bộ lọc bảng). Chỉ lưu ở máy được phép xử lý dữ liệu."
+        preview={
+          <ExportDateRange
+            from={exportRange.from}
+            to={exportRange.to}
+            onChange={(patch) => setExportRange((prev) => ({ ...prev, ...patch }))}
+          />
         }
-        confirmLabel="Xác nhận gỡ"
-        onConfirm={executeSoftDelete}
-        busy={msgBusy}
-        variant="danger"
+        confirmLabel={exporting ? 'Đang xuất...' : 'Xuất CSV'}
+        variant="primary"
+        busy={exporting}
+        onConfirm={handleExport}
       />
     </div>
   );
