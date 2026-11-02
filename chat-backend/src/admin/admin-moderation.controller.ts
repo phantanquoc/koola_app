@@ -30,6 +30,7 @@ import {
   UpdateMusicTrackDto,
 } from './dto/music-track.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
+import { applyCreatedAtRange } from '../common/utils/date-range';
 import { ConversationDoc } from '../conversations/conversation.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
@@ -51,6 +52,9 @@ import type { Request } from 'express';
 class SearchMessagesQueryDto extends SearchMessagesDto {
   @IsOptional() @IsString() includeDeleted?: string;
 }
+
+/** Export hội thoại cap 500 dòng, cùng con số với users/businesses export. */
+export const CONVERSATION_EXPORT_MAX = 500;
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
@@ -106,17 +110,110 @@ export class AdminModerationController {
     });
   }
 
+  /**
+   * Danh sách hội thoại — mọi consumer (list, stats, export) đi qua đây.
+   * Tách ra để ba endpoint không bao giờ lệch bộ lọc: stats `all` phải bằng
+   * `total` của list dưới cùng điều kiện.
+   */
   @Get('conversations')
   async listConversations(@Query() dto: ListConversationsDto) {
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 20;
+    return this.queryConversations(dto, dto.page ?? 1, dto.limit ?? 20);
+  }
+
+  private async queryConversations(
+    dto: ListConversationsDto,
+    page: number,
+    limit: number,
+  ) {
     const skip = (page - 1) * limit;
+    const ctx = await this.conversationFilterContext(dto);
+    const filter = await this.buildConversationFilter(dto, ctx);
+    // sort=reported: order by pending-report count desc via single aggregation,
+    // paginate the ordered ids so pages stay stable.
+    if (dto.sort === 'reported') {
+      const grouped = [...ctx.reportCounts.entries()]
+        .map(([id, r]) => ({ _id: id, n: r.n }))
+        .sort((a, b) => b.n - a.n);
+      const matchingIds: unknown[] = await this.convModel.distinct(
+        '_id',
+        filter as any,
+      );
+      const allowed = new Set(matchingIds.map((id) => String(id)));
+      const min = dto.minReports ?? 1;
+      const ordered = grouped.filter(
+        (r) => allowed.has(String(r._id ?? '')) && r.n >= min,
+      );
+      const total = ordered.length;
+      const slice = ordered.slice(skip, skip + limit);
+      const convs =
+        slice.length > 0
+          ? await this.convModel
+              .find({ _id: { $in: slice.map((r) => r._id) } })
+              .lean()
+          : [];
+      const byId = new Map(convs.map((c: any) => [String(c._id), c]));
+      const data = slice.map((r) => byId.get(String(r._id))).filter(Boolean);
+      const withDisplay = await this.withDisplayNames(data as any[]);
+      return {
+        data: await this.toListRows(withDisplay as any[], ctx.reportCounts),
+        total,
+        page,
+        limit,
+      };
+    }
+    const sortStage =
+      dto.sort === 'created'
+        ? { createdAt: -1, _id: -1 }
+        : dto.sort === 'members'
+          ? { __memberCount: -1, lastMessageAt: -1, _id: -1 }
+          : { __noMsg: 1, lastMessageAt: -1, _id: -1 };
+    const [data, total] = await Promise.all([
+      this.convModel.aggregate([
+        { $match: filter as any },
+        {
+          $addFields: {
+            __noMsg: { $cond: [{ $ifNull: ['$lastMessageAt', true] }, 1, 0] },
+            // $size trước khi sort — ổn định theo _id nên phân trang không nhảy.
+            __memberCount: { $size: { $ifNull: ['$members', []] } },
+          },
+        },
+        { $sort: sortStage as any },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { __noMsg: 0, __memberCount: 0 } },
+      ]),
+      this.convModel.countDocuments(filter),
+    ]);
+    const withDisplay = await this.withDisplayNames(data as any[]);
+    return {
+      data: await this.toListRows(
+        withDisplay as any[],
+        // Map rỗng nghĩa là chưa truy vấn báo cáo — để toListRows tự lấy cho trang.
+        ctx.reportCounts.size > 0 ? ctx.reportCounts : undefined,
+      ),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
+   * Dựng filter dùng chung cho list/stats/export. `ctx` cho phép stats truyền
+   * tập id đã tính sẵn — tránh chạy lại aggregate báo cáo 6 lần.
+   */
+  private async buildConversationFilter(
+    dto: ListConversationsDto,
+    ctx: {
+      reportCounts: Map<string, { n: number; oldest?: Date }>;
+      mediaIds: Set<string>;
+    },
+  ): Promise<Record<string, unknown>> {
     const filter: Record<string, unknown> = {};
     if (dto.type) filter['type'] = dto.type;
-    if (dto.activeAfter) {
-      const d = new Date(dto.activeAfter);
-      if (!Number.isNaN(d.getTime())) filter['lastMessageAt'] = { $gte: d };
-    }
+    if (dto.activeAfter) this.applyLastActivityRange(filter, dto.activeAfter);
+    this.applyLastActivityRange(filter, dto.activeFrom, dto.activeTo);
+    // Chỉ thêm key khi có giá trị; merge vào createdAt nếu filter khác đã đặt.
+    applyCreatedAtRange(filter, dto.createdFrom, dto.createdTo);
     if (dto.search && dto.search.trim().length > 0) {
       const escaped = escapeRegExp(dto.search.trim());
       const nameRegex = new RegExp(escaped, 'i');
@@ -138,53 +235,29 @@ export class AdminModerationController {
     }
     if (dto.minMembers != null || dto.maxMembers != null) {
       const conds: unknown[] = [];
-      if (dto.minMembers != null) conds.push({ $gte: [{ $size: '$members' }, dto.minMembers] });
-      if (dto.maxMembers != null) conds.push({ $lte: [{ $size: '$members' }, dto.maxMembers] });
+      if (dto.minMembers != null)
+        conds.push({ $gte: [{ $size: '$members' }, dto.minMembers] });
+      if (dto.maxMembers != null)
+        conds.push({ $lte: [{ $size: '$members' }, dto.maxMembers] });
       filter['$expr'] = conds.length === 1 ? conds[0] : { $and: conds };
     }
     // Collect _id $in constraints (pending reports, minReports, media) and intersect.
     const idSets: Set<string>[] = [];
     if (dto.hasPendingReport === 'true') {
-      const pending = await this.reportModel
-        .find({ targetType: 'conversation', status: 'pending' })
-        .select('targetId')
-        .lean();
-      idSets.push(
-        new Set(
-          pending
-            .map((r: any) => String(r.targetId ?? ''))
-            .filter((t: string) => Types.ObjectId.isValid(t)),
-        ),
-      );
+      idSets.push(new Set(ctx.reportCounts.keys()));
     }
     if (dto.minReports != null) {
-      const grouped = await this.reportModel.aggregate([
-        { $match: { targetType: 'conversation', status: 'pending' } },
-        { $group: { _id: '$targetId', n: { $sum: 1 } } },
-      ]);
+      const min = dto.minReports;
       idSets.push(
         new Set(
-          grouped
-            .filter((r: any) => r.n >= (dto.minReports as number))
-            .map((r: any) => String(r._id ?? ''))
-            .filter((t: string) => Types.ObjectId.isValid(t)),
+          [...ctx.reportCounts.entries()]
+            .filter(([, r]) => r.n >= min)
+            .map(([id]) => id),
         ),
       );
     }
     if (dto.hasMedia === 'true') {
-      const mediaConvIds: unknown[] = await this.msgModel.distinct('conversationId', {
-        $or: [
-          { mediaUrl: { $exists: true, $ne: '' } },
-          { type: { $in: ['image', 'voice', 'video', 'file'] } },
-        ],
-      });
-      idSets.push(
-        new Set(
-          mediaConvIds
-            .map((t) => String(t ?? ''))
-            .filter((t: string) => Types.ObjectId.isValid(t)),
-        ),
-      );
+      idSets.push(ctx.mediaIds);
     }
     if (idSets.length > 0) {
       let intersect = idSets[0];
@@ -195,83 +268,191 @@ export class AdminModerationController {
         $in: [...intersect].map((id) => new Types.ObjectId(id)),
       };
     }
-    // sort=reported: order by pending-report count desc via single aggregation,
-    // paginate the ordered ids so pages stay stable.
-    if (dto.sort === 'reported') {
-      const grouped = await this.reportModel.aggregate([
-        { $match: { targetType: 'conversation', status: 'pending' } },
-        { $group: { _id: '$targetId', n: { $sum: 1 } } },
-        { $sort: { n: -1 } },
-      ]);
-      const matchingIds: unknown[] = await this.convModel.distinct('_id', filter as any);
-      const allowed = new Set(matchingIds.map((id) => String(id)));
-      const min = dto.minReports ?? 1;
-      const ordered = grouped.filter(
-        (r: any) => allowed.has(String(r._id ?? '')) && r.n >= min,
-      );
-      const total = ordered.length;
-      const slice = ordered.slice(skip, skip + limit);
-      const convs =
-        slice.length > 0
-          ? await this.convModel
-              .find({ _id: { $in: slice.map((r: any) => r._id) } })
-              .lean()
-          : [];
-      const byId = new Map(convs.map((c: any) => [String(c._id), c]));
-      const data = slice.map((r: any) => byId.get(String(r._id))).filter(Boolean);
-      const withDisplay = await this.withDisplayNames(data as any[]);
-      const counts = new Map(slice.map((r: any) => [String(r._id), r.n]));
-      return {
-        data: (withDisplay as any[]).map((c: any) => ({
-          ...c,
-          pendingReportCount: counts.get(String(c._id)) ?? 0,
-        })),
-        total,
-        page,
-        limit,
-      };
-    }
-    const sortStage =
-      dto.sort === 'created'
-        ? { createdAt: -1, _id: -1 }
-        : { __noMsg: 1, lastMessageAt: -1, _id: -1 };
-    const [data, total] = await Promise.all([
-      this.convModel
-        .aggregate([
-          { $match: filter as any },
-          { $addFields: { __noMsg: { $cond: [{ $ifNull: ['$lastMessageAt', true] }, 1, 0] } } },
-          { $sort: sortStage as any },
-          { $skip: skip },
-          { $limit: limit },
-          { $project: { __noMsg: 0 } },
-        ]),
-      this.convModel.countDocuments(filter),
+    return filter;
+  }
+
+  /**
+   * Số báo cáo pending + tuổi báo cáo cũ nhất theo từng hội thoại — một
+   * aggregate dùng cho hasPendingReport, minReports, sort=reported và stats.
+   */
+  private async pendingReportCounts(): Promise<
+    Map<string, { n: number; oldest?: Date }>
+  > {
+    const grouped = await this.reportModel.aggregate([
+      { $match: { targetType: 'conversation', status: 'pending' } },
+      {
+        $group: {
+          _id: '$targetId',
+          n: { $sum: 1 },
+          oldest: { $min: '$createdAt' },
+        },
+      },
     ]);
-    const withDisplay = await this.withDisplayNames(data as any[]);
-    // Batch pending-report counts for the returned rows (single query).
-    const rowIds = (withDisplay as any[]).map((c: any) => String(c._id));
-    const countAgg = rowIds.length
-      ? await this.reportModel.aggregate([
-          {
-            $match: {
-              targetType: 'conversation',
-              status: 'pending',
-              targetId: { $in: rowIds },
+    return new Map(
+      (grouped as any[])
+        .map(
+          (r) =>
+            [
+              String(r._id ?? ''),
+              { n: Number(r.n ?? 0), oldest: r.oldest as Date | undefined },
+            ] as const,
+        )
+        .filter(([id]) => Types.ObjectId.isValid(id)),
+    );
+  }
+
+  /** Hội thoại có ít nhất một message media (ảnh/voice/video/file). */
+  private async mediaConversationIds(): Promise<Set<string>> {
+    const ids: unknown[] = await this.msgModel.distinct('conversationId', {
+      $or: [
+        { mediaUrl: { $exists: true, $ne: '' } },
+        { type: { $in: ['image', 'voice', 'video', 'file'] } },
+      ],
+    });
+    return new Set(
+      ids
+        .map((t) => String(t ?? ''))
+        .filter((t: string) => Types.ObjectId.isValid(t)),
+    );
+  }
+
+  /** Chỉ truy vấn tập id khi filter thật sự cần — list thường không đụng tới. */
+  private async conversationFilterContext(dto: ListConversationsDto) {
+    const needReports =
+      dto.hasPendingReport === 'true' ||
+      dto.minReports != null ||
+      dto.sort === 'reported';
+    const [reportCounts, mediaIds] = await Promise.all([
+      needReports
+        ? this.pendingReportCounts()
+        : Promise.resolve(new Map<string, { n: number; oldest?: Date }>()),
+      dto.hasMedia === 'true'
+        ? this.mediaConversationIds()
+        : Promise.resolve(new Set<string>()),
+    ]);
+    return { reportCounts, mediaIds };
+  }
+
+  /** `lastMessageAt` range — cùng ba bất biến với applyCreatedAtRange. */
+  private applyLastActivityRange(
+    filter: Record<string, unknown>,
+    from?: string | null,
+    to?: string | null,
+  ) {
+    const range: Record<string, Date> = {};
+    if (from) {
+      const d = new Date(from);
+      if (!Number.isNaN(d.getTime())) range.$gte = d;
+    }
+    if (to) {
+      const d = new Date(to);
+      if (!Number.isNaN(d.getTime())) range.$lte = d;
+    }
+    if (Object.keys(range).length === 0) return;
+    const current = filter['lastMessageAt'];
+    filter['lastMessageAt'] =
+      current && typeof current === 'object' && !(current instanceof Date)
+        ? { ...(current as Record<string, unknown>), ...range }
+        : range;
+  }
+
+  /**
+   * Row list chỉ mang `memberCount` — `members` là mảng đầy đủ, chỉ detail cần.
+   * Số liệu báo cáo lấy từ batch aggregate của cả trang, không N+1.
+   */
+  private async toListRows(
+    rows: any[],
+    knownCounts?: Map<string, { n: number; oldest?: Date }>,
+  ) {
+    const rowIds = rows.map((c: any) => String(c._id));
+    const countAgg =
+      knownCounts || rowIds.length === 0
+        ? []
+        : await this.reportModel.aggregate([
+            {
+              $match: {
+                targetType: 'conversation',
+                status: 'pending',
+                targetId: { $in: rowIds },
+              },
             },
-          },
-          { $group: { _id: '$targetId', n: { $sum: 1 } } },
-        ])
-      : [];
-    const countById = new Map(countAgg.map((r: any) => [String(r._id), r.n]));
-    return {
-      data: (withDisplay as any[]).map((c: any) => ({
-        ...c,
-        pendingReportCount: countById.get(String(c._id)) ?? 0,
-      })),
-      total,
-      page,
-      limit,
-    };
+            {
+              $group: {
+                _id: '$targetId',
+                n: { $sum: 1 },
+                oldest: { $min: '$createdAt' },
+              },
+            },
+          ]);
+    const pendingById = new Map<string, { n: number; oldest?: Date }>();
+    for (const r of countAgg as any[]) {
+      pendingById.set(String(r._id), { n: r.n, oldest: r.oldest });
+    }
+    if (knownCounts) {
+      // sort=reported đã có cả trang trong map — khỏi aggregate thêm lần nữa.
+      for (const [id, pending] of knownCounts) pendingById.set(id, pending);
+    }
+    return rows.map((c: any) => {
+      const { members, ...rest } = c;
+      const pending = pendingById.get(String(c._id));
+      return {
+        ...rest,
+        memberCount: Array.isArray(members) ? members.length : 0,
+        pendingReportCount: pending?.n ?? 0,
+        // Không có báo cáo pending → không có tuổi SLA để hiển thị.
+        ...(pending?.oldest ? { oldestPendingReportAt: pending.oldest } : {}),
+      };
+    });
+  }
+
+  /**
+   * Số đếm cho tab của trang list. Một lần dựng filter, sáu count — không đếm
+   * ở client từ trang đang tải.
+   */
+  @Get('conversations/stats')
+  async conversationStats(@Query() dto: ListConversationsDto) {
+    // Stats luôn cần cả hai tập id để đếm tab, kể cả khi filter chưa bật cờ.
+    const [reportCounts, mediaIds] = await Promise.all([
+      this.pendingReportCounts(),
+      this.mediaConversationIds(),
+    ]);
+    const ctx = { reportCounts, mediaIds };
+    const filter = await this.buildConversationFilter(dto, ctx);
+    const withExtra = (extra: Record<string, unknown>) => ({
+      $and: [filter, extra],
+    });
+    const pendingIds = [...reportCounts.keys()].map(
+      (id) => new Types.ObjectId(id),
+    );
+    const mediaIdsArr = [...mediaIds].map((id) => new Types.ObjectId(id));
+    const [all, pendingReport, group, direct, hasMedia, active24h] =
+      await Promise.all([
+        this.convModel.countDocuments(filter),
+        this.convModel.countDocuments(withExtra({ _id: { $in: pendingIds } })),
+        this.convModel.countDocuments(withExtra({ type: 'group' })),
+        this.convModel.countDocuments(withExtra({ type: 'direct' })),
+        this.convModel.countDocuments(withExtra({ _id: { $in: mediaIdsArr } })),
+        this.convModel.countDocuments(
+          withExtra({
+            lastMessageAt: { $gte: new Date(Date.now() - 24 * 3_600_000) },
+          }),
+        ),
+      ]);
+    return { all, pendingReport, group, direct, hasMedia, active24h };
+  }
+
+  /**
+   * Export CSV hội thoại — cùng bộ lọc với list, cap 500 dòng.
+   * Trả `truncated` để caller biết còn dòng chưa xuất.
+   */
+  @Get('conversations/export')
+  async exportConversations(@Query() dto: ListConversationsDto) {
+    const { data, total } = await this.queryConversations(
+      dto,
+      1,
+      CONVERSATION_EXPORT_MAX,
+    );
+    return { data, total, truncated: total > data.length };
   }
 
   // ponytail: batch member-displayName lookup shared by both list branches; N+1 if called per-row
@@ -286,9 +467,14 @@ export class AdminModerationController {
       ),
     ];
     const displayUsers = allMemberIds.length
-      ? await this.userModel.find({ _id: { $in: allMemberIds } }).select('displayName').lean()
+      ? await this.userModel
+          .find({ _id: { $in: allMemberIds } })
+          .select('displayName')
+          .lean()
       : [];
-    const byId = new Map(displayUsers.map((u: any) => [String(u._id), u.displayName]));
+    const byId = new Map(
+      displayUsers.map((u: any) => [String(u._id), u.displayName]),
+    );
     return (data as any[]).map((c: any) => ({
       ...c,
       displayName: this.displayNameFor(
@@ -362,7 +548,10 @@ export class AdminModerationController {
         ])
       : [];
     return {
-      conversation: { ...(conv as any), displayName: this.displayNameFor(conv, members) },
+      conversation: {
+        ...(conv as any),
+        displayName: this.displayNameFor(conv, members),
+      },
       members,
       recentMessages: signedMessages,
       hasMore,
@@ -395,7 +584,12 @@ export class AdminModerationController {
         .lean(),
       this.msgModel.countDocuments(filter),
     ]);
-    return { data: await this.withMessageNames(data as any[]), total, page, limit };
+    return {
+      data: await this.withMessageNames(data as any[]),
+      total,
+      page,
+      limit,
+    };
   }
 
   /**
@@ -421,7 +615,10 @@ export class AdminModerationController {
     ];
     const [senders, convs] = await Promise.all([
       senderIds.length
-        ? this.userModel.find({ _id: { $in: senderIds } }).select('displayName').lean()
+        ? this.userModel
+            .find({ _id: { $in: senderIds } })
+            .select('displayName')
+            .lean()
         : Promise.resolve([]),
       convIds.length
         ? this.convModel
@@ -434,7 +631,9 @@ export class AdminModerationController {
       (senders as any[]).map((u: any) => [String(u._id), u.displayName]),
     );
     // withDisplayNames đã gom batch member displayName cho hội thoại direct.
-    const convsWithName = (await this.withDisplayNames(convs as any[])) as any[];
+    const convsWithName = (await this.withDisplayNames(
+      convs as any[],
+    )) as any[];
     const convNameById = new Map(
       convsWithName.map((c: any) => [String(c._id), c.displayName]),
     );
@@ -551,7 +750,9 @@ export class AdminModerationController {
           .select('displayName avatar')
           .lean()
       : [];
-    const byId = new Map((authors as any[]).map((u: any) => [String(u._id), u]));
+    const byId = new Map(
+      (authors as any[]).map((u: any) => [String(u._id), u]),
+    );
     return data.map((s: any) => {
       const author = byId.get(String(s.authorId));
       return {

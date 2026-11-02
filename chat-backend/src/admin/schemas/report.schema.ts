@@ -44,7 +44,9 @@ export class Report {
 
 export const ReportSchema = SchemaFactory.createForClass(Report);
 ReportSchema.index({ status: 1, createdAt: -1 });
-ReportSchema.index({ targetType: 1, status: 1 });
+// detail hội thoại fetch báo cáo theo targetId; list/stats aggregate match
+// đúng ba field này. Bao luôn prefix { targetType, status } cũ nên thay thế nó.
+ReportSchema.index({ targetType: 1, status: 1, targetId: 1 });
 ReportSchema.index({ reporterId: 1 });
 ReportSchema.index(
   { reporterId: 1, targetType: 1, targetId: 1 },
