@@ -56,6 +56,15 @@ class SearchMessagesQueryDto extends SearchMessagesDto {
 /** Export hội thoại cap 500 dòng, cùng con số với users/businesses export. */
 export const CONVERSATION_EXPORT_MAX = 500;
 
+/**
+ * Report kèm doc method: `findById` trả hydrated doc (có `save`), fallback
+ * `_id` chuỗi trả plain object — chỉ dùng để trả về, không `save()` ở nhánh đó.
+ */
+type ReportDoc = Report & {
+  _id: Types.ObjectId | string;
+  save: () => Promise<unknown>;
+};
+
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminModerationController {
@@ -854,6 +863,46 @@ export class AdminModerationController {
     return this.reportService.findOne(id);
   }
 
+/**
+   * pending → resolved/dismissed. Fallback cho `_id` dạng chuỗi (seed data
+   * `seed-report-N`, DESIGN §9): `findById` ném CastError → trước đây resolve/
+   * dismiss trả 500 trong khi `findOne` có fallback. `changed=false` nghĩa là
+   * báo cáo đã ở trạng thái khác — caller trả về nguyên trạng, không audit.
+   */
+  private async transitionReport(
+    id: string,
+    status: 'resolved' | 'dismissed',
+    actorId: string,
+  ): Promise<{ report: ReportDoc; changed: boolean }> {
+    let doc: ReportDoc | null;
+    let stringId = false;
+    try {
+      doc = await this.reportModel.findById(id);
+    } catch {
+      stringId = true;
+      doc = (await this.reportModel.collection.findOne({
+        _id: id as never,
+      })) as ReportDoc | null;
+    }
+    if (!doc) throw new NotFoundException('Report not found');
+    if (doc.status !== 'pending') return { report: doc, changed: false };
+    const resolvedAt = new Date();
+    if (stringId) {
+      // Doc gốc là chuỗi — update theo đúng dạng đó, không cast.
+      await this.reportModel.collection.updateOne(
+        { _id: id as never },
+        { $set: { status, resolvedBy: actorId, resolvedAt } },
+      );
+      doc = { ...doc, status, resolvedBy: actorId, resolvedAt };
+    } else {
+      doc.status = status;
+      doc.resolvedBy = actorId;
+      doc.resolvedAt = resolvedAt;
+      await doc.save();
+    }
+    return { report: doc, changed: true };
+  }
+
   @Post('reports/:id/resolve')
   @HttpCode(HttpStatus.OK)
   @Throttle({
@@ -865,13 +914,12 @@ export class AdminModerationController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const report = await this.reportModel.findById(id);
-    if (!report) throw new NotFoundException('Report not found');
-    if ((report as any).status !== 'pending') return report;
-    (report as any).status = 'resolved';
-    (report as any).resolvedBy = u.actorId;
-    (report as any).resolvedAt = new Date();
-    await report.save();
+    const { report, changed } = await this.transitionReport(
+      id,
+      'resolved',
+      u.actorId,
+    );
+    if (!changed) return report;
     await this.audit.log({
       actorId: u.actorId,
       action: 'resolve_report',
@@ -893,13 +941,12 @@ export class AdminModerationController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
-    const report = await this.reportModel.findById(id);
-    if (!report) throw new NotFoundException('Report not found');
-    if ((report as any).status !== 'pending') return report;
-    (report as any).status = 'dismissed';
-    (report as any).resolvedBy = u.actorId;
-    (report as any).resolvedAt = new Date();
-    await report.save();
+    const { report, changed } = await this.transitionReport(
+      id,
+      'dismissed',
+      u.actorId,
+    );
+    if (!changed) return report;
     await this.audit.log({
       actorId: u.actorId,
       action: 'dismiss_report',

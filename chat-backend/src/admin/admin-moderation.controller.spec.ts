@@ -50,7 +50,12 @@ const msgModel = {
   distinct: jest.fn(),
 };
 const storyModel = { find: jest.fn(), countDocuments: jest.fn() };
-const reportModel = { find: jest.fn(), aggregate: jest.fn() };
+const reportModel = {
+  find: jest.fn(),
+  aggregate: jest.fn(),
+  findById: jest.fn(),
+  collection: { findOne: jest.fn(), updateOne: jest.fn() },
+};
 const musicTrackModel = {};
 const audienceListModel = {};
 const audit = { log: jest.fn() };
@@ -365,6 +370,45 @@ describe('AdminModerationController — conversation list/stats/export', () => {
         conversationId: { $in: [expect.anything(), expect.anything()] },
       }),
     );
+  });
+
+  it('2.5 resolve/dismiss nhận _id chuỗi (seed data) — fallback collection, không CastError 500', async () => {
+    // findById ném CastError với seed-report-N (DESIGN §9) — bản cũ ném thẳng
+    // ra ngoài → 500 trong khi list/findOne vẫn hiển thị được báo cáo đó.
+    reportModel.findById.mockRejectedValueOnce(new Error('Cast to ObjectId failed'));
+    reportModel.collection.findOne.mockResolvedValueOnce({
+      _id: 'seed-report-1',
+      status: 'pending',
+      targetType: 'conversation',
+      targetId: '6ad17a57c4379c1016089d18',
+    });
+    reportModel.collection.updateOne.mockResolvedValueOnce({ modifiedCount: 1 });
+
+    const res = await controller.resolveReport('seed-report-1', { actorId: 'a1' }, {
+      ip: '127.0.0.1',
+    } as never);
+
+    expect(res.status).toBe('resolved');
+    expect(reportModel.collection.updateOne).toHaveBeenCalledWith(
+      { _id: 'seed-report-1' },
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'resolve_report', targetId: 'seed-report-1' }),
+    );
+
+    // Idempotent: báo cáo đã resolved → trả về nguyên trạng, không audit lần 2.
+    reportModel.findById.mockRejectedValueOnce(new Error('Cast to ObjectId failed'));
+    reportModel.collection.findOne.mockResolvedValueOnce({
+      _id: 'seed-report-1',
+      status: 'resolved',
+    });
+    const again = await controller.resolveReport('seed-report-1', { actorId: 'a1' }, {
+      ip: '127.0.0.1',
+    } as never);
+    expect(again.status).toBe('resolved');
+    expect(reportModel.collection.updateOne).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledTimes(1);
   });
 
   it('2.1 stats: all bằng total của list dưới cùng filter, sáu count', async () => {
