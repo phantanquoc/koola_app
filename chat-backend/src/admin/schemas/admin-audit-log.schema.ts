@@ -30,9 +30,15 @@ export const ADMIN_AUDIT_ACTIONS = [
   'restore_business',
   'assign_business',
   'soft_delete_message',
+  'restore_message',
   'takedown_story',
   'resolve_report',
   'dismiss_report',
+  // Thao tác vận hành trên hội thoại (detail workbench).
+  'unpin_message',
+  'update_conversation_note',
+  'change_member_role',
+  'remove_member',
   'create_product',
   'update_product',
   'delete_product',
@@ -62,6 +68,7 @@ export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
 export const ADMIN_AUDIT_TARGET_TYPES = [
   'user',
   'business',
+  'conversation',
   'message',
   'story',
   'report',

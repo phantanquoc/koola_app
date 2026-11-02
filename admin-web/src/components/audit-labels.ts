@@ -35,10 +35,16 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   admin_login: 'Đăng nhập quản trị',
   // Nội dung
   soft_delete_message: 'Gỡ tin nhắn',
+  restore_message: 'Khôi phục tin nhắn',
   takedown_story: 'Gỡ story',
   resolve_report: 'Xử lý báo cáo',
   dismiss_report: 'Bỏ qua báo cáo',
   decide_appeal: 'Quyết định kháng nghị',
+  // Hội thoại
+  unpin_message: 'Bỏ ghim tin nhắn',
+  update_conversation_note: 'Cập nhật ghi chú hội thoại',
+  change_member_role: 'Đổi vai trò thành viên',
+  remove_member: 'Xoá thành viên khỏi nhóm',
   // Commerce
   create_product: 'Tạo sản phẩm',
   update_product: 'Cập nhật sản phẩm',
@@ -65,6 +71,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
 export const AUDIT_TARGET_LABELS: Record<string, string> = {
   user: 'Người dùng',
   business: 'Doanh nghiệp',
+  conversation: 'Hội thoại',
   message: 'Tin nhắn',
   story: 'Story',
   report: 'Báo cáo',
@@ -88,15 +95,17 @@ const DANGER_ACTIONS = new Set([
   'delete_business', 'delete_product', 'delete_service', 'delete_store',
   'delete_music_track', 'soft_delete_message', 'takedown_story', 'ban_user',
   'delete_user', 'revoke_sessions', 'revoke_session', 'cancel_order',
+  'unpin_message', 'remove_member',
 ]);
 const WARNING_ACTIONS = new Set([
   'reject_business', 'bulk_reject_business', 'suspend_business', 'refund_order',
-  'decide_appeal', 'update_config', 'impersonate_start',
+  'decide_appeal', 'update_config', 'impersonate_start', 'change_member_role',
+  'update_conversation_note',
 ]);
 const SUCCESS_ACTIONS = new Set([
   'approve_business', 'bulk_approve_business', 'restore_business', 'unban_user',
   'unsuspend_business', 'reopen_business', 'resolve_report', 'dismiss_report',
-  'restore_user',
+  'restore_user', 'restore_message',
 ]);
 
 export function auditActionTone(action: string): Tone {
