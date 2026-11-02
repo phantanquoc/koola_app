@@ -1,0 +1,20 @@
+# Tạm thời: chạy dev không cần MinIO (không pull được image).
+# License thumbnail/presigned URL trả null, còn lại chạy bình thường.
+# Xóa file này khi Docker Hub pull lại được minio/minio.
+services:
+  backend-dev:
+    command: sh -c "npm install && npm run start:dev"
+    volumes:
+      - ../chat-backend:/app
+      - /app/node_modules
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: localhost
+      MINIO_PUBLIC_HOST: localhost
+
+  admin-dev:
+    depends_on: []
