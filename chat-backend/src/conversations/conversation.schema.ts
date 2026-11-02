@@ -66,6 +66,14 @@ export class ConversationDoc {
 
   @Prop({ type: [PinnedMessageSchema], default: [] })
   pinnedMessages: PinnedMessage[];
+
+  /**
+   * Ghi chú nội bộ của đội kiểm duyệt — không hiện với người dùng, không gửi
+   * trong socket payload. Document cũ thiếu field đọc ra `undefined` (Mongoose
+   * chỉ áp default lúc create) nên UI phải `?? ''`.
+   */
+  @Prop({ type: String, default: '' })
+  internalNote: string;
 }
 
 export const ConversationDocSchema =

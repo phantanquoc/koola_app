@@ -273,6 +273,73 @@ export class ConversationsService {
       throw new ForbiddenException();
     }
 
+    return this.detachMember(conv, targetId);
+  }
+
+  /**
+   * Admin kick — cùng luồng gỡ thành viên với `removeMember`, bỏ qua kiểm tra
+   * "caller là admin nhóm" (admin hệ thống thường không phải thành viên) nhưng
+   * giữ nguyên luật membership. Từ chối gỡ thành viên cuối để nhóm không mồ côi.
+   */
+  async adminRemoveMember(
+    conversationId: string,
+    targetId: string,
+  ): Promise<ConversationDocument> {
+    const conv = await this.findByIdOrFail(conversationId);
+    if (conv.type === ConversationType.DIRECT) {
+      throw new BadRequestException(
+        'Cannot remove members from a direct conversation',
+      );
+    }
+    if (!conv.members.some((m) => m.userId.toString() === targetId)) {
+      throw new NotFoundException('User not found in this conversation');
+    }
+    if (conv.members.length <= 1) {
+      throw new BadRequestException('Cannot remove the last member of a group');
+    }
+    return this.detachMember(conv, targetId);
+  }
+
+  /** Admin đổi vai trò trong nhóm — nhóm trực tiếp và người ngoài nhóm bị từ chối. */
+  async adminSetMemberRole(
+    conversationId: string,
+    targetId: string,
+    role: MemberRole,
+  ): Promise<ConversationDocument> {
+    const conv = await this.findByIdOrFail(conversationId);
+    if (conv.type === ConversationType.DIRECT) {
+      throw new BadRequestException(
+        'Cannot change roles in a direct conversation',
+      );
+    }
+    const member = conv.members.find((m) => m.userId.toString() === targetId);
+    if (!member) {
+      throw new NotFoundException('User not found in this conversation');
+    }
+    member.role = role;
+    return conv.save();
+  }
+
+  /** Ghi chú nội bộ của đội kiểm duyệt — chuỗi rỗng nghĩa là xoá ghi chú. */
+  async setInternalNote(
+    conversationId: string,
+    note: string,
+  ): Promise<ConversationDocument> {
+    const conv = await this.findByIdOrFail(conversationId);
+    conv.internalNote = note.trim();
+    return conv.save();
+  }
+
+  /**
+   * Phần gỡ thành viên dùng chung: gỡ khỏi members, dọn UserConversation, ghi
+   * system message và thu hồi room. Tách ra để đường user và đường admin không
+   * lệch luật membership.
+   */
+  private async detachMember(
+    conv: ConversationDocument,
+    targetId: string,
+  ): Promise<ConversationDocument> {
+    const conversationId = String(conv._id);
     const targetMember = conv.members.find(
       (m) => m.userId.toString() === targetId,
     );
@@ -926,11 +993,33 @@ export class ConversationsService {
     const isMember = conv.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException();
 
+    return this.pullPin(conversationId, messageId);
+  }
+
+  /**
+   * Admin unpin — cùng thao tác gỡ ghim, bỏ kiểm tra thành viên vì admin hệ
+   * thống thường không ở trong hội thoại. Trả false khi pin không tồn tại.
+   */
+  async adminUnpinMessage(
+    conversationId: string,
+    messageId: string,
+  ): Promise<boolean> {
+    await this.findByIdOrFail(conversationId);
+    return this.pullPin(conversationId, messageId);
+  }
+
+  private async pullPin(
+    conversationId: string,
+    messageId: string,
+  ): Promise<boolean> {
+    // Ghim phải có trong filter: schema bật `timestamps`, nên $pull không khớp
+    // vẫn bump updatedAt và modifiedCount = 1 — dùng modifiedCount sẽ báo
+    // "gỡ thành công" cho pin không tồn tại. matchedCount mới là tín hiệu đúng.
     const res = await this.conversationModel.updateOne(
-      { _id: conversationId },
+      { _id: conversationId, 'pinnedMessages.messageId': messageId },
       { $pull: { pinnedMessages: { messageId } } },
     );
-    if (res.modifiedCount === 0) return false;
+    if (res.matchedCount === 0) return false;
 
     this.unpinEmitCallback?.(conversationId, { messageId });
     return true;
