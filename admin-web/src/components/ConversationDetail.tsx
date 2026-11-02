@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../apiClient';
 import { StatusBadge } from './StatusBadge';
+import { reportStatusLabel, reportStatusTone } from './report-labels';
 import { initials, formatDateTime } from './formatters';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
@@ -40,6 +41,10 @@ export interface DetailMessage {
   mediaSize?: number;
   createdAt?: string;
   deleted?: boolean;
+  /** Ngữ cảnh trả lời/like — backend trả sẵn, trước đây bị bỏ qua. */
+  replyTo?: string | null;
+  replyToPreview?: { senderId: string; text?: string; mediaType?: string } | null;
+  reactions?: Array<{ userId: string; emoji: string }>;
 }
 
 export interface RelatedReport {
@@ -49,6 +54,23 @@ export interface RelatedReport {
   targetId?: string;
   reporterName?: string | null;
   createdAt?: string;
+  /** Chỉ có ở bản resolved/dismissed — dùng cho section lịch sử. */
+  resolvedByName?: string | null;
+  resolvedAt?: string;
+}
+
+/** Pinned đã backend resolve: messageId + nội dung + tên người ghim (§B2). */
+export interface PinnedMessagePreview {
+  messageId: string;
+  pinnedBy: string;
+  pinnedByName: string | null;
+  pinnedAt: string;
+  found: boolean;
+  content?: string;
+  type?: string;
+  deleted?: boolean;
+  senderName?: string | null;
+  mediaUrlSigned?: string;
 }
 
 export interface ConversationDetailPayload {
@@ -59,9 +81,12 @@ export interface ConversationDetailPayload {
     displayName?: string | null;
     createdAt?: string;
     lastMessageAt?: string | null;
+    avatar?: string | null;
+    createdBy?: string;
   };
   members: ConversationMember[];
   recentMessages: DetailMessage[];
+  pinnedMessages?: PinnedMessagePreview[];
   hasMore: boolean;
   reportedMessageCounts: Record<string, number>;
 }
@@ -94,6 +119,14 @@ function formatClock(value?: string | null) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Ngày ngắn theo locale — dùng trong chip member (không cần giờ). */
+function shortDate(iso?: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('vi-VN');
 }
 
 function formatSize(bytes?: number | null) {
@@ -258,6 +291,19 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
     enabled: Boolean(id),
   });
 
+  // Lịch sử: query RIÊNG không truyền status (mới nhất trước), tách client —
+  // không nới lỏng query pending, không bao giờ trộn báo cáo cũ vào hàng đợi.
+  const historyQuery = useQuery({
+    queryKey: ['conversation-reports-history', id],
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: RelatedReport[] }>('/admin/reports', {
+        params: { targetType: 'conversation', targetId: id, limit: 20 },
+      });
+      return (res.data.data ?? []).filter((r) => r.status !== 'pending');
+    },
+    enabled: Boolean(id),
+  });
+
   // Tin nhắn cũ tải thêm nằm riêng; danh sách hiển thị = cũ + trang đầu từ query.
   // Trang chi tiết mount lại theo `key={id}` nên không cần effect reset.
   const [olderMessages, setOlderMessages] = useState<DetailMessage[]>([]);
@@ -269,6 +315,8 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
   const members = detailQuery.data?.members ?? [];
   const reportedCounts = detailQuery.data?.reportedMessageCounts ?? {};
   const reports = reportsQuery.data ?? [];
+  const reportHistory = historyQuery.data ?? [];
+  const pinned = detailQuery.data?.pinnedMessages ?? [];
 
   // Server trả mới nhất trước; stream đọc từ trên xuống.
   const messages = useMemo(
@@ -440,6 +488,28 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
   const nameOf = (userId: string) =>
     members.find((m) => String(m.userId) === String(userId))?.displayName || DELETED_NAME;
 
+  // Chỉ http(s) mới render — avatar là URL từ user, không tin scheme khác (§0.7).
+  const avatarSrc =
+    detail && /^https?:\/\//i.test(detail.avatar ?? '') ? detail.avatar! : null;
+
+  /** Tally emoji: [{emoji: '👍' ×2}] → "👍 2" —userId là dữ liệu thô, không hiện. */
+  function reactionTally(m: DetailMessage): Array<{ emoji: string; n: number }> {
+    if (!m.reactions?.length) return [];
+    const tally = new Map<string, number>();
+    for (const r of m.reactions) tally.set(r.emoji, (tally.get(r.emoji) ?? 0) + 1);
+    return [...tally.entries()].map(([emoji, n]) => ({ emoji, n }));
+  }
+
+  /** Quote trả lời: sender + snippet (text hoặc nhãn loại media). */
+  function replyQuote(m: DetailMessage): { name: string; text: string } | null {
+    const p = m.replyToPreview;
+    if (!m.replyTo || !p) return null;
+    return {
+      name: p.senderId ? nameOf(p.senderId) : DELETED_NAME,
+      text: p.text || (p.mediaType ? `[${typeLabel(p.mediaType)}]` : ''),
+    };
+  }
+
   const loadError = (detailQuery.error as { response?: { data?: { message?: string } } } | null)
     ?.response?.data?.message;
 
@@ -481,7 +551,9 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
   return (
     <section className="table-shell detail-card conv-detail" aria-label={`Hội thoại ${convName(detail)}`}>
       <div className="detail-header">
-        <div className="detail-avatar" aria-hidden="true">{initials(convName(detail), 'H')}</div>
+        <div className="detail-avatar" aria-hidden="true">
+          {avatarSrc ? <img src={avatarSrc} alt="" /> : initials(convName(detail), 'H')}
+        </div>
         <div className="detail-heading">
           <div className="detail-title-row">
             <h1 className="detail-title">{convName(detail)}</h1>
@@ -572,10 +644,38 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   <dt>Mã hội thoại</dt>
                   <dd className="k-mono">{detail._id}</dd>
                 </div>
+                <div>
+                  <dt>Người tạo</dt>
+                  <dd className="k-mono">{detail.createdBy ?? '—'}</dd>
+                </div>
               </dl>
             </details>
           </div>
         </dl>
+
+        {pinned.length > 0 && (
+          <section aria-label="Tin đã ghim" className="conv-reports">
+            <h2 className="panel-title">Đã ghim ({pinned.length})</h2>
+            {pinned.map((p) => (
+              <div key={p.messageId} className="surface-card conv-report">
+                <p className="cell-title">
+                  {!p.found
+                    ? 'Tin nhắn không còn tồn tại'
+                    : p.deleted
+                      ? '(Nội dung đã gỡ)'
+                      : p.content || (p.type ? typeLabel(p.type) : '(không có nội dung)')}
+                </p>
+                {p.found && !p.deleted && p.mediaUrlSigned && p.type === 'image' && (
+                  <img src={p.mediaUrlSigned} alt="" className="conv-msg-img conv-pinned-img" loading="lazy" />
+                )}
+                <div className="cell-meta">
+                  Đã ghim bởi {p.pinnedByName ?? 'Không rõ'}
+                  {p.senderName ? ` · tin của ${p.senderName}` : ''} · {formatDateTime(p.pinnedAt)}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section aria-label="Thành viên" className="conv-members-section">
           <h2 className="panel-title">Thành viên ({members.length})</h2>
@@ -591,7 +691,13 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   {initials(m.displayName ?? '?', '?')}
                 </span>
                 {m.displayName ?? DELETED_NAME}
+                {m.accountType === 'business' ? (
+                  <span className="badge badge-muted conv-member-biz">Doanh nghiệp</span>
+                ) : null}
                 {m.role === 'admin' ? <span className="badge badge-primary">Quản trị</span> : null}
+                {m.joinedAt ? (
+                  <span className="conv-member-since">tham gia {shortDate(m.joinedAt)}</span>
+                ) : null}
               </Link>
             ))}
           </div>
@@ -624,6 +730,8 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
               const showTime = !(nextSame && t != null && nt != null && nt - t < GROUP_GAP_MS);
               const isActiveMatch = activeMatchId === m._id;
               const reportedCount = reportedCounts[m._id] ?? 0;
+              const quote = replyQuote(m);
+              const tally = reactionTally(m);
               return (
                 <div
                   key={m._id}
@@ -647,11 +755,26 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   <div className="conv-msg-line">
                     <span className="conv-msg-gutter" aria-hidden="true" />
                     <div className="conv-bubble">
+                      {quote && (
+                        <div className="conv-reply-quote" aria-label="Trả lời tin nhắn">
+                          <span className="conv-reply-name">{quote.name}</span>
+                          <span className="conv-reply-text">{quote.text}</span>
+                        </div>
+                      )}
                       <MessageBody
                         m={m}
                         find={findQ}
                         onRetry={() => void detailQuery.refetch()}
                       />
+                      {tally.length > 0 && (
+                        <div className="conv-reactions" aria-label="Phản ứng">
+                          {tally.map((t) => (
+                            <span key={t.emoji} className="conv-reaction">
+                              {t.emoji} {t.n}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {showTime && (
                         <div className="conv-bubble-foot">
                           <span>{formatClock(m.createdAt) || formatDateTime(m.createdAt)}</span>
@@ -709,6 +832,28 @@ export function ConversationDetail({ id, backTo }: { id: string; backTo: string 
                   >
                     <X size={16} strokeWidth={2} aria-hidden /> Bỏ qua
                   </button>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {reportHistory.length > 0 && (
+          <section aria-label="Lịch sử báo cáo" className="conv-reports">
+            <h2 className="panel-title">Lịch sử báo cáo ({reportHistory.length})</h2>
+            {reportHistory.map((r) => (
+              <div key={r._id} className="surface-card conv-report">
+                <div className="conv-report-history-head">
+                  <p className="cell-title">{r.reason}</p>
+                  <StatusBadge
+                    tone={reportStatusTone(r.status)}
+                    label={reportStatusLabel(r.status)}
+                  />
+                </div>
+                <div className="cell-meta">
+                  {r.reporterName ?? 'Không rõ'} · {formatDateTime(r.createdAt)}
+                  {r.resolvedByName ? ` · xử lý bởi ${r.resolvedByName}` : ''}
+                  {r.resolvedAt ? ` ${formatDateTime(r.resolvedAt)}` : ''}
                 </div>
               </div>
             ))}

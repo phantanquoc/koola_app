@@ -361,7 +361,7 @@
   color: var(--koola-muted);
 }
 
-/* báo cáo chờ trong chi tiết */
+/* report cáo chờ + lịch sử trong chi tiết */
 .conv-reports {
   display: flex;
   flex-direction: column;
@@ -374,6 +374,84 @@
 
 .conv-report-actions {
   margin-top: var(--space-2);
+}
+
+.conv-report-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Avatar hội thoại dùng ảnh thật khi có URL http(s); scheme khác fallback initials */
+.detail-avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* Quote trả lời + tally phản ứng trong bong bóng tin nhắn (ngữ cảnh báo cáo) */
+.conv-reply-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-1);
+  padding: 4px var(--space-2);
+  border-left: 3px solid var(--koola-primary);
+  border-radius: var(--radius-xs);
+  background: var(--koola-surface-soft);
+  font-size: 12px;
+}
+
+.conv-reply-name {
+  color: var(--koola-primary-dark);
+  font-weight: 700;
+}
+
+.conv-reply-text {
+  color: var(--koola-muted);
+  overflow-wrap: anywhere;
+}
+
+.conv-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--space-1);
+}
+
+.conv-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface-soft);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* Chip member: ngày tham gia + nhãn doanh nghiệp */
+.conv-member-since {
+  color: var(--koola-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.conv-member-biz {
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 10.5px;
+}
+
+/* Ảnh ghim trong card "Đã ghim" */
+.conv-pinned-img {
+  max-width: 200px;
+  max-height: 140px;
+  margin-top: var(--space-1);
 }
 
 .conv-more,

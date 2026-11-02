@@ -50,10 +50,32 @@ const detailResponse = {
       displayName: 'Nhóm Koola',
       createdAt: '2026-10-01T00:00:00.000Z',
       lastMessageAt: '2026-10-20T00:00:00.000Z',
+      avatar: 'https://koola.local/conv-avatar.png',
+      createdBy: '69cf33318ebc501e439e722a',
     },
-    members: [{ userId: 'u1', displayName: 'Minh', role: 'admin' }],
+    members: [
+      {
+        userId: 'u1',
+        displayName: 'Minh',
+        role: 'admin',
+        accountType: 'business',
+        joinedAt: '2026-09-01T12:00:00.000Z',
+      },
+    ],
     recentMessages: [
-      { _id: 'm1', senderId: 'u1', content: 'xin chào', type: 'text', createdAt: '2026-10-20T00:00:00.000Z' },
+      {
+        _id: 'm1',
+        senderId: 'u1',
+        content: 'xin chào',
+        type: 'text',
+        createdAt: '2026-10-20T00:00:00.000Z',
+        replyTo: 'm0',
+        replyToPreview: { senderId: 'u1', text: 'báo giá giúp nhé' },
+        reactions: [
+          { userId: 'u2', emoji: '👍' },
+          { userId: 'u3', emoji: '👍' },
+        ],
+      },
       {
         _id: 'm2',
         senderId: 'u1',
@@ -64,6 +86,19 @@ const detailResponse = {
         createdAt: '2026-10-20T00:01:00.000Z',
       },
       { _id: 'm3', senderId: 'u1', content: 'tin bị báo cáo', type: 'text', createdAt: '2026-10-20T00:02:00.000Z' },
+    ],
+    pinnedMessages: [
+      {
+        messageId: 'm1',
+        pinnedBy: 'u1',
+        pinnedByName: 'Minh',
+        pinnedAt: '2026-10-21T00:00:00.000Z',
+        found: true,
+        content: 'xin chào',
+        type: 'text',
+        deleted: false,
+        senderName: 'Minh',
+      },
     ],
     hasMore: false,
     reportedMessageCounts: { m3: 2 },
@@ -78,23 +113,39 @@ const pendingReport = {
   createdAt: '2026-10-21T00:00:00.000Z',
 };
 
+const resolvedReport = {
+  _id: 'r0',
+  reason: 'spam cũ đã xử lý',
+  status: 'resolved',
+  reporterName: 'Lan',
+  createdAt: '2026-09-01T00:00:00.000Z',
+  resolvedByName: 'Admin B',
+  resolvedAt: '2026-09-02T00:00:00.000Z',
+};
+
 const reportsResponse = { data: { data: [pendingReport] } };
 
 function stubApi() {
-  mockedGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
-    if (url === '/admin/reports') return Promise.resolve(reportsResponse);
-    if (url === '/admin/conversations/stats')
-      return Promise.resolve({ data: statsResponse });
-    if (url === `/admin/conversations/${CONV_ID}`)
-      return Promise.resolve(detailResponse);
-    if (url === '/admin/conversations/export')
-      return Promise.resolve({
-        data: { data: [listRow], total: 1, truncated: false },
-      });
-    if (url === '/admin/conversations') return Promise.resolve(listResponse);
-    void config;
-    return Promise.resolve({ data: {} });
-  });
+  mockedGet.mockImplementation(
+    (url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/admin/reports') {
+        // Pending queue truyền status; lịch sử thì không (tách hai hàng đợi).
+        if (config?.params?.status === 'pending') return Promise.resolve(reportsResponse);
+        return Promise.resolve({ data: { data: [resolvedReport] } });
+      }
+      if (url === '/admin/conversations/stats')
+        return Promise.resolve({ data: statsResponse });
+      if (url === `/admin/conversations/${CONV_ID}`)
+        return Promise.resolve(detailResponse);
+      if (url === '/admin/conversations/export')
+        return Promise.resolve({
+          data: { data: [listRow], total: 1, truncated: false },
+        });
+      if (url === '/admin/conversations') return Promise.resolve(listResponse);
+      void config;
+      return Promise.resolve({ data: {} });
+    },
+  );
 }
 
 function renderPage(entry: InitialEntry = '/conversations') {
@@ -138,7 +189,7 @@ describe('ConversationsPage — 3.1 URL → request params', () => {
 
   it('3.1 mọi filter dịch 1-1 sang DTO; tên URL không rò vào request', async () => {
     renderPage(
-      '/conversations?tab=all&q=koola&sort=created&type=group&size=medium&minReports=3&media=true&since=7d&from=2026-10-01&to=2026-10-31&page=1&pageSize=50',
+      '/conversations?tab=all&q=koola&sort=created&type=group&size=medium&minReports=3&media=true&since=7d&from=2026-10-01&to=2026-10-31&afrom=2026-09-01&ato=2026-09-15&page=1&pageSize=50',
     );
     await screen.findByText('Nhóm Koola');
 
@@ -158,11 +209,16 @@ describe('ConversationsPage — 3.1 URL → request params', () => {
     // Biên ngày sinh từ chuỗi ngày theo quy ước 00:00 / 23:59:59.999 (dayToIso)
     expect(params.createdFrom).toBe(dayToIso('2026-10-01', 'from'));
     expect(params.createdTo).toBe(dayToIso('2026-10-31', 'to'));
+    // Khoảng ngày hoạt động (7.6) map sang activeFrom/activeTo
+    expect(params.activeFrom).toBe(dayToIso('2026-09-01', 'from'));
+    expect(params.activeTo).toBe(dayToIso('2026-09-15', 'to'));
     // focus/tab/q/pageSize là tên URL, không phải tên DTO (forbidNonWhitelisted → 400)
     expect(params).not.toHaveProperty('focus');
     expect(params).not.toHaveProperty('tab');
     expect(params).not.toHaveProperty('q');
     expect(params).not.toHaveProperty('pageSize');
+    expect(params).not.toHaveProperty('afrom');
+    expect(params).not.toHaveProperty('ato');
   });
 
   it('3.1 focus nằm trong URL nhưng KHÔNG BAO GIỜ trong params gọi API', async () => {
@@ -481,7 +537,9 @@ describe('ConversationDetail (4.2–4.5)', () => {
       const src = el.getAttribute('src') ?? el.getAttribute('href') ?? '';
       expect(src).not.toContain(RAW_KEY);
     }
-    expect(container.querySelector('img')).toBeNull();
+    // Trong luồng tin nhắn không có img nào (ảnh đại diện ở header là img hợp lệ,
+    // không thuộc stream tin nhắn)
+    expect(container.querySelector('.conv-msg-media img')).toBeNull();
   });
 
   it('4.4 badge báo cáo hiện số lượng trên tin nhắn bị báo cáo', async () => {
@@ -563,5 +621,129 @@ describe('ConversationsPage — 5.1 export dialog', () => {
       expect(params).not.toHaveProperty('limit');
       expect(params.type).toBe('group');
     });
+  });
+});
+describe('Mở rộng sau audit (task 7) — list', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('7.6 khoảng ngày hoạt động trong popover → activeFrom/activeTo trong params', async () => {
+    renderPage('/conversations?afrom=2026-10-05&ato=2026-10-10');
+    await screen.findByText('Nhóm Koola');
+
+    const params = lastListParams();
+    expect(params.activeFrom).toBe(dayToIso('2026-10-05', 'from'));
+    expect(params.activeTo).toBe(dayToIso('2026-10-10', 'to'));
+    // Chip activity hiện trong context-row
+    expect(screen.getByRole('button', { name: /Hoạt động:/ })).toBeTruthy();
+  });
+
+  it('7.1 bấm cột Tuổi → sort=reportAge trong URL, aria-sort ascending', async () => {
+    renderPage();
+    await screen.findByText('Nhóm Koola');
+
+    const ageHeader = screen.getByRole('columnheader', { name: /Tuổi/ });
+    expect(ageHeader.getAttribute('aria-sort')).toBe('none');
+    fireEvent.click(within(ageHeader).getByRole('button'));
+
+    await waitFor(() => {
+      expect(lastListParams().sort).toBe('reportAge');
+    });
+    await screen.findByText('Nhóm Koola');
+    expect(
+      screen.getByRole('columnheader', { name: /Tuổi/ }).getAttribute('aria-sort'),
+    ).toBe('ascending');
+  });
+});
+
+describe('Mở rộng sau audit (task 7) — detail context', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubApi();
+  });
+
+  it('7.4 avatar http(s) render thành img, scheme khác fallback initials', async () => {
+    const { container } = renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    const img = container.querySelector('.detail-avatar img');
+    expect(img?.getAttribute('src')).toBe('https://koola.local/conv-avatar.png');
+
+    // Scheme không an toàn → không render img (guard §0.7)
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/conversations/stats') return Promise.resolve({ data: statsResponse });
+      if (url === '/admin/conversations')
+        return Promise.resolve({
+          data: {
+            ...detailResponse.data,
+            conversation: { ...detailResponse.data.conversation, avatar: 'javascript:alert(1)' },
+          },
+        });
+      if (url === '/admin/reports') return Promise.resolve({ data: { data: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    const second = renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+    expect(second.container.querySelector('.detail-avatar img')).toBeNull();
+  });
+
+  it('7.4 createdBy nằm trong Chi tiết kỹ thuật; member hiện DN + ngày tham gia', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    // createdBy chỉ trong disclosure
+    const createdBy = screen.getByText('69cf33318ebc501e439e722a');
+    expect(createdBy.closest('details')).toBeTruthy();
+
+    expect(screen.getByText('Doanh nghiệp')).toBeTruthy();
+    const joined = new Date('2026-09-01T12:00:00.000Z').toLocaleDateString('vi-VN');
+    expect(screen.getByText(new RegExp(`tham gia ${joined.replace(/\//g, '\\/')}`))).toBeTruthy();
+  });
+
+  it('7.4 section Đã ghim resolve nội dung + tên ghim, không hiện messageId trần', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const region = await screen.findByRole('region', { name: 'Tin đã ghim' });
+    expect(within(region).getByText('Đã ghim (1)')).toBeTruthy();
+    expect(within(region).getByText('xin chào')).toBeTruthy();
+    expect(within(region).getByText(/Đã ghim bởi Minh/)).toBeTruthy();
+    expect(within(region).queryByText('m1')).toBeNull();
+  });
+
+  it('7.3 reply quote + reaction tally render trong bong bóng tin nhắn', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    const quote = document.querySelector('.conv-reply-quote');
+    expect(quote?.textContent).toContain('Minh');
+    expect(quote?.textContent).toContain('báo giá giúp nhé');
+
+    const tally = document.querySelector('.conv-reactions');
+    expect(tally?.textContent).toContain('👍');
+    expect(tally?.textContent).toContain('2');
+    // userId là dữ liệu thô — không hiện trong tally
+    expect(tally?.textContent).not.toContain('u2');
+  });
+
+  it('7.5 lịch sử báo cáo: query KHÔNG truyền status, tách khỏi hàng đợi pending', async () => {
+    renderPage(`/conversations/${CONV_ID}`);
+    await screen.findByRole('heading', { name: 'Nhóm Koola' });
+
+    await waitFor(() => {
+      expect(mockedGet).toHaveBeenCalledWith('/admin/reports', {
+        params: { targetType: 'conversation', targetId: CONV_ID, limit: 20 },
+      });
+    });
+
+    const region = await screen.findByRole('region', { name: 'Lịch sử báo cáo' });
+    expect(within(region).getByText('Lịch sử báo cáo (1)')).toBeTruthy();
+    expect(within(region).getByText('spam cũ đã xử lý')).toBeTruthy();
+    expect(within(region).getByText('Đã xử lý')).toBeTruthy();
+    expect(within(region).getByText(/xử lý bởi Admin B/)).toBeTruthy();
+    // Hàng đợi pending không chứa báo cáo đã xử lý
+    const pendingRegion = screen.getByRole('region', { name: 'Báo cáo chờ xử lý' });
+    expect(within(pendingRegion).queryByText('spam cũ đã xử lý')).toBeNull();
   });
 });

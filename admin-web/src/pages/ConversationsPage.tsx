@@ -58,13 +58,15 @@ const PAGE_SIZES = [10, 20, 50];
 const TAB_KEYS = ['all', 'pendingReport', 'group', 'direct', 'hasMedia', 'active24h'] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
-const SORT_VALUES = ['recent', 'created', 'reported', 'members'] as const;
+const SORT_VALUES = ['recent', 'created', 'reported', 'members', 'reportAge'] as const;
 
-/** Sort allow-list của backend — URL giữ dạng thô, không `field:dir` (server chỉ desc). */
+/** Sort allow-list của backend — URL giữ dạng thô, không `field:dir` (server chỉ desc,
+    riêng `reportAge` là asc: báo cáo chờ cũ nhất trước). */
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'recent', label: 'Mới hoạt động' },
   { value: 'created', label: 'Mới tạo' },
   { value: 'reported', label: 'Nhiều báo cáo' },
+  { value: 'reportAge', label: 'Báo cáo cũ nhất' },
   { value: 'members', label: 'Nhiều thành viên' },
 ];
 
@@ -103,9 +105,12 @@ const FILTER_DEFAULTS = {
   since: '',
   // `from`/`to` là chuỗi ngày `YYYY-MM-DD` của `type="date"` — input bind thẳng,
   // chip hiện dayLabel; ISO (biên đầu 00:00 / biên cuối 23:59:59.999) chỉ sinh
-  // lúc request qua dayToIso, không lưu trong URL.
+  // lúc request qua dayToIso, không lưu trong URL. `afrom`/`ato` cùng quy ước
+  // cho khoảng Hoạt động (lastMessageAt) — map sang activeFrom/activeTo.
   from: '',
   to: '',
+  afrom: '',
+  ato: '',
   page: '1',
   pageSize: '20',
   // Chỉ là đích redirect (D6) — KHÔNG BAO GIỜ gửi lên API (forbidNonWhitelisted → 400).
@@ -161,9 +166,11 @@ export default function ConversationsPage() {
       minReports: values.minReports ? Number(values.minReports) : undefined,
       ...(values.from ? { createdFrom: dayToIso(values.from, 'from') } : {}),
       ...(values.to ? { createdTo: dayToIso(values.to, 'to') } : {}),
+      ...(values.afrom ? { activeFrom: dayToIso(values.afrom, 'from') } : {}),
+      ...(values.ato ? { activeTo: dayToIso(values.ato, 'to') } : {}),
       ...sizeFilter,
     }),
-    [values.q, values.minReports, values.from, values.to, sizeFilter],
+    [values.q, values.minReports, values.from, values.to, values.afrom, values.ato, sizeFilter],
   );
 
   // Stats: tab cùng trục phải được strip, nếu không sáu count sẽ bị giới hạn
@@ -212,6 +219,8 @@ export default function ConversationsPage() {
       values.since,
       values.from,
       values.to,
+      values.afrom,
+      values.ato,
       page,
       pageSize,
       values.focus,
@@ -232,6 +241,8 @@ export default function ConversationsPage() {
       values.since,
       values.from,
       values.to,
+      values.afrom,
+      values.ato,
     ],
     queryFn: async () =>
       (await apiClient.get<ConversationStats>('/admin/conversations/stats', { params: statsParams }))
@@ -298,11 +309,12 @@ export default function ConversationsPage() {
   }
 
   // Sort allow-list: click cột đang active quay về mặc định (recent).
-  // URL luôn giữ giá trị thô; ColumnHeader nhận `field:desc` vì server chỉ desc.
+  // URL luôn giữ giá trị thô; ColumnHeader nhận `field:dir` — `reportAge` là
+  // asc (cũ nhất trước), ba sort còn lại backend luôn desc.
   function toggleSort(field: string) {
     set({ sort: sort === field && field !== 'recent' ? 'recent' : field, page: '1' });
   }
-  const sortDisplay = `${sort}:desc`;
+  const sortDisplay = `${sort}:${sort === 'reportAge' ? 'asc' : 'desc'}`;
 
   // Bàn phím (D8, mẫu BusinessesPage): j/k di chuyển, Enter mở, ? trợ giúp.
   const [highlight, setHighlight] = useState(-1);
@@ -441,7 +453,8 @@ export default function ConversationsPage() {
     (values.media === 'true' ? 1 : 0) +
     (values.minReports ? 1 : 0) +
     (values.since ? 1 : 0) +
-    (values.from || values.to ? 1 : 0);
+    (values.from || values.to ? 1 : 0) +
+    (values.afrom || values.ato ? 1 : 0);
   // Tab không phải "bộ lọc đang bật" — nó đã hiện active trên thanh tab.
   const hasFilter = Boolean(values.q || advancedCount);
   const loadError = apiErrorMessage(error, 'Không tải được danh sách hội thoại.');
@@ -516,7 +529,17 @@ export default function ConversationsPage() {
         <FilterPopover
           activeCount={advancedCount}
           onClear={() =>
-            setFilter({ type: '', size: '', media: '', minReports: '', since: '', from: '', to: '' })
+            setFilter({
+              type: '',
+              size: '',
+              media: '',
+              minReports: '',
+              since: '',
+              from: '',
+              to: '',
+              afrom: '',
+              ato: '',
+            })
           }
         >
           <label className="form-field">
@@ -602,6 +625,30 @@ export default function ConversationsPage() {
                 min={values.from || undefined}
                 onChange={(e) => setFilter({ to: e.target.value })}
                 aria-label="Đến ngày tạo"
+              />
+            </div>
+          </div>
+          <div className="form-field">
+            <span className="form-label">Hoạt động (tin nhắn cuối)</span>
+            <div className="export-date-row">
+              <input
+                className="input input-sm"
+                type="date"
+                value={values.afrom}
+                max={values.ato || undefined}
+                onChange={(e) => setFilter({ afrom: e.target.value })}
+                aria-label="Từ ngày hoạt động"
+              />
+              <span className="cell-meta" aria-hidden>
+                →
+              </span>
+              <input
+                className="input input-sm"
+                type="date"
+                value={values.ato}
+                min={values.afrom || undefined}
+                onChange={(e) => setFilter({ ato: e.target.value })}
+                aria-label="Đến ngày hoạt động"
               />
             </div>
           </div>
@@ -706,6 +753,16 @@ export default function ConversationsPage() {
               <X size={12} aria-hidden />
             </button>
           )}
+          {(values.afrom || values.ato) && (
+            <button
+              className="filter-chip filter-chip-removable"
+              type="button"
+              onClick={() => setFilter({ afrom: '', ato: '' })}
+            >
+              Hoạt động: {values.afrom ? dayLabel(values.afrom) : '…'} → {values.ato ? dayLabel(values.ato) : '…'}{' '}
+              <X size={12} aria-hidden />
+            </button>
+          )}
           <button
             className="btn btn-ghost btn-sm"
             type="button"
@@ -774,8 +831,15 @@ export default function ConversationsPage() {
                     sort={sortDisplay}
                     onSort={toggleSort}
                   />
-                  {/* Tuổi báo cáo (SLA): ẩn ≤1099px, có dòng .show-under-1100 ở ô đầu */}
-                  <ColumnHeader label="Tuổi" className="col-hide-xs" />
+                  {/* Tuổi báo cáo (SLA): sort reportAge asc; ẩn ≤1099px, có dòng
+                    .show-under-1100 ở ô đầu */}
+                  <ColumnHeader
+                    label="Tuổi"
+                    className="col-hide-xs"
+                    sortField="reportAge"
+                    sort={sortDisplay}
+                    onSort={toggleSort}
+                  />
                   <ColumnHeader label="Media" className="col-hide-mobile" />
                   <th scope="col" className="th-center col-sticky">
                     Hành động
