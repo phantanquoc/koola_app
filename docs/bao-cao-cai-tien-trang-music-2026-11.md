@@ -114,7 +114,8 @@ Ba index mới: `{isActive, usageCount7d}`, `{isActive, genre}`, unique sparse `
 - **Dấu vân tay bằng hash PCM** bắt được trùng byte/container nhưng **không** bắt được cùng một bài bị encode lại từ nguồn khác. Giảm thiểu: chỉ nhận nguồn đã lọc, và ghi rõ trần này trong code; khi báo cáo import lộ ra case thật thì nâng lên Chromaprint sau cùng interface.
 - **Job import chạy trong process backend** — restart giữa chừng sẽ treo job. Giảm thiểu: job quá 10 phút ở trạng thái chạy tự đánh dấu `failed: interrupted`; chạy lại an toàn nhờ dedupe.
 - **`ffmpeg` trong image** (chỉ khi bật pha preview) tăng ~70 MB và thành binary phải vá bảo mật định kỳ. Pha 0 không cần.
-- **Dùng chung MinIO với media tin nhắn** — file nhạc nằm cùng bucket, khác prefix. Hai job dọn rác hằng ngày (`MediaCleanupService`, `MediaCronService`) chỉ đụng bản ghi `Media` có `messageId: null`, nên pha 0 **không đi qua `/media/upload`** mà tự ký PUT riêng. Nếu đi nhầm đường, file nhạc sẽ bị xoá sau 30 ngày trong khi DB vẫn trỏ tới.
+- **Dùng chung MinIO với media tin nhắn** — file nhạc nằm cùng bucket, khác prefix. Pha 0 **không đi qua `/media/upload`** mà tự ký PUT riêng, vì đường đó ghi bản ghi `Media` với `messageId: null` — đúng hình dạng mà job dọn rác được viết để xoá.
+- **Nợ kỹ thuật phát hiện khi khảo sát:** `MediaCleanupService` (đánh dấu `messageId: null` là deleted sau 24h) **chưa được đăng ký** trong module nào — `MediaModule.providers` chỉ có `MediaService`. Nhờ vậy ảnh sản phẩm (cũng upload qua `/media/upload`) hiện vẫn còn. Nhưng nó là bom hẹn giờ: chỉ cần thêm một dòng `providers:` là ảnh sản phẩm và mọi file nhạc đi nhầm đường biến mất. Cần một change riêng sửa job này trước khi bật nó.
 - **Đổi contract tạo track** (key phải tồn tại thật, thời lượng do server đọc) — chỉ ảnh hưởng trang admin, vốn được viết lại trong pha 0.
 
 ---
