@@ -11,6 +11,8 @@ import {
   MusicTrackDocument,
 } from '../../moments/schemas/music-track.schema';
 import { escapeRegExp } from '../../common/utils/escape-regexp';
+import { Story } from '../../moments/schemas/story.schema';
+import { Post } from '../../moments/schemas/post.schema';
 import { AdminAuditService } from '../admin-audit.service';
 import { MusicStorageService } from './music-storage.service';
 import { readDurationMs } from './audio-metadata';
@@ -48,6 +50,10 @@ export class AdminMusicService {
   constructor(
     @InjectModel(MusicTrack.name)
     private readonly musicTrackModel: Model<MusicTrackDocument>,
+    @InjectModel(Story.name)
+    private readonly storyModel: Model<Record<string, unknown>>,
+    @InjectModel(Post.name)
+    private readonly postModel: Model<Record<string, unknown>>,
     private readonly storage: MusicStorageService,
     private readonly audit: AdminAuditService,
   ) {}
@@ -167,10 +173,23 @@ export class AdminMusicService {
       ? await this.storage.presignPlayback(t.previewKey)
       : audioUrl;
 
+    // How many live pieces of content still point at this track. This is the
+    // question a moderator asks before pressing Ngưng: "does deactivating this
+    // break anything?" Two indexed countDocuments on `musicRef.trackId`.
+    const [storyCount, postCount] = await Promise.all([
+      this.storyModel.countDocuments({ 'musicRef.trackId': id, isActive: true }),
+      this.postModel.countDocuments({ 'musicRef.trackId': id, isActive: true }),
+    ]);
+
     return {
       ...(track as unknown as Record<string, unknown>),
       audioUrl,
       previewUrl,
+      usage: {
+        stories: storyCount,
+        posts: postCount,
+        total: storyCount + postCount,
+      },
     };
   }
 

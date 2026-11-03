@@ -262,7 +262,7 @@ export default function MusicCatalogPage() {
         )}
 
         {!isLoading && !isError && (
-          <div className="table-scroll">
+          <div className="table-scroll table-scroll--music">
             <table className="data-table data-table--compact" aria-label="Thư viện nhạc">
               <thead>
                 <tr>
@@ -429,12 +429,27 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
   const [error, setError] = useState<string | null>(null);
   // Reused on retry so a create failure does not force a second upload.
   const [uploadedKey, setUploadedKey] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState('');
+
+  // Preview the picked file before it is committed. The object URL is local —
+  // no upload, no endpoint — and reading `duration` off the element is what lets
+  // the admin see the length the server will derive before pressing Tạo.
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  const [localDurationMs, setLocalDurationMs] = useState<number | null>(null);
+  useEffect(
+    () => () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
 
   const busy = uploading || saving;
 
   function pickFile(f: File | null) {
     setError(null);
     setUploadedKey(null);
+    setLocalDurationMs(null);
     if (!f) {
       setFile(null);
       return;
@@ -448,6 +463,25 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
       return;
     }
     setFile(f);
+  }
+
+  function addTag() {
+    const t = tagDraft.trim().toLowerCase();
+    if (!t) return;
+    if (tags.includes(t)) {
+      setTagDraft('');
+      return;
+    }
+    if (tags.length >= 20) {
+      setError('Tối đa 20 tag.');
+      return;
+    }
+    if (t.length > 40) {
+      setError('Mỗi tag tối đa 40 ký tự.');
+      return;
+    }
+    setTags([...tags, t]);
+    setTagDraft('');
   }
 
   async function submit() {
@@ -498,6 +532,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
         licenseUrl: licenseUrl.trim(),
         sourceUrl: sourceUrl.trim(),
         attribution: attribution.trim() || undefined,
+        tags: tags.length ? tags : undefined,
       });
       onCreated();
     } catch (err) {
@@ -511,86 +546,163 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
 
   return (
     <Dialog open onClose={busy ? () => {} : onClose} labelId={labelId} variant="wide">
-      <div className="dialog-header">
-        <h2 id={labelId} className="panel-title" style={{ margin: 0 }}>Thêm track</h2>
-        <button className="btn btn-sm" type="button" onClick={onClose} disabled={busy} aria-label="Đóng">
-          ✕
-        </button>
-      </div>
-
-      <div className="dialog-body" style={{ display: 'grid', gap: 14 }}>
-        <label className="form-field">
-          <span className="form-label">File âm thanh</span>
-          <input
-            className="input"
-            type="file"
-            accept={AUDIO_ACCEPT}
-            disabled={busy}
-            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            aria-describedby="audio-file-hint"
-          />
-          <span id="audio-file-hint" className="form-hint">
-            mp3, wav, ogg, m4a hoặc aac — tối đa 100MB. Thời lượng được đọc từ file, không nhập tay.
-          </span>
-          {file && <span className="cell-meta">{file.name}</span>}
-          {uploadedKey && <span className="cell-meta">Đã tải lên — có thể bấm Tạo lại nếu lần trước lỗi.</span>}
-        </label>
-
-        {uploading && (
-          <div className="form-field" role="status" aria-live="polite">
-            <span className="form-label">Đang tải lên… {progress}%</span>
-            <progress max={100} value={progress} style={{ width: '100%' }} />
-          </div>
-        )}
-
-        <div className="form-grid">
-          <label className="form-field">
-            <span className="form-label">Tiêu đề</span>
-            <input className="input" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Nghệ sĩ</span>
-            <input className="input" value={artist} disabled={busy} onChange={(e) => setArtist(e.target.value)} maxLength={200} />
-          </label>
+      {/* Dialog renders only the overlay; the panel is the caller's. Without
+          `.dialog--wide` the header/body/footer stack as loose overlay children
+          and the buttons escape the card. */}
+      <div className="dialog dialog--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header">
+          <h2 id={labelId} className="panel-title" style={{ margin: 0 }}>Thêm track</h2>
+          <button className="btn btn-sm" type="button" onClick={onClose} disabled={busy} aria-label="Đóng">
+            ✕
+          </button>
         </div>
 
-        <div className="form-grid">
+        <div className="dialog-body" style={{ display: 'grid', gap: 14 }}>
           <label className="form-field">
-            <span className="form-label">Giấy phép</span>
-            <select className="select" value={licenseType} disabled={busy} onChange={(e) => setLicenseType(e.target.value)}>
-              {LICENSE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-label">
-              Ghi công {licenseType === 'cc-by' ? '(bắt buộc)' : '(tuỳ chọn)'}
+            <span className="form-label">File âm thanh</span>
+            <input
+              className="input"
+              type="file"
+              accept={AUDIO_ACCEPT}
+              disabled={busy}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+              aria-describedby="audio-file-hint"
+            />
+            <span id="audio-file-hint" className="form-hint">
+              mp3, wav, ogg, m4a hoặc aac — tối đa 100MB. Thời lượng được đọc từ file, không nhập tay.
             </span>
-            <input className="input" value={attribution} disabled={busy} onChange={(e) => setAttribution(e.target.value)} maxLength={1000} />
+            {file && <span className="cell-meta">{file.name}</span>}
+            {uploadedKey && <span className="cell-meta">Đã tải lên — có thể bấm Tạo lại nếu lần trước lỗi.</span>}
           </label>
+
+          {/* Listen before committing. Duration is read off the element, so the
+              number shown here is the same one the server will derive. */}
+          {previewUrl && (
+            <div className="form-field" aria-label="Nghe thử file đã chọn">
+              <span className="form-label">
+                Nghe thử
+                {localDurationMs != null && (
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                    · {Math.floor(localDurationMs / 60000)}:
+                    {String(Math.floor((localDurationMs % 60000) / 1000)).padStart(2, '0')}
+                  </span>
+                )}
+              </span>
+              <audio
+                src={previewUrl}
+                controls
+                preload="metadata"
+                style={{ width: '100%' }}
+                onLoadedMetadata={(e) => {
+                  const d = e.currentTarget.duration;
+                  if (Number.isFinite(d) && d > 0) setLocalDurationMs(Math.round(d * 1000));
+                }}
+              />
+            </div>
+          )}
+
+          {uploading && (
+            <div className="form-field" role="status" aria-live="polite">
+              <span className="form-label">Đang tải lên… {progress}%</span>
+              <progress max={100} value={progress} style={{ width: '100%' }} />
+            </div>
+          )}
+
+          <div className="form-grid">
+            <label className="form-field">
+              <span className="form-label">Tiêu đề</span>
+              <input className="input" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+            </label>
+            <label className="form-field">
+              <span className="form-label">Nghệ sĩ</span>
+              <input className="input" value={artist} disabled={busy} onChange={(e) => setArtist(e.target.value)} maxLength={200} />
+            </label>
+          </div>
+
+          <div className="form-grid">
+            <label className="form-field">
+              <span className="form-label">Giấy phép</span>
+              <select className="select" value={licenseType} disabled={busy} onChange={(e) => setLicenseType(e.target.value)}>
+                {LICENSE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span className="form-label">
+                Ghi công {licenseType === 'cc-by' ? '(bắt buộc)' : '(tuỳ chọn)'}
+              </span>
+              <input className="input" value={attribution} disabled={busy} onChange={(e) => setAttribution(e.target.value)} maxLength={1000} />
+            </label>
+          </div>
+
+          {/* Tags power the picker's tag filter (moments.service filters on
+              `tags`), so a track without them is unreachable by category. */}
+          <div className="form-field">
+            <span className="form-label">Tags</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: tags.length ? 8 : 0 }}>
+              {tags.map((t) => (
+                <button
+                  key={t}
+                  className="filter-chip filter-chip-removable"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setTags(tags.filter((x) => x !== t))}
+                  aria-label={`Bỏ tag ${t}`}
+                >
+                  {t} ✕
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                value={tagDraft}
+                disabled={busy || tags.length >= 20}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+                placeholder={tags.length >= 20 ? 'Đã đủ 20 tag' : 'Nhập rồi Enter — vd: acoustic, lofi'}
+                aria-label="Thêm tag"
+                maxLength={41}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={addTag}
+                disabled={busy || !tagDraft.trim() || tags.length >= 20}
+              >
+                Thêm
+              </button>
+            </div>
+            <span className="form-hint">Dùng để lọc trong thư viện nhạc trên app. Tối đa 20 tag.</span>
+          </div>
+
+          <label className="form-field">
+            <span className="form-label">URL giấy phép</span>
+            <input className="input" value={licenseUrl} disabled={busy} onChange={(e) => setLicenseUrl(e.target.value)} placeholder="https://creativecommons.org/…" />
+          </label>
+
+          <label className="form-field">
+            <span className="form-label">URL nguồn</span>
+            <input className="input" value={sourceUrl} disabled={busy} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://freemusicarchive.org/…" />
+          </label>
+
+          {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 
-        <label className="form-field">
-          <span className="form-label">URL giấy phép</span>
-          <input className="input" value={licenseUrl} disabled={busy} onChange={(e) => setLicenseUrl(e.target.value)} placeholder="https://creativecommons.org/…" />
-        </label>
-
-        <label className="form-field">
-          <span className="form-label">URL nguồn</span>
-          <input className="input" value={sourceUrl} disabled={busy} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://freemusicarchive.org/…" />
-        </label>
-
-        {error && <p className="form-error" role="alert">{error}</p>}
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 var(--space-5) var(--space-5)' }}>
-        <button className="btn" type="button" onClick={onClose} disabled={busy}>
-          Huỷ
-        </button>
-        <button className="btn btn-primary" type="button" onClick={submit} disabled={busy}>
-          {uploading ? 'Đang tải…' : saving ? 'Đang lưu…' : 'Tạo track'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 var(--space-5) var(--space-5)' }}>
+          <button className="btn" type="button" onClick={onClose} disabled={busy}>
+            Huỷ
+          </button>
+          <button className="btn btn-primary" type="button" onClick={submit} disabled={busy}>
+            {uploading ? 'Đang tải…' : saving ? 'Đang lưu…' : 'Tạo track'}
+          </button>
+        </div>
       </div>
     </Dialog>
   );

@@ -33,6 +33,8 @@ export interface MusicTrack {
 export interface MusicTrackDetail extends MusicTrack {
   audioUrl: string;
   previewUrl: string;
+  /** Live content still pointing at this track — what "Ngưng" would affect. */
+  usage?: { stories: number; posts: number; total: number };
 }
 
 export interface MusicStats {

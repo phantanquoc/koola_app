@@ -7,6 +7,8 @@ import { AdminMusicService } from './admin-music.service';
 import { MusicStorageService } from './music-storage.service';
 import { AdminAuditService } from '../admin-audit.service';
 import { MusicTrack } from '../../moments/schemas/music-track.schema';
+import { Story } from '../../moments/schemas/story.schema';
+import { Post } from '../../moments/schemas/post.schema';
 import { readDurationMs } from './audio-metadata';
 
 // The wrapper is the only module that touches the ESM-only music-metadata
@@ -58,11 +60,17 @@ function makeStorage(overrides: Record<string, unknown> = {}) {
 
 const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AdminAuditService;
 
-async function build(model: any, storage: any) {
+function makeCountingModel(count = 0) {
+  return { countDocuments: jest.fn().mockResolvedValue(count) };
+}
+
+async function build(model: any, storage: any, counts = { stories: 0, posts: 0 }) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       AdminMusicService,
       { provide: getModelToken(MusicTrack.name), useValue: model },
+      { provide: getModelToken(Story.name), useValue: makeCountingModel(counts.stories) },
+      { provide: getModelToken(Post.name), useValue: makeCountingModel(counts.posts) },
       { provide: MusicStorageService, useValue: storage },
       { provide: AdminAuditService, useValue: audit },
     ],
@@ -249,6 +257,23 @@ describe('findOne', () => {
     expect(got.isActive).toBe(false);
     expect(got.licenseUrl).toBe('https://lic');
     expect(got.audioUrl).toBe('https://signed.example/a.mp3');
+  });
+
+  it('reports how many live stories and posts still use the track', async () => {
+    const track = {
+      _id: OID,
+      audioKey: 'music-catalog/a.mp3',
+      previewKey: 'music-catalog/a.mp3',
+      isActive: true,
+    };
+    const model = makeModel({
+      findById: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(track) }),
+    });
+    const svc = await build(model, makeStorage(), { stories: 3, posts: 2 });
+
+    const got: any = await svc.findOne(OID);
+
+    expect(got.usage).toEqual({ stories: 3, posts: 2, total: 5 });
   });
 
   it('404s an unknown id', async () => {

@@ -276,8 +276,24 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
                 <dd><span className="k-mono" style={{ wordBreak: 'break-all' }}>{track.audioKey}</span></dd>
               </div>
               <div>
-                <dt>Lượt dùng</dt>
+                <dt>Lượt dùng (tổng)</dt>
                 <dd>{formatNumber(track.usageCount ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>Đang dùng ở</dt>
+                <dd>
+                  {track.usage
+                    ? `${formatNumber(track.usage.stories)} khoảnh khắc · ${formatNumber(track.usage.posts)} bài đăng`
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt>Tags</dt>
+                <dd>
+                  {track.tags?.length
+                    ? track.tags.join(', ')
+                    : 'Chưa gắn tag — không lọc được theo nhóm trong thư viện app'}
+                </dd>
               </div>
               <div>
                 <dt>Ngày thêm</dt>
@@ -314,7 +330,11 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
             {confirmAction && (
               <p className="cell-meta">
                 {confirmAction === 'deactivate'
-                  ? 'Ngưng track: biến mất khỏi thư viện người dùng, file vẫn giữ trong kho.'
+                  ? `Ngưng track: biến mất khỏi thư viện người dùng, file vẫn giữ trong kho.${
+                      track.usage && track.usage.total > 0
+                        ? ` Hiện có ${formatNumber(track.usage.total)} nội dung đang dùng track này — chúng vẫn phát được.`
+                        : ''
+                    }`
                   : 'Khôi phục track: hiện lại trong thư viện cho story/post mới.'}
               </p>
             )}

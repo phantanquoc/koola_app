@@ -3766,3 +3766,62 @@ th.sortable:hover {
   color: var(--koola-warning-dark);
   font-weight: 700;
 }
+
+/* ─── Bảng nhạc: cho cuộn ngang thay vì bóp cột ───────────────────────────────
+   `.table-scroll--fit` (15 trang khác đang dùng) đặt overflow-x: visible và các
+   media query hạ `.data-table { min-width: 0 }`, nên cột bị ép còn ~110px và
+   chữ xuống 3 dòng thay vì cho vuốt ngang. Trang nhạc đi đường riêng trước;
+   các trang còn lại sẽ theo sau ở change khác.
+
+   Selector `.table-scroll--music .data-table` (0,2,0) thắng `.data-table`
+   (0,1,0) nên các media query bên trên không ghi đè được. */
+.table-scroll--music {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.table-scroll--music .data-table {
+  min-width: 900px;
+}
+
+/* ─── Danh sách khoá–giá trị trong trang chi tiết ─────────────────────────────
+   `MusicDetail` render <dl class="detail-list"> nhưng class này chưa từng được
+   định nghĩa → trình duyệt dùng style mặc định của <dl> (thụt lề, giá trị xuống
+   dòng dưới nhãn) nên khối "Chi tiết kỹ thuật" đọc như một cột chữ rời. */
+.detail-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.detail-list > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--koola-line);
+}
+
+.detail-list > div:first-child {
+  border-top: 0;
+}
+
+.detail-list dt {
+  color: var(--koola-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.detail-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .detail-list > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}

@@ -65,6 +65,7 @@ import {
   AudienceList,
   AudienceListSchema,
 } from '../moments/schemas/audience-list.schema';
+import { Post, PostSchema } from '../moments/schemas/post.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
@@ -79,6 +80,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Story.name, schema: StorySchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
+      // Đếm nội dung đang dùng một track nhạc (music-catalog-ops).
+      { name: Post.name, schema: PostSchema },
       { name: BroadcastLog.name, schema: BroadcastLogSchema },
       { name: Appeal.name, schema: AppealSchema },
       // Đọc-only: hồ sơ người dùng hiện đơn mua/bán + GMV. Chỉ đăng ký schema,
