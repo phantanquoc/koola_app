@@ -43,6 +43,7 @@
     "ioredis": "^5.10.1",
     "minio": "^8.0.7",
     "mongoose": "^9.3.3",
+    "music-metadata": "^11.16.1",
     "nodemailer": "^8.0.7",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

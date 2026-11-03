@@ -29,10 +29,6 @@ import {
 } from './dto/conversation-ops.dto';
 import { SearchMessagesDto } from './dto/search-messages.dto';
 import { ListStoriesDto } from './dto/list-stories.dto';
-import {
-  CreateMusicTrackDto,
-  UpdateMusicTrackDto,
-} from './dto/music-track.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 import { applyCreatedAtRange } from '../common/utils/date-range';
 import { ConversationDoc } from '../conversations/conversation.schema';
@@ -40,7 +36,6 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
-import { MusicTrack } from '../moments/schemas/music-track.schema';
 import { AudienceList } from '../moments/schemas/audience-list.schema';
 import { Report } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
@@ -80,8 +75,6 @@ export class AdminModerationController {
     @InjectModel(Message.name) private msgModel: Model<Message>,
     @InjectModel(Story.name) private storyModel: Model<Story>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
-    @InjectModel(MusicTrack.name)
-    private musicTrackModel: Model<MusicTrack>,
     @InjectModel(AudienceList.name)
     private audienceListModel: Model<AudienceList>,
     private readonly audit: AdminAuditService,
@@ -1298,119 +1291,6 @@ export class AdminModerationController {
       ip: req.ip ?? null,
     });
     return report;
-  }
-
-  // ─── MusicTrack admin CRUD (real persistence) ────────────────────────────────
-
-  @Get('music-tracks')
-  async listMusicTracks(@Query() dto: PaginationDto) {
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 20;
-    const skip = (page - 1) * limit;
-    const [data, total] = await Promise.all([
-      this.musicTrackModel
-        .find({ isActive: true })
-        .sort({ addedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      this.musicTrackModel.countDocuments({ isActive: true }),
-    ]);
-    return { data, total, page, limit };
-  }
-
-  @Post('music-tracks')
-  @HttpCode(HttpStatus.CREATED)
-  @Throttle({
-    short: { limit: 30, ttl: 60000 },
-    long: { limit: 200, ttl: 60000 },
-  })
-  async createMusicTrack(
-    @Body() dto: CreateMusicTrackDto,
-    @CurrentUser() u: { actorId: string },
-    @Req() req: Request,
-  ) {
-    const doc = await this.musicTrackModel.create({
-      title: dto.title,
-      artist: dto.artist,
-      durationMs: dto.durationMs,
-      audioKey: dto.audioKey,
-      previewKey: dto.previewKey,
-      licenseType: dto.licenseType,
-      licenseUrl: dto.licenseUrl,
-      sourceUrl: dto.sourceUrl,
-      attribution: dto.attribution ?? '',
-      tags: dto.tags ?? [],
-      addedBy: u.actorId,
-      addedAt: new Date(),
-      isActive: true,
-      usageCount: 0,
-    });
-    await this.audit.log({
-      actorId: u.actorId,
-      action: 'create_music_track',
-      targetType: 'music_track',
-      targetId: String((doc as any)._id),
-      payload: dto as any,
-      ip: req.ip ?? null,
-    });
-    return doc;
-  }
-
-  @Patch('music-tracks/:id')
-  @Throttle({
-    short: { limit: 30, ttl: 60000 },
-    long: { limit: 200, ttl: 60000 },
-  })
-  async updateMusicTrack(
-    @Param('id') id: string,
-    @Body() dto: UpdateMusicTrackDto,
-    @CurrentUser() u: { actorId: string },
-    @Req() req: Request,
-  ) {
-    const updated = await this.musicTrackModel.findByIdAndUpdate(
-      id,
-      { $set: dto as any },
-      { new: true },
-    );
-    if (!updated) throw new NotFoundException('Music track not found');
-    await this.audit.log({
-      actorId: u.actorId,
-      action: 'update_music_track',
-      targetType: 'music_track',
-      targetId: id,
-      payload: dto as any,
-      ip: req.ip ?? null,
-    });
-    return updated;
-  }
-
-  @Delete('music-tracks/:id')
-  @HttpCode(HttpStatus.OK)
-  @Throttle({
-    short: { limit: 30, ttl: 60000 },
-    long: { limit: 200, ttl: 60000 },
-  })
-  async deleteMusicTrack(
-    @Param('id') id: string,
-    @CurrentUser() u: { actorId: string },
-    @Req() req: Request,
-  ) {
-    // Soft-delete to preserve referential integrity with stories using the track
-    const updated = await this.musicTrackModel.findByIdAndUpdate(
-      id,
-      { $set: { isActive: false } },
-      { new: true },
-    );
-    if (!updated) throw new NotFoundException('Music track not found');
-    await this.audit.log({
-      actorId: u.actorId,
-      action: 'delete_music_track',
-      targetType: 'music_track',
-      targetId: id,
-      ip: req.ip ?? null,
-    });
-    return { message: 'deleted' };
   }
 
   @Get('audience-lists')

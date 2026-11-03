@@ -3,6 +3,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AdminModerationController } from './admin-moderation.controller';
+import { AdminMusicController } from './music/admin-music.controller';
+import { AdminMusicService } from './music/admin-music.service';
+import { MusicStorageService } from './music/music-storage.service';
 import { AdminOpsController } from './admin-ops.controller';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { User, UserSchema } from '../users/user.schema';
@@ -107,6 +110,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminController,
     AdminExportController,
     AdminModerationController,
+    AdminMusicController,
     AdminOpsController,
     SessionController,
     AppealController,
@@ -122,6 +126,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminRoleGuard,
     AdminAuditService,
     AdminReportService,
+    AdminMusicService,
+    MusicStorageService,
     CoturnHealthService,
     ModerationMediaService,
     AdminSessionService,
