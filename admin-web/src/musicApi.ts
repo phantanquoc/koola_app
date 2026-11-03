@@ -35,6 +35,8 @@ export interface MusicTrackDetail extends MusicTrack {
   previewUrl: string;
   /** Live content still pointing at this track — what "Ngưng" would affect. */
   usage?: { stories: number; posts: number; total: number };
+  /** Resolved display name of the admin who added it (§3B2: no raw ObjectId). */
+  addedByName?: string | null;
 }
 
 export interface MusicStats {
@@ -42,6 +44,8 @@ export interface MusicStats {
   active: number;
   inactive: number;
   byLicense: Record<string, number>;
+  /** Distinct tags currently in use — powers the tag filter options. */
+  tags: string[];
 }
 
 export interface MusicListResult {
@@ -93,6 +97,7 @@ export const musicApi = {
     status?: string;
     q?: string;
     licenseType?: string;
+    tag?: string;
     sort?: string;
     page?: number;
     limit?: number;

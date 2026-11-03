@@ -9,6 +9,7 @@ import { AdminAuditService } from '../admin-audit.service';
 import { MusicTrack } from '../../moments/schemas/music-track.schema';
 import { Story } from '../../moments/schemas/story.schema';
 import { Post } from '../../moments/schemas/post.schema';
+import { User } from '../../users/user.schema';
 import { readDurationMs } from './audio-metadata';
 
 // The wrapper is the only module that touches the ESM-only music-metadata
@@ -71,6 +72,14 @@ async function build(model: any, storage: any, counts = { stories: 0, posts: 0 }
       { provide: getModelToken(MusicTrack.name), useValue: model },
       { provide: getModelToken(Story.name), useValue: makeCountingModel(counts.stories) },
       { provide: getModelToken(Post.name), useValue: makeCountingModel(counts.posts) },
+      {
+        provide: getModelToken(User.name),
+        useValue: {
+          findById: () => ({
+            select: () => ({ lean: () => Promise.resolve({ displayName: 'Admin Dev' }) }),
+          }),
+        },
+      },
       { provide: MusicStorageService, useValue: storage },
       { provide: AdminAuditService, useValue: audit },
     ],
@@ -142,6 +151,15 @@ describe('list', () => {
     });
   });
 
+  it('filters by an exact tag (DESIGN §0.8: visible field must be filterable)', async () => {
+    const model = makeModel();
+    const svc = await build(model, makeStorage());
+
+    await svc.list({ tag: 'Acoustic' });
+
+    expect(model.find.mock.calls[0][0]).toEqual({ isActive: true, tags: 'acoustic' });
+  });
+
   it('rejects a sort outside the allow-list', async () => {
     const svc = await build(makeModel(), makeStorage());
     await expect(svc.list({ sort: 'password:asc' })).rejects.toBeInstanceOf(
@@ -197,9 +215,11 @@ describe('stats', () => {
         .mockResolvedValueOnce(10)
         .mockResolvedValueOnce(7)
         .mockResolvedValueOnce(3),
+      // First aggregate = license buckets, second = distinct tags.
       aggregate: jest
         .fn()
-        .mockResolvedValue([{ _id: 'cc0', count: 4 }, { _id: 'cc-by', count: 6 }]),
+        .mockResolvedValueOnce([{ _id: 'cc0', count: 4 }, { _id: 'cc-by', count: 6 }])
+        .mockResolvedValueOnce([]),
     });
     const svc = await build(model, makeStorage());
 
@@ -213,6 +233,7 @@ describe('stats', () => {
         'epidemic-sound': 0,
         'owned-by-koola': 0,
       },
+      tags: [],
     });
   });
 });
@@ -274,6 +295,7 @@ describe('findOne', () => {
     const got: any = await svc.findOne(OID);
 
     expect(got.usage).toEqual({ stories: 3, posts: 2, total: 5 });
+    expect(got.addedByName).toBe('Admin Dev');
   });
 
   it('404s an unknown id', async () => {

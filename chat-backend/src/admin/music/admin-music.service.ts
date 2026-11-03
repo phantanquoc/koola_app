@@ -12,6 +12,7 @@ import {
 } from '../../moments/schemas/music-track.schema';
 import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { Story } from '../../moments/schemas/story.schema';
+import { User, UserDocument } from '../../users/user.schema';
 import { Post } from '../../moments/schemas/post.schema';
 import { AdminAuditService } from '../admin-audit.service';
 import { MusicStorageService } from './music-storage.service';
@@ -54,6 +55,8 @@ export class AdminMusicService {
     private readonly storyModel: Model<Record<string, unknown>>,
     @InjectModel(Post.name)
     private readonly postModel: Model<Record<string, unknown>>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly storage: MusicStorageService,
     private readonly audit: AdminAuditService,
   ) {}
@@ -72,6 +75,7 @@ export class AdminMusicService {
       status?: string;
       q?: string;
       licenseType?: LicenseType;
+      tag?: string;
     },
     defaultToActive = true,
   ): Record<string, unknown> {
@@ -84,6 +88,10 @@ export class AdminMusicService {
     else if (status === 'inactive') filter.isActive = false;
 
     if (dto.licenseType) filter.licenseType = dto.licenseType;
+    // `tags` is an array field; Mongo matches an exact element. DESIGN §0.8 wants
+    // every field visible in the UI to be filterable, otherwise a tag is a dead
+    // field — set in the form, never usable for finding the track again.
+    if (dto.tag?.trim()) filter.tags = dto.tag.trim().toLowerCase();
 
     // Case-insensitive substring, not $text: $text matches whole words only,
     // so `q=Scot` would miss "Scott Buckley". escapeRegExp keeps user input
@@ -158,7 +166,23 @@ export class AdminMusicService {
       if (row._id in byLicense) byLicense[row._id] = row.count;
     }
 
-    return { all, active, inactive, byLicense };
+    // Distinct tags power the filter picker. Derived from the collection rather
+    // than a static list so it never drifts from what tracks actually carry.
+    const tagAgg = await this.musicTrackModel.aggregate<{ _id: string }>([
+      { $match: base },
+      { $unwind: '$tags' },
+      { $group: { _id: '$tags' } },
+      { $sort: { _id: 1 } },
+      { $limit: 200 },
+    ]);
+
+    return {
+      all,
+      active,
+      inactive,
+      byLicense,
+      tags: tagAgg.map((r) => r._id).filter(Boolean),
+    };
   }
 
   /** Full document plus freshly signed playback URLs, for any lifecycle state. */
@@ -181,10 +205,22 @@ export class AdminMusicService {
       this.postModel.countDocuments({ 'musicRef.trackId': id, isActive: true }),
     ]);
 
+    // Resolve the admin's display name. §3B2 forbids raw ObjectIds in the page
+    // body; the id itself stays available inside "Chi tiết kỹ thuật".
+    const addedByUser = await this.userModel
+      .findById(t.addedBy)
+      .select('displayName email')
+      .lean()
+      .catch(() => null);
+
     return {
       ...(track as unknown as Record<string, unknown>),
       audioUrl,
       previewUrl,
+      addedByName:
+        (addedByUser as { displayName?: string } | null)?.displayName ??
+        (addedByUser as { email?: string } | null)?.email ??
+        null,
       usage: {
         stories: storyCount,
         posts: postCount,

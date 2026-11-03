@@ -3784,44 +3784,40 @@ th.sortable:hover {
   min-width: 900px;
 }
 
-/* ─── Danh sách khoá–giá trị trong trang chi tiết ─────────────────────────────
-   `MusicDetail` render <dl class="detail-list"> nhưng class này chưa từng được
-   định nghĩa → trình duyệt dùng style mặc định của <dl> (thụt lề, giá trị xuống
-   dòng dưới nhãn) nên khối "Chi tiết kỹ thuật" đọc như một cột chữ rời. */
-.detail-list {
+
+
+/* ─── Khối phụ của trang chi tiết nhạc ───────────────────────────────────────
+   Các class dưới đây thay cho inline style trong `MusicDetail` (§1: cấm style
+   cứng ngoài index.css). */
+.detail-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.audit-list {
   display: grid;
-  gap: 0;
+  gap: var(--space-2);
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.detail-list > div {
+.audit-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lifecycle-confirm {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: var(--space-3);
-  align-items: baseline;
-  padding: 7px 0;
-  border-top: 1px solid var(--koola-line);
+  gap: var(--space-2);
 }
 
-.detail-list > div:first-child {
-  border-top: 0;
+.lifecycle-confirm-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
-.detail-list dt {
-  color: var(--koola-muted);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.detail-list dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 560px) {
-  .detail-list > div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-}

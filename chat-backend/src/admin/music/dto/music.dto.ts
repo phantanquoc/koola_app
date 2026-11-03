@@ -40,6 +40,12 @@ export class ListMusicTracksDto {
   @IsEnum(LicenseType)
   licenseType?: LicenseType;
 
+  @ApiPropertyOptional({ description: 'Lọc theo một tag' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  tag?: string;
+
   @ApiPropertyOptional({ description: '`<field>:asc|desc`', example: 'addedAt:desc' })
   @IsOptional()
   @IsString()

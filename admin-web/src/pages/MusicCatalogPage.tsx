@@ -46,6 +46,7 @@ export default function MusicCatalogPage() {
     status: 'active',
     q: '',
     license: '',
+    tag: '',
     sort: 'addedAt:desc',
     page: '1',
     pageSize: '20',
@@ -68,15 +69,16 @@ export default function MusicCatalogPage() {
       status: values.status || 'active',
       q: values.q || undefined,
       licenseType: values.license || undefined,
+      tag: values.tag || undefined,
       sort,
       page,
       limit: pageSize,
     }),
-    [values.status, values.q, values.license, sort, page, pageSize],
+    [values.status, values.q, values.license, values.tag, sort, page, pageSize],
   );
 
   const { rows, total, isLoading, isError, error, refetch } = useAdminList<MusicTrack>(
-    ['music', values.status, values.q, values.license, sort, page, pageSize],
+    ['music', values.status, values.q, values.license, values.tag, sort, page, pageSize],
     '/admin/music-tracks',
     params,
   );
@@ -111,7 +113,7 @@ export default function MusicCatalogPage() {
     });
   }
 
-  const advancedCount = values.license ? 1 : 0;
+  const advancedCount = (values.license ? 1 : 0) + (values.tag ? 1 : 0);
   const hasActiveFilter = Boolean(values.q || advancedCount || values.status !== 'active');
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const loadError = apiErrorMessage(error, 'Không tải được danh sách nhạc.');
@@ -195,7 +197,7 @@ export default function MusicCatalogPage() {
 
         <FilterPopover
           activeCount={advancedCount}
-          onClear={() => set({ license: '', page: '1' })}
+          onClear={() => set({ license: '', tag: '', page: '1' })}
         >
           <label className="form-field">
             <span className="form-label">Giấy phép</span>
@@ -210,6 +212,24 @@ export default function MusicCatalogPage() {
               ))}
             </select>
           </label>
+
+          {/* Tag list comes from stats, not a hardcoded vocabulary — it mirrors
+              what tracks actually carry. Hidden while no track has a tag. */}
+          {(stats?.tags?.length ?? 0) > 0 && (
+            <label className="form-field">
+              <span className="form-label">Tag</span>
+              <select
+                className="select"
+                value={values.tag}
+                onChange={(e) => set({ tag: e.target.value, page: '1' })}
+              >
+                <option value="">Mọi tag</option>
+                {stats?.tags.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </FilterPopover>
       </ListHeader>
 
@@ -228,6 +248,11 @@ export default function MusicCatalogPage() {
           {values.license && (
             <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ license: '', page: '1' })}>
               {licenseLabel(values.license)} ✕
+            </button>
+          )}
+          {values.tag && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ tag: '', page: '1' })}>
+              Tag: {values.tag} ✕
             </button>
           )}
           {values.q && (
@@ -273,9 +298,9 @@ export default function MusicCatalogPage() {
                       <th> is invalid HTML and React logs a hydration error. */}
                   <ColumnHeader label="Tiêu đề" sortField="title" sort={sort} onSort={toggleSort} />
                   <th scope="col">Nghệ sĩ</th>
-                  <th scope="col">Thời lượng</th>
+                  <th scope="col" className="col-num">Thời lượng</th>
                   <th scope="col">Giấy phép</th>
-                  <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} />
+                  <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} className="col-num" />
                   <ColumnHeader
                     label="Ngày thêm"
                     sortField="addedAt"
@@ -333,9 +358,9 @@ export default function MusicCatalogPage() {
                       {!t.isActive && <div className="cell-meta">Đã ngưng</div>}
                     </td>
                     <td>{t.artist}</td>
-                    <td className="k-mono">{durationLabel(t.durationMs)}</td>
+                    <td className="col-num">{durationLabel(t.durationMs)}</td>
                     <td>{licenseLabel(t.licenseType)}</td>
-                    <td>{formatNumber(t.usageCount ?? 0)}</td>
+                    <td className="col-num">{formatNumber(t.usageCount ?? 0)}</td>
                     <td className="col-hide-mobile">
                       <span className="cell-date">{formatDateTime(t.addedAt)}</span>
                     </td>
@@ -389,6 +414,7 @@ export default function MusicCatalogPage() {
         description="Track sẽ biến mất khỏi thư viện người dùng nhưng file vẫn nằm trong kho và nội dung đã đăng vẫn phát được. Có thể khôi phục lại sau."
         confirmLabel="Ngưng"
         variant="danger"
+        requireText="XACNHAN"
         onConfirm={confirmDeactivate}
         onClose={() => setDeactivateId(null)}
       />
