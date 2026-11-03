@@ -114,6 +114,46 @@ describe('MusicDetail', () => {
     expect(values.some((v) => v.includes('creativecommons'))).toBe(false);
   });
 
+  it('links the license URL when it is http(s)', async () => {
+    renderDetail();
+    await screen.findByText('Rainy Afternoon');
+    const link = screen.getByRole('link', { name: /creativecommons/ }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://creativecommons.org/publicdomain/zero/1.0/');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('renders a javascript: license URL as text, never as a link', async () => {
+    detailMock.mockResolvedValue(track({ licenseUrl: 'javascript:alert(1)' }));
+    renderDetail();
+    await screen.findByText('Rainy Afternoon');
+    expect(screen.queryByRole('link', { name: /javascript/ })).toBeNull();
+    expect(screen.getByText('javascript:alert(1)')).toBeTruthy();
+  });
+
+  it('makes tags editable and sends them on save', async () => {
+    detailMock.mockResolvedValue(track({ tags: ['lofi'] }));
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Bỏ tag lofi/ }));
+    fireEvent.change(screen.getByLabelText('Thêm tag'), { target: { value: 'Ambient' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Thêm$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Lưu thay đổi/ }));
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith('t1', { tags: ['ambient'] });
+  });
+
+  it('does not send tags when the set is unchanged', async () => {
+    detailMock.mockResolvedValue(track({ tags: ['lofi'] }));
+    renderDetail();
+    const titleInput = await screen.findByDisplayValue('Rainy Afternoon');
+    fireEvent.change(titleInput, { target: { value: 'Rainy' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu thay đổi/ }));
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith('t1', { title: 'Rainy' });
+  });
+
   it('offers Ngưng when active and Khôi phục only when inactive', async () => {
     renderDetail();
     expect(await screen.findByRole('button', { name: /Ngưng track/ })).toBeTruthy();

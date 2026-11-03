@@ -6,7 +6,8 @@ import StateBlock from './StateBlock';
 import { apiErrorMessage, formatDateTime, formatNumber } from './formatters';
 import { auditActionLabel, auditActionTone } from './audit-labels';
 import { StatusBadge } from './StatusBadge';
-import { musicApi, durationLabel, licenseLabel, type MusicTrackDetail } from '../musicApi';
+import { TagChipEditor } from './TagChipEditor';
+import { musicApi, durationLabel, licenseLabel, externalHref, type MusicTrackDetail } from '../musicApi';
 
 interface MusicDetailProps {
   id: string;
@@ -80,6 +81,7 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [attribution, setAttribution] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -92,19 +94,26 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
     setTitle(track.title);
     setArtist(track.artist);
     setAttribution(track.attribution ?? '');
+    setTags(track.tags ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?._id, track?.title, track?.artist, track?.attribution]);
+  }, [track?._id, track?.title, track?.artist, track?.attribution, track?.tags]);
 
   // Only changed fields go up: sending the whole object would rewrite provenance
   // values the operator never touched.
   const patch = useMemo(() => {
     if (!track) return {};
-    const out: Record<string, string> = {};
+    const out: Record<string, string | string[]> = {};
     if (title !== track.title) out.title = title;
     if (artist !== track.artist) out.artist = artist;
     if (attribution !== (track.attribution ?? '')) out.attribution = attribution;
+    // Tags are compared as an ordered list: the chip editor only appends or
+    // removes, so order is stable and an equal set is an equal array.
+    const currentTags = track.tags ?? [];
+    if (tags.length !== currentTags.length || tags.some((t, i) => t !== currentTags[i])) {
+      out.tags = tags;
+    }
     return out;
-  }, [track, title, artist, attribution]);
+  }, [track, title, artist, attribution, tags]);
   const dirty = Object.keys(patch).length > 0;
 
   async function save() {
@@ -237,6 +246,14 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
             </span>
             <input className="input" value={attribution} onChange={(e) => setAttribution(e.target.value)} maxLength={1000} disabled={saving} />
           </label>
+          {/* Tags are how the app's picker groups tracks; a track without them
+              cannot be found by category, so they must be editable here too. */}
+          <TagChipEditor
+            value={tags}
+            onChange={setTags}
+            disabled={saving}
+            hint="Dùng để lọc trong thư viện nhạc trên app."
+          />
           {saveError && <p className="form-error" role="alert">{saveError}</p>}
           {saved && <p className="cell-meta" role="status">Đã lưu.</p>}
           <button
@@ -276,15 +293,20 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
               )}
             </dd>
 
-            <dt className="cell-meta">Lượt dùng (tổng)</dt>
+            <dt className="cell-meta">Lượt dùng (tích luỹ)</dt>
             <dd>{formatNumber(track.usageCount ?? 0)}</dd>
 
             <dt className="cell-meta">Đang dùng ở</dt>
             <dd>
               {track.usage ? (
                 <>
-                  {formatNumber(track.usage.stories)} khoảnh khắc ·{' '}
-                  {formatNumber(track.usage.posts)} bài đăng
+                  {formatNumber(track.usage.stories)} khoảnh khắc còn sống
+                  {track.usageCount > track.usage.stories && (
+                    <span className="cell-meta">
+                      {' '}· {formatNumber(track.usageCount - track.usage.stories)} lượt
+                      trước đây đã xoá hoặc hết hạn
+                    </span>
+                  )}
                 </>
               ) : (
                 <span className="cell-meta">—</span>
@@ -298,10 +320,22 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
             <dd>{track.addedByName ?? <span className="cell-meta">Không xác định</span>}</dd>
 
             <dt className="cell-meta">URL giấy phép</dt>
-            <dd><span className="k-mono">{track.licenseUrl}</span></dd>
+            <dd><ExternalRef url={track.licenseUrl} /></dd>
 
             <dt className="cell-meta">URL nguồn</dt>
-            <dd><span className="k-mono">{track.sourceUrl}</span></dd>
+            <dd><ExternalRef url={track.sourceUrl} /></dd>
+
+            <dt className="cell-meta">File nghe thử</dt>
+            <dd>
+              {track.previewKey && track.previewKey !== track.audioKey ? (
+                <span className="k-mono">{track.previewKey}</span>
+              ) : (
+                <span className="cell-meta">Dùng chung file âm thanh chính</span>
+              )}
+            </dd>
+
+            <dt className="cell-meta">Mã track</dt>
+            <dd><span className="k-mono">{track._id}</span></dd>
 
             <dt className="cell-meta">Khoá lưu trữ</dt>
             <dd><span className="k-mono">{track.audioKey}</span></dd>
@@ -377,5 +411,20 @@ export default function MusicDetail({ id, onMutated }: MusicDetailProps) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * License and source URLs are admin-entered text, so they are shown as a link
+ * only when they parse as http(s) — a `javascript:` href executes on click.
+ * Anything else stays visible as plain text rather than vanishing.
+ */
+function ExternalRef({ url }: { url: string }) {
+  const href = externalHref(url);
+  if (!href) return <span className="k-mono">{url || '—'}</span>;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="k-mono">
+      {url}
+    </a>
   );
 }

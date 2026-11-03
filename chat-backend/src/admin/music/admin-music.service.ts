@@ -13,7 +13,6 @@ import {
 import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { Story } from '../../moments/schemas/story.schema';
 import { User, UserDocument } from '../../users/user.schema';
-import { Post } from '../../moments/schemas/post.schema';
 import { AdminAuditService } from '../admin-audit.service';
 import { MusicStorageService } from './music-storage.service';
 import { readDurationMs } from './audio-metadata';
@@ -53,8 +52,6 @@ export class AdminMusicService {
     private readonly musicTrackModel: Model<MusicTrackDocument>,
     @InjectModel(Story.name)
     private readonly storyModel: Model<Record<string, unknown>>,
-    @InjectModel(Post.name)
-    private readonly postModel: Model<Record<string, unknown>>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly storage: MusicStorageService,
@@ -197,13 +194,14 @@ export class AdminMusicService {
       ? await this.storage.presignPlayback(t.previewKey)
       : audioUrl;
 
-    // How many live pieces of content still point at this track. This is the
-    // question a moderator asks before pressing Ngưng: "does deactivating this
-    // break anything?" Two indexed countDocuments on `musicRef.trackId`.
-    const [storyCount, postCount] = await Promise.all([
-      this.storyModel.countDocuments({ 'musicRef.trackId': id, isActive: true }),
-      this.postModel.countDocuments({ 'musicRef.trackId': id, isActive: true }),
-    ]);
+    // How many live stories still point at this track. This is the question a
+    // moderator asks before pressing Ngưng: "does deactivating this break
+    // anything?" Posts deliberately do NOT appear here — `Post` has no music
+    // field, so a post count would always be 0.
+    const storyCount = await this.storyModel.countDocuments({
+      'musicRef.trackId': id,
+      isActive: true,
+    });
 
     // Resolve the admin's display name. §3B2 forbids raw ObjectIds in the page
     // body; the id itself stays available inside "Chi tiết kỹ thuật".
@@ -223,8 +221,7 @@ export class AdminMusicService {
         null,
       usage: {
         stories: storyCount,
-        posts: postCount,
-        total: storyCount + postCount,
+        total: storyCount,
       },
     };
   }
@@ -239,7 +236,32 @@ export class AdminMusicService {
         .lean(),
       this.musicTrackModel.countDocuments({}),
     ]);
-    return { data, total, truncated: total > data.length };
+
+    // One grouped lookup for every actor on the page instead of one query per
+    // row. The clearance CSV must carry readable names (§3B2), and a raw
+    // ObjectId in a spreadsheet cell is exactly what that rule forbids.
+    const actorIds = [...new Set(data.map((t) => t.addedBy).filter(Boolean))];
+    const actors = actorIds.length
+      ? await this.userModel
+          .find({ _id: { $in: actorIds } })
+          .select('displayName email')
+          .lean()
+          .catch(() => [])
+      : [];
+    const nameById = new Map(
+      (actors as { _id: unknown; displayName?: string; email?: string }[]).map(
+        (u) => [String(u._id), u.displayName ?? u.email ?? null],
+      ),
+    );
+
+    return {
+      data: data.map((t) => ({
+        ...t,
+        addedByName: nameById.get(String(t.addedBy)) ?? null,
+      })),
+      total,
+      truncated: total > data.length,
+    };
   }
 
   // ─── Writes ────────────────────────────────────────────────────────────────

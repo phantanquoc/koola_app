@@ -27,14 +27,19 @@ export interface MusicTrack {
   isActive: boolean;
   usageCount: number;
   tags: string[];
+  /** Resolved display name; only the export endpoint fills it (§3B2). */
+  addedByName?: string | null;
 }
 
 /** Detail read adds freshly signed playback URLs; the list never carries them. */
 export interface MusicTrackDetail extends MusicTrack {
   audioUrl: string;
   previewUrl: string;
-  /** Live content still pointing at this track — what "Ngưng" would affect. */
-  usage?: { stories: number; posts: number; total: number };
+  /**
+   * Live stories still pointing at this track — what "Ngưng" would affect.
+   * No post count: `Post` has no music field, so it could only ever be 0.
+   */
+  usage?: { stories: number; total: number };
   /** Resolved display name of the admin who added it (§3B2: no raw ObjectId). */
   addedByName?: string | null;
 }
@@ -169,16 +174,35 @@ function toCsvCell(value: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * Only http(s) links are rendered as anchors. License/source URLs are
+ * admin-entered text; `javascript:` in an href executes on click.
+ */
+export function externalHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function buildMusicCsv(rows: MusicTrack[]): string {
   const header = [
     'ID', 'Tiêu đề', 'Nghệ sĩ', 'Thời lượng (ms)', 'Giấy phép',
-    'URL giấy phép', 'URL nguồn', 'Ghi công', 'Người thêm', 'Ngày thêm', 'Đang dùng',
+    'URL giấy phép', 'URL nguồn', 'Ghi công', 'Tags',
+    'Người thêm', 'Ngày thêm', 'Lượt dùng (tích luỹ)', 'Đang dùng',
   ];
   const lines = rows.map((t) =>
     [
       t._id, t.title, t.artist, t.durationMs, licenseLabel(t.licenseType),
-      t.licenseUrl, t.sourceUrl, t.attribution, t.addedBy,
+      t.licenseUrl, t.sourceUrl, t.attribution, (t.tags ?? []).join(' '),
+      // Display name from the export endpoint; a raw ObjectId is a useless hex
+      // cell in a clearance spreadsheet (§3B2), so it is never the fallback.
+      t.addedByName ?? '',
       t.addedAt ? new Date(t.addedAt).toISOString().slice(0, 10) : '',
+      t.usageCount ?? 0,
       t.isActive ? 'Có' : 'Không',
     ].map(toCsvCell).join(','),
   );

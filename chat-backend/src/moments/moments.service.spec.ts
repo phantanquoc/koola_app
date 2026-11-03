@@ -531,7 +531,7 @@ describe('MomentsService', () => {
     it('attaches presigned audioUrl and previewUrl to the track', async () => {
       musicTrackModel.findOne.mockReturnValue({
         lean: jest.fn().mockResolvedValue({
-          _id: 'track-1',
+          _id: '507f1f77bcf86cd799439011',
           title: 'Đà Lạt',
           artist: 'KOOLA',
           audioKey: 'music/track-1.mp3',
@@ -540,7 +540,7 @@ describe('MomentsService', () => {
         }),
       });
 
-      const result = await service.getMusicTrackById('track-1');
+      const result = await service.getMusicTrackById('507f1f77bcf86cd799439011');
 
       expect(result.audioUrl).toEqual(expect.any(String));
       expect(result.audioUrl.length).toBeGreaterThan(0);
@@ -554,9 +554,18 @@ describe('MomentsService', () => {
         lean: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(service.getMusicTrackById('missing')).rejects.toThrow(
+      await expect(
+        service.getMusicTrackById('507f1f77bcf86cd799439012'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s a non-ObjectId segment instead of throwing a CastError', async () => {
+      // `GET /moments/music-tracks/audit` still matches `:id`; a raw CastError
+      // there surfaced as a 500 for what is just an unknown route.
+      await expect(service.getMusicTrackById('audit')).rejects.toThrow(
         NotFoundException,
       );
+      expect(musicTrackModel.findOne).not.toHaveBeenCalled();
     });
   });
 

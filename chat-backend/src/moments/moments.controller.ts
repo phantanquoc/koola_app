@@ -9,10 +9,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  Res,
-  ForbiddenException,
 } from '@nestjs/common';
-import type { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { MomentsService } from './moments.service';
 import { CreateStoryDto } from './dto/create-story.dto';
@@ -22,10 +19,6 @@ import {
   UpdateAudienceListDto,
 } from './dto/audience-list.dto';
 import { CreateHighlightDto, UpdateHighlightDto } from './dto/highlight.dto';
-import {
-  CreateMusicTrackDto,
-  UpdateMusicTrackDto,
-} from './dto/music-track.dto';
 import {
   CreatePostDto,
   UpdatePostDto,
@@ -386,7 +379,12 @@ export class MomentsController {
     return this.momentsService.getAudienceListDetail(listId, userId);
   }
 
-  // ─── Music Library ────────────────────────────────────────────────────────
+  // ─── Music Library (read-only) ─────────────────────────────────────────────
+  //
+  // Writes live ONLY at `/admin/music-tracks`: those routes carry AdminGuard's
+  // fresh DB read, an audit entry, and a server-derived duration. The write
+  // endpoints that used to sit here accepted a client-supplied `durationMs`
+  // and wrote no audit — a second, unaudited path to the same collection.
 
   @Get('music-tracks')
   async searchMusicTracks(
@@ -403,49 +401,6 @@ export class MomentsController {
     );
   }
 
-  @Get('music-tracks/audit')
-  async auditMusicTracks(
-    @CurrentUser() user: { id: string; isAdmin?: boolean } | undefined,
-    @Query('format') format: string,
-    @Res() res: Response,
-  ) {
-    if (!user?.isAdmin) {
-      res.status(403).json({ message: 'Forbidden' });
-      return;
-    }
-
-    const tracks = await this.momentsService.auditMusicTracks();
-
-    if (format === 'csv') {
-      const headers = [
-        '_id',
-        'title',
-        'artist',
-        'licenseType',
-        'licenseUrl',
-        'sourceUrl',
-        'attribution',
-        'addedBy',
-        'addedAt',
-        'isActive',
-      ];
-      const rows = tracks.map((t) => {
-        const track = t as any;
-        return headers.map((h) => JSON.stringify(track[h] ?? '')).join(',');
-      });
-      const csv = [headers.join(','), ...rows].join('\n');
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader(
-        'Content-Disposition',
-        'attachment; filename="music-tracks-audit.csv"',
-      );
-      res.send(csv);
-      return;
-    }
-
-    res.json(tracks);
-  }
-
   @Get('music-tracks/:id')
   async getMusicTrackById(
     @CurrentUser() user: { id: string; isAdmin?: boolean } | undefined,
@@ -453,42 +408,5 @@ export class MomentsController {
   ) {
     const includeInactive = user?.isAdmin ?? false;
     return this.momentsService.getMusicTrackById(trackId, includeInactive);
-  }
-
-  @Post('music-tracks')
-  @HttpCode(HttpStatus.CREATED)
-  async createMusicTrack(
-    @CurrentUser() user: { id: string; isAdmin?: boolean },
-    @Body() dto: CreateMusicTrackDto,
-  ) {
-    if (!user?.isAdmin) {
-      throw new ForbiddenException('Admin access required');
-    }
-    return this.momentsService.createMusicTrack(user.id, dto);
-  }
-
-  @Patch('music-tracks/:id')
-  async updateMusicTrack(
-    @CurrentUser() user: { id: string; isAdmin?: boolean },
-    @Param('id') trackId: string,
-    @Body() dto: UpdateMusicTrackDto,
-  ) {
-    if (!user?.isAdmin) {
-      throw new ForbiddenException('Admin access required');
-    }
-    return this.momentsService.updateMusicTrack(trackId, dto);
-  }
-
-  @Delete('music-tracks/:id')
-  @HttpCode(HttpStatus.OK)
-  async deleteMusicTrack(
-    @CurrentUser() user: { id: string; isAdmin?: boolean },
-    @Param('id') trackId: string,
-  ) {
-    if (!user?.isAdmin) {
-      throw new ForbiddenException('Admin access required');
-    }
-    await this.momentsService.deactivateMusicTrack(trackId);
-    return { success: true };
   }
 }

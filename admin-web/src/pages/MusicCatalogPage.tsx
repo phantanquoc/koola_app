@@ -32,6 +32,7 @@ import {
   RowPlayButton,
   useMusicRowPlayer,
 } from '../components/MusicRowPlayer';
+import { MAX_TAGS, TagChipEditor } from '../components/TagChipEditor';
 
 const PAGE_SIZES = [10, 20, 50];
 const SORT_FIELDS = ['addedAt', 'title', 'usageCount'] as const;
@@ -208,7 +209,14 @@ export default function MusicCatalogPage() {
             >
               <option value="">Mọi giấy phép</option>
               {LICENSE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {/* Count comes from `stats.byLicense`, which the server already
+                      aggregates — the filter is the only place it is useful. */}
+                  {o.label}
+                  {typeof stats?.byLicense?.[o.value] === 'number'
+                    ? ` (${formatNumber(stats.byLicense[o.value])})`
+                    : ''}
+                </option>
               ))}
             </select>
           </label>
@@ -300,7 +308,9 @@ export default function MusicCatalogPage() {
                   <th scope="col">Nghệ sĩ</th>
                   <th scope="col" className="col-num">Thời lượng</th>
                   <th scope="col">Giấy phép</th>
-                  <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} className="col-num" />
+                  {/* Cumulative, not live: the counter only ever increments (see
+                      `usageCount` in the schema), so it is labeled as history. */}
+                  <ColumnHeader label="Lượt (tích luỹ)" sortField="usageCount" sort={sort} onSort={toggleSort} className="col-num" />
                   <ColumnHeader
                     label="Ngày thêm"
                     sortField="addedAt"
@@ -456,7 +466,6 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
   // Reused on retry so a create failure does not force a second upload.
   const [uploadedKey, setUploadedKey] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
-  const [tagDraft, setTagDraft] = useState('');
 
   // Preview the picked file before it is committed. The object URL is local —
   // no upload, no endpoint — and reading `duration` off the element is what lets
@@ -489,25 +498,6 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
       return;
     }
     setFile(f);
-  }
-
-  function addTag() {
-    const t = tagDraft.trim().toLowerCase();
-    if (!t) return;
-    if (tags.includes(t)) {
-      setTagDraft('');
-      return;
-    }
-    if (tags.length >= 20) {
-      setError('Tối đa 20 tag.');
-      return;
-    }
-    if (t.length > 40) {
-      setError('Mỗi tag tối đa 40 ký tự.');
-      return;
-    }
-    setTags([...tags, t]);
-    setTagDraft('');
   }
 
   async function submit() {
@@ -664,49 +654,12 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
 
           {/* Tags power the picker's tag filter (moments.service filters on
               `tags`), so a track without them is unreachable by category. */}
-          <div className="form-field">
-            <span className="form-label">Tags</span>
-            <div className="tag-chip-row">
-              {tags.map((t) => (
-                <button
-                  key={t}
-                  className="filter-chip filter-chip-removable"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setTags(tags.filter((x) => x !== t))}
-                  aria-label={`Bỏ tag ${t}`}
-                >
-                  {t} ✕
-                </button>
-              ))}
-            </div>
-            <div className="field-inline">
-              <input
-                className="input"
-                value={tagDraft}
-                disabled={busy || tags.length >= 20}
-                onChange={(e) => setTagDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    addTag();
-                  }
-                }}
-                placeholder={tags.length >= 20 ? 'Đã đủ 20 tag' : 'Nhập rồi Enter — vd: acoustic, lofi'}
-                aria-label="Thêm tag"
-                maxLength={41}
-              />
-              <button
-                className="btn btn-secondary btn-sm"
-                type="button"
-                onClick={addTag}
-                disabled={busy || !tagDraft.trim() || tags.length >= 20}
-              >
-                Thêm
-              </button>
-            </div>
-            <span className="form-hint">Dùng để lọc trong thư viện nhạc trên app. Tối đa 20 tag.</span>
-          </div>
+          <TagChipEditor
+            value={tags}
+            onChange={setTags}
+            disabled={busy}
+            hint={`Dùng để lọc trong thư viện nhạc trên app. Tối đa ${MAX_TAGS} tag.`}
+          />
 
           <label className="form-field">
             <span className="form-label">URL giấy phép</span>

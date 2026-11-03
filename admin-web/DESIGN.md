@@ -433,6 +433,14 @@ hậu tố `Signed`, giữ nguyên key gốc cho consumer khác (mobile tự ký
   đăng ký** trong `MediaModule.providers` → cron không chạy. Đừng dựa vào nó để dọn
   rác, và đừng "sửa" bằng cách tin rằng nó đang dọn. Bật nó là thay đổi có rủi ro
   xoá dữ liệu (ảnh sản phẩm, file catalog) — phải rà `messageId: null` trước.
+- **`music-catalog/*` không có gì dọn.** Object mồ côi sinh ra khi upload xong mà
+  `POST /admin/music-tracks` thất bại (dialog cố ý giữ `uploadedKey` để thử lại, nên
+  orphan chỉ tồn tại khi người vận hành bỏ ngang). Không màn hình nào thấy chúng và
+  không cron nào quét prefix này. Muốn dọn phải làm job đối chiếu MinIO ↔ collection
+  `musictracks` riêng — đừng mở rộng `MediaCleanupService` cho nó.
+- **Route ghi duy nhất:** `/admin/music-tracks`. `GET /moments/music-tracks*` vẫn còn
+  cho picker của app nhưng mọi `POST/PATCH/DELETE` và `/audit` ở đó đã bị xoá — bản cũ
+  nhận `durationMs` từ client và không ghi audit.
 
 #### 5.2.2 Mọi mutation admin đều ghi audit
 

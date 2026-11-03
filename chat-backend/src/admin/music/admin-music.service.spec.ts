@@ -8,7 +8,6 @@ import { MusicStorageService } from './music-storage.service';
 import { AdminAuditService } from '../admin-audit.service';
 import { MusicTrack } from '../../moments/schemas/music-track.schema';
 import { Story } from '../../moments/schemas/story.schema';
-import { Post } from '../../moments/schemas/post.schema';
 import { User } from '../../users/user.schema';
 import { readDurationMs } from './audio-metadata';
 
@@ -65,21 +64,24 @@ function makeCountingModel(count = 0) {
   return { countDocuments: jest.fn().mockResolvedValue(count) };
 }
 
-async function build(model: any, storage: any, counts = { stories: 0, posts: 0 }) {
+/** User model: `findById().select().lean()` for detail, `find().select().lean()` for export. */
+function makeUserModel(users: Array<{ _id: string; displayName?: string; email?: string }> = []) {
+  const chain = { lean: () => Promise.resolve(users) };
+  return {
+    findById: () => ({
+      select: () => ({ lean: () => Promise.resolve({ displayName: 'Admin Dev' }) }),
+    }),
+    find: jest.fn(() => ({ select: () => chain })),
+  };
+}
+
+async function build(model: any, storage: any, counts = { stories: 0 }, users = [] as Array<{ _id: string; displayName?: string; email?: string }>) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       AdminMusicService,
       { provide: getModelToken(MusicTrack.name), useValue: model },
       { provide: getModelToken(Story.name), useValue: makeCountingModel(counts.stories) },
-      { provide: getModelToken(Post.name), useValue: makeCountingModel(counts.posts) },
-      {
-        provide: getModelToken(User.name),
-        useValue: {
-          findById: () => ({
-            select: () => ({ lean: () => Promise.resolve({ displayName: 'Admin Dev' }) }),
-          }),
-        },
-      },
+      { provide: getModelToken(User.name), useValue: makeUserModel(users) },
       { provide: MusicStorageService, useValue: storage },
       { provide: AdminAuditService, useValue: audit },
     ],
@@ -280,7 +282,7 @@ describe('findOne', () => {
     expect(got.audioUrl).toBe('https://signed.example/a.mp3');
   });
 
-  it('reports how many live stories and posts still use the track', async () => {
+  it('reports how many live stories still use the track', async () => {
     const track = {
       _id: OID,
       audioKey: 'music-catalog/a.mp3',
@@ -290,11 +292,13 @@ describe('findOne', () => {
     const model = makeModel({
       findById: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(track) }),
     });
-    const svc = await build(model, makeStorage(), { stories: 3, posts: 2 });
+    const svc = await build(model, makeStorage(), { stories: 3 });
 
     const got: any = await svc.findOne(OID);
 
-    expect(got.usage).toEqual({ stories: 3, posts: 2, total: 5 });
+    // Posts are deliberately absent: `Post` has no music field, so a post
+    // count could only ever be 0 and would misstate what deactivating affects.
+    expect(got.usage).toEqual({ stories: 3, total: 3 });
     expect(got.addedByName).toBe('Admin Dev');
   });
 
@@ -352,6 +356,34 @@ describe('exportAll', () => {
     const out = await svc.exportAll();
     expect(storage.presignPlayback).not.toHaveBeenCalled();
     expect(JSON.stringify(out.data)).not.toContain('X-Amz-Signature');
+  });
+
+  it('resolves actor ids to display names for the clearance CSV', async () => {
+    const model = makeModel({ countDocuments: jest.fn().mockResolvedValue(2) });
+    model.find.mockReturnValue(
+      leanChain([
+        { _id: OID, addedBy: OID2 },
+        { _id: OID2, addedBy: OID2 },
+      ]),
+    );
+    const svc = await build(model, makeStorage(), { stories: 0 }, [
+      { _id: OID2, displayName: 'Admin Dev' },
+    ]);
+
+    const out: any = await svc.exportAll();
+
+    // Two rows, one actor → one lookup, name on both rows.
+    expect(out.data[0].addedByName).toBe('Admin Dev');
+    expect(out.data[1].addedByName).toBe('Admin Dev');
+  });
+
+  it('leaves an unknown actor null instead of inventing a name', async () => {
+    const model = makeModel({ countDocuments: jest.fn().mockResolvedValue(1) });
+    model.find.mockReturnValue(leanChain([{ _id: OID, addedBy: OID2 }]));
+    const svc = await build(model, makeStorage());
+
+    const out: any = await svc.exportAll();
+    expect(out.data[0].addedByName).toBeNull();
   });
 });
 

@@ -46,10 +46,6 @@ import {
   UpdateAudienceListDto,
 } from './dto/audience-list.dto';
 import { CreateHighlightDto, UpdateHighlightDto } from './dto/highlight.dto';
-import {
-  CreateMusicTrackDto,
-  UpdateMusicTrackDto,
-} from './dto/music-track.dto';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -1137,43 +1133,8 @@ export class MomentsService {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // SECTION 6: Music Library
+  // SECTION 6: Music Library (read-only — writes live at /admin/music-tracks)
   // ───────────────────────────────────────────────────────────────────────────
-
-  async createMusicTrack(
-    adminId: string,
-    dto: CreateMusicTrackDto,
-  ): Promise<MusicTrackDocument> {
-    return this.musicTrackModel.create({
-      ...dto,
-      attribution: dto.attribution ?? '',
-      tags: dto.tags ?? [],
-      addedBy: adminId,
-      addedAt: new Date(),
-      isActive: true,
-      usageCount: 0,
-    });
-  }
-
-  async updateMusicTrack(
-    trackId: string,
-    dto: UpdateMusicTrackDto,
-  ): Promise<MusicTrackDocument> {
-    const track = await this.musicTrackModel.findByIdAndUpdate(
-      trackId,
-      { $set: dto },
-      { new: true },
-    );
-    if (!track) throw new NotFoundException('Music track not found');
-    return track;
-  }
-
-  async deactivateMusicTrack(trackId: string): Promise<void> {
-    await this.musicTrackModel.updateOne(
-      { _id: trackId },
-      { $set: { isActive: false } },
-    );
-  }
 
   async searchMusicTracks(
     q?: string,
@@ -1238,6 +1199,12 @@ export class MomentsService {
     trackId: string,
     includeInactive = false,
   ): Promise<MusicTrackDocument & { audioUrl: string; previewUrl: string }> {
+    // `music-tracks/:id` also catches paths like `.../audit`; without this
+    // guard Mongoose throws a CastError and the client sees a 500 for what is
+    // simply an unknown route.
+    if (!Types.ObjectId.isValid(trackId)) {
+      throw new NotFoundException('Music track not found');
+    }
     const filter: Record<string, unknown> = { _id: trackId };
     if (!includeInactive) {
       filter.isActive = true;
@@ -1264,13 +1231,6 @@ export class MomentsService {
       : audioUrl;
 
     return { ...t, audioUrl, previewUrl };
-  }
-
-  async auditMusicTracks(): Promise<MusicTrackDocument[]> {
-    return this.musicTrackModel
-      .find({})
-      .sort({ addedAt: -1 })
-      .lean() as unknown as MusicTrackDocument[];
   }
 
   // ───────────────────────────────────────────────────────────────────────────

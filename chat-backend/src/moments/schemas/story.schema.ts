@@ -162,6 +162,10 @@ StorySchema.index({ authorId: 1, expiresAt: 1, isActive: 1 });
 // index instead of scanning; low cardinality but every story carries the field.
 StorySchema.index({ audienceScope: 1 });
 
+// Admin music page: count live stories still using a track before deactivating
+// it. Without this index that count is a full collection scan.
+StorySchema.index({ 'musicRef.trackId': 1, isActive: 1 });
+
 // Idempotency: at most one story per (author, clientStoryId). Partial filter
 // so the many stories created WITHOUT a clientStoryId don't collide on null.
 StorySchema.index(

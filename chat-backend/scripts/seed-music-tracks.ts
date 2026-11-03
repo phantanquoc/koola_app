@@ -17,9 +17,13 @@
 
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { getModelToken } from '@nestjs/mongoose';
+import type { Model } from 'mongoose';
 import { AppModule } from '../src/app.module';
-import { MomentsService } from '../src/moments/moments.service';
-import { LicenseType } from '../src/moments/schemas/music-track.schema';
+import {
+  LicenseType,
+  MusicTrack,
+} from '../src/moments/schemas/music-track.schema';
 import { Logger } from '@nestjs/common';
 
 // ---------------------------------------------------------------------------
@@ -157,7 +161,14 @@ async function bootstrap() {
   });
 
   try {
-    const momentsService = app.get(MomentsService, { strict: false });
+    // Writes go through the model directly, not the admin service: this is a
+    // manual fixture loader, and the admin path deliberately derives
+    // `durationMs` from the uploaded file. The keys here point at MinIO objects
+    // that must exist before any track is playable.
+    const musicTrackModel = app.get<Model<unknown>>(
+      getModelToken(MusicTrack.name),
+      { strict: false },
+    );
     const seedAdminId =
       process.env.SEED_ADMIN_ID ?? '000000000000000000000001';
 
@@ -166,7 +177,13 @@ async function bootstrap() {
     let seeded = 0;
     for (const track of TRACKS) {
       try {
-        await momentsService.createMusicTrack(seedAdminId, track);
+        await musicTrackModel.create({
+          ...track,
+          addedBy: seedAdminId,
+          addedAt: new Date(),
+          isActive: true,
+          usageCount: 0,
+        });
         logger.log(`  + ${track.artist} — ${track.title}`);
         seeded++;
       } catch (err: unknown) {
