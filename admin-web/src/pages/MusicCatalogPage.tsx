@@ -269,18 +269,20 @@ export default function MusicCatalogPage() {
                   <th scope="col" style={{ width: 52 }}>
                     <span className="sr-only">Nghe thử</span>
                   </th>
-                  <th scope="col">
-                    <ColumnHeader label="Tiêu đề" sortField="title" sort={sort} onSort={toggleSort} />
-                  </th>
+                  {/* ColumnHeader renders its own <th>; wrapping it in another
+                      <th> is invalid HTML and React logs a hydration error. */}
+                  <ColumnHeader label="Tiêu đề" sortField="title" sort={sort} onSort={toggleSort} />
                   <th scope="col">Nghệ sĩ</th>
                   <th scope="col">Thời lượng</th>
                   <th scope="col">Giấy phép</th>
-                  <th scope="col">
-                    <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} />
-                  </th>
-                  <th scope="col" className="col-hide-mobile">
-                    <ColumnHeader label="Ngày thêm" sortField="addedAt" sort={sort} onSort={toggleSort} />
-                  </th>
+                  <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} />
+                  <ColumnHeader
+                    label="Ngày thêm"
+                    sortField="addedAt"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="col-hide-mobile"
+                  />
                   <th scope="col" className="th-center">Hành động</th>
                 </tr>
               </thead>

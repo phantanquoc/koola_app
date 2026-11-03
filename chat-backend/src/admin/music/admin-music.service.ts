@@ -54,17 +54,26 @@ export class AdminMusicService {
 
   // ─── Filters ───────────────────────────────────────────────────────────────
 
-  /** Build the Mongo filter shared by list, stats and export. */
-  private buildFilter(dto: {
-    status?: string;
-    q?: string;
-    licenseType?: LicenseType;
-  }): Record<string, unknown> {
+  /**
+   * Build the Mongo filter shared by list, stats and export.
+   *
+   * `defaultToActive` exists because the LIST defaults to the active tab while
+   * STATS must count everything: applying the list default inside stats made
+   * `all` equal `active` and left `all !== active + inactive`.
+   */
+  private buildFilter(
+    dto: {
+      status?: string;
+      q?: string;
+      licenseType?: LicenseType;
+    },
+    defaultToActive = true,
+  ): Record<string, unknown> {
     const filter: Record<string, unknown> = {};
 
-    // Default to the active tab. The DTO also defaults it, but the service must
-    // not depend on class-transformer having run (direct callers, tests).
-    const status = dto.status ?? 'active';
+    // The DTO also defaults the status, but the service must not depend on
+    // class-transformer having run (direct callers, tests).
+    const status = dto.status ?? (defaultToActive ? 'active' : 'all');
     if (status === 'active') filter.isActive = true;
     else if (status === 'inactive') filter.isActive = false;
 
@@ -120,7 +129,9 @@ export class AdminMusicService {
   }
 
   async stats() {
-    const base = this.buildFilter({});
+    // All tracks. The client's status filter does not apply here — stats exist
+    // so each tab can show an honest count.
+    const base = this.buildFilter({}, false);
     const [all, active, inactive, licenseAgg] = await Promise.all([
       this.musicTrackModel.countDocuments(base),
       this.musicTrackModel.countDocuments({ ...base, isActive: true }),

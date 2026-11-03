@@ -1,6 +1,10 @@
-# Tạm thời: chạy dev không cần MinIO (không pull được image).
-# License thumbnail/presigned URL trả null, còn lại chạy bình thường.
-# Xóa file này khi Docker Hub pull lại được minio/minio.
+# Dev chạy MinIO NATIVE trên host (Homebrew) thay vì container, vì Docker Hub
+# vẫn không pull được `minio/minio`. Backend container nói chuyện với MinIO qua
+# host.docker.internal; trình duyệt trên máy host dùng localhost.
+#
+#   brew services start minio   # hoặc: minio server ~/minio-data
+#
+# Xóa file này và dùng service `minio` trong docker-compose.yml khi pull được.
 services:
   backend-dev:
     command: sh -c "npm install && npm run start:dev"
@@ -12,9 +16,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # `minio` dropped from depends_on — it runs natively on the host, not as a
+      # container, so waiting on it would block the backend forever.
+      minio: !reset null
     environment:
-      MINIO_ENDPOINT: localhost
+      # hostname only — minio-js takes the port from MINIO_PORT separately.
+      MINIO_ENDPOINT: host.docker.internal
+      MINIO_PORT: "9000"
+      # Signed URLs are opened by a browser on this machine → localhost.
       MINIO_PUBLIC_HOST: localhost
+      MINIO_PUBLIC_PORT: "9000"
 
   admin-dev:
     depends_on: []

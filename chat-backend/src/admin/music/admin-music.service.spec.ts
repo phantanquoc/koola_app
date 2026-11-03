@@ -163,6 +163,25 @@ describe('list', () => {
 // ─── Stats ───────────────────────────────────────────────────────────────────
 
 describe('stats', () => {
+  it('counts every lifecycle state regardless of the list default', async () => {
+    // Regression: `stats` once reused the list's default filter, so `all`
+    // silently equalled `active` and all !== active + inactive.
+    const model = makeModel({
+      countDocuments: jest
+        .fn()
+        .mockResolvedValueOnce(10)
+        .mockResolvedValueOnce(9)
+        .mockResolvedValueOnce(1),
+      aggregate: jest.fn().mockResolvedValue([]),
+    });
+    const svc = await build(model, makeStorage());
+
+    await svc.stats();
+
+    // The first count (all) must not carry isActive.
+    expect(model.countDocuments.mock.calls[0][0]).toEqual({});
+  });
+
   it('counts every lifecycle state and every license bucket', async () => {
     const model = makeModel({
       countDocuments: jest
