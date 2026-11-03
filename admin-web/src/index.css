@@ -3826,18 +3826,14 @@ th.sortable:hover {
    `thead.top` giữ nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc.
 
    Dùng cho mọi trang cần cuộn ngang thay vì bóp cột (§6). */
-.table-scroll--x {
+.table-scroll--x,
+.table-scroll--music {
   overflow-x: auto;
   overflow-y: clip;
 }
 
 /* Trang nhạc: 8 cột không nhét vừa 1024px, thà vuốt ngang còn hơn ép cột còn
    ~110px và chữ xuống 3 dòng. */
-.table-scroll--music {
-  overflow-x: auto;
-  overflow-y: clip;
-}
-
 .table-scroll--music .data-table {
   min-width: 900px;
 }
