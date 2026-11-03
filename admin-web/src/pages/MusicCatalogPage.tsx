@@ -291,7 +291,7 @@ export default function MusicCatalogPage() {
             <table className="data-table data-table--compact" aria-label="Thư viện nhạc">
               <thead>
                 <tr>
-                  <th scope="col" style={{ width: 52 }}>
+                  <th scope="col" className="col-icon">
                     <span className="sr-only">Nghe thử</span>
                   </th>
                   {/* ColumnHeader renders its own <th>; wrapping it in another
@@ -343,12 +343,12 @@ export default function MusicCatalogPage() {
                 {rows.map((t) => (
                   <tr
                     key={t._id}
+                    className="row-clickable"
                     onClick={(e) => {
                       // Buttons (play, deactivate) stop propagation themselves.
                       if ((e.target as HTMLElement).closest('button,a')) return;
                       openDetail(t._id);
                     }}
-                    style={{ cursor: 'pointer' }}
                   >
                     <td>
                       <RowPlayButton id={t._id} title={t.title} state={player} />
@@ -577,13 +577,13 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
           and the buttons escape the card. */}
       <div className="dialog dialog--wide" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
-          <h2 id={labelId} className="panel-title" style={{ margin: 0 }}>Thêm track</h2>
+          <h2 id={labelId} className="panel-title">Thêm track</h2>
           <button className="btn btn-sm" type="button" onClick={onClose} disabled={busy} aria-label="Đóng">
             ✕
           </button>
         </div>
 
-        <div className="dialog-body" style={{ display: 'grid', gap: 14 }}>
+        <div className="dialog-body page-stack">
           <label className="form-field">
             <span className="form-label">File âm thanh</span>
             <input
@@ -608,7 +608,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
               <span className="form-label">
                 Nghe thử
                 {localDurationMs != null && (
-                  <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                  <span className="form-label-note">
                     · {Math.floor(localDurationMs / 60000)}:
                     {String(Math.floor((localDurationMs % 60000) / 1000)).padStart(2, '0')}
                   </span>
@@ -618,7 +618,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
                 src={previewUrl}
                 controls
                 preload="metadata"
-                style={{ width: '100%' }}
+                className="audio-preview"
                 onLoadedMetadata={(e) => {
                   const d = e.currentTarget.duration;
                   if (Number.isFinite(d) && d > 0) setLocalDurationMs(Math.round(d * 1000));
@@ -630,7 +630,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
           {uploading && (
             <div className="form-field" role="status" aria-live="polite">
               <span className="form-label">Đang tải lên… {progress}%</span>
-              <progress max={100} value={progress} style={{ width: '100%' }} />
+              <progress className="audio-preview" max={100} value={progress} />
             </div>
           )}
 
@@ -666,7 +666,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
               `tags`), so a track without them is unreachable by category. */}
           <div className="form-field">
             <span className="form-label">Tags</span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: tags.length ? 8 : 0 }}>
+            <div className="tag-chip-row">
               {tags.map((t) => (
                 <button
                   key={t}
@@ -680,7 +680,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
                 </button>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="field-inline">
               <input
                 className="input"
                 value={tagDraft}
@@ -721,7 +721,7 @@ function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 var(--space-5) var(--space-5)' }}>
+        <div className="dialog-actions dialog-actions--padded">
           <button className="btn" type="button" onClick={onClose} disabled={busy}>
             Huỷ
           </button>

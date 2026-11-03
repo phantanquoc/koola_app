@@ -1678,6 +1678,12 @@ code,
   gap: var(--space-2);
 }
 
+/* Footer nằm ngoài .dialog-body (dialog cuộn riêng phần thân) — cần đệm
+   ngang/dưới khớp header để nút không chạm mép card. */
+.dialog-actions--padded {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
 .table-scroll {
   overflow: auto;
 }
@@ -1889,6 +1895,46 @@ th.sortable:hover {
   font-family: var(--font-mono);
   font-size: 13px;
   white-space: nowrap;
+}
+
+/* Cột nút icon hẹp (phát/tải): chặn bảng tự doãng cột theo nội dung. */
+.data-table th.col-icon,
+.data-table td.col-icon {
+  width: 52px;
+  padding-right: 0;
+}
+
+/* Hàng bấm được để mở chi tiết. Trước đây vài trang đặt `style={{cursor:'pointer'}}`
+   ngay trên <tr> — cùng một ý nghĩa, hai cách viết, và inline style trượt khỏi
+   kiểm tra §1. Dùng class này thay cho inline. */
+.data-table tbody tr.row-clickable {
+  cursor: pointer;
+}
+
+/* ─── Mảnh dùng lại trong form dialog ─────────────────────────────────────────
+   Gộp các inline style từng rải rác ở `MusicCatalogPage` (dialog Thêm track). */
+.form-label-note {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.audio-preview {
+  width: 100%;
+}
+
+.field-inline {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.tag-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-chip-row:not(:empty) {
+  margin-bottom: var(--space-2);
 }
 
 .data-table td {
@@ -3767,24 +3813,34 @@ th.sortable:hover {
   font-weight: 700;
 }
 
-/* ─── Bảng nhạc: cho cuộn ngang thay vì bóp cột ───────────────────────────────
-   `.table-scroll--fit` (15 trang khác đang dùng) đặt overflow-x: visible và các
-   media query hạ `.data-table { min-width: 0 }`, nên cột bị ép còn ~110px và
-   chữ xuống 3 dòng thay vì cho vuốt ngang. Trang nhạc đi đường riêng trước;
-   các trang còn lại sẽ theo sau ở change khác.
+/* ─── Bảng cuộn ngang mà KHÔNG mất thead sticky ──────────────────────────────
+   Cái bẫy: `overflow-x: auto` + `overflow-y: visible` KHÔNG giữ được `visible` —
+   theo spec, khi một trục khác `visible` thì trục còn lại bị tính thành `auto`.
+   Khung bảng trở thành scroll container dọc, `position: sticky` của `<thead>`
+   bám vào chính khung đó thay vì `.admin-content-scroll`, nên header trôi mất
+   ngay khi bảng dài hơn màn hình.
 
-   Selector `.table-scroll--music .data-table` (0,2,0) thắng `.data-table`
-   (0,1,0) nên các media query bên trên không ghi đè được. */
+   `overflow-y: clip` giữ khung NGOÀI chuỗi scroll container (không cuộn dọc
+   được) mà vẫn cắt overflow ngang, nên thead sticky bám đúng scroller trang.
+   Đo ở 1024px: khung cuộn ngang 882px/1200px, cột phải dịch 318px,
+   `thead.top` giữ nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc.
+
+   Dùng cho mọi trang cần cuộn ngang thay vì bóp cột (§6). */
+.table-scroll--x {
+  overflow-x: auto;
+  overflow-y: clip;
+}
+
+/* Trang nhạc: 8 cột không nhét vừa 1024px, thà vuốt ngang còn hơn ép cột còn
+   ~110px và chữ xuống 3 dòng. */
 .table-scroll--music {
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: clip;
 }
 
 .table-scroll--music .data-table {
   min-width: 900px;
 }
-
-
 
 /* ─── Khối phụ của trang chi tiết nhạc ───────────────────────────────────────
    Các class dưới đây thay cho inline style trong `MusicDetail` (§1: cấm style

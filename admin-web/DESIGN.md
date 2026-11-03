@@ -219,12 +219,43 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
   nét; phân cấp bằng weight + nền `surface-soft`, không bằng `text-transform`.
 - Cột id/user/target: dòng 1 = title/link (700), dòng 2 = meta muted 12px (id mono).
 - Cột số/ngày/tuổi: mono, canh phải cho số — dùng class `.col-num`
-  (`text-align:right` + `font-variant-numeric: tabular-nums`).
+  (`text-align:right` + `font-variant-numeric: tabular-nums`). Cột chỉ chứa một
+  nút icon dùng `.col-icon` (52px, bỏ padding phải); đừng đặt `style={{width}}`.
+- Hàng mở được chi tiết gắn `.row-clickable` (con trỏ bàn tay) — **cấm**
+  `style={{cursor:'pointer'}}` trên `<tr>`. Nút/link trong hàng tự
+  `stopPropagation()` để không kích hoạt cả hàng.
 - Hàng có checkbox khi bulk được; hàng selected = nền primary-soft nhạt;
   hàng cảnh báo (quá SLA, banned) = viền trái 3px tone tương ứng, không tô cả hàng.
 - Cột actions sticky phải, nút `btn-sm`; hành động phá hủy = danger-ghost.
 - Header sortable có icon mũi tên + `aria-sort`; click giữ nguyên filter trong URL.
 - Tuổi ticket: <24h muted; 24–72h badge warning; >72h badge danger.
+
+### 4.1 Cuộn ngang: cho vuốt, nhưng đừng giết thead sticky
+
+Bảng quản trị **được phép** cuộn ngang khi hẹp — bóp 8 cột vào 882px thì mỗi cột
+còn ~110px và chữ xuống 3 dòng, đọc còn chậm hơn vuốt. Nhưng có một bẫy spec
+CSS đã làm cả 15 trang phải bỏ cuộn ngang:
+
+> Khi một trục là `visible` mà trục kia **khác** `visible`, trình duyệt tính trục
+> còn lại thành `auto`. Nên `overflow-x: auto; overflow-y: visible` **không** giữ
+> được `visible` — khung bảng lặng lẽ trở thành scroll container dọc, `<thead>`
+> `position: sticky` bám vào chính khung đó thay vì `.admin-content-scroll`, và
+> header trôi mất ngay khi bảng dài hơn màn hình.
+
+Đúng: `overflow-y: clip` — khung vẫn cắt overflow ngang, vẫn **không** cuộn dọc
+được nên không chen vào chuỗi scroll container, thead sticky bám đúng scroller
+trang. Đo ở 1024×900 trên trang Nhạc: khung cuộn ngang 882/900px, cột phải dịch
+18px, `thead.top` giữ nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc.
+
+| Class | Dùng khi | CSS |
+|---|---|---|
+| `.table-scroll--fit` | Bảng vừa khung ở mọi bề ngang (≤7 cột, cột phụ có `col-hide-*`) | `overflow: visible` |
+| `.table-scroll--x` | Bảng cần vuốt ngang | `overflow-x: auto; overflow-y: clip` |
+
+Chọn `--x` thì phải khai `min-width` cho bảng **đủ lớn để không còn cột bị bóp**
+(trang Nhạc: 900px). `min-width` nhỏ hơn khung thì class thành vô nghĩa — không
+có gì để cuộn.
+
 
 ## 5. Kit (dùng, không chế mới — thiếu thì thêm theo spec này)
 
@@ -251,6 +282,25 @@ Mặc định mọi bảng quản lý dùng variant **compact**:
 | `detail-card` + `detail-header`/`detail-card-body`/`detail-bottombar` | khung chi tiết inline dùng chung cho route `/:id` — header (avatar/tên/badge) → body → bottombar. Riêng trang Người dùng (`.detail-page--split`) bottombar `position: sticky; bottom: 0` để hành động cấm/xoá luôn thấy; card phải bỏ `overflow: clip` vì clip biến card thành scroll container khiến sticky không bao giờ bám |
 | `LicensePreview` | preview + lightbox 720px trước khi duyệt/gỡ — gỡ mù là cấm. Prop `label` cho ảnh không phải giấy phép |
 | `Toast` | feedback sau mutation; 429 = warning "thao tác quá nhanh" + disable nút 10s |
+
+Ba component dưới đây có **hợp đồng ngầm** đã từng làm vỡ trang (mỗi lỗi đều
+lọt qua `tsc` nên chỉ phát hiện khi nhìn):
+
+| Component | Hợp đồng — sai là vỡ |
+|---|---|
+| `Dialog` | Chỉ render **overlay** (`role="dialog"` + backdrop). Panel là việc của caller: bọc con trong `<div className="dialog">` hoặc `<div className="dialog dialog--wide">`. Thiếu lớp đó thì header/body/footer thành con rời của overlay, nút trôi ra ngoài card. Footer dùng `.dialog-actions`; nếu đặt ngoài `.dialog-body` thì thêm `.dialog-actions--padded` để có đệm mép |
+| `ColumnHeader` | **Tự render `<th>`** — phải là con trực tiếp của `<tr>`. Bọc nó trong `<th>` khác là HTML sai và React cảnh báo hydration. Tham số `className` (`col-num`, `col-hide-mobile`) truyền thẳng vào `<th>` đó |
+| `description-list` | Con trực tiếp **bắt buộc là cặp `dt`/`dd`** — không bọc từng cặp trong `<div>` hay `<p>`. Bọc là grid/flex đứt và mỗi cặp thành khối xếp dọc. Ngoài `details.detail-section` nó là grid 2 cột (150px + 1fr); **trong** `details.detail-section` `index.css` cố ý chuyển thành danh sách xếp dọc — nên muốn khối "Chi tiết kỹ thuật" gọn thì đặt `dl` trong `<details class="detail-section">` với `<summary class="detail-section-title">`, giống `AuditLogDetail` và `MusicDetail` |
+
+Kiểm nhanh sau khi sửa trang chi tiết/dialog:
+
+```bash
+# Không inline style trong trang (ngoài index.css)
+grep -n "style={{" src/pages/XPage.tsx src/components/XDetail.tsx
+# Không bọc ColumnHeader trong <th>
+grep -n -B1 "<ColumnHeader" src/pages/XPage.tsx
+```
+
 
 Hook dùng chung (đừng viết lại):
 
@@ -355,6 +405,15 @@ hậu tố `Signed`, giữ nguyên key gốc cho consumer khác (mobile tự ký
   preview thì xin lại. Gặp 403/hết hạn → gọi lại endpoint, không hiện ảnh hỏng.
 - **Ký theo lô, lỗi từng key độc lập.** Một object mồ côi không được kéo cả trang về
   `null`; trần 60 key/lần (vượt trần trả `null`) để payload không phình.
+- **Ngoại lệ: file phục vụ nguyên thuỷ (audio trong catalog nhạc).** Không đi qua
+  `/media/upload` → không có row `Media` → `/media/download/:key` trả 404. Backend trả
+  field URL đã ký (`audioUrl`/`previewUrl`) và UI phát thẳng. Vì URL hết hạn sau
+  1 giờ, **khoá cache phía client phải là id bản ghi** (`music:<trackId>`), không
+  phải chuỗi URL đã ký — cache theo URL là cache một đường dẫn sắp chết.
+- **Cảnh báo tồn tại:** `MediaCleanupService` (xoá file mồ côi sau 24h) **không được
+  đăng ký** trong `MediaModule.providers` → cron không chạy. Đừng dựa vào nó để dọn
+  rác, và đừng "sửa" bằng cách tin rằng nó đang dọn. Bật nó là thay đổi có rủi ro
+  xoá dữ liệu (ảnh sản phẩm, file catalog) — phải rà `messageId: null` trước.
 
 #### 5.2.2 Mọi mutation admin đều ghi audit
 
@@ -561,11 +620,14 @@ ban không đá được phiên, danh sách thiết bị luôn rỗng — trong 
   cuộn nhỏ giữa trang, và `.table-shell { overflow: hidden }` biến chính khung
   bảng thành scroll container khiến thead `sticky` trôi mất. Nay `.table-shell`
   dùng `overflow: clip` (giữ bo góc, không tạo scroll container).
-- ≤1099px ẩn `.col-hide-xs` và hạ `.data-table { min-width: 0 }`: nội dung chỉ
-  còn ~700px sau sidebar, nhưng nếu để bảng tràn thì phải bật `overflow-x`, mà
-  `overflow-x: auto` kéo theo `overflow-y: auto` → thead hết sticky. Cùng mốc đó
-  `.col-sticky` chuyển về `position: static` — sticky chỉ có nghĩa khi bảng cuộn
-  ngang, để nguyên thì cột Hành động đè lên cột dữ liệu cuối.
+- ≤1099px ẩn `.col-hide-xs` và hạ `.data-table { min-width: 0 }` cho các bảng
+  **vừa khung** (`.table-scroll--fit`): nội dung chỉ còn ~700px sau sidebar, ẩn cột
+  phụ là đủ. Bảng **không** vừa thì dùng `.table-scroll--x`
+  (`overflow-x: auto; overflow-y: clip`) — **không** dùng `overflow-x: auto` với
+  `overflow-y: visible`, vì theo spec trục còn lại tự thành `auto`, khung bảng
+  thành scroll container dọc và thead mất sticky (§4.1). Chỉ bảng `--x` mới giữ
+  `.col-sticky`; ở `--fit` cột hành động phải `position: static`, nếu không nó đè
+  lên cột dữ liệu cuối.
 - **Cột bị ẩn phải có đường về:** dữ liệu không được biến mất khỏi bảng. Mỗi cột
   ẩn theo bề ngang cần một dòng `.show-under-1100` / `.show-under-860` / `.show-xs`
   tương ứng nằm trong ô đầu của hàng, và ô gốc phải gắn đúng lớp ẩn
@@ -626,8 +688,18 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 
 **Kiểm thử**
 - [ ] Vitest cho hành động chính (bulk, restore, filter); `tsc --noEmit`
-- [ ] Test tay 1440 / 860 / 390
+- [ ] Test tay 1440 / 1024 / 860 / 390
 - [ ] Tab và đường dẫn trực tiếp cùng mở đúng một bản ghi (route `/:id` share được)
+
+**Bảng & bố cục (hay lọt nhất)**
+- [ ] Chọn đúng khung cuộn: bảng vừa khung → `.table-scroll--fit`; cần vuốt ngang →
+      `.table-scroll--x` + `min-width` đủ lớn. **Không** viết `overflow-x: auto` với
+      `overflow-y: visible` (§4.1)
+- [ ] Ở 1024px vẫn cuộn dọc được 900px mà thead còn dính mép dưới topbar
+- [ ] 0 inline style ngoài `index.css`: `grep -n "style={{" src/pages/XPage.tsx`
+- [ ] `ColumnHeader` không bị bọc trong `<th>`; `description-list` chỉ có `dt`/`dd` là con
+- [ ] `Dialog` có panel `.dialog`/`.dialog--wide` bọc con; footer `.dialog-actions`
+      (thêm `--padded` nếu nằm ngoài `.dialog-body`)
 
 Lệnh chốt trước khi báo done:
 
@@ -647,14 +719,26 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 3. `useAdminList` → `params` map 1-1 với DTO server; thêm filter mới thì **thêm cả 3 chỗ**:
    DTO list, DTO export, `filter` trong `queryBusinesses` tương đương của module đó.
 4. `TABS` + count lấy từ endpoint stats của module (không đếm ở client).
-5. Bảng: `ColumnHeader` cho cột sort/lọc được; `cell-title` + `cell-meta`.
-6. Hành động: tách logic mutation ra hook `use<Domain>Decision` nếu dùng ở cả list và detail.
-7. **Chi tiết = route riêng**, theo mẫu `AuditLogPage` + `AuditLogDetailPage` + `AuditLogDetail`:
+5. Bảng: `ColumnHeader` cho cột sort/lọc được; `cell-title` + `cell-meta`; cột số
+   dùng `.col-num`, hàng mở chi tiết gắn `.row-clickable`.
+6. Chọn khung cuộn theo §4.1: `.table-scroll--fit` nếu vừa khung, `.table-scroll--x`
+   + `min-width` nếu cần vuốt ngang.
+7. Hành động: tách logic mutation ra hook `use<Domain>Decision` nếu dùng ở cả list và detail.
+8. **Chi tiết = route riêng**, theo mẫu `AuditLogPage` + `AuditLogDetailPage` + `AuditLogDetail`:
    - page mỏng `pages/XDetailPage.tsx`: lấy `:id`, đọc `location.state.from` để back về đúng filter;
    - component `components/XDetail.tsx`: `useQuery` gọi `GET /x/:id` (endpoint riêng, không lọc từ list),
      render `<section className="table-shell detail-card">` + `detail-header`/`detail-card-body`/`detail-bottombar`;
    - list: `onClick` hàng → `navigate('/x/'+id, { state: { from: pathname+search } })`.
-8. Server: list/export/search/sort/stats + `GET :id` + index cho tổ hợp filter chính.
+9. Server: list/export/search/sort/stats + `GET :id` + index cho tổ hợp filter chính.
+
+Hai bước dễ bỏ sót nhất — làm trước khi vẽ bảng:
+
+- **Field nào hiện trên màn hình thì phải lọc được ở server** (§0.8). Thêm cột `tags`
+  vào bảng kéo theo: `tag` trong DTO list, `filter.tags` trong service, danh sách tag
+  trong endpoint `stats`, select trong `FilterPopover`, và chip "đang lọc". Bỏ một
+  mắt là field chết.
+- **Id thô phải resolve thành tên ở server** (§3B2). `addedBy: ObjectId` phải trả
+  kèm `addedByName` — đừng để trang tự gọi thêm `/admin/users/:id` cho mỗi hàng.
 
 Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
 
