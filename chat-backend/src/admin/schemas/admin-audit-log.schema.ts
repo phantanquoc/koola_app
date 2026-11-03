@@ -52,6 +52,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   'update_music_track',
   'delete_music_track',
   'restore_music_track',
+  'purge_music_orphans',
   'broadcast',
   // Gửi thử push từ trang nhật ký vận hành — thao tác chạm thiết bị người dùng.
   'send_test_push',

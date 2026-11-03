@@ -54,6 +54,8 @@ function makeStorage(overrides: Record<string, unknown> = {}) {
     statSize: jest.fn().mockResolvedValue(1024),
     readObject: jest.fn().mockResolvedValue(Buffer.from('audio')),
     presignPlayback: jest.fn().mockResolvedValue('https://signed.example/a.mp3'),
+    listCatalogObjects: jest.fn().mockResolvedValue([]),
+    removeObject: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -562,5 +564,129 @@ describe('deactivate / restore', () => {
     await expect(svc.restore(OID2, 'a', null)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+// ─── Orphan objects ──────────────────────────────────────────────────────────
+
+describe('orphan objects', () => {
+  const OLD = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const FRESH = new Date(Date.now() - 60 * 1000);
+
+  function storageWithObjects(objects: Array<{ key: string; size: number; lastModified: Date }>) {
+    return makeStorage({
+      listCatalogObjects: jest.fn().mockResolvedValue(objects),
+      removeObject: jest.fn().mockResolvedValue(undefined),
+    });
+  }
+
+  /** `find(...).select(...).lean()` — the reference lookup. */
+  function modelWithRefs(rows: Array<{ audioKey?: string; previewKey?: string }>) {
+    const model = makeModel();
+    model.find.mockImplementation((filter: any) => {
+      // The orphan lookup is the only call carrying `$or` over both keys.
+      if (filter && filter.$or) {
+        return {
+          select: () => ({ lean: () => Promise.resolve(rows) }),
+        };
+      }
+      return leanChain([]);
+    });
+    return model;
+  }
+
+  it('reports objects no track references and splits by the grace window', async () => {
+    const storage = storageWithObjects([
+      { key: 'music-catalog/used.mp3', size: 10, lastModified: OLD },
+      { key: 'music-catalog/old-orphan.mp3', size: 20, lastModified: OLD },
+      { key: 'music-catalog/fresh-orphan.mp3', size: 30, lastModified: FRESH },
+    ]);
+    const model = modelWithRefs([{ audioKey: 'music-catalog/used.mp3' }]);
+    const svc = await build(model, storage);
+
+    const report = await svc.listOrphans();
+
+    expect(report.objects).toBe(3);
+    expect(report.referenced).toBe(1);
+    expect(report.orphans.map((o) => o.key).sort()).toEqual([
+      'music-catalog/fresh-orphan.mp3',
+      'music-catalog/old-orphan.mp3',
+    ]);
+    expect(report.eligible).toBe(1);
+    expect(report.pending).toBe(1);
+  });
+
+  it('counts a previewKey reference, not just audioKey', async () => {
+    const storage = storageWithObjects([
+      { key: 'music-catalog/preview.mp3', size: 10, lastModified: OLD },
+    ]);
+    const model = modelWithRefs([{ previewKey: 'music-catalog/preview.mp3' }]);
+    const svc = await build(model, storage);
+
+    const report = await svc.listOrphans();
+    expect(report.orphans).toHaveLength(0);
+  });
+
+  it('never purges an object still inside the grace window', async () => {
+    const storage = storageWithObjects([
+      { key: 'music-catalog/fresh.mp3', size: 30, lastModified: FRESH },
+    ]);
+    const svc = await build(modelWithRefs([]), storage);
+
+    const result = await svc.purgeOrphans('admin', null);
+
+    expect(result.deleted).toBe(0);
+    expect(storage.removeObject).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('deletes only eligible objects and audits the batch', async () => {
+    const storage = storageWithObjects([
+      { key: 'music-catalog/old.mp3', size: 20, lastModified: OLD },
+      { key: 'music-catalog/fresh.mp3', size: 30, lastModified: FRESH },
+    ]);
+    const svc = await build(modelWithRefs([]), storage);
+
+    const result = await svc.purgeOrphans('admin', '1.2.3.4');
+
+    expect(storage.removeObject).toHaveBeenCalledTimes(1);
+    expect(storage.removeObject).toHaveBeenCalledWith('music-catalog/old.mp3');
+    expect(result).toMatchObject({ deleted: 1, bytes: 20, failed: 0 });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'purge_music_orphans',
+        targetId: 'music-catalog/',
+      }),
+    );
+  });
+
+  it('keeps going after one delete fails and reports it', async () => {
+    const storage = storageWithObjects([
+      { key: 'music-catalog/a.mp3', size: 20, lastModified: OLD },
+      { key: 'music-catalog/b.mp3', size: 20, lastModified: OLD },
+    ]);
+    (storage.removeObject as jest.Mock)
+      .mockRejectedValueOnce(new Error('minio down'))
+      .mockResolvedValueOnce(undefined);
+    const svc = await build(modelWithRefs([]), storage);
+
+    const result = await svc.purgeOrphans('admin', null);
+
+    expect(result.deleted).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.failures).toEqual(['music-catalog/a.mp3']);
+  });
+
+  it('re-diffs against the DB instead of trusting a client key list', async () => {
+    // A track was created against the key between report and purge.
+    const storage = storageWithObjects([
+      { key: 'music-catalog/now-used.mp3', size: 20, lastModified: OLD },
+    ]);
+    const svc = await build(modelWithRefs([{ audioKey: 'music-catalog/now-used.mp3' }]), storage);
+
+    const result = await svc.purgeOrphans('admin', null);
+
+    expect(result.deleted).toBe(0);
+    expect(storage.removeObject).not.toHaveBeenCalled();
   });
 });

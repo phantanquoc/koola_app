@@ -66,6 +66,35 @@ export interface MusicExportResult {
   truncated: boolean;
 }
 
+export interface MusicOrphanObject {
+  key: string;
+  size: number;
+  /** ISO string on the wire (JSON), Date when rendered. */
+  lastModified: string;
+  /** false while the grace window still protects it from deletion. */
+  eligible: boolean;
+}
+
+export interface MusicOrphanReport {
+  /** Total objects under `music-catalog/`. */
+  objects: number;
+  /** Keys referenced by at least one track row. */
+  referenced: number;
+  orphans: MusicOrphanObject[];
+  /** Too new to delete — likely mid-create. */
+  pending: number;
+  /** Outside the grace window and unreferenced. */
+  eligible: number;
+  graceHours: number;
+}
+
+export interface MusicOrphanPurge {
+  deleted: number;
+  bytes: number;
+  failed: number;
+  failures: string[];
+}
+
 export const LICENSE_LABELS: Record<string, string> = {
   cc0: 'CC0',
   'cc-by': 'CC-BY',
@@ -150,6 +179,22 @@ export const musicApi = {
 
   async exportAll(): Promise<MusicExportResult> {
     const { data } = await apiClient.get<MusicExportResult>('/admin/music-tracks/export');
+    return data;
+  },
+
+  /** Catalog objects no track points at, with a grace window before deletion. */
+  async orphans(): Promise<MusicOrphanReport> {
+    const { data } = await apiClient.get<MusicOrphanReport>('/admin/music-tracks/orphans');
+    return data;
+  },
+
+  /**
+   * Delete the orphans the server considers eligible. The server re-lists and
+   * re-diffs, never trusting a client-supplied key list — a track could have
+   * been created against one of those keys since the report was rendered.
+   */
+  async purgeOrphans(): Promise<MusicOrphanPurge> {
+    const { data } = await apiClient.delete<MusicOrphanPurge>('/admin/music-tracks/orphans');
     return data;
   },
 

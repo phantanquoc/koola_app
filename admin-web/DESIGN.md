@@ -433,11 +433,17 @@ hậu tố `Signed`, giữ nguyên key gốc cho consumer khác (mobile tự ký
   đăng ký** trong `MediaModule.providers` → cron không chạy. Đừng dựa vào nó để dọn
   rác, và đừng "sửa" bằng cách tin rằng nó đang dọn. Bật nó là thay đổi có rủi ro
   xoá dữ liệu (ảnh sản phẩm, file catalog) — phải rà `messageId: null` trước.
-- **`music-catalog/*` không có gì dọn.** Object mồ côi sinh ra khi upload xong mà
-  `POST /admin/music-tracks` thất bại (dialog cố ý giữ `uploadedKey` để thử lại, nên
-  orphan chỉ tồn tại khi người vận hành bỏ ngang). Không màn hình nào thấy chúng và
-  không cron nào quét prefix này. Muốn dọn phải làm job đối chiếu MinIO ↔ collection
-  `musictracks` riêng — đừng mở rộng `MediaCleanupService` cho nó.
+- **`music-catalog/*` không có gì dọn tự động.** Object mồ côi sinh ra khi upload
+  xong mà `POST /admin/music-tracks` thất bại (dialog cố ý giữ `uploadedKey` để thử
+  lại, nên orphan chỉ tồn tại khi người vận hành bỏ ngang). Vì catalog cố tình không
+  đi qua `Media`, cả hai cron dọn media đều không thấy prefix này. Lối dọn là
+  **thủ công có xác nhận**: `GET /admin/music-tracks/orphans` đối chiếu kho với
+  collection, `DELETE` cùng path xoá phần đủ điều kiện. Không tự động hoá vì xoá
+  file là không hoàn tác được và chi phí lưu trữ nhỏ — quyết định xoá cần người.
+- **Cửa sổ ân hạn 24h là bắt buộc, không phải cho đẹp.** Presigned PUT ghi object
+  *trước* khi row được tạo, nên một file "mồ côi" lúc này có thể là track đang tạo
+  dở. Purge re-list và re-diff tại thời điểm xoá chứ không tin danh sách client
+  gửi lên — giữa lúc mở báo cáo và lúc bấm xoá, một track có thể đã trỏ vào key đó.
 - **Route ghi duy nhất:** `/admin/music-tracks`. `GET /moments/music-tracks*` vẫn còn
   cho picker của app nhưng mọi `POST/PATCH/DELETE` và `/audit` ở đó đã bị xoá — bản cũ
   nhận `durationMs` từ client và không ghi audit.

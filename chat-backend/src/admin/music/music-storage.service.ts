@@ -135,4 +135,49 @@ export class MusicStorageService {
       PRESIGNED_PLAYBACK_EXPIRY_SECONDS,
     );
   }
+
+  /**
+   * Every object under `music-catalog/`, with its age.
+   *
+   * MinIO has no "unused" concept — the only way to find a file that no track
+   * row points at is to list the prefix and diff against the collection. Paged
+   * by the SDK's own continuation; the caller caps how many it keeps.
+   */
+  async listCatalogObjects(
+    max = 5000,
+  ): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    const out: Array<{ key: string; size: number; lastModified: Date }> = [];
+    const stream = minioClient.listObjectsV2(
+      BUCKET,
+      MUSIC_CATALOG_PREFIX,
+      true,
+    );
+    for await (const obj of stream) {
+      if (!obj.name) continue;
+      out.push({
+        key: obj.name,
+        size: obj.size ?? 0,
+        lastModified: obj.lastModified ?? new Date(),
+      });
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  /**
+   * Delete one catalog object. A missing object is a success — the goal state
+   * is "not there", and a retried purge must not fail on its own last step.
+   */
+  async removeObject(audioKey: string): Promise<void> {
+    try {
+      await minioClient.removeObject(BUCKET, audioKey);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === 'NotFound' || code === 'NoSuchKey') return;
+      this.logger.error(`[MusicStorage] removeObject failed for ${audioKey}`, err);
+      throw new ServiceUnavailableException(
+        'Không xoá được file trong kho — thử lại sau',
+      );
+    }
+  }
 }

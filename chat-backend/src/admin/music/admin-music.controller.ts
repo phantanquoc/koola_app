@@ -53,6 +53,25 @@ export class AdminMusicController {
     return this.music.exportAll();
   }
 
+  /**
+   * Files under `music-catalog/` that no track points at. Must stay above
+   * `:id` — `orphans` would otherwise be read as an ObjectId.
+   */
+  @Get('orphans')
+  listOrphans() {
+    return this.music.listOrphans();
+  }
+
+  @Delete('orphans')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { limit: 5, ttl: 60000 }, long: { limit: 20, ttl: 60000 } })
+  purgeOrphans(
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    return this.music.purgeOrphans(u.actorId, req.ip ?? null);
+  }
+
   @Post('upload-url')
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ short: { limit: 30, ttl: 60000 }, long: { limit: 200, ttl: 60000 } })

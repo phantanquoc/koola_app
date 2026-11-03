@@ -14,7 +14,10 @@ import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { Story } from '../../moments/schemas/story.schema';
 import { User, UserDocument } from '../../users/user.schema';
 import { AdminAuditService } from '../admin-audit.service';
-import { MusicStorageService } from './music-storage.service';
+import {
+  MUSIC_CATALOG_PREFIX,
+  MusicStorageService,
+} from './music-storage.service';
 import { readDurationMs } from './audio-metadata';
 import {
   CreateMusicTrackDto,
@@ -37,6 +40,15 @@ const IMMUTABLE_FIELDS = [
 
 /** Export row cap — an announced truncation beats a silently short file. */
 export const MUSIC_EXPORT_MAX = 5000;
+
+/**
+ * How long an unreferenced object is protected before it may be purged.
+ * The presigned PUT lands the object *before* `POST` creates the row, so a file
+ * that looks orphaned right now may still be mid-create. 24h is far beyond any
+ * realistic upload dialog session; below that, a purge races an operator who
+ * left the create dialog open.
+ */
+export const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 
 const REQUIRED_FOR_CC_BY = 'CC-BY cần ghi công (attribution)';
 
@@ -406,6 +418,94 @@ export class AdminMusicService {
       ip,
     });
     return { message: 'active' };
+  }
+
+  // ─── Orphaned objects ──────────────────────────────────────────────────────
+
+  /**
+   * Catalog objects no track row points at.
+   *
+   * These appear when the upload succeeds but the create fails, or when a track
+   * was removed outside this service. They cost storage, are invisible to every
+   * screen, and — because catalog audio deliberately bypasses the `Media`
+   * collection — no existing cleanup job will ever find them.
+   *
+   * `graceMs` protects a file that is mid-flight: the presigned PUT writes the
+   * object *before* the row is created, so anything newer than the grace window
+   * may still be about to become a track. Never purge below the upload dialog's
+   * realistic lifetime.
+   */
+  async listOrphans(graceMs = ORPHAN_GRACE_MS) {
+    const objects = await this.storage.listCatalogObjects();
+    const keys = objects.map((o) => o.key);
+
+    // One query for every key on the page — a per-object existence check would
+    // be N round-trips over the whole prefix.
+    const referenced = new Set<string>();
+    if (keys.length) {
+      const rows = await this.musicTrackModel
+        .find({
+          $or: [{ audioKey: { $in: keys } }, { previewKey: { $in: keys } }],
+        })
+        .select('audioKey previewKey')
+        .lean();
+      for (const r of rows) {
+        if (r.audioKey) referenced.add(r.audioKey);
+        if (r.previewKey) referenced.add(r.previewKey);
+      }
+    }
+
+    const cutoff = Date.now() - graceMs;
+    const orphans = objects
+      .filter((o) => !referenced.has(o.key))
+      .map((o) => ({ ...o, eligible: o.lastModified.getTime() < cutoff }));
+
+    return {
+      objects: objects.length,
+      referenced: referenced.size,
+      orphans,
+      /** Kept objects the grace window still protects — shown, never deleted. */
+      pending: orphans.filter((o) => !o.eligible).length,
+      eligible: orphans.filter((o) => o.eligible).length,
+      graceHours: Math.round(graceMs / 3_600_000),
+    };
+  }
+
+  /**
+   * Delete orphaned objects. Re-lists and re-diffs instead of trusting a client
+   * payload: between "show me the orphans" and "delete them", a track could
+   * have been created against one of those keys.
+   */
+  async purgeOrphans(actorId: string, ip: string | null) {
+    const { orphans } = await this.listOrphans();
+    const targets = orphans.filter((o) => o.eligible);
+
+    let deleted = 0;
+    let bytes = 0;
+    const failures: string[] = [];
+    for (const obj of targets) {
+      try {
+        await this.storage.removeObject(obj.key);
+        deleted++;
+        bytes += obj.size;
+      } catch {
+        failures.push(obj.key);
+      }
+    }
+
+    if (deleted > 0) {
+      await this.audit.log({
+        actorId,
+        action: 'purge_music_orphans',
+        targetType: 'music_track',
+        // No single track is the target; the prefix is.
+        targetId: MUSIC_CATALOG_PREFIX,
+        payload: { deleted, bytes, failed: failures.length },
+        ip,
+      });
+    }
+
+    return { deleted, bytes, failed: failures.length, failures };
   }
 
   private assertObjectId(id: string): void {

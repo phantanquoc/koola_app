@@ -11,6 +11,7 @@ import { Pagination } from '../components/Pagination';
 import { ExportButton } from '../components/ExportButton';
 import StateBlock from '../components/StateBlock';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { StatusBadge } from '../components/StatusBadge';
 import Dialog from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { apiErrorMessage, formatDateTime, formatNumber } from '../components/formatters';
@@ -24,6 +25,7 @@ import {
   durationLabel,
   licenseLabel,
   musicApi,
+  type MusicOrphanReport,
   type MusicStats,
   type MusicTrack,
 } from '../musicApi';
@@ -123,6 +125,7 @@ export default function MusicCatalogPage() {
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [orphansOpen, setOrphansOpen] = useState(false);
 
   async function confirmDeactivate() {
     if (!deactivateId) return;
@@ -175,6 +178,9 @@ export default function MusicCatalogPage() {
         actions={
           <>
             <ExportButton onExport={() => setExportOpen(true)} label="Xuất CSV" />
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOrphansOpen(true)}>
+              Kiểm kho
+            </button>
             <button className="btn btn-primary btn-sm" type="button" onClick={() => setCreateOpen(true)}>
               Thêm track
             </button>
@@ -438,7 +444,225 @@ export default function MusicCatalogPage() {
         onConfirm={runExport}
         onClose={() => setExportOpen(false)}
       />
+
+      {orphansOpen && (
+        <OrphansDialog
+          onClose={() => setOrphansOpen(false)}
+          onPurged={() => {
+            setOrphansOpen(false);
+            refreshAll();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Orphan-object dialog ────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Files under `music-catalog/` with no track row.
+ *
+ * Catalog audio bypasses the `Media` collection on purpose, so the shared
+ * cleanup jobs never see these — nothing else in the product can report them.
+ * Purge is behind type-to-confirm: the objects are gone from MinIO, and no
+ * screen lists them again once deleted.
+ */
+function OrphansDialog({ onClose, onPurged }: { onClose: () => void; onPurged: () => void }) {
+  const { addToast } = useToast();
+  const queryClient = useQueryClient();
+  const [report, setReport] = useState<MusicOrphanReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [purging, setPurging] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await musicApi.orphans());
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Không kiểm tra được kho lưu trữ'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // Load once per open; the report is a snapshot and re-running on every
+    // render would hammer MinIO.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function purge() {
+    setPurging(true);
+    try {
+      const result = await musicApi.purgeOrphans();
+      if (result.failed > 0) {
+        addToast('warning', `Đã xoá ${result.deleted} file, ${result.failed} file lỗi.`);
+      } else {
+        addToast('success', `Đã xoá ${result.deleted} file (${formatBytes(result.bytes)}).`);
+      }
+      void queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      onPurged();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Dọn file thất bại'));
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  const eligibleBytes = (report?.orphans ?? [])
+    .filter((o) => o.eligible)
+    .reduce((sum, o) => sum + o.size, 0);
+
+  return (
+    <Dialog open onClose={purging ? () => {} : onClose} labelId="music-orphans-title" variant="wide">
+      <div className="dialog dialog--wide">
+        <div className="dialog-header">
+          <h2 id="music-orphans-title" className="panel-title">Kiểm kho nhạc</h2>
+          <button className="btn btn-sm" type="button" onClick={onClose} disabled={purging} aria-label="Đóng">
+            ✕
+          </button>
+        </div>
+
+        <div className="dialog-body page-stack">
+          {loading && <p className="cell-meta">Đang đối chiếu kho với danh mục…</p>}
+          {error && (
+            <p className="form-error" role="alert">
+              {error}{' '}
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => void load()}>
+                Thử lại
+              </button>
+            </p>
+          )}
+
+          {report && !loading && (
+            <>
+              <dl className="description-list">
+                <dt className="cell-meta">File trong kho</dt>
+                <dd>{formatNumber(report.objects)}</dd>
+
+                <dt className="cell-meta">Đang được track dùng</dt>
+                <dd>{formatNumber(report.referenced)}</dd>
+
+                <dt className="cell-meta">Mồ côi</dt>
+                <dd>
+                  {formatNumber(report.orphans.length)}
+                  {report.pending > 0 && (
+                    <span className="cell-meta">
+                      {' '}· {formatNumber(report.pending)} mới tạo, còn trong {report.graceHours}h
+                      bảo vệ
+                    </span>
+                  )}
+                </dd>
+              </dl>
+
+              {report.orphans.length === 0 ? (
+                <p className="cell-meta">Kho khớp danh mục — không có file thừa.</p>
+              ) : (
+                <>
+                  <p className="cell-meta">
+                    File mồ côi sinh ra khi tải lên xong nhưng bước tạo track thất bại. File
+                    trong vòng {report.graceHours} giờ vẫn được giữ vì có thể đang được tạo dở.
+                  </p>
+                  {/* List, not a table: object keys are long unbroken strings, and a
+                      table inside a 720px dialog would scroll sideways on its own. */}
+                  <ul className="audit-list" aria-label="File mồ côi">
+                    {report.orphans.slice(0, 50).map((o) => (
+                      <li key={o.key} className="audit-list-row">
+                        <span className="k-mono orphan-key">{o.key}</span>
+                        <span className="cell-meta">{formatBytes(o.size)}</span>
+                        <span className="cell-meta k-mono">{formatDateTime(o.lastModified)}</span>
+                        <StatusBadge
+                          tone={o.eligible ? 'danger' : 'muted'}
+                          label={o.eligible ? 'Xoá được' : 'Đang bảo vệ'}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  {report.orphans.length > 50 && (
+                    <p className="cell-meta">
+                      Hiện 50/{formatNumber(report.orphans.length)} file đầu — dọn sẽ xoá tất cả
+                      file đủ điều kiện, không chỉ phần đang hiện.
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="dialog-actions dialog-actions--padded">
+          <button className="btn" type="button" onClick={onClose} disabled={purging}>
+            Đóng
+          </button>
+          <PurgeOrphansButton
+            eligible={report?.eligible ?? 0}
+            eligibleBytes={eligibleBytes}
+            busy={purging}
+            onConfirm={purge}
+          />
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Type-to-confirm is separate so the count in the label stays live. */
+function PurgeOrphansButton({
+  eligible,
+  eligibleBytes,
+  busy,
+  onConfirm,
+}: {
+  eligible: number;
+  eligibleBytes: number;
+  busy: boolean;
+  onConfirm: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (eligible === 0) {
+    return (
+      <button className="btn btn-primary" type="button" disabled>
+        Không có file nào để xoá
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <button
+        className="btn btn-danger"
+        type="button"
+        onClick={() => setConfirming(true)}
+        disabled={busy}
+      >
+        {busy ? 'Đang xoá…' : `Xoá ${formatNumber(eligible)} file (${formatBytes(eligibleBytes)})`}
+      </button>
+      <ConfirmDialog
+        open={confirming}
+        title={`Xoá ${formatNumber(eligible)} file mồ côi?`}
+        description="File bị xoá khỏi kho lưu trữ và không khôi phục được. Chỉ file không track nào dùng và cũ hơn mốc bảo vệ mới bị xoá."
+        confirmLabel="Xoá file"
+        variant="danger"
+        requireText="XOA"
+        busy={busy}
+        onConfirm={() => {
+          setConfirming(false);
+          onConfirm();
+        }}
+        onClose={() => setConfirming(false)}
+      />
+    </>
   );
 }
 

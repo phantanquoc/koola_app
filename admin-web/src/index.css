@@ -3844,3 +3844,12 @@ th.sortable:hover {
   gap: var(--space-2);
 }
 
+/* Khoá MinIO là chuỗi dài không có chỗ ngắt: cần cả `min-width: 0` (flex con
+   không tự co xuống dưới content) lẫn `overflow-wrap` thì mới xuống dòng thay
+   vì đẩy cả dialog rộng ra. */
+.orphan-key {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+

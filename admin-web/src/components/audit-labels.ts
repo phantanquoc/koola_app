@@ -63,6 +63,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   update_music_track: 'Cập nhật track',
   delete_music_track: 'Ngưng track',
   restore_music_track: 'Khôi phục track',
+  purge_music_orphans: 'Dọn file nhạc mồ côi',
   // Hệ thống
   broadcast: 'Gửi broadcast',
   send_test_push: 'Gửi thử push',
@@ -96,7 +97,7 @@ const DANGER_ACTIONS = new Set([
   'delete_business', 'delete_product', 'delete_service', 'delete_store',
   'delete_music_track', 'soft_delete_message', 'takedown_story', 'ban_user',
   'delete_user', 'revoke_sessions', 'revoke_session', 'cancel_order',
-  'unpin_message', 'remove_member',
+  'unpin_message', 'remove_member', 'purge_music_orphans',
 ]);
 const WARNING_ACTIONS = new Set([
   'reject_business', 'bulk_reject_business', 'suspend_business', 'refund_order',
@@ -177,6 +178,7 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   licenseType: 'Loại giấy phép',
   licenseUrl: 'Link giấy phép',
   sourceUrl: 'Link nguồn',
+  bytes: 'Dung lượng đã xoá (byte)',
   // Broadcast
   body: 'Nội dung',
   at: 'Thời điểm gửi',
