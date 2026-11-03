@@ -193,7 +193,7 @@ export default function AppealsPage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải kháng nghị" copy="Đang lấy danh sách kháng nghị." />}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách kháng nghị">
               <thead>
                 <tr>

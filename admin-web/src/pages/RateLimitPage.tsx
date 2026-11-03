@@ -213,7 +213,7 @@ export default function RateLimitPage() {
                 copy="Không ai bị đếm trong cửa sổ hiện tại, hoặc Redis vừa được flush. Bảng sẽ tự cập nhật sau 30 giây."
               />
             ) : (
-              <div className="table-scroll table-scroll--fit">
+              <div className="table-scroll">
                 <table className="data-table data-table--compact" aria-label="Chi tiết giới hạn tần suất">
                   <thead>
                     <tr>

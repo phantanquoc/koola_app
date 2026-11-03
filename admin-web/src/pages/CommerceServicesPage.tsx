@@ -152,7 +152,7 @@ export default function CommerceServicesPage() {
           <StateBlock variant="loading" title="Đang tải dịch vụ" copy="Đang lấy catalog dịch vụ mới nhất." />
         )}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách dịch vụ">
               <thead>
                 <tr>

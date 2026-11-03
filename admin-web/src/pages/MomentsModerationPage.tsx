@@ -177,7 +177,7 @@ export default function MomentsModerationPage() {
           <StateBlock variant="loading" title="Đang tải story" copy="Đang lấy danh sách story mới nhất." />
         )}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách story">
               <thead>
                 <tr>

@@ -224,7 +224,7 @@ export default function AuditLogPage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải nhật ký thao tác" copy="Đang lấy lịch sử thao tác quản trị." />}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Lịch sử thao tác quản trị">
               <thead>
                 <tr>

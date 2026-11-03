@@ -290,7 +290,7 @@ export default function BroadcastPage() {
           <StateBlock variant="loading" title="Đang tải lịch sử" copy="Đang lấy lịch sử thông báo đã gửi." />
         )}
         {!history.isLoading && !history.isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Lịch sử gửi thông báo">
               <thead>
                 <tr>

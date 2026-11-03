@@ -200,7 +200,7 @@ export default function ReportsPage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải báo cáo" copy="Đang lấy hộp thư báo cáo." />}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Hộp thư báo cáo">
               <thead>
                 <tr>

@@ -1684,18 +1684,16 @@ code,
   padding: 0 var(--space-5) var(--space-5);
 }
 
+/* Khung bảng: cuộn NGANG trong khung, KHÔNG cuộn dọc.
+   `overflow-y: clip` là điểm mấu chốt — `overflow-x: auto` + `overflow-y: visible`
+   không giữ được `visible` (spec: trục kia tự thành `auto`), khung thành scroll
+   container dọc và `<thead sticky>` bám vào chính khung đó, trôi mất khi bảng dài
+   hơn màn hình. Clip thì cắt được overflow ngang mà vẫn ngoài chuỗi scroller.
+   `.admin-content-scroll` vẫn là scroller dọc duy nhất của trang.
+   `min-height` để bảng rỗng/ít dòng vẫn giữ khung, không nhảy layout. */
 .table-scroll {
-  overflow: auto;
-}
-
-/* Trang list: KHÔNG tự cuộn trong khung nữa.
-   Trước đây `.table-scroll--fit` đặt max-height: calc(100vh - 470px) → ở laptop
-   768px chỉ còn 298px, hiện được 4 dòng, và người dùng phải cuộn một ô nhỏ ở
-   giữa trang. Giờ cả vùng nội dung (.admin-content-scroll) là scroller duy nhất;
-   topbar/sidebar đứng yên vì chúng nằm ngoài vùng đó, và thead sticky bám mép
-   dưới topbar. */
-.table-scroll--fit {
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: clip;
   min-height: 180px;
 }
 
@@ -3491,10 +3489,9 @@ th.sortable:hover {
   display: none;
 }
 
-/* 861–1099px: vùng nội dung chỉ còn ~700–760px (sidebar 264 + padding 64), hẹp
-   hơn bảng 6 cột. Ẩn cột phụ sớm hơn để bảng vừa khung — nếu để tràn thì phải
-   bật overflow-x, mà `overflow-x:auto` kéo theo `overflow-y:auto` (spec), biến
-   khung bảng thành scroller thứ hai và thead sticky bám sai chỗ. */
+/* ≤1099px: vùng nội dung còn ~700–760px (sidebar 264 + padding 64). Ẩn cột phụ
+   để bảng không phải cuộn ngang vì những cột ít giá trị; bảng vẫn giữ `min-width`
+   nên phần còn lại cuộn ngang thay vì bị bóp (xem khối media phía dưới). */
 @media (max-width: 1099px) {
   .col-hide-xs {
     display: none;
@@ -3502,15 +3499,6 @@ th.sortable:hover {
 
   .show-under-1100 {
     display: block;
-  }
-
-  /* Cột hành động sticky chỉ có nghĩa khi bảng cuộn ngang. Từ 1099px trở
-     xuống khung bảng đã bỏ overflow ngang (xem `.data-table { min-width: 0 }`),
-     nên sticky không còn tác dụng mà lại kéo cột đè lên cột dữ liệu cuối. */
-  .data-table th.col-sticky,
-  .data-table td.col-sticky {
-    position: static;
-    box-shadow: none;
   }
 }
 
@@ -3525,23 +3513,24 @@ th.sortable:hover {
   }
 }
 
-/* Bảng rộng 760px là đúng ở desktop, nhưng ở mobile chỉ còn 2–3 cột hiển thị —
-   giữ min-width đó là bắt người dùng vuốt ngang để đọc một cột duy nhất.
-   §6 yêu cầu "bảng luôn có .table-scroll, không tràn ngang": hạ min-width theo
-   số cột còn lại thay vì để thanh cuộn ngang xuất hiện.
-   861–1099px cũng cần hạ: nội dung chỉ còn ~700px sau sidebar, đã ẩn cột Liên hệ
-   nên 5 cột còn lại vừa khung. */
+/* Bảng luôn giữ bề ngang đọc được; hẹp hơn thì khung cuộn ngang, KHÔNG bóp cột.
+   Bản cũ hạ `min-width` về 0 ở 1099px và 560px để "khỏi phải vuốt ngang" — đổi
+   lại là cột co còn ~100px và chữ xuống 3 dòng. Đo ở 390px với 5 hàng đầu:
+
+     min-width   0px   480px   560px   640px
+     /reports     105 L   105 L    90 L    90 L
+     /ops-logs     90 L    60 L    60 L    60 L
+     /products    147 L   147 L   147 L   105 L
+
+   560px là điểm gãy: dưới mức đó cột ngày/giá bắt đầu xuống dòng dù đã ẩn hết
+   cột phụ, trên mức đó chỉ tăng số pixel phải vuốt mà không giảm dòng nào. */
 @media (max-width: 1099px) {
   .data-table {
-    min-width: 0;
+    min-width: 760px;
   }
 }
 
 @media (max-width: 860px) {
-  .data-table {
-    min-width: 520px;
-  }
-
   .show-under-860 {
     display: block;
   }
@@ -3549,7 +3538,7 @@ th.sortable:hover {
 
 @media (max-width: 560px) {
   .data-table {
-    min-width: 0;
+    min-width: 560px;
   }
 
   /* 390px: 3 cột còn lại (Thời gian 145 + Hành động 172 + Chi tiết 79) vẫn hơn
@@ -3813,28 +3802,10 @@ th.sortable:hover {
   font-weight: 700;
 }
 
-/* ─── Bảng cuộn ngang mà KHÔNG mất thead sticky ──────────────────────────────
-   Cái bẫy: `overflow-x: auto` + `overflow-y: visible` KHÔNG giữ được `visible` —
-   theo spec, khi một trục khác `visible` thì trục còn lại bị tính thành `auto`.
-   Khung bảng trở thành scroll container dọc, `position: sticky` của `<thead>`
-   bám vào chính khung đó thay vì `.admin-content-scroll`, nên header trôi mất
-   ngay khi bảng dài hơn màn hình.
-
-   `overflow-y: clip` giữ khung NGOÀI chuỗi scroll container (không cuộn dọc
-   được) mà vẫn cắt overflow ngang, nên thead sticky bám đúng scroller trang.
-   Đo ở 1024px: khung cuộn ngang 882px/1200px, cột phải dịch 318px,
-   `thead.top` giữ nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc.
-
-   Dùng cho mọi trang cần cuộn ngang thay vì bóp cột (§6). */
-.table-scroll--x,
-.table-scroll--music {
-  overflow-x: auto;
-  overflow-y: clip;
-}
-
-/* Trang nhạc: 8 cột không nhét vừa 1024px, thà vuốt ngang còn hơn ép cột còn
-   ~110px và chữ xuống 3 dòng. */
-.table-scroll--music .data-table {
+/* ─── Bảng rộng: thêm `min-width` cho bảng nhiều cột ──────────────────────────
+   Hành vi cuộn ngang đã nằm ở `.table-scroll` (§4.1); modifier này chỉ nâng
+   sàn bề ngang để bảng 8 cột không bị bóp cột. */
+.table-scroll--wide .data-table {
   min-width: 900px;
 }
 

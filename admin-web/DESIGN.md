@@ -244,17 +244,36 @@ CSS đã làm cả 15 trang phải bỏ cuộn ngang:
 
 Đúng: `overflow-y: clip` — khung vẫn cắt overflow ngang, vẫn **không** cuộn dọc
 được nên không chen vào chuỗi scroll container, thead sticky bám đúng scroller
-trang. Đo ở 1024×900 trên trang Nhạc: khung cuộn ngang 882/900px, cột phải dịch
-18px, `thead.top` giữ nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc.
+trang. Đo ở 1024×900: khung cuộn ngang, cột phải dịch theo, `thead.top` giữ
+nguyên 104px (mép dưới topbar) suốt 900px cuộn dọc trên **cả 14 trang list**.
 
-| Class | Dùng khi | CSS |
+Cả hệ thống dùng **một** class `.table-scroll` (`overflow-x: auto; overflow-y: clip;
+min-height: 180px`). Không còn `--fit`/`--x` — hai modifier cũ chỉ khác nhau ở
+`overflow`, mà `--fit` (`overflow: visible`) chính là thứ làm thead trôi.
+
+Sàn bề ngang của `.data-table` đặt theo breakpoint, **giữ nguyên không hạ về 0**:
+
+| Breakpoint | `min-width` | Vì sao |
 |---|---|---|
-| `.table-scroll--fit` | Bảng vừa khung ở mọi bề ngang (≤7 cột, cột phụ có `col-hide-*`) | `overflow: visible` |
-| `.table-scroll--x` | Bảng cần vuốt ngang | `overflow-x: auto; overflow-y: clip` |
+| > 1099px | 760px | Bảng ít cột thì khung rộng hơn, không phải cuộn |
+| ≤ 1099px | 760px | Vùng nội dung ~700px sau sidebar → vuốt ~60px, không bóp cột |
+| ≤ 560px | 560px | Điểm gãy: dưới mức này cột ngày/giá xuống dòng dù đã ẩn cột phụ |
 
-Chọn `--x` thì phải khai `min-width` cho bảng **đủ lớn để không còn cột bị bóp**
-(trang Nhạc: 900px). `min-width` nhỏ hơn khung thì class thành vô nghĩa — không
-có gì để cuộn.
+Đo ở 390px, tổng số dòng chữ của 5 hàng đầu (càng thấp càng tốt):
+
+| `min-width` | `/reports` | `/ops-logs` | `/products` |
+|---|---|---|---|
+| 0 (bản cũ) | 105 | 90 | 147 |
+| 480px | 105 | 60 | 147 |
+| 560px | **90** | **60** | **105** |
+| 760px | 90 | 45 | 105 |
+
+560 → 760 giảm thêm được dòng ở `/ops-logs` nhưng phải vuốt thêm 200px trên
+màn 390px; 560 là điểm cân bằng. **Không** dùng `min-width: max-content`:
+bảng nhỏ nhất cũng phình lên 10 400px vì ô nào cũng được phép một dòng.
+
+Bảng rất nhiều cột (≥8) thêm `.table-scroll--wide` để nâng sàn lên 900px —
+trang Nhạc là ca đó.
 
 
 ## 5. Kit (dùng, không chế mới — thiếu thì thêm theo spec này)
@@ -615,19 +634,15 @@ ban không đá được phiên, danh sách thiết bị luôn rỗng — trong 
   Test 1440 + 1024 + 860 + 390; bảng luôn có `.table-scroll`, không tràn ngang.
 - **Một scroller duy nhất:** `.admin-content-scroll`. Topbar + sidebar nằm ngoài
   vùng đó nên đứng yên khi cuộn. Cấm đặt `max-height`/`overflow-y` cho khung bảng
-  trên trang list (`.table-scroll--fit` chỉ `overflow: visible`) — trước đây
-  `max-height: calc(100vh - 470px)` làm laptop 768px chỉ hiện 4 dòng trong một ô
-  cuộn nhỏ giữa trang, và `.table-shell { overflow: hidden }` biến chính khung
-  bảng thành scroll container khiến thead `sticky` trôi mất. Nay `.table-shell`
-  dùng `overflow: clip` (giữ bo góc, không tạo scroll container).
-- ≤1099px ẩn `.col-hide-xs` và hạ `.data-table { min-width: 0 }` cho các bảng
-  **vừa khung** (`.table-scroll--fit`): nội dung chỉ còn ~700px sau sidebar, ẩn cột
-  phụ là đủ. Bảng **không** vừa thì dùng `.table-scroll--x`
-  (`overflow-x: auto; overflow-y: clip`) — **không** dùng `overflow-x: auto` với
-  `overflow-y: visible`, vì theo spec trục còn lại tự thành `auto`, khung bảng
-  thành scroll container dọc và thead mất sticky (§4.1). Chỉ bảng `--x` mới giữ
-  `.col-sticky`; ở `--fit` cột hành động phải `position: static`, nếu không nó đè
-  lên cột dữ liệu cuối.
+  trên trang list — trước đây `max-height: calc(100vh - 470px)` làm laptop 768px
+  chỉ hiện 4 dòng trong một ô cuộn nhỏ giữa trang, và `.table-shell { overflow:
+  hidden }` biến chính khung bảng thành scroll container khiến thead `sticky`
+  trôi mất. Nay `.table-shell` dùng `overflow: clip` (giữ bo góc, không tạo
+  scroll container), còn `.table-scroll` chỉ `overflow-x: auto; overflow-y: clip`.
+- ≤1099px ẩn `.col-hide-xs` nhưng **không** hạ `.data-table { min-width: 0 }`:
+  bảng vẫn giữ 760px và khung cuộn ngang (§4.1). Bóp cột về 0 từng là "cách
+  tránh vuốt ngang" — đổi lại là hàng cao gấp đôi vì chữ xuống dòng.
+  `.col-sticky` giữ nguyên sticky vì giờ mọi khung đều cuộn ngang được.
 - **Cột bị ẩn phải có đường về:** dữ liệu không được biến mất khỏi bảng. Mỗi cột
   ẩn theo bề ngang cần một dòng `.show-under-1100` / `.show-under-860` / `.show-xs`
   tương ứng nằm trong ô đầu của hàng, và ô gốc phải gắn đúng lớp ẩn
@@ -692,10 +707,11 @@ Chạy hết trước khi báo done. Mỗi dòng đều grep/kiểm được, kh
 - [ ] Tab và đường dẫn trực tiếp cùng mở đúng một bản ghi (route `/:id` share được)
 
 **Bảng & bố cục (hay lọt nhất)**
-- [ ] Chọn đúng khung cuộn: bảng vừa khung → `.table-scroll--fit`; cần vuốt ngang →
-      `.table-scroll--x` + `min-width` đủ lớn. **Không** viết `overflow-x: auto` với
-      `overflow-y: visible` (§4.1)
-- [ ] Ở 1024px vẫn cuộn dọc được 900px mà thead còn dính mép dưới topbar
+- [ ] Khung bảng là `className="table-scroll"` (không thêm modifier). Bảng ≥8 cột
+      thêm `table-scroll--wide`. **Không** đặt `overflow-y`/`max-height` lên khung
+- [ ] Ở 1024px: khung cuộn ngang được (~60px) **và** cuộn dọc 900px thì `thead.top`
+      vẫn bằng mép dưới topbar — kiểm bằng DevTools, không đoán (§4.1)
+- [ ] Không `min-width: 0` cho `.data-table` ở breakpoint nào (bóp cột = chữ xuống dòng)
 - [ ] 0 inline style ngoài `index.css`: `grep -n "style={{" src/pages/XPage.tsx`
 - [ ] `ColumnHeader` không bị bọc trong `<th>`; `description-list` chỉ có `dt`/`dd` là con
 - [ ] `Dialog` có panel `.dialog`/`.dialog--wide` bọc con; footer `.dialog-actions`
@@ -721,8 +737,8 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 4. `TABS` + count lấy từ endpoint stats của module (không đếm ở client).
 5. Bảng: `ColumnHeader` cho cột sort/lọc được; `cell-title` + `cell-meta`; cột số
    dùng `.col-num`, hàng mở chi tiết gắn `.row-clickable`.
-6. Chọn khung cuộn theo §4.1: `.table-scroll--fit` nếu vừa khung, `.table-scroll--x`
-   + `min-width` nếu cần vuốt ngang.
+6. Khung bảng: `<div className="table-scroll">` — cuộn ngang đã sẵn, không thêm
+   modifier trừ khi ≥8 cột (`table-scroll--wide`). Đừng chạm `min-width` (§4.1).
 7. Hành động: tách logic mutation ra hook `use<Domain>Decision` nếu dùng ở cả list và detail.
 8. **Chi tiết = route riêng**, theo mẫu `AuditLogPage` + `AuditLogDetailPage` + `AuditLogDetail`:
    - page mỏng `pages/XDetailPage.tsx`: lấy `:id`, đọc `location.state.from` để back về đúng filter;

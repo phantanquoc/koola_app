@@ -366,7 +366,7 @@ export default function OpsLogPage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải nhật ký" copy="Đang lấy log vận hành." />}
         {!isLoading && !isError && tab === 'otp' && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Nhật ký gửi OTP">
               <thead>
                 <tr>
@@ -417,7 +417,7 @@ export default function OpsLogPage() {
           </div>
         )}
         {!isLoading && !isError && tab === 'push' && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Nhật ký gửi push">
               <thead>
                 <tr>

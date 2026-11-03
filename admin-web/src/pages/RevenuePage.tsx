@@ -213,7 +213,7 @@ export default function RevenuePage() {
                 copy="Đổi khoảng ngày hoặc bỏ lọc người bán để xem thêm."
               />
             ) : (
-              <div className="table-scroll table-scroll--fit">
+              <div className="table-scroll">
                 <table className="data-table data-table--compact" aria-label="Doanh thu theo ngày">
                   <thead>
                     <tr>
@@ -249,7 +249,7 @@ export default function RevenuePage() {
                 copy="Bảng này chỉ liệt kê người bán có đơn trong khoảng ngày đã chọn."
               />
             ) : (
-              <div className="table-scroll table-scroll--fit">
+              <div className="table-scroll">
                 <table className="data-table data-table--compact" aria-label="Doanh thu theo người bán">
                   <thead>
                     <tr>

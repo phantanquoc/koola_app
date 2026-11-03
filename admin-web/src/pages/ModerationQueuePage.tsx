@@ -117,7 +117,7 @@ export default function ModerationQueuePage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải hàng đợi" copy="Đang gom báo cáo và hồ sơ chờ duyệt." />}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Hàng đợi kiểm duyệt gộp">
               <thead>
                 <tr>

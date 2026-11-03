@@ -320,7 +320,7 @@ export default function UsersPage() {
           <StateBlock variant="loading" title="Đang tải danh sách" copy="Đang lấy dữ liệu người dùng mới nhất." />
         )}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách người dùng">
               <thead>
                 <tr>

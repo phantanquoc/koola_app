@@ -539,7 +539,7 @@ export default function BusinessesPage() {
         )}
         {isLoading && <StateBlock variant="loading" title="Đang tải danh sách" copy="Đang lấy hồ sơ doanh nghiệp." />}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách doanh nghiệp">
               <thead>
                 <tr>

@@ -219,7 +219,7 @@ export default function MessageSearchPage() {
           <StateBlock variant="loading" title="Đang tìm tin nhắn" copy="Đang quét nội dung trên mọi hội thoại." />
         )}
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Kết quả tìm tin nhắn">
               <thead>
                 <tr>

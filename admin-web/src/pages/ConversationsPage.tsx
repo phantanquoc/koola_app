@@ -800,7 +800,7 @@ export default function ConversationsPage() {
         )}
 
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--fit">
+          <div className="table-scroll">
             <table className="data-table data-table--compact" aria-label="Danh sách hội thoại">
               <thead>
                 <tr>

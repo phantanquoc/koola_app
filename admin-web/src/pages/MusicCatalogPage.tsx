@@ -287,7 +287,7 @@ export default function MusicCatalogPage() {
         )}
 
         {!isLoading && !isError && (
-          <div className="table-scroll table-scroll--music">
+          <div className="table-scroll table-scroll--wide">
             <table className="data-table data-table--compact" aria-label="Thư viện nhạc">
               <thead>
                 <tr>
