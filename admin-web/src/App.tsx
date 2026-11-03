@@ -19,6 +19,7 @@ import ReportsPage from './pages/ReportsPage';
 import ReportDetailPage from './pages/ReportDetailPage';
 import MomentsModerationPage from './pages/MomentsModerationPage';
 import MusicCatalogPage from './pages/MusicCatalogPage';
+import MusicDetailPage from './pages/MusicDetailPage';
 import CommerceProductsPage from './pages/CommerceProductsPage';
 import CommerceOrdersPage from './pages/CommerceOrdersPage';
 import CommerceServicesPage from './pages/CommerceServicesPage';
@@ -63,6 +64,7 @@ export default function App() {
                 <Route path="messages" element={<MessageSearchPage />} />
                 <Route path="moments" element={<MomentsModerationPage />} />
                 <Route path="music" element={<MusicCatalogPage />} />
+                <Route path="music/:id" element={<MusicDetailPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="reports/:id" element={<ReportDetailPage />} />
                 <Route path="products" element={<CommerceProductsPage />} />

@@ -1,175 +1,167 @@
-import { useEffect, useState } from 'react';
-import apiClient from '../apiClient';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
+import { StatusTabs } from '../components/StatusTabs';
+import { ColumnHeader } from '../components/ColumnHeader';
+import { FilterPopover } from '../components/FilterPopover';
 import { Pagination } from '../components/Pagination';
-import { EmptyState } from '../components/EmptyState';
+import { ExportButton } from '../components/ExportButton';
+import StateBlock from '../components/StateBlock';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import Dialog from '../components/Dialog';
-import { IntegerInput } from '../components/StructuredInput';
 import { useToast } from '../components/Toast';
+import { apiErrorMessage, formatDateTime, formatNumber } from '../components/formatters';
+import { useUrlFilters } from '../hooks/useUrlFilters';
+import { useAdminList } from '../hooks/useAdminList';
+import {
+  AUDIO_ACCEPT,
+  MAX_AUDIO_BYTES,
+  LICENSE_OPTIONS,
+  buildMusicCsv,
+  durationLabel,
+  licenseLabel,
+  musicApi,
+  type MusicStats,
+  type MusicTrack,
+} from '../musicApi';
+import {
+  MusicRowAudio,
+  RowPlayButton,
+  useMusicRowPlayer,
+} from '../components/MusicRowPlayer';
 
-type Track = {
-  _id: string;
-  title: string;
-  artist: string;
-  durationMs: number;
-  audioKey: string;
-  previewKey: string;
-  licenseType: string;
-  licenseUrl: string;
-  sourceUrl: string;
-  isActive: boolean;
-};
-
-/** `licenseUrl`/`sourceUrl` bắt buộc ở schema; form phải nhập thật, không prefill giả. */
-const EMPTY_FORM = {
-  title: '',
-  artist: '',
-  durationMs: 180000,
-  audioKey: '',
-  previewKey: '',
-  licenseType: 'cc0' as string,
-  licenseUrl: '',
-  sourceUrl: '',
-};
-
-function isHttpUrl(v: string): boolean {
-  try {
-    const u = new URL(v);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-/** Slug enum → nhãn đọc được (§3B2: không hiện nguyên slug lên bảng). */
-const LICENSE_LABEL: Record<string, string> = {
-  cc0: 'CC0',
-  'cc-by': 'CC-BY',
-  'epidemic-sound': 'Epidemic Sound',
-  'owned-by-koola': 'Nội bộ Koola',
-};
-
-/** 180000 → "3:00" — người nghe nghĩ theo phút:giây, không theo mili giây. */
-function durationLabel(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '—';
-  const total = Math.round(ms / 1000);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
+const PAGE_SIZES = [10, 20, 50];
+const SORT_FIELDS = ['addedAt', 'title', 'usageCount'] as const;
 
 export default function MusicCatalogPage() {
   const { addToast } = useToast();
-  const [data, setData] = useState<Track[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editTrack, setEditTrack] = useState<Track | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
-  async function load(p = page) {
-    setLoading(true);
-    try {
-      const r = await apiClient.get('/admin/music-tracks', { params: { page: p, limit: 20 } });
-      setData(r.data.data ?? []);
-      setTotal(r.data.total ?? 0);
-    } catch {
-      addToast('error', 'Tải danh sách thất bại');
-    } finally {
-      setLoading(false);
-    }
+  const { values, set, reset } = useUrlFilters({
+    status: 'active',
+    q: '',
+    license: '',
+    sort: 'addedAt:desc',
+    page: '1',
+    pageSize: '20',
+  });
+
+  const page = Math.max(1, Number(values.page) || 1);
+  const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+
+  // Allow-listed here too, so a hand-edited URL cannot produce a server 400 for
+  // a sort value this page never offers.
+  const sort = useMemo(() => {
+    const [field, dir] = values.sort.split(':');
+    const okField = SORT_FIELDS.includes(field as never);
+    const okDir = dir === 'asc' || dir === 'desc';
+    return okField && okDir ? values.sort : 'addedAt:desc';
+  }, [values.sort]);
+
+  const params = useMemo(
+    () => ({
+      status: values.status || 'active',
+      q: values.q || undefined,
+      licenseType: values.license || undefined,
+      sort,
+      page,
+      limit: pageSize,
+    }),
+    [values.status, values.q, values.license, sort, page, pageSize],
+  );
+
+  const { rows, total, isLoading, isError, error, refetch } = useAdminList<MusicTrack>(
+    ['music', values.status, values.q, values.license, sort, page, pageSize],
+    '/admin/music-tracks',
+    params,
+  );
+
+  const statsQuery = useQuery({
+    queryKey: ['music-stats'],
+    queryFn: () => musicApi.stats(),
+    staleTime: 30_000,
+  });
+  const stats: MusicStats | undefined = statsQuery.data;
+
+  // Both keys, so tab counts never drift from the table after a mutation.
+  function refreshAll() {
+    void queryClient.invalidateQueries({ queryKey: ['music'] });
+    void queryClient.invalidateQueries({ queryKey: ['music-stats'] });
   }
 
+  // Debounced search: typing must not fire one request per keystroke.
+  const [searchInput, setSearchInput] = useState(values.q);
+  useEffect(() => setSearchInput(values.q), [values.q]);
   useEffect(() => {
-    load(1);
-  }, []);
+    if (searchInput.trim() === values.q) return;
+    const t = setTimeout(() => set({ q: searchInput.trim(), page: '1' }), 350);
+    return () => clearTimeout(t);
+    // set/values.q are stable for this purpose; re-running on them would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
 
-  function openCreate() {
-    setForm(EMPTY_FORM);
-    setEditTrack(null);
-    setShowCreate(true);
-  }
-
-  function openEdit(t: Track) {
-    // Sửa track phải giữ URL giấy phép/nguồn đã lưu. Trước đây hai field này bị
-    // ghi đè bằng URL mẫu → mỗi lần Sửa là xoá dữ liệu pháp lý thật.
-    setForm({
-      title: t.title,
-      artist: t.artist,
-      durationMs: t.durationMs,
-      audioKey: t.audioKey,
-      previewKey: t.previewKey,
-      licenseType: t.licenseType,
-      licenseUrl: t.licenseUrl ?? '',
-      sourceUrl: t.sourceUrl ?? '',
+  function openDetail(id: string) {
+    navigate(`/music/${id}`, {
+      state: { from: `${location.pathname}${location.search}` },
     });
-    setEditTrack(t);
-    setShowCreate(true);
   }
 
-  async function submit() {
-    if (!form.title.trim() || !form.artist.trim() || !form.audioKey.trim()) {
-      addToast('error', 'Tiêu đề, nghệ sĩ và audioKey là bắt buộc');
-      return;
-    }
-    // Server yêu cầu licenseUrl/sourceUrl khác rỗng và durationMs ≥ 1.
-    if (!isHttpUrl(form.licenseUrl.trim())) {
-      addToast('error', 'URL giấy phép phải là http(s):// đầy đủ.');
-      return;
-    }
-    if (!isHttpUrl(form.sourceUrl.trim())) {
-      addToast('error', 'URL nguồn phải là http(s):// đầy đủ.');
-      return;
-    }
-    if (!(form.durationMs > 0)) {
-      addToast('error', 'Thời lượng phải lớn hơn 0.');
-      return;
-    }
+  const advancedCount = values.license ? 1 : 0;
+  const hasActiveFilter = Boolean(values.q || advancedCount || values.status !== 'active');
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const loadError = apiErrorMessage(error, 'Không tải được danh sách nhạc.');
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deactivateId, setDeactivateId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function confirmDeactivate() {
+    if (!deactivateId) return;
     try {
-      if (editTrack) {
-        await apiClient.patch(`/admin/music-tracks/${editTrack._id}`, {
-          title: form.title,
-          artist: form.artist,
-          durationMs: Number(form.durationMs),
-          audioKey: form.audioKey,
-          previewKey: form.previewKey || form.audioKey,
-          licenseType: form.licenseType,
-          licenseUrl: form.licenseUrl,
-          sourceUrl: form.sourceUrl,
-        });
-        addToast('success', 'Đã cập nhật');
+      await musicApi.deactivate(deactivateId);
+      addToast('success', 'Đã ngưng track. File vẫn giữ trong kho.');
+      setDeactivateId(null);
+      refreshAll();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Ngưng track thất bại'));
+    }
+  }
+
+  async function runExport() {
+    setExporting(true);
+    try {
+      const { data, truncated, total: all } = await musicApi.exportAll();
+      const blob = new Blob([buildMusicCsv(data)], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `nhac-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      if (truncated) {
+        addToast('warning', `Chỉ xuất ${data.length}/${all} dòng — thu hẹp phạm vi để xuất hết.`);
       } else {
-        await apiClient.post('/admin/music-tracks', {
-          title: form.title,
-          artist: form.artist,
-          durationMs: Number(form.durationMs),
-          audioKey: form.audioKey,
-          previewKey: form.previewKey || form.audioKey,
-          licenseType: form.licenseType,
-          licenseUrl: form.licenseUrl,
-          sourceUrl: form.sourceUrl,
-        });
-        addToast('success', 'Đã tạo');
+        addToast('success', `Đã xuất ${data.length} dòng.`);
       }
-      setShowCreate(false);
-      load(page);
-    } catch {
-      addToast('error', editTrack ? 'Cập nhật thất bại' : 'Tạo thất bại');
+      setExportOpen(false);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Xuất CSV thất bại'));
+    } finally {
+      setExporting(false);
     }
   }
 
-  async function confirmDelete() {
-    if (!deleteId) return;
-    try {
-      await apiClient.delete(`/admin/music-tracks/${deleteId}`);
-      addToast('success', 'Đã xóa');
-      setDeleteId(null);
-      load(page);
-    } catch {
-      addToast('error', 'Xóa thất bại');
-    }
+  const player = useMusicRowPlayer();
+
+  function toggleSort(field: string) {
+    const [curField, curDir] = sort.split(':');
+    const nextDir = curField === field && curDir === 'desc' ? 'asc' : 'desc';
+    set({ sort: `${field}:${nextDir}`, page: '1' });
   }
 
   return (
@@ -177,39 +169,187 @@ export default function MusicCatalogPage() {
       <ListHeader
         title="Nhạc"
         count={total}
-        actions={<button className="btn btn-primary btn-sm" onClick={openCreate} type="button">Tạo track</button>}
+        actions={
+          <>
+            <ExportButton onExport={() => setExportOpen(true)} label="Xuất CSV" />
+            <button className="btn btn-primary btn-sm" type="button" onClick={() => setCreateOpen(true)}>
+              Thêm track
+            </button>
+          </>
+        }
       >
-        <span className="cell-meta">Track trong thư viện nhạc của Moments, mới nhất trước.</span>
+        <div className="filter-search-wrap">
+          <Search size={15} className="filter-search-icon" aria-hidden />
+          <input
+            className="input filter-search filter-search--icon"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') set({ q: searchInput.trim(), page: '1' });
+            }}
+            placeholder="Tìm theo tên bài hoặc nghệ sĩ"
+            aria-label="Tìm theo tên bài hoặc nghệ sĩ"
+          />
+        </div>
+
+        <FilterPopover
+          activeCount={advancedCount}
+          onClear={() => set({ license: '', page: '1' })}
+        >
+          <label className="form-field">
+            <span className="form-label">Giấy phép</span>
+            <select
+              className="select"
+              value={values.license}
+              onChange={(e) => set({ license: e.target.value, page: '1' })}
+            >
+              <option value="">Mọi giấy phép</option>
+              {LICENSE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+        </FilterPopover>
       </ListHeader>
-      <TableShell title="Music tracks">
-        {loading ? (
-          <div className="skeleton" style={{ height: 120 }} />
-        ) : data.length === 0 ? (
-          <EmptyState title="Chưa có track" copy="Tạo track đầu tiên để hiển thị trong thư viện Moments." />
-        ) : (
+
+      <StatusTabs
+        tabs={[
+          { key: 'active', label: 'Đang dùng', count: stats?.active },
+          { key: 'inactive', label: 'Đã ngưng', count: stats?.inactive },
+          { key: 'all', label: 'Tất cả', count: stats?.all },
+        ]}
+        active={values.status || 'active'}
+        onChange={(k) => set({ status: k, page: '1' })}
+      />
+
+      {hasActiveFilter && (
+        <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
+          {values.license && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ license: '', page: '1' })}>
+              {licenseLabel(values.license)} ✕
+            </button>
+          )}
+          {values.q && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ q: '', page: '1' })}>
+              Từ khoá: {values.q} ✕
+            </button>
+          )}
+          {values.status !== 'active' && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ status: 'active', page: '1' })}>
+              Tab: {values.status === 'all' ? 'Tất cả' : 'Đã ngưng'} ✕
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={reset}>
+            Xoá bộ lọc
+          </button>
+        </div>
+      )}
+
+      <TableShell>
+        <MusicRowAudio audioRef={player.audioRef} />
+
+        {isError && (
+          <StateBlock variant="error" title="Không tải được danh sách nhạc" copy={loadError}>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => refetch()}>
+              Thử lại
+            </button>
+          </StateBlock>
+        )}
+
+        {isLoading && (
+          <StateBlock variant="loading" title="Đang tải thư viện nhạc" copy="Đang lấy danh sách track." />
+        )}
+
+        {!isLoading && !isError && (
           <div className="table-scroll">
-            <table className="data-table">
+            <table className="data-table data-table--compact" aria-label="Thư viện nhạc">
               <thead>
                 <tr>
-                  <th scope="col">Tiêu đề</th>
+                  <th scope="col" style={{ width: 52 }}>
+                    <span className="sr-only">Nghe thử</span>
+                  </th>
+                  <th scope="col">
+                    <ColumnHeader label="Tiêu đề" sortField="title" sort={sort} onSort={toggleSort} />
+                  </th>
                   <th scope="col">Nghệ sĩ</th>
                   <th scope="col">Thời lượng</th>
                   <th scope="col">Giấy phép</th>
-                  <th scope="col" style={{ width: 160 }}>Hành động</th>
+                  <th scope="col">
+                    <ColumnHeader label="Lượt dùng" sortField="usageCount" sort={sort} onSort={toggleSort} />
+                  </th>
+                  <th scope="col" className="col-hide-mobile">
+                    <ColumnHeader label="Ngày thêm" sortField="addedAt" sort={sort} onSort={toggleSort} />
+                  </th>
+                  <th scope="col" className="th-center">Hành động</th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((m) => (
-                  <tr key={m._id}>
-                    <td>{m.title}</td>
-                    <td>{m.artist}</td>
-                    <td>{durationLabel(m.durationMs)}</td>
-                    <td>{LICENSE_LABEL[m.licenseType] ?? m.licenseType}</td>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={8}>
+                      {hasActiveFilter ? (
+                        <StateBlock
+                          variant="empty"
+                          title="Không khớp track nào"
+                          copy="Bộ lọc hiện tại không khớp. Gỡ bớt điều kiện để xem thêm."
+                        >
+                          <button className="btn btn-secondary btn-sm" type="button" onClick={reset}>
+                            Xoá bộ lọc
+                          </button>
+                        </StateBlock>
+                      ) : (
+                        <StateBlock
+                          variant="empty"
+                          title="Chưa có track nào"
+                          copy="Thêm track đầu tiên để nó xuất hiện trong thư viện nhạc của Moments."
+                        >
+                          <button className="btn btn-primary btn-sm" type="button" onClick={() => setCreateOpen(true)}>
+                            Thêm track
+                          </button>
+                        </StateBlock>
+                      )}
+                    </td>
+                  </tr>
+                )}
+
+                {rows.map((t) => (
+                  <tr
+                    key={t._id}
+                    onClick={(e) => {
+                      // Buttons (play, deactivate) stop propagation themselves.
+                      if ((e.target as HTMLElement).closest('button,a')) return;
+                      openDetail(t._id);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn btn-sm" onClick={() => openEdit(m)} type="button">Sửa</button>
-                        <button className="btn btn-sm btn-danger" onClick={() => setDeleteId(m._id)} type="button">Xóa</button>
-                      </div>
+                      <RowPlayButton id={t._id} title={t.title} state={player} />
+                    </td>
+                    <td>
+                      <div className="cell-title">{t.title}</div>
+                      {!t.isActive && <div className="cell-meta">Đã ngưng</div>}
+                    </td>
+                    <td>{t.artist}</td>
+                    <td className="k-mono">{durationLabel(t.durationMs)}</td>
+                    <td>{licenseLabel(t.licenseType)}</td>
+                    <td>{formatNumber(t.usageCount ?? 0)}</td>
+                    <td className="col-hide-mobile">
+                      <span className="cell-date">{formatDateTime(t.addedAt)}</span>
+                    </td>
+                    <td className="th-center">
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeactivateId(t._id);
+                        }}
+                        disabled={!t.isActive}
+                        title={t.isActive ? 'Ngưng phát track này' : 'Track đã ngưng'}
+                      >
+                        Ngưng
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -217,97 +357,239 @@ export default function MusicCatalogPage() {
             </table>
           </div>
         )}
-        <Pagination page={page} totalPages={Math.ceil(total / 20) || 1} total={total} unit="track" onPageChange={(p) => { setPage(p); load(p); }} />
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          unit="track"
+          onPageChange={(p) => set({ page: String(p) })}
+          pageSize={pageSize}
+          pageSizes={PAGE_SIZES}
+          onPageSizeChange={(n) => set({ pageSize: String(n), page: '1' })}
+        />
       </TableShell>
 
-      <Dialog open={showCreate} onClose={() => setShowCreate(false)} labelId="music-form-title" variant="wide">
-        <div className="dialog dialog--wide">
-          <div className="dialog-header">
-            <div>
-              <h2 id="music-form-title" className="panel-title">{editTrack ? 'Sửa track' : 'Tạo track mới'}</h2>
-              <p className="panel-subtitle">Track hiển thị trong thư viện nhạc của Moments.</p>
-            </div>
-          </div>
-          <div className="dialog-body page-stack">
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-title">Tiêu đề <span className="form-required">*</span></label>
-              <input id="music-title" className="input" placeholder="Tiêu đề" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-artist">Nghệ sĩ <span className="form-required">*</span></label>
-              <input id="music-artist" className="input" placeholder="Nghệ sĩ" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-audio">Audio key (MinIO) <span className="form-required">*</span></label>
-              <input id="music-audio" className="input" placeholder="Audio key (MinIO)" value={form.audioKey} onChange={(e) => setForm({ ...form, audioKey: e.target.value })} />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-preview">Preview key</label>
-              <input id="music-preview" className="input" placeholder="Preview key" value={form.previewKey} onChange={(e) => setForm({ ...form, previewKey: e.target.value })} />
-              <span className="form-hint">Để trống sẽ dùng audio key chính.</span>
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-duration">Thời lượng (ms)</label>
-              <IntegerInput
-                id="music-duration" placeholder="VD: 180000" maxLength={9}
-                value={String(form.durationMs)} aria-label="Thời lượng tính bằng mili giây"
-                onChange={(v) => setForm({ ...form, durationMs: v ? Number(v) : 0 })}
-              />
-              <span className="form-hint">
-                {form.durationMs > 0
-                  ? `≈ ${Math.floor(form.durationMs / 60000)}:${String(Math.floor((form.durationMs % 60000) / 1000)).padStart(2, '0')}`
-                  : 'Nhập số mili giây, chỉ chữ số.'}
-              </span>
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-license">Giấy phép</label>
-              <select id="music-license" className="input" value={form.licenseType} onChange={(e) => setForm({ ...form, licenseType: e.target.value })}>
-                <option value="cc0">CC0</option>
-                <option value="cc-by">CC-BY</option>
-                <option value="epidemic-sound">Epidemic Sound</option>
-                <option value="owned-by-koola">Owned by Koola</option>
-              </select>
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-license-url">
-                URL giấy phép <span className="form-required">*</span>
-              </label>
-              <input
-                id="music-license-url" className="input" type="url" inputMode="url"
-                autoComplete="off" spellCheck={false} placeholder="https://…"
-                required aria-required
-                value={form.licenseUrl} onChange={(e) => setForm({ ...form, licenseUrl: e.target.value })}
-              />
-              <span className="form-hint">Trang điều khoản cho phép dùng track này.</span>
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="music-source-url">
-                URL nguồn <span className="form-required">*</span>
-              </label>
-              <input
-                id="music-source-url" className="input" type="url" inputMode="url"
-                autoComplete="off" spellCheck={false} placeholder="https://…"
-                required aria-required
-                value={form.sourceUrl} onChange={(e) => setForm({ ...form, sourceUrl: e.target.value })}
-              />
-              <span className="form-hint">Nơi tải track gốc — cần khi đối soát bản quyền.</span>
-            </div>
-          </div>
-          <div className="detail-bottombar" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary" onClick={() => setShowCreate(false)} type="button">Hủy</button>
-            <button className="btn btn-primary" onClick={submit} type="button">{editTrack ? 'Lưu' : 'Tạo'}</button>
-          </div>
-        </div>
-      </Dialog>
+      {createOpen && (
+        <CreateMusicDialog
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => {
+            setCreateOpen(false);
+            refreshAll();
+            addToast('success', 'Đã thêm track');
+          }}
+        />
+      )}
 
       <ConfirmDialog
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        title="Xóa track?"
-        description="Track sẽ bị ẩn khỏi catalog (soft-delete)."
-        confirmLabel="Xóa"
-        onConfirm={confirmDelete}
+        open={deactivateId !== null}
+        title="Ngưng track này?"
+        description="Track sẽ biến mất khỏi thư viện người dùng nhưng file vẫn nằm trong kho và nội dung đã đăng vẫn phát được. Có thể khôi phục lại sau."
+        confirmLabel="Ngưng"
+        variant="danger"
+        onConfirm={confirmDeactivate}
+        onClose={() => setDeactivateId(null)}
+      />
+
+      <ConfirmDialog
+        open={exportOpen}
+        title="Xuất danh mục nhạc?"
+        description="Xuất toàn bộ track, gồm cả track đã ngưng, kèm URL giấy phép và nguồn để đối soát bản quyền. Tối đa 5000 dòng."
+        confirmLabel="Xuất CSV"
+        busy={exporting}
+        onConfirm={runExport}
+        onClose={() => setExportOpen(false)}
       />
     </div>
+  );
+}
+
+// ─── Create dialog ───────────────────────────────────────────────────────────
+
+interface CreateDialogProps {
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+function CreateMusicDialog({ onClose, onCreated }: CreateDialogProps) {
+  const labelId = 'create-music-title';
+
+  const [title, setTitle] = useState('');
+  const [artist, setArtist] = useState('');
+  const [licenseType, setLicenseType] = useState('cc0');
+  const [licenseUrl, setLicenseUrl] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [attribution, setAttribution] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Reused on retry so a create failure does not force a second upload.
+  const [uploadedKey, setUploadedKey] = useState<string | null>(null);
+
+  const busy = uploading || saving;
+
+  function pickFile(f: File | null) {
+    setError(null);
+    setUploadedKey(null);
+    if (!f) {
+      setFile(null);
+      return;
+    }
+    if (!f.type.startsWith('audio/')) {
+      setError('Chỉ nhận file âm thanh (mp3, wav, ogg, m4a, aac).');
+      return;
+    }
+    if (f.size > MAX_AUDIO_BYTES) {
+      setError('File vượt quá 100MB.');
+      return;
+    }
+    setFile(f);
+  }
+
+  async function submit() {
+    setError(null);
+    if (!title.trim() || !artist.trim()) {
+      setError('Tiêu đề và nghệ sĩ là bắt buộc.');
+      return;
+    }
+    if (!file && !uploadedKey) {
+      setError('Chọn file âm thanh trước khi tạo track.');
+      return;
+    }
+    if (!/^https?:\/\//.test(licenseUrl.trim())) {
+      setError('URL giấy phép phải là http(s):// đầy đủ.');
+      return;
+    }
+    if (!/^https?:\/\//.test(sourceUrl.trim())) {
+      setError('URL nguồn phải là http(s):// đầy đủ.');
+      return;
+    }
+    if (licenseType === 'cc-by' && !attribution.trim()) {
+      setError('CC-BY cần ghi công (attribution).');
+      return;
+    }
+
+    let audioKey = uploadedKey;
+    if (!audioKey) {
+      setUploading(true);
+      setProgress(0);
+      try {
+        audioKey = await musicApi.uploadAudio(file as File, setProgress);
+        setUploadedKey(audioKey);
+      } catch (err) {
+        setError(apiErrorMessage(err, 'Tải file lên thất bại — thử lại.'));
+        return;
+      } finally {
+        setUploading(false);
+      }
+    }
+
+    setSaving(true);
+    try {
+      await musicApi.create({
+        title: title.trim(),
+        artist: artist.trim(),
+        audioKey,
+        licenseType,
+        licenseUrl: licenseUrl.trim(),
+        sourceUrl: sourceUrl.trim(),
+        attribution: attribution.trim() || undefined,
+      });
+      onCreated();
+    } catch (err) {
+      // The object is orphaned but harmless: no row, nothing lists it, and the
+      // key is kept so retrying does not upload the same file twice.
+      setError(apiErrorMessage(err, 'Tạo track thất bại.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={busy ? () => {} : onClose} labelId={labelId} variant="wide">
+      <div className="dialog-header">
+        <h2 id={labelId} className="panel-title" style={{ margin: 0 }}>Thêm track</h2>
+        <button className="btn btn-sm" type="button" onClick={onClose} disabled={busy} aria-label="Đóng">
+          ✕
+        </button>
+      </div>
+
+      <div className="dialog-body" style={{ display: 'grid', gap: 14 }}>
+        <label className="form-field">
+          <span className="form-label">File âm thanh</span>
+          <input
+            className="input"
+            type="file"
+            accept={AUDIO_ACCEPT}
+            disabled={busy}
+            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+            aria-describedby="audio-file-hint"
+          />
+          <span id="audio-file-hint" className="form-hint">
+            mp3, wav, ogg, m4a hoặc aac — tối đa 100MB. Thời lượng được đọc từ file, không nhập tay.
+          </span>
+          {file && <span className="cell-meta">{file.name}</span>}
+          {uploadedKey && <span className="cell-meta">Đã tải lên — có thể bấm Tạo lại nếu lần trước lỗi.</span>}
+        </label>
+
+        {uploading && (
+          <div className="form-field" role="status" aria-live="polite">
+            <span className="form-label">Đang tải lên… {progress}%</span>
+            <progress max={100} value={progress} style={{ width: '100%' }} />
+          </div>
+        )}
+
+        <div className="form-grid">
+          <label className="form-field">
+            <span className="form-label">Tiêu đề</span>
+            <input className="input" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Nghệ sĩ</span>
+            <input className="input" value={artist} disabled={busy} onChange={(e) => setArtist(e.target.value)} maxLength={200} />
+          </label>
+        </div>
+
+        <div className="form-grid">
+          <label className="form-field">
+            <span className="form-label">Giấy phép</span>
+            <select className="select" value={licenseType} disabled={busy} onChange={(e) => setLicenseType(e.target.value)}>
+              {LICENSE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">
+              Ghi công {licenseType === 'cc-by' ? '(bắt buộc)' : '(tuỳ chọn)'}
+            </span>
+            <input className="input" value={attribution} disabled={busy} onChange={(e) => setAttribution(e.target.value)} maxLength={1000} />
+          </label>
+        </div>
+
+        <label className="form-field">
+          <span className="form-label">URL giấy phép</span>
+          <input className="input" value={licenseUrl} disabled={busy} onChange={(e) => setLicenseUrl(e.target.value)} placeholder="https://creativecommons.org/…" />
+        </label>
+
+        <label className="form-field">
+          <span className="form-label">URL nguồn</span>
+          <input className="input" value={sourceUrl} disabled={busy} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://freemusicarchive.org/…" />
+        </label>
+
+        {error && <p className="form-error" role="alert">{error}</p>}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 var(--space-5) var(--space-5)' }}>
+        <button className="btn" type="button" onClick={onClose} disabled={busy}>
+          Huỷ
+        </button>
+        <button className="btn btn-primary" type="button" onClick={submit} disabled={busy}>
+          {uploading ? 'Đang tải…' : saving ? 'Đang lưu…' : 'Tạo track'}
+        </button>
+      </div>
+    </Dialog>
   );
 }

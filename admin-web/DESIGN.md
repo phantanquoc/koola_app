@@ -658,8 +658,9 @@ Lỗi `tsc` đã biết, không tính là hỏng (pre-existing, ngoài phạm vi
 
 Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản sang trang mới):
 
-- `ReportsPage`, `CommerceOrdersPage`, `MusicCatalogPage`
+- `ReportsPage`, `CommerceOrdersPage`
   vẫn dùng `PageHeader` + filter `useState`/`fetch tay` → lệch §3A.
+  (`MusicCatalogPage` đã được chuyển sang archetype §3A — xem change `music-catalog-ops`.)
 - `CommerceOrdersPage` đặt filter ngoài `TableShell`, dùng inline style, `sellerId`/`buyerId`
   thô thay vì ô tìm kiếm chung.
 - `ReportsPage` dùng `StateBlock variant="empty"` cho lỗi — sai tone, phải `variant="error"`;

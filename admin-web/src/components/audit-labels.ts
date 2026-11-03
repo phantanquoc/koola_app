@@ -61,7 +61,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   // Nhạc
   create_music_track: 'Thêm track',
   update_music_track: 'Cập nhật track',
-  delete_music_track: 'Xoá track',
+  delete_music_track: 'Ngưng track',
+  restore_music_track: 'Khôi phục track',
   // Hệ thống
   broadcast: 'Gửi broadcast',
   send_test_push: 'Gửi thử push',

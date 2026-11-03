@@ -136,6 +136,35 @@ export const mediaAdminApi = {
     }
     return data.mediaKey;
   },
+
+  /**
+   * Upload catalog audio for the music library.
+   *
+   * Uses `/admin/music-tracks/upload-url`, NOT `/media/upload`: the media
+   * endpoint writes a `Media` row with `messageId: null`, which is the shape the
+   * orphan-cleanup jobs delete. Catalog audio has no message behind it and must
+   * stay outside that lifecycle. Returns the `music-catalog/…` key only after
+   * the PUT finishes, so the caller never saves a key whose bytes are missing.
+   */
+  async uploadCatalogAudio(
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<string> {
+    const { data } = await apiClient.post<{ uploadUrl: string; audioKey: string }>(
+      '/admin/music-tracks/upload-url',
+      { filename: file.name, mimeType: file.type, size: file.size },
+    );
+    const res = await fetch(data.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new Error(`Tải nhạc lên thất bại (HTTP ${res.status})`);
+    }
+    onProgress?.(100);
+    return data.audioKey;
+  },
 };
 
 // ─── Orders (commerce-orders D9) ─────────────────────────────────────────────
