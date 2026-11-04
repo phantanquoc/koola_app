@@ -70,12 +70,15 @@ npx ts-node -r tsconfig-paths/register scripts/seed-moments-posts.ts --clean
 
 Creates 25 Vietnamese posts for exercising `/posts` and `/posts/:id`: all three
 visibility scopes (`public` / `connections` / `custom` list), 23 visible and 2
-removed, nested comments (including one removed comment), and 8 pending `post`
-reports across 5 posts. Images come from `ChatApp/src/assets/mock-*` and are
+removed, nested comments (including one removed comment), 8 pending `post`
+reports across 5 posts, 38 likes, and 27 share rows across 11 people — some
+people share twice 30h apart so the shares panel demonstrates that its two
+numbers differ (people vs attempts). Images come from `ChatApp/src/assets/mock-*` and are
 uploaded to MinIO under `seed-posts/`; posts need no `Media` row because both
 the mobile view and the admin enrich sign `mediaKey` directly. Idempotent on
 `clientPostId` (`seed-post-NN`) — a re-run creates nothing and re-uploads
-nothing. `--clean` removes the posts, their comments, reports and the three
+nothing; it only **tops up** likes/shares on posts that predate those features,
+and re-syncs `likeCount`/`shareCount` to match the real row counts. `--clean` removes the posts, their comments, reports and the three
 `Seed – …` audience lists, leaving the images in MinIO for the next run.
 
 #### Seed the music catalog with playable audio

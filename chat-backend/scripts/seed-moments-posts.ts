@@ -28,6 +28,8 @@ import { Logger } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { Post } from '../src/moments/schemas/post.schema';
 import { PostComment } from '../src/moments/schemas/post-comment.schema';
+import { PostLike } from '../src/moments/schemas/post-like.schema';
+import { PostShare } from '../src/moments/schemas/post-share.schema';
 import { AudienceList } from '../src/moments/schemas/audience-list.schema';
 import { User } from '../src/users/user.schema';
 import { Report } from '../src/admin/schemas/report.schema';
@@ -79,6 +81,12 @@ interface SeedPost {
   /** Số người được gắn thẻ. */
   mentions?: number;
   comments?: SeedComment[];
+  /** Số người thích bài (lấy userId khác tác giả). */
+  likes?: number;
+  /** Số NGƯỜI chia sẻ. */
+  sharers?: number;
+  /** Số người chia sẻ 2 lần (cách > 24h) — để thử panel gộp theo người. */
+  repeatSharers?: number;
 }
 
 /**
@@ -91,6 +99,9 @@ const POSTS: SeedPost[] = [
     caption: 'Sáng nay ghé chợ sớm, rau củ tươi rói. Ai cần mua sỉ thì nhắn mình nhé.',
     images: [1],
     scope: 'public',
+    likes: 4,
+    sharers: 2,
+    repeatSharers: 1,
     comments: [
       ['Cho mình xin giá rau cải với ạ', false],
       ['Mình lấy 2kg cà chua nhé', true],
@@ -102,6 +113,8 @@ const POSTS: SeedPost[] = [
     images: [2],
     scope: 'public',
     reports: 2,
+    likes: 6,
+    sharers: 3,
     comments: [
       ['Trông ngon quá, địa chỉ ở đâu vậy bạn?', false],
       ['Đây là quảng cáo trá hình, đừng mua', false, 'removed'],
@@ -111,12 +124,16 @@ const POSTS: SeedPost[] = [
     caption: 'Gạo ST25 vụ mới về kho. Số lượng có hạn, ship toàn quốc.',
     images: [3],
     scope: 'public',
+    likes: 2,
+    sharers: 1,
     comments: [['Mua 10kg được giảm giá không shop?', false]],
   },
   {
     caption: 'Skincare routine tối giản cho da dầu mụn — 3 bước là đủ.',
     images: [4],
     scope: 'connections',
+    likes: 5,
+    sharers: 2,
     comments: [
       ['Da mình cũng dầu, dùng sản phẩm này ổn không?', false],
       ['Bạn dùng buổi sáng luôn hay chỉ tối?', true],
@@ -127,6 +144,9 @@ const POSTS: SeedPost[] = [
     images: [5],
     scope: 'public',
     reports: 1,
+    likes: 3,
+    sharers: 2,
+    repeatSharers: 1,
   },
   {
     caption: 'Nhà mình vừa dọn xong, sạch bóng. Cuối tuần nằm dài cả ngày.',
@@ -176,6 +196,8 @@ const POSTS: SeedPost[] = [
     caption: 'Cuối tuần chạy xe lên Đà Lạt, sương mù đẹp như phim.',
     images: [1, 3],
     scope: 'public',
+    likes: 8,
+    sharers: 4,
   },
   {
     caption: 'Mình mới mở tiệm bánh nhỏ, mong mọi người ủng hộ 🥐',
@@ -228,6 +250,8 @@ const POSTS: SeedPost[] = [
     caption: 'Thực đơn tuần này cho quán cơm văn phòng — mời cả nhà chọn món.',
     images: [2, 3],
     scope: 'public',
+    likes: 3,
+    sharers: 1,
     comments: [
       ['Thứ 5 ăn gì vậy chị?', false],
       ['Thứ 5 thịt kho trứng nhé em', true],
@@ -238,6 +262,9 @@ const POSTS: SeedPost[] = [
     images: [],
     scope: 'public',
     reports: 3,
+    likes: 7,
+    sharers: 5,
+    repeatSharers: 2,
     comments: [['Bạn mua ở đâu vậy, để mình tránh', false]],
   },
   {
@@ -293,6 +320,98 @@ async function ensureImage(
   };
 }
 
+interface EngagementInput {
+  postId: string;
+  createdAt: Date;
+  author: { _id: unknown; displayName?: string };
+  users: { _id: unknown; displayName?: string }[];
+  seed: SeedPost;
+  likeModel: Model<Record<string, unknown>>;
+  shareModel: Model<Record<string, unknown>>;
+  postModel: Model<Record<string, unknown>>;
+}
+
+/**
+ * Ghi lượt thích + lượt chia sẻ cho một bài, và đồng bộ hai counter.
+ *
+ * Tách ra để dùng cho cả bài MỚI và bài ĐÃ CÓ: seed idempotent trên
+ * `clientPostId`, nên một bài tạo từ trước (chưa có like/share) phải được bổ
+ * sung dữ liệu thay vì bị bỏ qua hoàn toàn. Bỏ qua chỉ khi đã có row — chạy
+ * lại nhiều lần không nhân đôi.
+ */
+async function seedEngagement(input: EngagementInput): Promise<{
+  likes: number;
+  sharers: number;
+  shareRows: number;
+}> {
+  const { postId, createdAt, author, users, seed, likeModel, shareModel, postModel } =
+    input;
+
+  const existingLikes = await likeModel.countDocuments({ postId });
+  const existingShares = await shareModel.countDocuments({ postId });
+  if (existingLikes > 0 || existingShares > 0) {
+    const sharers = (await shareModel.distinct('userId', { postId })) as unknown[];
+    // Đồng bộ lại counter kể cả khi đã có row: seed cũ từng đặt `shareCount`
+    // giả ((i*3)%11) mà không có row nào phía sau.
+    await postModel.updateOne(
+      { _id: postId },
+      { $set: { likeCount: existingLikes, shareCount: existingShares } },
+    );
+    return {
+      likes: existingLikes,
+      sharers: sharers.length,
+      shareRows: existingShares,
+    };
+  }
+
+  const others = users.filter((u) => String(u._id) !== String(author._id));
+
+  const likeCount = Math.min(seed.likes ?? 0, others.length);
+  for (let l = 0; l < likeCount; l++) {
+    const at = new Date(createdAt.getTime() + (l + 1) * 12 * 60 * 1000);
+    await likeModel.updateOne(
+      { postId, userId: String(others[l]._id) },
+      { $set: { postId, userId: String(others[l]._id), createdAt: at, updatedAt: at } },
+      { upsert: true },
+    );
+  }
+
+  // Một số người chia sẻ 2 lần cách nhau 30h: Redis chỉ dedupe trong 24h nên
+  // counter lớn hơn số người — đúng trường hợp panel phải giải thích.
+  const sharerCount = Math.min(seed.sharers ?? 0, others.length);
+  const timesByUser = new Map<string, Date[]>();
+  for (let i = 0; i < sharerCount; i++) {
+    const u = others[(likeCount + i) % others.length];
+    timesByUser.set(String(u._id), [
+      new Date(createdAt.getTime() + (i + 1) * 45 * 60 * 1000),
+    ]);
+  }
+  for (let rp = 0; rp < Math.min(seed.repeatSharers ?? 0, sharerCount); rp++) {
+    const u = others[(likeCount + rp) % others.length];
+    const list = timesByUser.get(String(u._id)) ?? [];
+    list.push(new Date(createdAt.getTime() + 30 * 3600 * 1000 + rp * 60 * 1000));
+    timesByUser.set(String(u._id), list);
+  }
+
+  let shareRows = 0;
+  for (const [userId, times] of timesByUser) {
+    for (const at of times) {
+      await shareModel.create({ postId, userId, createdAt: at, updatedAt: at });
+      shareRows++;
+    }
+  }
+
+  // Luôn ghi cả hai counter, kể cả 0: counter là số denormalize, nó phải khớp
+  // số row thật. Chỉ ghi khi > 0 sẽ để lại counter giả từ dữ liệu cũ, và panel
+  // admin sẽ nói "5 lượt chia sẻ" trong khi danh sách trống.
+  await postModel.updateOne(
+    { _id: postId },
+    { $set: { likeCount, shareCount: shareRows } },
+  );
+
+  return { likes: likeCount, sharers: sharerCount, shareRows };
+}
+
 async function clean(logger: Logger) {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
@@ -302,6 +421,8 @@ async function clean(logger: Logger) {
     const commentModel = app.get<Model<unknown>>(getModelToken(PostComment.name), { strict: false });
     const listModel = app.get<Model<unknown>>(getModelToken(AudienceList.name), { strict: false });
     const reportModel = app.get<Model<unknown>>(getModelToken(Report.name), { strict: false });
+    const likeModel = app.get<Model<unknown>>(getModelToken(PostLike.name), { strict: false });
+    const shareModel = app.get<Model<unknown>>(getModelToken(PostShare.name), { strict: false });
 
     const posts = (await postModel
       .find({ clientPostId: { $regex: `^${SEED_PREFIX}` } })
@@ -310,12 +431,15 @@ async function clean(logger: Logger) {
     const ids = posts.map((p) => String(p._id));
 
     const comments = await commentModel.deleteMany({ postId: { $in: ids } });
+    const likes = await likeModel.deleteMany({ postId: { $in: ids } });
+    const shares = await shareModel.deleteMany({ postId: { $in: ids } });
     const reports = await reportModel.deleteMany({ targetType: 'post', targetId: { $in: ids } });
     const removed = await postModel.deleteMany({ _id: { $in: ids } });
     const lists = await listModel.deleteMany({ name: { $regex: `^${LIST_PREFIX}` } });
 
     logger.log(
       `Đã xoá ${removed.deletedCount} bài, ${comments.deletedCount} bình luận, ` +
+        `${likes.deletedCount} lượt thích, ${shares.deletedCount} lượt chia sẻ, ` +
         `${reports.deletedCount} báo cáo, ${lists.deletedCount} danh sách.`,
     );
     logger.log('Ảnh trong MinIO (seed-posts/) giữ nguyên để seed lại dùng lại.');
@@ -341,6 +465,8 @@ async function bootstrap() {
     const commentModel = app.get<Model<Record<string, unknown>>>(getModelToken(PostComment.name), { strict: false });
     const listModel = app.get<Model<Record<string, unknown>>>(getModelToken(AudienceList.name), { strict: false });
     const reportModel = app.get<Model<Record<string, unknown>>>(getModelToken(Report.name), { strict: false });
+    const likeModel = app.get<Model<Record<string, unknown>>>(getModelToken(PostLike.name), { strict: false });
+    const shareModel = app.get<Model<Record<string, unknown>>>(getModelToken(PostShare.name), { strict: false });
     const userModel = app.get<Model<Record<string, unknown>>>(getModelToken(User.name), { strict: false });
 
     // Người đăng lấy từ user thật để tên hiện đúng trên trang quản trị và cột
@@ -389,8 +515,32 @@ async function bootstrap() {
       const seed = POSTS[i];
       const clientPostId = `${SEED_PREFIX}${String(i + 1).padStart(2, '0')}`;
 
-      if (await postModel.findOne({ clientPostId }).lean()) {
+      const existingPost = (await postModel
+        .findOne({ clientPostId })
+        .select('_id authorId createdAt')
+        .lean()) as { _id: unknown; authorId: string; createdAt: Date } | null;
+      if (existingPost) {
+        // Bài đã có từ lần seed trước: bổ sung lượt thích/chia sẻ nếu chúng
+        // chưa tồn tại (tính năng thêm sau). Không đụng vào bình luận/báo cáo.
+        const author =
+          users.find((u) => String(u._id) === String(existingPost.authorId)) ?? users[0];
+        const engagement = await seedEngagement({
+          postId: String(existingPost._id),
+          createdAt: existingPost.createdAt ?? new Date(),
+          author,
+          users,
+          seed,
+          likeModel,
+          shareModel,
+          postModel,
+        });
         skipped++;
+        if (engagement.likes > 0 || engagement.shareRows > 0) {
+          logger.log(
+            `  ~ bổ sung: ${engagement.likes} thích, ${engagement.sharers} người chia sẻ ` +
+              `(${engagement.shareRows} lượt) — ${seed.caption.slice(0, 36)}…`,
+          );
+        }
         continue;
       }
 
@@ -432,7 +582,7 @@ async function bootstrap() {
         likeCount: 0,
         commentCount: 0,
         topLevelCommentCount: 0,
-        shareCount: (i * 3) % 11,
+        shareCount: 0,
         clientPostId,
         isActive: !seed.removed,
         createdAt,
@@ -485,9 +635,29 @@ async function bootstrap() {
         });
       }
 
+      const engagement = await seedEngagement({
+        postId,
+        createdAt,
+        author,
+        users,
+        seed,
+        likeModel,
+        shareModel,
+        postModel,
+      });
+
       created++;
+      const bits = [
+        seed.scope,
+        seed.removed ? 'đã gỡ' : '',
+        seed.reports ? `${seed.reports} báo cáo` : '',
+        engagement.likes ? `${engagement.likes} thích` : '',
+        engagement.sharers
+          ? `${engagement.sharers} người chia sẻ / ${engagement.shareRows} lượt`
+          : '',
+      ].filter(Boolean);
       logger.log(
-        `  + [${seed.scope}${seed.removed ? ', đã gỡ' : ''}${seed.reports ? `, ${seed.reports} báo cáo` : ''}] ` +
+        `  + [${bits.join(', ')}] ` +
           `${(author.displayName ?? 'ai đó').slice(0, 18)} — ${seed.caption.slice(0, 40)}…`,
       );
     }
