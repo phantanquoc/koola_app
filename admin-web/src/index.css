@@ -3842,30 +3842,36 @@ th.sortable:hover {
 }
 
 /* Bảng bài đăng có 10 cột: ở 900px cột nội dung còn ~90px nên caption bị cắt
-   còn 8 ký tự. Nâng sàn riêng cho trang này thay vì nới `.table-scroll--wide`
-   cho mọi bảng (những trang 8 cột sẽ thừa khoảng trống). */
+   còn 8 ký tự. Nâng sàn riêng cho trang này; bảng vượt khung thì cuộn ngang
+   (§4.1) — bóp cột mới là thứ làm chữ xuống 8 dòng. */
 .table-scroll--posts .data-table {
-  min-width: 1080px;
+  min-width: 1180px;
 }
 
-/* Cột nội dung là cột duy nhất được co giãn — nhãn khác đã cố định nghĩa. */
+/* Cột nội dung là cột duy nhất được co giãn — nhãn khác đã cố định nghĩa.
+   215px là mức đo được để 10 cột vừa khung 1298px ở màn 1440 (sidebar mở). */
 .col-caption {
-  min-width: 260px;
+  min-width: 215px;
+}
+
+/* "Danh sách: Seed – Nhóm bạn thân" dài gấp đôi mọi nhãn khác và đẩy bảng vượt
+   khung ở 1440px. Cắt nhãn, giữ title để rê chuột đọc đủ tên danh sách. */
+.col-scope {
+  max-width: 150px;
+}
+
+.cell-scope {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 /* Tên tác giả xuống 2 dòng ("Nguyễn / Bá Lộc") làm hàng cao gấp đôi dù nội dung
    chỉ 1 dòng; tên người Việt đủ ngắn để giữ một dòng. */
 .cell-author {
-  white-space: nowrap;
-}
-
-/* Ba chỉ số trên một dòng thay vì ba cột: giữ được cột nội dung khi bảng đã
-   có 8 cột. Số xếp ngang để so sánh nhanh mà không chiếm thêm bề ngang. */
-.cell-stats {
-  display: inline-flex;
-  gap: 10px;
-  color: var(--koola-muted);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

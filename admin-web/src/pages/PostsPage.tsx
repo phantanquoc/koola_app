@@ -93,6 +93,18 @@ export function scopeTone(scope?: string): 'danger' | 'warning' | 'muted' {
 }
 
 /**
+ * Nhãn ngắn cho BẢNG. Tên danh sách riêng dài gấp đôi mọi nhãn khác và đẩy
+ * bảng vượt khung; trên bảng chỉ cần biết "khác công khai", tên đầy đủ nằm ở
+ * `title` và ở trang chi tiết (`scopeLabel`).
+ */
+export function scopeTableLabel(post: {
+  audienceScope?: string;
+  audienceListName?: string | null;
+}): string {
+  return post.audienceScope === 'custom' ? 'Danh sách riêng' : scopeLabel(post);
+}
+
+/**
  * Trang Bài đăng — tra cứu và gỡ xuống.
  *
  * KHÔNG có duyệt trước: bài đăng lên feed ngay khi người dùng tạo. Trang này
@@ -480,6 +492,7 @@ export default function PostsPage() {
                   <ColumnHeader label="Nội dung" className="col-caption" />
                   <ColumnHeader
                     label="Phạm vi"
+                    className="col-scope"
                     filter={{
                       value: scope,
                       options: [
@@ -491,9 +504,24 @@ export default function PostsPage() {
                       onChange: (v) => set({ scope: v, page: '1' }),
                     }}
                   />
-                  {/* Gộp ba cột số vào một ô: 10 cột riêng không vừa 1440px và
-                      cột nội dung bị bóp còn 8 ký tự. Thứ tự đọc vẫn rõ nhờ icon. */}
-                  <th scope="col" className="col-num col-hide-mobile">Tương tác</th>
+                  {/* Ba cột số hẹp, giữ được nút sort từng cột. Cột nội dung
+                      rộng 260px gánh phần co giãn; bảng vượt khung thì cuộn
+                      ngang (§4.1), không bóp cột. */}
+                  <ColumnHeader
+                    label="Thích"
+                    sortField="likeCount"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="col-num col-hide-mobile"
+                  />
+                  <ColumnHeader
+                    label="Bình luận"
+                    sortField="commentCount"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="col-num col-hide-mobile"
+                  />
+                  <th scope="col" className="col-num col-hide-mobile">Báo cáo</th>
                   <th scope="col">Trạng thái</th>
                   <ColumnHeader
                     label="Ngày đăng"
@@ -508,7 +536,7 @@ export default function PostsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={10}>
                       {hasActiveFilter ? (
                         <EmptyState
                           title="Không khớp bài đăng nào"
@@ -590,25 +618,21 @@ export default function PostsPage() {
                           : <span className="cell-meta">Không có nội dung</span>}
                       </td>
                       <td>
-                        <StatusBadge
-                          tone={scopeTone(p.audienceScope)}
-                          label={scopeLabel(p)}
-                        />
-                      </td>
-                      <td className="col-num col-hide-mobile">
-                        <span className="cell-stats">
-                          <span title={`${formatNumber(p.likeCount ?? 0)} lượt thích`}>
-                            ♥ {formatNumber(p.likeCount ?? 0)}
-                          </span>
-                          <span title={`${formatNumber(p.commentCount ?? 0)} bình luận`}>
-                            💬 {formatNumber(p.commentCount ?? 0)}
-                          </span>
-                          {(p.pendingReportCount ?? 0) > 0 && (
-                            <strong title={`${formatNumber(p.pendingReportCount ?? 0)} báo cáo chờ`}>
-                              ⚑ {formatNumber(p.pendingReportCount ?? 0)}
-                            </strong>
-                          )}
+                        <span className="cell-scope" title={scopeLabel(p)}>
+                          <StatusBadge
+                            tone={scopeTone(p.audienceScope)}
+                            label={scopeTableLabel(p)}
+                          />
                         </span>
+                      </td>
+                      <td className="col-num col-hide-mobile">{formatNumber(p.likeCount ?? 0)}</td>
+                      <td className="col-num col-hide-mobile">{formatNumber(p.commentCount ?? 0)}</td>
+                      <td className="col-num col-hide-mobile">
+                        {(p.pendingReportCount ?? 0) > 0
+                          ? <strong title={`${formatNumber(p.pendingReportCount ?? 0)} báo cáo chờ`}>
+                              {formatNumber(p.pendingReportCount ?? 0)}
+                            </strong>
+                          : <span className="cell-meta">0</span>}
                       </td>
                       <td>
                         {p.isActive === false
