@@ -15,7 +15,6 @@ import { socketService } from '../../services/socket/SocketService';
 import { warmMemoryCache } from '../../services/media/mediaCacheService';
 import { useAuth } from '../../contexts/AuthContext';
 import ConversationListItem from '../../components/ConversationListItem';
-import { CHAT_ROW_CARD_GAP } from '../../components/chatRowCard';
 import LoadingFooter from '../../components/LoadingFooter';
 import { useMessageSync } from '../../hooks/useMessageSync';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
@@ -675,10 +674,10 @@ const ConversationListScreen: React.FC = () => {
         // the first row sits just below it and later rows scroll behind it.
         contentContainerStyle={[
           screenStyles.listContent,
-          // +CHAT_ROW_CARD_GAP clears room above the first card: its 4px margin
+          // +2px clears room above the first card: its 1px margin
           // alone would leave the top half of the shadow tucked under the
           // sub-tab bar.
-          { paddingTop: headerInset + CHAT_ROW_CARD_GAP, paddingBottom: tabBarInset },
+          { paddingTop: headerInset + 2, paddingBottom: tabBarInset },
         ]}
         // Offline banner scrolls with the list, directly below the chrome.
         ListHeaderComponent={

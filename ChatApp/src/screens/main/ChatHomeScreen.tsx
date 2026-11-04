@@ -32,7 +32,7 @@ import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import ChatStartPopup from '../../components/ChatStartPopup';
-import { CHAT_ROW_CARD_GAP, makeChatRowCardStyle } from '../../components/chatRowCard';
+import { makeChatRowCardStyle } from '../../components/chatRowCard';
 import { useChatHomeOverlay, type ChatHomeOverlay, type GroupCloseRequester } from './useChatHomeOverlay';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
 import { acquireBackIntercept } from '../../services/nativeBack';
@@ -789,7 +789,7 @@ function makeScreenStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
     },
     shellRows: {
       flex: 1,
-      paddingTop: CHAT_ROW_CARD_GAP,
+      paddingTop: 2,
     },
     shellRow: {
       flexDirection: 'row',
@@ -798,6 +798,11 @@ function makeScreenStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
       paddingVertical: 10,
       paddingHorizontal: 12,
       ...makeChatRowCardStyle(scheme),
+      // 2px outer gutter, mirrors the real card above.
+      marginHorizontal: 2,
+      marginVertical: 1,
+      // Tighter corners than the shared md(14) recipe.
+      borderRadius: 8,
     },
     shellRowContent: {
       flex: 1,

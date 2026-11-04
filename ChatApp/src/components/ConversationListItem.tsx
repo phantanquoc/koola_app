@@ -338,6 +338,11 @@ function makeItemStyles(
       // Insets stay inside the card so avatar/text never sit on the corner.
       paddingHorizontal: 12,
       ...card,
+      // 2px outer gutter: card sits ~2px from screen edges, ~2px apart.
+      marginHorizontal: 2,
+      marginVertical: 1,
+      // Tighter corners than the shared md(14) recipe.
+      borderRadius: 8,
     },
     pressableContent: {
       flex: 1,
