@@ -1163,6 +1163,13 @@ export class AdminModerationController {
     @CurrentUser() u: { actorId: string },
     @Req() req: Request,
   ) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Story not found');
+    const story = await this.storyModel.findById(id).lean();
+    if (!story) throw new NotFoundException('Story not found');
+
+    // Idempotent: a repeat on an already-hidden story writes no second audit.
+    if (story.isActive === false) return { message: 'takedown done', changed: false };
+
     const updated = await this.storyModel.findByIdAndUpdate(
       id,
       { $set: { isActive: false } },
@@ -1170,7 +1177,20 @@ export class AdminModerationController {
     );
     if (!updated) throw new NotFoundException('Story not found');
     try {
-      this.chatGateway.io?.emit('story_deleted', { storyId: id });
+      // Event name matches what the mobile router listens for
+      // (`story.deleted` — socketEventRouter.ts). It used to be emitted as
+      // `story_deleted`, which no client subscribed to: the takedown worked in
+      // the DB and was invisible to every open app.
+      //
+      // Scoped to the author's room rather than io.emit(): fanning out to the
+      // audience needs the connection set, which this controller does not load.
+      // Other viewers drop the story on their next feed load.
+      this.chatGateway.io
+        ?.to(`user:${String(story.authorId)}`)
+        .emit('story.deleted', {
+          storyId: id,
+          authorId: String(story.authorId),
+        });
     } catch {}
     await this.audit.log({
       actorId: u.actorId,
@@ -1179,7 +1199,49 @@ export class AdminModerationController {
       targetId: id,
       ip: req.ip ?? null,
     });
-    return { message: 'takedown done' };
+    return { message: 'takedown done', changed: true };
+  }
+
+  /**
+   * Khôi phục story đã gỡ. Đối xứng với `takedownStory`.
+   *
+   * Không emit socket: story đã bị xoá khỏi state client khi nhận
+   * `story.deleted`, và `story.new` cần payload đầy đủ mà route này không dựng.
+   * Client thấy lại story ở lần tải feed kế tiếp — cùng cách
+   * `AppealService.applyAccepted` đang khôi phục story.
+   */
+  @Post('stories/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async restoreStory(
+    @Param('id') id: string,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Story not found');
+    const story = await this.storyModel.findById(id).lean();
+    if (!story) throw new NotFoundException('Story not found');
+
+    if (story.isActive === true) return { message: 'restored', changed: false };
+
+    const updated = await this.storyModel.findByIdAndUpdate(
+      id,
+      { $set: { isActive: true } },
+      { new: true },
+    );
+    if (!updated) throw new NotFoundException('Story not found');
+
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'restore_story',
+      targetType: 'story',
+      targetId: id,
+      ip: req.ip ?? null,
+    });
+    return { message: 'restored', changed: true };
   }
 
   @Get('reports')

@@ -18,6 +18,8 @@ import MessageSearchPage from './pages/MessageSearchPage';
 import ReportsPage from './pages/ReportsPage';
 import ReportDetailPage from './pages/ReportDetailPage';
 import MomentsModerationPage from './pages/MomentsModerationPage';
+import PostsPage from './pages/PostsPage';
+import PostDetailPage from './pages/PostDetailPage';
 import MusicCatalogPage from './pages/MusicCatalogPage';
 import MusicDetailPage from './pages/MusicDetailPage';
 import CommerceProductsPage from './pages/CommerceProductsPage';
@@ -63,6 +65,8 @@ export default function App() {
                 <Route path="conversations/:id" element={<ConversationsDetailPage />} />
                 <Route path="messages" element={<MessageSearchPage />} />
                 <Route path="moments" element={<MomentsModerationPage />} />
+                <Route path="posts" element={<PostsPage />} />
+                <Route path="posts/:id" element={<PostDetailPage />} />
                 <Route path="music" element={<MusicCatalogPage />} />
                 <Route path="music/:id" element={<MusicDetailPage />} />
                 <Route path="reports" element={<ReportsPage />} />

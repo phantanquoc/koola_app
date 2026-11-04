@@ -5,6 +5,7 @@ import { Report } from './schemas/report.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
+import { Post } from '../moments/schemas/post.schema';
 import { ConversationDoc } from '../conversations/conversation.schema';
 import { ModerationMediaService } from './moderation-media.service';
 
@@ -33,6 +34,7 @@ const reportModel = {
 const userModel = { find: jest.fn() };
 const msgModel = { find: jest.fn() };
 const storyModel = { find: jest.fn() };
+const postModel = { find: jest.fn() };
 const convModel = { find: jest.fn() };
 const mockMedia = { presignMany: jest.fn() };
 
@@ -48,6 +50,7 @@ describe('AdminReportService', () => {
     userModel.find.mockReturnValue(leanQuery([]));
     msgModel.find.mockReturnValue(leanQuery([]));
     storyModel.find.mockReturnValue(leanQuery([]));
+    postModel.find.mockReturnValue(leanQuery([]));
     convModel.find.mockReturnValue(leanQuery([]));
     // Mặc định: không ký được gì (map rỗng) để test cũ không phải khai báo.
     mockMedia.presignMany.mockResolvedValue(new Map());
@@ -58,6 +61,7 @@ describe('AdminReportService', () => {
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: getModelToken(Message.name), useValue: msgModel },
         { provide: getModelToken(Story.name), useValue: storyModel },
+        { provide: getModelToken(Post.name), useValue: postModel },
         { provide: getModelToken(ConversationDoc.name), useValue: convModel },
         { provide: ModerationMediaService, useValue: mockMedia },
       ],
@@ -169,6 +173,88 @@ describe('AdminReportService', () => {
 
     const res = await service.list({ page: 1, limit: 20 });
     expect(res.data[0].targetMediaUrl).toBeUndefined();
+  });
+
+  it('bài đăng: caption làm tên, media đầu tiên được ký, tên tác giả ở dòng phụ', async () => {
+    const POST = '507f1f77bcf86cd799439040';
+    mockMedia.presignMany.mockResolvedValue(
+      signedMap({
+        'post/a.jpg': 'https://signed/a.jpg',
+        'post/a-thumb.jpg': 'https://signed/a-thumb.jpg',
+        'post/b.jpg': 'https://signed/b.jpg',
+      }),
+    );
+    reportModel.find.mockReturnValue(
+      leanQuery([
+        { _id: 'r1', reporterId: REPORTER, targetType: 'post', targetId: POST, status: 'pending', reason: 'x' },
+      ]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    postModel.find.mockReturnValue(
+      leanQuery([
+        {
+          _id: POST,
+          authorId: SELLER,
+          caption: 'Bán hàng rẻ',
+          media: [
+            { mediaKey: 'post/a.jpg', mediaType: 'image', thumbnailKey: 'post/a-thumb.jpg' },
+            { mediaKey: 'post/b.jpg', mediaType: 'image' },
+          ],
+        },
+      ]),
+    );
+    userModel.find.mockReturnValue(
+      leanQuery([{ _id: SELLER, displayName: 'Người đăng' }]),
+    );
+
+    const res = await service.list({ page: 1, limit: 20 });
+
+    expect(res.data[0].targetName).toBe('Bán hàng rẻ');
+    expect(res.data[0].targetDetail).toBe('Bài đăng của Người đăng');
+    // Chỉ media đầu — khung báo cáo chỉ render một.
+    expect(res.data[0].targetMediaUrl).toBe('https://signed/a.jpg');
+    expect(res.data[0].targetThumbnailUrl).toBe('https://signed/a-thumb.jpg');
+    expect(res.data[0].targetMediaType).toBe('image');
+    // Cả hai key của bài được đưa vào batch ký, không chỉ ảnh đầu.
+    expect(mockMedia.presignMany).toHaveBeenCalledWith([
+      'post/a.jpg',
+      'post/a-thumb.jpg',
+      'post/b.jpg',
+      undefined,
+    ]);
+  });
+
+  it('bài đăng không có chữ → nhãn [Bài đăng], không phải chuỗi rỗng', async () => {
+    const POST = '507f1f77bcf86cd799439041';
+    reportModel.find.mockReturnValue(
+      leanQuery([
+        { _id: 'r1', reporterId: REPORTER, targetType: 'post', targetId: POST, status: 'pending', reason: 'x' },
+      ]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    postModel.find.mockReturnValue(
+      leanQuery([{ _id: POST, authorId: SELLER, caption: '   ', media: [] }]),
+    );
+
+    const res = await service.list({ page: 1, limit: 20 });
+    expect(res.data[0].targetName).toBe('[Bài đăng]');
+  });
+
+  it('bài đăng không còn tồn tại → không nổ, chỉ thiếu tên', async () => {
+    reportModel.find.mockReturnValue(
+      leanQuery([
+        {
+          _id: 'r1', reporterId: REPORTER, targetType: 'post',
+          targetId: '507f1f77bcf86cd7994390ff', status: 'pending', reason: 'x',
+        },
+      ]),
+    );
+    reportModel.countDocuments.mockResolvedValue(1);
+    postModel.find.mockReturnValue(leanQuery([]));
+
+    const res = await service.list({ page: 1, limit: 20 });
+    expect(res.data[0].targetName).toBeUndefined();
+    expect(res.data[0].reporterName).toBeUndefined();
   });
 
   it('hội thoại direct ghép tên thành viên khi không có tên nhóm', async () => {

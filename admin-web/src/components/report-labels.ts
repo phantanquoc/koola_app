@@ -5,12 +5,18 @@
  * phải dịch trong đầu. Đây là bảng dịch đó.
  */
 
-export type ReportTargetType = 'message' | 'story' | 'user' | 'conversation';
+export type ReportTargetType =
+  | 'message'
+  | 'story'
+  | 'post'
+  | 'user'
+  | 'conversation';
 export type ReportStatus = 'pending' | 'resolved' | 'dismissed';
 
 export const REPORT_TARGET_LABELS: Record<ReportTargetType, string> = {
   message: 'Tin nhắn',
   story: 'Story',
+  post: 'Bài đăng',
   user: 'Người dùng',
   conversation: 'Hội thoại',
 };
@@ -58,6 +64,8 @@ export function reportTargetHref(type: string, id: string): string | null {
       return `/messages?focus=${focus}`;
     case 'story':
       return `/moments?focus=${focus}`;
+    case 'post':
+      return `/posts?focus=${focus}`;
     default:
       return null;
   }

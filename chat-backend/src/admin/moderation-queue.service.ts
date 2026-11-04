@@ -5,11 +5,13 @@ import { Report, ReportDocument } from './schemas/report.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
+import { Post, PostDocument } from '../moments/schemas/post.schema';
 import { AdminReportService } from './admin-report.service';
 
 export type ModerationQueueKind =
   | 'report'
   | 'story-reports'
+  | 'post-reports'
   | 'message-reports'
   | 'business-verification';
 
@@ -41,6 +43,9 @@ const CLUSTER_THRESHOLD = 3;
 // báo cáo lẻ nhưng dưới nội dung đang lan truyền.
 const PRIORITY = {
   'story-reports': 90,
+  // Bài đăng công khai và tồn tại lâu hơn story (story tự hết hạn) — nội dung
+  // vi phạm nằm trên feed lâu hơn nên cần xử lý sớm hơn tin nhắn.
+  'post-reports': 88,
   'message-reports': 85,
   'business-verification': 70,
   report: 50,
@@ -54,6 +59,7 @@ export class ModerationQueueService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Message.name) private readonly msgModel: Model<Message>,
     @InjectModel(Story.name) private readonly storyModel: Model<Story>,
+    @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
     private readonly reportService: AdminReportService,
   ) {}
 
@@ -79,7 +85,9 @@ export class ModerationQueueService {
       .filter(
         (c) =>
           c.count >= CLUSTER_THRESHOLD &&
-          (c.targetType === 'story' || c.targetType === 'message'),
+          (c.targetType === 'story' ||
+            c.targetType === 'post' ||
+            c.targetType === 'message'),
       )
       // Giữ mục bị báo nhiều nhất khi cắt — $in vài nghìn id sẽ làm chậm
       // query mà hàng đợi cũng chỉ hiện 200 mục.
@@ -158,8 +166,13 @@ export class ModerationQueueService {
         (c) => c.targetType === 'message' && Types.ObjectId.isValid(c.targetId),
       )
       .map((c) => c.targetId);
+    const postIds = clusters
+      .filter(
+        (c) => c.targetType === 'post' && Types.ObjectId.isValid(c.targetId),
+      )
+      .map((c) => c.targetId);
 
-    const [stories, messages] = await Promise.all([
+    const [stories, messages, posts] = await Promise.all([
       storyIds.length
         ? this.storyModel
             .find({ _id: { $in: storyIds } })
@@ -172,9 +185,16 @@ export class ModerationQueueService {
             .select('content type')
             .lean()
         : [],
+      postIds.length
+        ? this.postModel
+            .find({ _id: { $in: postIds } })
+            .select('caption isActive')
+            .lean()
+        : [],
     ]);
     const storyById = new Map(stories.map((s) => [String(s._id), s]));
     const msgById = new Map(messages.map((m) => [String(m._id), m]));
+    const postById = new Map(posts.map((p) => [String(p._id), p]));
 
     return clusters.flatMap<ModerationQueueItem>((c) => {
       if (c.targetType === 'story') {
@@ -194,6 +214,25 @@ export class ModerationQueueService {
               : '[Story]',
             subtitle: `${c.count} báo cáo đang chờ xử lý`,
             link: `/reports?targetType=story`,
+          },
+        ];
+      }
+      if (c.targetType === 'post') {
+        const post = postById.get(c.targetId);
+        // Cùng lý do với story: bài đã gỡ thì không còn gì để kiểm duyệt.
+        if (!post || post.isActive === false) return [];
+        return [
+          {
+            kind: 'post-reports',
+            id: c.targetId,
+            priority: PRIORITY['post-reports'],
+            reportedCount: c.count,
+            createdAt: c.firstAt.toISOString(),
+            title: post.caption?.trim()
+              ? post.caption.trim().slice(0, 80)
+              : '[Bài đăng]',
+            subtitle: `${c.count} báo cáo đang chờ xử lý`,
+            link: `/reports?targetType=post`,
           },
         ];
       }

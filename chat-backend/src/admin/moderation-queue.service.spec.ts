@@ -5,9 +5,11 @@ import { Report } from './schemas/report.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
+import { Post } from '../moments/schemas/post.schema';
 import { AdminReportService } from './admin-report.service';
 
 const STORY_ID = '507f1f77bcf86cd799439020';
+const POST_ID = '507f1f77bcf86cd799439030';
 const MSG_ID = '507f1f77bcf86cd799439010';
 const BIZ_ID = '507f1f77bcf86cd799439099';
 
@@ -25,6 +27,7 @@ const reportModel = { aggregate: jest.fn() };
 const userModel = { find: jest.fn() };
 const msgModel = { find: jest.fn() };
 const storyModel = { find: jest.fn() };
+const postModel = { find: jest.fn() };
 const reportService = { list: jest.fn() };
 
 describe('ModerationQueueService', () => {
@@ -35,6 +38,7 @@ describe('ModerationQueueService', () => {
     userModel.find.mockReturnValue(leanQuery([]));
     msgModel.find.mockReturnValue(leanQuery([]));
     storyModel.find.mockReturnValue(leanQuery([]));
+    postModel.find.mockReturnValue(leanQuery([]));
     reportService.list.mockResolvedValue({
       data: [],
       total: 0,
@@ -48,6 +52,7 @@ describe('ModerationQueueService', () => {
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: getModelToken(Message.name), useValue: msgModel },
         { provide: getModelToken(Story.name), useValue: storyModel },
+        { provide: getModelToken(Post.name), useValue: postModel },
         { provide: AdminReportService, useValue: reportService },
       ],
     }).compile();
@@ -136,6 +141,61 @@ describe('ModerationQueueService', () => {
 
     const items = await service.getQueue(50);
     expect(items.find((it) => it.kind === 'story-reports')).toBeUndefined();
+  });
+
+  it('bài đăng active có ≥3 báo cáo → vào hàng đợi với kind post-reports', async () => {
+    reportModel.aggregate.mockResolvedValue([
+      {
+        _id: { targetType: 'post', targetId: POST_ID },
+        count: 4,
+        firstAt: new Date('2026-10-02'),
+      },
+    ]);
+    postModel.find.mockReturnValue(
+      leanQuery([{ _id: POST_ID, caption: 'Bài vi phạm', isActive: true }]),
+    );
+
+    const items = await service.getQueue(50);
+
+    expect(items[0]).toMatchObject({
+      kind: 'post-reports',
+      id: POST_ID,
+      reportedCount: 4,
+      title: 'Bài vi phạm',
+      link: '/reports?targetType=post',
+    });
+  });
+
+  it('bài đăng đã bị gỡ (isActive=false) không vào hàng đợi', async () => {
+    reportModel.aggregate.mockResolvedValue([
+      {
+        _id: { targetType: 'post', targetId: POST_ID },
+        count: 5,
+        firstAt: new Date('2026-10-02'),
+      },
+    ]);
+    postModel.find.mockReturnValue(
+      leanQuery([{ _id: POST_ID, caption: 'cũ', isActive: false }]),
+    );
+
+    const items = await service.getQueue(50);
+    expect(items.find((it) => it.kind === 'post-reports')).toBeUndefined();
+  });
+
+  it('bài đăng không có chữ → nhãn [Bài đăng] trong hàng đợi', async () => {
+    reportModel.aggregate.mockResolvedValue([
+      {
+        _id: { targetType: 'post', targetId: POST_ID },
+        count: 3,
+        firstAt: new Date('2026-10-02'),
+      },
+    ]);
+    postModel.find.mockReturnValue(
+      leanQuery([{ _id: POST_ID, caption: '  ', isActive: true }]),
+    );
+
+    const items = await service.getQueue(50);
+    expect(items[0].title).toBe('[Bài đăng]');
   });
 
   it('targetId dạng chuỗi seed không đưa vào $in (tránh CastError)', async () => {

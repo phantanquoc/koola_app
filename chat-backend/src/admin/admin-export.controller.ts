@@ -17,9 +17,9 @@ export class ExportReportsDto {
   @IsIn(['pending', 'resolved', 'dismissed'])
   status?: string;
 
-  @ApiPropertyOptional({ enum: ['message', 'story', 'user', 'conversation'] })
+  @ApiPropertyOptional({ enum: ['message', 'story', 'user', 'conversation', 'post'] })
   @IsOptional()
-  @IsIn(['message', 'story', 'user', 'conversation'])
+  @IsIn(['message', 'story', 'user', 'conversation', 'post'])
   targetType?: string;
 
   @ApiPropertyOptional({

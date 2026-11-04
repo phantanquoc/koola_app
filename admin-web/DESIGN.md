@@ -805,6 +805,17 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
   `/conversations/<id>` (`state.from` = list URL bỏ `focus`); Tin nhắn và Khoảnh
   khắc tự tải object qua `?focus=`. Bỏ cơ chế này là tạo link chết — vi phạm §0.7,
   phải sửa `report-labels.ts` cùng lúc.
+- **`post` là target type thứ năm của Report.** Backend đã nhận từ lâu
+  (`moments.service.ts` ghi `targetType:'post'` khi người dùng báo cáo bài đăng), nhưng
+  admin thiếu cả ba mảnh: nhãn trong `report-labels.ts`, nhánh resolve trong
+  `AdminReportService.enrich`, và cluster trong hàng đợi. Hệ quả trước đây: mọi báo cáo bài
+  đăng hiện "Đối tượng không còn tồn tại", không có nội dung, không lên hàng đợi ưu tiên,
+  và 20 báo cáo vẫn nằm im. Thêm một target type mới bây giờ phải làm đủ **năm** chỗ:
+  `REPORT_TARGET_LABELS`, `reportTargetHref`, `AUDIT_TARGET_LABELS`, nhánh `enrich`,
+  và `ExportReportsDto.targetType` (enum đóng — thiếu là export trả 400 dù list vẫn chạy).
+- **Báo cáo bài đăng chỉ hiện media đầu tiên.** `ReportTargetMedia` render một khung; bài
+  nhiều ảnh vẫn nhận diện được qua ảnh đầu + caption, mở `/posts/:id` để xem hết. Server
+  ký **mọi** key của bài trong cùng batch nên cache đã ấm khi mở chi tiết.
 - **Báo cáo story không xem được ảnh**: report targetType story chỉ resolve được caption,
   ảnh cần presigned URL + lightbox (`LicensePreview` đã có, chỉ thiếu presign ở server).
 - **Seed data `_id` dạng chuỗi** (`scripts/seed-admin-reports.ts` tạo `seed-report-1`):

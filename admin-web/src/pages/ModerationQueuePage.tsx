@@ -21,7 +21,12 @@ import './admin-new-pages.css';
  * ưu tiên mà server tính từ dữ liệu đầy đủ.
  */
 
-type QueueKind = 'report' | 'story-reports' | 'message-reports' | 'business-verification';
+type QueueKind =
+  | 'report'
+  | 'story-reports'
+  | 'post-reports'
+  | 'message-reports'
+  | 'business-verification';
 
 interface QueueItem {
   kind: QueueKind;
@@ -42,6 +47,7 @@ const DEFAULT_FILTERS = { limit: '50' };
 const KIND_LABEL: Record<QueueKind, string> = {
   report: 'Báo cáo',
   'story-reports': 'Story bị báo nhiều',
+  'post-reports': 'Bài đăng bị báo nhiều',
   'message-reports': 'Tin nhắn bị báo nhiều',
   'business-verification': 'Doanh nghiệp chờ duyệt',
 };
@@ -49,11 +55,12 @@ const KIND_LABEL: Record<QueueKind, string> = {
 const KIND_TONE: Record<QueueKind, 'primary' | 'warning' | 'muted' | 'danger'> = {
   report: 'primary',
   'story-reports': 'danger',
+  'post-reports': 'danger',
   'message-reports': 'danger',
   'business-verification': 'warning',
 };
 
-/** Ngưỡng đọc theo dải điểm server đang dùng (90/85/70/50). */
+/** Ngưỡng đọc theo dải điểm server đang dùng (90/88/85/70/50). */
 function priorityBadge(priority: number): { tone: 'danger' | 'warning' | 'muted'; label: string } {
   if (priority >= 85) return { tone: 'danger', label: 'Khẩn' };
   if (priority >= 60) return { tone: 'warning', label: 'Ưu tiên' };

@@ -5,6 +5,7 @@ import { Report, ReportDocument } from './schemas/report.schema';
 import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
+import { Post, PostDocument } from '../moments/schemas/post.schema';
 import { ConversationDoc } from '../conversations/conversation.schema';
 import { ModerationMediaService } from './moderation-media.service';
 
@@ -33,6 +34,7 @@ export class AdminReportService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Message.name) private readonly msgModel: Model<Message>,
     @InjectModel(Story.name) private readonly storyModel: Model<Story>,
+    @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
     @InjectModel(ConversationDoc.name)
     private readonly convModel: Model<ConversationDoc>,
     private readonly moderationMedia: ModerationMediaService,
@@ -98,6 +100,7 @@ export class AdminReportService {
     // Id không hợp lệ thì bỏ qua, dòng đó chỉ hiện "Không còn trong hệ thống".
     const msgIds = byType('message').filter((id) => Types.ObjectId.isValid(id));
     const storyIds = byType('story').filter((id) => Types.ObjectId.isValid(id));
+    const postIds = byType('post').filter((id) => Types.ObjectId.isValid(id));
     const convIds = byType('conversation').filter((id) => Types.ObjectId.isValid(id));
     const userIds = [...byType('user'), ...convIds]
       .concat(reports.map((r) => String(r.reporterId)))
@@ -108,7 +111,7 @@ export class AdminReportService {
       )
       .filter((id) => Types.ObjectId.isValid(id));
 
-    const [messages, stories, conversations] = await Promise.all([
+    const [messages, stories, posts, conversations] = await Promise.all([
       msgIds.length
         ? this.msgModel
             .find({ _id: { $in: msgIds } })
@@ -121,6 +124,12 @@ export class AdminReportService {
             .select('authorId caption mediaKey thumbnailKey mediaType')
             .lean()
         : [],
+      postIds.length
+        ? this.postModel
+            .find({ _id: { $in: postIds } })
+            .select('authorId caption media')
+            .lean()
+        : [],
       convIds.length
         ? this.convModel
             .find({ _id: { $in: convIds } })
@@ -131,15 +140,21 @@ export class AdminReportService {
 
     // Ký media của đối tượng bị báo — trước đây moderator chỉ thấy tiêu đề text
     // nên phải quyết định "mù" với story/tin nhắn ảnh. Một batch cho cả trang.
+    // Post có NHIỀU media; ký hết để UI chọn được ảnh đầu (và để cache ấm nếu
+    // sau này mở rộng sang gallery).
     const signed = await this.moderationMedia.presignMany([
       ...messages.map((m) => m.mediaUrl),
       ...stories.flatMap((s) => [s.mediaKey, s.thumbnailKey]),
+      ...posts.flatMap((p) =>
+        (p.media ?? []).flatMap((m) => [m.mediaKey, m.thumbnailKey]),
+      ),
     ]);
 
     // Tin nhắn không có tên — cần tên người gửi, và tên thành viên cho hội thoại
-    // direct (name = null).
+    // direct (name = null). Bài đăng cần tên tác giả cho dòng phụ.
     const extraUserIds = [
       ...messages.map((m) => String(m.senderId)),
+      ...posts.map((p) => String(p.authorId)),
       ...conversations.flatMap((c) => (c.members ?? []).map((mb) => String(mb.userId))),
     ];
     const allUserIds = [...new Set([...userIds, ...extraUserIds])].filter((id) =>
@@ -152,6 +167,7 @@ export class AdminReportService {
 
     const msgById = new Map(messages.map((m) => [String(m._id), m]));
     const storyById = new Map(stories.map((s) => [String(s._id), s]));
+    const postById = new Map(posts.map((p) => [String(p._id), p]));
     const convById = new Map(conversations.map((c) => [String(c._id), c]));
 
     return reports.map((r) => {
@@ -205,6 +221,25 @@ export class AdminReportService {
           out.targetName = c.name?.trim()
             || (memberNames.length > 0 ? memberNames.join(' - ') : 'Hội thoại trực tiếp');
           out.targetDetail = `${(c.members ?? []).length} thành viên`;
+        }
+      } else if (r.targetType === 'post') {
+        const p = postById.get(tid);
+        if (p) {
+          const author = nameById.get(String(p.authorId));
+          out.targetName = p.caption?.trim()
+            ? p.caption.trim().slice(0, 80)
+            : '[Bài đăng]';
+          if (author) out.targetDetail = `Bài đăng của ${author}`;
+          // Chỉ hiện media đầu: `ReportTargetMedia` render một khung. Bài nhiều
+          // ảnh vẫn nhận diện được; mở trang /posts/:id để xem hết.
+          const first = (p.media ?? [])[0];
+          if (first) {
+            out.targetMediaUrl = signed.get(first.mediaKey) ?? null;
+            out.targetThumbnailUrl = first.thumbnailKey
+              ? (signed.get(first.thumbnailKey) ?? null)
+              : null;
+            out.targetMediaType = first.mediaType;
+          }
         }
       }
       return out;

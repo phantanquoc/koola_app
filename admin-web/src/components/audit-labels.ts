@@ -37,6 +37,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   soft_delete_message: 'Gỡ tin nhắn',
   restore_message: 'Khôi phục tin nhắn',
   takedown_story: 'Gỡ story',
+  restore_story: 'Khôi phục story',
+  takedown_post: 'Gỡ bài đăng',
+  restore_post: 'Khôi phục bài đăng',
   resolve_report: 'Xử lý báo cáo',
   dismiss_report: 'Bỏ qua báo cáo',
   decide_appeal: 'Quyết định kháng nghị',
@@ -76,6 +79,7 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
   conversation: 'Hội thoại',
   message: 'Tin nhắn',
   story: 'Story',
+  post: 'Bài đăng',
   report: 'Báo cáo',
   product: 'Sản phẩm',
   service: 'Dịch vụ',
@@ -97,7 +101,7 @@ const DANGER_ACTIONS = new Set([
   'delete_business', 'delete_product', 'delete_service', 'delete_store',
   'delete_music_track', 'soft_delete_message', 'takedown_story', 'ban_user',
   'delete_user', 'revoke_sessions', 'revoke_session', 'cancel_order',
-  'unpin_message', 'remove_member', 'purge_music_orphans',
+  'unpin_message', 'remove_member', 'purge_music_orphans', 'takedown_post',
 ]);
 const WARNING_ACTIONS = new Set([
   'reject_business', 'bulk_reject_business', 'suspend_business', 'refund_order',
@@ -107,7 +111,7 @@ const WARNING_ACTIONS = new Set([
 const SUCCESS_ACTIONS = new Set([
   'approve_business', 'bulk_approve_business', 'restore_business', 'unban_user',
   'unsuspend_business', 'reopen_business', 'resolve_report', 'dismiss_report',
-  'restore_user', 'restore_message',
+  'restore_user', 'restore_message', 'restore_post', 'restore_story',
 ]);
 
 export function auditActionTone(action: string): Tone {

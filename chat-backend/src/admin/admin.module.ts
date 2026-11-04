@@ -53,6 +53,9 @@ import {
 import { ConversationsModule } from '../conversations/conversations.module';
 import { Message, MessageSchema } from '../messages/message.schema';
 import { Story, StorySchema } from '../moments/schemas/story.schema';
+import { Post, PostSchema } from '../moments/schemas/post.schema';
+import { AdminMomentsController } from './moments/admin-moments.controller';
+import { AdminMomentsService } from './moments/admin-moments.service';
 import {
   MusicTrack,
   MusicTrackSchema,
@@ -77,6 +80,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: ConversationDoc.name, schema: ConversationDocSchema },
       { name: Message.name, schema: MessageSchema },
       { name: Story.name, schema: StorySchema },
+      { name: Post.name, schema: PostSchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
       { name: BroadcastLog.name, schema: BroadcastLogSchema },
@@ -111,6 +115,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminExportController,
     AdminModerationController,
     AdminMusicController,
+    AdminMomentsController,
     AdminOpsController,
     SessionController,
     AppealController,
@@ -128,6 +133,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminReportService,
     AdminMusicService,
     MusicStorageService,
+    AdminMomentsService,
     CoturnHealthService,
     ModerationMediaService,
     AdminSessionService,

@@ -63,6 +63,10 @@ export const ADMIN_AUDIT_ACTIONS = [
   'impersonate_start',
   'admin_login',
   'update_config',
+  // Kiểm duyệt Moments: bài đăng (post) và khôi phục story.
+  'takedown_post',
+  'restore_post',
+  'restore_story',
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -73,6 +77,7 @@ export const ADMIN_AUDIT_TARGET_TYPES = [
   'conversation',
   'message',
   'story',
+  'post',
   'report',
   'product',
   'service',

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { getModelToken } from '@nestjs/mongoose';
@@ -30,6 +30,8 @@ import { AudienceList } from '../moments/schemas/audience-list.schema';
 
 const AUTHOR = '507f1f77bcf86cd799439001';
 const SENDER = '507f1f77bcf86cd799439002';
+/** Story id phải là ObjectId hợp lệ: controller chặn id rác trước khi truy vấn. */
+const STORY_ID = '507f1f77bcf86cd799439033';
 const CONV = '507f1f77bcf86cd799439020';
 
 function leanQuery(result: unknown) {
@@ -73,7 +75,13 @@ const conversations = {
   adminSetMemberRole: jest.fn(),
   adminRemoveMember: jest.fn(),
 };
-const chatGateway = { io: { emit: jest.fn(), sockets: new Map([['s1', {}]]) } };
+const chatGateway = {
+  io: {
+    emit: jest.fn(),
+    to: jest.fn(() => ({ emit: jest.fn() })),
+    sockets: new Map([['s1', {}]]),
+  },
+};
 
 describe('AdminModerationController — enrich + filter', () => {
   let controller: AdminModerationController;
@@ -188,14 +196,81 @@ describe('AdminModerationController — enrich + filter', () => {
 
     expect(msgModel.find).toHaveBeenCalledWith({ content: expect.any(RegExp) });
   });
+
+  it('story takedown là idempotent — gọi lại không ghi audit thứ hai', async () => {
+    const findById = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: false }),
+    });
+    (storyModel as unknown as Record<string, unknown>).findById = findById;
+
+    const res = await controller.takedownStory(STORY_ID, { actorId: 'admin' }, { ip: '1.2.3.4' } as never);
+
+    expect(res).toMatchObject({ changed: false });
+    expect(audit.log).not.toHaveBeenCalled();
+    delete (storyModel as unknown as Record<string, unknown>).findById;
+  });
+
+  it('story takedown gỡ lần đầu: audit takedown_story và phát story.deleted cho tác giả', async () => {
+    (storyModel as unknown as Record<string, unknown>).findById = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: true }),
+    });
+    (storyModel as unknown as Record<string, unknown>).findByIdAndUpdate = jest
+      .fn()
+      .mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: false });
+
+    const res = await controller.takedownStory(STORY_ID, { actorId: 'admin' }, { ip: null } as never);
+
+    expect(res).toMatchObject({ changed: true });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'takedown_story', targetType: 'story', targetId: STORY_ID }),
+    );
+    // Client mobile chỉ nghe `story.deleted` — tên cũ `story_deleted` là sự kiện chết.
+    expect(chatGateway.io.to).toHaveBeenCalledWith(`user:${AUTHOR}`);
+    delete (storyModel as unknown as Record<string, unknown>).findById;
+    delete (storyModel as unknown as Record<string, unknown>).findByIdAndUpdate;
+  });
+
+  it('story restore: bật lại, audit restore_story, không emit', async () => {
+    (storyModel as unknown as Record<string, unknown>).findById = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: false }),
+    });
+    (storyModel as unknown as Record<string, unknown>).findByIdAndUpdate = jest
+      .fn()
+      .mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: true });
+
+    await controller.restoreStory(STORY_ID, { actorId: 'admin' }, { ip: null } as never);
+
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'restore_story', targetType: 'story' }),
+    );
+    delete (storyModel as unknown as Record<string, unknown>).findById;
+    delete (storyModel as unknown as Record<string, unknown>).findByIdAndUpdate;
+  });
+
+  it('story restore trên story đang hiển thị là no-op', async () => {
+    (storyModel as unknown as Record<string, unknown>).findById = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: STORY_ID, authorId: AUTHOR, isActive: true }),
+    });
+
+    const res = await controller.restoreStory(STORY_ID, { actorId: 'admin' }, { ip: null } as never);
+
+    expect(res).toMatchObject({ changed: false });
+    expect(audit.log).not.toHaveBeenCalled();
+    delete (storyModel as unknown as Record<string, unknown>).findById;
+  });
+
+  it('story restore 404 với id không phải ObjectId', async () => {
+    await expect(
+      controller.restoreStory('khong-phai-id', { actorId: 'admin' }, { ip: null } as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
 });
 
 /**
  * Danh sách hội thoại dùng chung một filter builder cho list/stats/export.
  * Các test dưới đây chốt hợp đồng: row list gọn (`memberCount`, không `members`),
  * có tuổi báo cáo, sort có allow-list, và export không bị `:id` nuốt route.
- */
-describe('AdminModerationController — conversation list/stats/export', () => {
+ */describe('AdminModerationController — conversation list/stats/export', () => {
   let controller: AdminModerationController;
 
   const ROW_GROUP = '507f1f77bcf86cd799439030';
