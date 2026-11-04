@@ -3841,6 +3841,48 @@ th.sortable:hover {
   min-width: 900px;
 }
 
+/* Bảng bài đăng có 10 cột: ở 900px cột nội dung còn ~90px nên caption bị cắt
+   còn 8 ký tự. Nâng sàn riêng cho trang này thay vì nới `.table-scroll--wide`
+   cho mọi bảng (những trang 8 cột sẽ thừa khoảng trống). */
+.table-scroll--posts .data-table {
+  min-width: 1080px;
+}
+
+/* Cột nội dung là cột duy nhất được co giãn — nhãn khác đã cố định nghĩa. */
+.col-caption {
+  min-width: 260px;
+}
+
+/* Tên tác giả xuống 2 dòng ("Nguyễn / Bá Lộc") làm hàng cao gấp đôi dù nội dung
+   chỉ 1 dòng; tên người Việt đủ ngắn để giữ một dòng. */
+.cell-author {
+  white-space: nowrap;
+}
+
+/* Ba chỉ số trên một dòng thay vì ba cột: giữ được cột nội dung khi bảng đã
+   có 8 cột. Số xếp ngang để so sánh nhanh mà không chiếm thêm bề ngang. */
+.cell-stats {
+  display: inline-flex;
+  gap: 10px;
+  color: var(--koola-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─── Ô nội dung dài trong bảng list ─────────────────────────────────────────
+   Caption/bình luận là câu văn dài: để nguyên thì cột nội dung bị ép còn ~100px
+   và mỗi dòng cao 8-10 hàng chữ (đo trên /posts với 25 bài thật). Kẹp 2 dòng +
+   title để rê chuột xem đầy đủ — người đọc mở chi tiết khi cần, bảng giữ nhịp. */
+.cell-clamp {
+  display: -webkit-box;
+  max-width: 46ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
 /* ─── Khối phụ của trang chi tiết nhạc ───────────────────────────────────────
    Các class dưới đây thay cho inline style trong `MusicDetail` (§1: cấm style
    cứng ngoài index.css). */

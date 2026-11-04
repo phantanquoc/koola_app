@@ -60,6 +60,24 @@ db.users.updateOne({ email: "admin@example.com" }, { $set: { isPlatformAdmin: tr
 
 The script and one-liner are idempotent — safe to re-run.
 
+#### Seed sample posts (Moments)
+
+```bash
+cd chat-backend
+npx ts-node -r tsconfig-paths/register scripts/seed-moments-posts.ts
+npx ts-node -r tsconfig-paths/register scripts/seed-moments-posts.ts --clean
+```
+
+Creates 25 Vietnamese posts for exercising `/posts` and `/posts/:id`: all three
+visibility scopes (`public` / `connections` / `custom` list), 23 visible and 2
+removed, nested comments (including one removed comment), and 8 pending `post`
+reports across 5 posts. Images come from `ChatApp/src/assets/mock-*` and are
+uploaded to MinIO under `seed-posts/`; posts need no `Media` row because both
+the mobile view and the admin enrich sign `mediaKey` directly. Idempotent on
+`clientPostId` (`seed-post-NN`) — a re-run creates nothing and re-uploads
+nothing. `--clean` removes the posts, their comments, reports and the three
+`Seed – …` audience lists, leaving the images in MinIO for the next run.
+
 #### Seed the music catalog with playable audio
 
 ```bash

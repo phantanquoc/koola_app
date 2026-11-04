@@ -471,13 +471,13 @@ export default function PostsPage() {
           <StateBlock variant="loading" title="Đang tải bài đăng" copy="Đang lấy danh sách bài mới nhất." />
         )}
         {!isLoading && !isError && (
-          <div className="table-scroll">
+          <div className="table-scroll table-scroll--posts">
             <table className="data-table data-table--compact" aria-label="Danh sách bài đăng">
               <thead>
                 <tr>
                   <th scope="col">Tác giả</th>
                   <th scope="col" className="col-hide-mobile">Media</th>
-                  <ColumnHeader label="Nội dung" />
+                  <ColumnHeader label="Nội dung" className="col-caption" />
                   <ColumnHeader
                     label="Phạm vi"
                     filter={{
@@ -491,21 +491,9 @@ export default function PostsPage() {
                       onChange: (v) => set({ scope: v, page: '1' }),
                     }}
                   />
-                  <ColumnHeader
-                    label="Thích"
-                    sortField="likeCount"
-                    sort={sort}
-                    onSort={toggleSort}
-                    className="col-num col-hide-mobile"
-                  />
-                  <ColumnHeader
-                    label="Bình luận"
-                    sortField="commentCount"
-                    sort={sort}
-                    onSort={toggleSort}
-                    className="col-num col-hide-mobile"
-                  />
-                  <th scope="col" className="col-num col-hide-mobile">Báo cáo</th>
+                  {/* Gộp ba cột số vào một ô: 10 cột riêng không vừa 1440px và
+                      cột nội dung bị bóp còn 8 ký tự. Thứ tự đọc vẫn rõ nhờ icon. */}
+                  <th scope="col" className="col-num col-hide-mobile">Tương tác</th>
                   <th scope="col">Trạng thái</th>
                   <ColumnHeader
                     label="Ngày đăng"
@@ -520,7 +508,7 @@ export default function PostsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={10}>
+                    <td colSpan={8}>
                       {hasActiveFilter ? (
                         <EmptyState
                           title="Không khớp bài đăng nào"
@@ -572,7 +560,7 @@ export default function PostsPage() {
                               {(p.authorName ?? '?').slice(0, 1).toUpperCase()}
                             </span>
                           )}
-                          <span>{p.authorName ?? <span className="cell-meta">Tài khoản đã xoá</span>}</span>
+                          <span className="cell-author">{p.authorName ?? <span className="cell-meta">Tài khoản đã xoá</span>}</span>
                         </div>
                       </td>
                       <td className="col-hide-mobile">
@@ -598,11 +586,7 @@ export default function PostsPage() {
                       </td>
                       <td>
                         {caption
-                          ? (
-                            <span title={caption}>
-                              {caption.length > 60 ? `${caption.slice(0, 60)}…` : caption}
-                            </span>
-                          )
+                          ? <span className="cell-clamp" title={caption}>{caption}</span>
                           : <span className="cell-meta">Không có nội dung</span>}
                       </td>
                       <td>
@@ -611,12 +595,20 @@ export default function PostsPage() {
                           label={scopeLabel(p)}
                         />
                       </td>
-                      <td className="col-num col-hide-mobile">{formatNumber(p.likeCount ?? 0)}</td>
-                      <td className="col-num col-hide-mobile">{formatNumber(p.commentCount ?? 0)}</td>
                       <td className="col-num col-hide-mobile">
-                        {(p.pendingReportCount ?? 0) > 0
-                          ? <strong>{formatNumber(p.pendingReportCount ?? 0)}</strong>
-                          : <span className="cell-meta">0</span>}
+                        <span className="cell-stats">
+                          <span title={`${formatNumber(p.likeCount ?? 0)} lượt thích`}>
+                            ♥ {formatNumber(p.likeCount ?? 0)}
+                          </span>
+                          <span title={`${formatNumber(p.commentCount ?? 0)} bình luận`}>
+                            💬 {formatNumber(p.commentCount ?? 0)}
+                          </span>
+                          {(p.pendingReportCount ?? 0) > 0 && (
+                            <strong title={`${formatNumber(p.pendingReportCount ?? 0)} báo cáo chờ`}>
+                              ⚑ {formatNumber(p.pendingReportCount ?? 0)}
+                            </strong>
+                          )}
+                        </span>
                       </td>
                       <td>
                         {p.isActive === false
