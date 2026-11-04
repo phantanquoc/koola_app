@@ -60,6 +60,21 @@ db.users.updateOne({ email: "admin@example.com" }, { $set: { isPlatformAdmin: tr
 
 The script and one-liner are idempotent — safe to re-run.
 
+#### Seed the music catalog with playable audio
+
+```bash
+cd chat-backend
+npx ts-node -r tsconfig-paths/register scripts/seed-music-audio.ts
+```
+
+Downloads 7 public-domain tracks (Wikimedia Commons), uploads each through the
+same presigned path the admin UI uses, and derives `durationMs` from the file —
+so they actually play. Idempotent on `sourceUrl`. Requires MinIO + MongoDB up.
+
+`scripts/seed-music-tracks.ts` is the older metadata-only seeder: its rows
+point at `music/…` keys that were never uploaded, so **every one of them fails
+on play**. Use it only when that audio already exists in the bucket.
+
 ### Mobile (`ChatApp/`)
 ```bash
 npx react-native start               # Metro bundler on :8081

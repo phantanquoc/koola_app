@@ -1,10 +1,15 @@
 /**
  * seed-music-tracks.ts
  *
- * Seeds 10 CC0/CC-BY public-domain music tracks into the moments music library.
- * All tracks use Free Music Archive (freemusicarchive.org) sample URLs as placeholders.
- * In production, replace `audioKey` / `previewKey` with actual MinIO object keys
- * after uploading the audio files.
+ * Seeds placeholder music-track *records* (10 of them) with `music/…` keys.
+ *
+ * ⚠️ These rows are metadata only: nothing is uploaded to `music/…`, so every
+ * one of them fails on play. Use `seed-music-audio.ts` instead when you want
+ * tracks that actually play — it downloads public-domain audio, uploads it
+ * through the presigned path, and derives the duration from the file.
+ *
+ * This script stays for the case where the audio already lives in MinIO under
+ * those exact keys (e.g. restored from a production bucket dump).
  *
  * Usage:
  *   cd chat-backend

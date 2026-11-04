@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useMusicRowPlayer } from '../components/MusicRowPlayer';
+import { useMusicRowPlayer, playbackErrorMessage } from '../components/MusicRowPlayer';
 
 // `vi.mock` is hoisted above this file's imports, so the factory must not close
 // over a const declared below it — reference the mock lazily instead.
@@ -114,5 +114,30 @@ describe('useMusicRowPlayer', () => {
     expect(result.current.errorId).toBe('t1');
     expect(result.current.playingId).toBeNull();
     expect(detailMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('playbackErrorMessage', () => {
+  it('names a missing or unsupported file in Vietnamese', () => {
+    // The exact message Chrome produces when the object is absent from MinIO.
+    expect(
+      playbackErrorMessage(new Error('Failed to load because no supported source was found.')),
+    ).toBe('Không tải được file âm thanh — file có thể thiếu trong kho hoặc sai định dạng.');
+  });
+
+  it('names an expired signature separately, because retrying fixes it', () => {
+    expect(playbackErrorMessage(new Error('403 Forbidden'))).toBe(
+      'Đường dẫn phát đã hết hạn — thử lại.',
+    );
+  });
+
+  it('falls back to a generic sentence for an unknown error', () => {
+    expect(playbackErrorMessage(new Error('boom'))).toBe('Không phát được track này.');
+    expect(playbackErrorMessage(undefined)).toBe('Không phát được track này.');
+  });
+
+  it('never leaks the raw English browser message', () => {
+    const msg = playbackErrorMessage(new Error('Failed to load because no supported source was found.'));
+    expect(msg).not.toContain('Failed to load');
   });
 });

@@ -23,6 +23,26 @@ export interface RowPlayerState {
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
 
+/**
+ * Turn a playback failure into something an operator can act on.
+ *
+ * The browser's own messages are English and describe the *element*
+ * ("Failed to load because no supported source was found.") — useless to
+ * someone who needs to know the file is missing from storage, not that the
+ * browser lacks a codec. A signed-URL 403 is the one case worth naming
+ * separately: it is transient and a retry fixes it.
+ */
+export function playbackErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : '';
+  if (/403|forbidden|expired|signature/i.test(raw)) {
+    return 'Đường dẫn phát đã hết hạn — thử lại.';
+  }
+  if (/no supported source|not supported|MEDIA_ERR_SRC_NOT_SUPPORTED|Failed to load/i.test(raw)) {
+    return 'Không tải được file âm thanh — file có thể thiếu trong kho hoặc sai định dạng.';
+  }
+  return 'Không phát được track này.';
+}
+
 export function useMusicRowPlayer(): RowPlayerState {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -72,11 +92,7 @@ export function useMusicRowPlayer(): RowPlayerState {
           retriedRef.current = true;
           return start(id).catch((err: unknown) => {
             setErrorId(id);
-            setErrorMessage(
-              err instanceof Error && err.message
-                ? err.message
-                : 'Không phát được bài này',
-            );
+            setErrorMessage(playbackErrorMessage(err));
           });
         })
         .finally(() => setLoadingId(null));

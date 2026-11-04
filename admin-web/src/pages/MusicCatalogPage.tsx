@@ -186,6 +186,17 @@ export default function MusicCatalogPage() {
 
   const player = useMusicRowPlayer();
 
+  // Surface a playback failure as a toast. The row button only turns red and
+  // carries the reason in `title`, which no touch device ever shows — a dead
+  // presigned URL used to fail completely silently.
+  useEffect(() => {
+    if (!player.errorId) return;
+    addToast('error', player.errorMessage ?? 'Không phát được track này.');
+    // errorId only changes when a new failure lands; adding the message/toast
+    // would re-fire on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.errorId]);
+
   function toggleSort(field: string) {
     const [curField, curDir] = sort.split(':');
     const nextDir = curField === field && curDir === 'desc' ? 'asc' : 'desc';
