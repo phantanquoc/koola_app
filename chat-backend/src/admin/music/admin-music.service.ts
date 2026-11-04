@@ -85,6 +85,7 @@ export class AdminMusicService {
       q?: string;
       licenseType?: LicenseType;
       tag?: string;
+      unused?: 'true' | 'false';
     },
     defaultToActive = true,
   ): Record<string, unknown> {
@@ -97,6 +98,10 @@ export class AdminMusicService {
     else if (status === 'inactive') filter.isActive = false;
 
     if (dto.licenseType) filter.licenseType = dto.licenseType;
+
+    // `usageCount` is cumulative and never decremented, so 0 means "never
+    // attached to a story" — the only reliable "safe to retire" signal.
+    if (dto.unused === 'true') filter.usageCount = 0;
     // `tags` is an array field; Mongo matches an exact element. DESIGN §0.8 wants
     // every field visible in the UI to be filterable, otherwise a tag is a dead
     // field — set in the form, never usable for finding the track again.
@@ -155,10 +160,13 @@ export class AdminMusicService {
     // All tracks. The client's status filter does not apply here — stats exist
     // so each tab can show an honest count.
     const base = this.buildFilter({}, false);
-    const [all, active, inactive, licenseAgg] = await Promise.all([
+    const [all, active, inactive, unused, licenseAgg] = await Promise.all([
       this.musicTrackModel.countDocuments(base),
       this.musicTrackModel.countDocuments({ ...base, isActive: true }),
       this.musicTrackModel.countDocuments({ ...base, isActive: false }),
+      // Tracks never attached to a story — the retirable set. Counted over ALL
+      // lifecycle states so the filter's chip is honest regardless of tab.
+      this.musicTrackModel.countDocuments({ ...base, usageCount: 0 }),
       this.musicTrackModel.aggregate<{ _id: string; count: number }>([
         { $match: base },
         { $group: { _id: '$licenseType', count: { $sum: 1 } } },
@@ -189,6 +197,7 @@ export class AdminMusicService {
       all,
       active,
       inactive,
+      unused,
       byLicense,
       tags: tagAgg.map((r) => r._id).filter(Boolean),
     };

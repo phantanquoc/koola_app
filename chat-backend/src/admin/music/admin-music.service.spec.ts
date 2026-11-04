@@ -164,6 +164,24 @@ describe('list', () => {
     expect(model.find.mock.calls[0][0]).toEqual({ isActive: true, tags: 'acoustic' });
   });
 
+  it('filters to never-used tracks', async () => {
+    const model = makeModel();
+    const svc = await build(model, makeStorage());
+
+    await svc.list({ unused: 'true' });
+
+    expect(model.find.mock.calls[0][0]).toEqual({ isActive: true, usageCount: 0 });
+  });
+
+  it('does not add a usageCount clause when unused is off', async () => {
+    const model = makeModel();
+    const svc = await build(model, makeStorage());
+
+    await svc.list({ unused: 'false' });
+
+    expect(model.find.mock.calls[0][0]).toEqual({ isActive: true });
+  });
+
   it('rejects a sort outside the allow-list', async () => {
     const svc = await build(makeModel(), makeStorage());
     await expect(svc.list({ sort: 'password:asc' })).rejects.toBeInstanceOf(
@@ -218,7 +236,8 @@ describe('stats', () => {
         .fn()
         .mockResolvedValueOnce(10)
         .mockResolvedValueOnce(7)
-        .mockResolvedValueOnce(3),
+        .mockResolvedValueOnce(3)
+        .mockResolvedValueOnce(2),
       // First aggregate = license buckets, second = distinct tags.
       aggregate: jest
         .fn()
@@ -231,6 +250,7 @@ describe('stats', () => {
       all: 10,
       active: 7,
       inactive: 3,
+      unused: 2,
       byLicense: {
         cc0: 4,
         'cc-by': 6,

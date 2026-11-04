@@ -46,6 +46,20 @@ export class ListMusicTracksDto {
   @MaxLength(40)
   tag?: string;
 
+  /**
+   * Only tracks with `usageCount = 0` — these are safe to retire because no
+   * story points at them yet.
+   *
+   * Deliberately a **string** enum, not `boolean`: the global ValidationPipe
+   * runs `enableImplicitConversion`, which maps the string `"false"` to
+   * `Boolean("false")` = `true`. A boolean field here would silently filter
+   * when the client asked not to.
+   */
+  @ApiPropertyOptional({ enum: ['true', 'false'], description: 'Chỉ track chưa từng được dùng' })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  unused?: 'true' | 'false';
+
   @ApiPropertyOptional({ description: '`<field>:asc|desc`', example: 'addedAt:desc' })
   @IsOptional()
   @IsString()

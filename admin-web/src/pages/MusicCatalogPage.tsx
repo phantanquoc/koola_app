@@ -50,6 +50,9 @@ export default function MusicCatalogPage() {
     q: '',
     license: '',
     tag: '',
+    // '' | '1' — kept in the URL so "chưa dùng" survives a reload like every
+    // other filter on this page.
+    unused: '',
     sort: 'addedAt:desc',
     page: '1',
     pageSize: '20',
@@ -57,6 +60,7 @@ export default function MusicCatalogPage() {
 
   const page = Math.max(1, Number(values.page) || 1);
   const pageSize = PAGE_SIZES.includes(Number(values.pageSize)) ? Number(values.pageSize) : 20;
+  const unusedOnly = values.unused === '1';
 
   // Allow-listed here too, so a hand-edited URL cannot produce a server 400 for
   // a sort value this page never offers.
@@ -73,15 +77,16 @@ export default function MusicCatalogPage() {
       q: values.q || undefined,
       licenseType: values.license || undefined,
       tag: values.tag || undefined,
+      unused: unusedOnly || undefined,
       sort,
       page,
       limit: pageSize,
     }),
-    [values.status, values.q, values.license, values.tag, sort, page, pageSize],
+    [values.status, values.q, values.license, values.tag, unusedOnly, sort, page, pageSize],
   );
 
   const { rows, total, isLoading, isError, error, refetch } = useAdminList<MusicTrack>(
-    ['music', values.status, values.q, values.license, values.tag, sort, page, pageSize],
+    ['music', values.status, values.q, values.license, values.tag, values.unused, sort, page, pageSize],
     '/admin/music-tracks',
     params,
   );
@@ -116,7 +121,8 @@ export default function MusicCatalogPage() {
     });
   }
 
-  const advancedCount = (values.license ? 1 : 0) + (values.tag ? 1 : 0);
+  const advancedCount =
+    (values.license ? 1 : 0) + (values.tag ? 1 : 0) + (unusedOnly ? 1 : 0);
   const hasActiveFilter = Boolean(values.q || advancedCount || values.status !== 'active');
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const loadError = apiErrorMessage(error, 'Không tải được danh sách nhạc.');
@@ -220,7 +226,7 @@ export default function MusicCatalogPage() {
 
         <FilterPopover
           activeCount={advancedCount}
-          onClear={() => set({ license: '', tag: '', page: '1' })}
+          onClear={() => set({ license: '', tag: '', unused: '', page: '1' })}
         >
           <label className="form-field">
             <span className="form-label">Giấy phép</span>
@@ -260,6 +266,23 @@ export default function MusicCatalogPage() {
               </select>
             </label>
           )}
+
+          {/* Only tracks never attached to a story. `usageCount` is cumulative
+              and never decremented, so 0 is the reliable "safe to retire" mark —
+              these can be deactivated without breaking live content. */}
+          <label className="filter-check">
+            <input
+              type="checkbox"
+              checked={unusedOnly}
+              onChange={(e) => set({ unused: e.target.checked ? '1' : '', page: '1' })}
+            />
+            <span>
+              Chưa từng được dùng
+              {typeof stats?.unused === 'number' && (
+                <span className="form-label-note"> · {formatNumber(stats.unused)} track</span>
+              )}
+            </span>
+          </label>
         </FilterPopover>
       </ListHeader>
 
@@ -287,6 +310,11 @@ export default function MusicCatalogPage() {
           {values.tag && (
             <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ tag: '', page: '1' })}>
               Tag: {values.tag} ✕
+            </button>
+          )}
+          {unusedOnly && (
+            <button className="filter-chip filter-chip-removable" type="button" onClick={() => set({ unused: '', page: '1' })}>
+              Chưa từng được dùng ✕
             </button>
           )}
           {values.q && (

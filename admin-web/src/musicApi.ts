@@ -48,6 +48,8 @@ export interface MusicStats {
   all: number;
   active: number;
   inactive: number;
+  /** Tracks never attached to a story — candidates for retiring. */
+  unused: number;
   byLicense: Record<string, number>;
   /** Distinct tags currently in use — powers the tag filter options. */
   tags: string[];
@@ -132,6 +134,8 @@ export const musicApi = {
     q?: string;
     licenseType?: string;
     tag?: string;
+    /** Only tracks never attached to a story. */
+    unused?: boolean;
     sort?: string;
     page?: number;
     limit?: number;
