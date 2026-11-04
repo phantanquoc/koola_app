@@ -550,7 +550,11 @@ describe('deactivate / restore', () => {
   it('restores and audits once', async () => {
     const model = makeModel({
       findById: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ _id: OID, isActive: false }),
+        lean: jest.fn().mockResolvedValue({
+          _id: OID,
+          isActive: false,
+          audioKey: 'music-catalog/real.mp3',
+        }),
       }),
     });
     const svc = await build(model, makeStorage());
@@ -560,6 +564,28 @@ describe('deactivate / restore', () => {
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'restore_music_track' }),
     );
+  });
+
+  it('refuses to restore when the audio object is missing', async () => {
+    // The legacy `music/…` rows: a row with no object behind it. Restoring one
+    // would put an unplayable track back in the picker.
+    const model = makeModel({
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: OID,
+          isActive: false,
+          audioKey: 'music/never-uploaded.mp3',
+        }),
+      }),
+    });
+    const storage = makeStorage({ statSize: jest.fn().mockResolvedValue(null) });
+    const svc = await build(model, storage);
+
+    await expect(svc.restore(OID, 'admin', null)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(model.updateOne).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   it('restore on an active track is a no-op', async () => {
@@ -708,5 +734,33 @@ describe('orphan objects', () => {
 
     expect(result.deleted).toBe(0);
     expect(storage.removeObject).not.toHaveBeenCalled();
+  });
+
+  it('treats a deactivated track\'s audio as referenced, not orphaned', async () => {
+    // "Ngưng" is reversible and restore() replays the same object. Counting
+    // that audio as orphaned would let a routine "Kiểm kho" destroy a file an
+    // admin only meant to hide.
+    const storage = storageWithObjects([
+      { key: 'music-catalog/only-on-inactive.mp3', size: 40, lastModified: OLD },
+    ]);
+    const model = makeModel();
+    let seenFilter: any = null;
+    model.find.mockImplementation((filter: any) => {
+      seenFilter = filter;
+      return {
+        select: () => ({
+          lean: () =>
+            Promise.resolve([{ audioKey: 'music-catalog/only-on-inactive.mp3' }]),
+        }),
+      };
+    });
+    const svc = await build(model, storage);
+
+    const report = await svc.listOrphans();
+
+    // No `isActive` clause: deactivated rows still protect their object.
+    expect(seenFilter.isActive).toBeUndefined();
+    expect(report.orphans).toHaveLength(0);
+    expect(report.referenced).toBe(1);
   });
 });

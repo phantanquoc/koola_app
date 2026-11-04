@@ -407,13 +407,27 @@ export class AdminMusicService {
     return { message: 'deleted' };
   }
 
-  /** Reactivate. A repeat on an already-active track writes no audit. */
+  /**
+   * Reactivate. A repeat on an already-active track writes no audit.
+   *
+   * Refuses when the audio object is gone. Without this check, restoring one of
+   * the legacy `music/…` rows — keys that were never uploaded — would put an
+   * unplayable track back in the picker, reopening the exact hole `create()`
+   * closes by stat'ing the key before writing the row.
+   */
   async restore(id: string, actorId: string, ip: string | null) {
     this.assertObjectId(id);
     const track = await this.musicTrackModel.findById(id).lean();
     if (!track) throw new NotFoundException('Music track not found');
 
     if (track.isActive === true) return { message: 'active' };
+
+    const size = await this.storage.statSize(track.audioKey);
+    if (size === null) {
+      throw new BadRequestException(
+        'File âm thanh không còn trong kho — không thể khôi phục track này',
+      );
+    }
 
     await this.musicTrackModel.updateOne(
       { _id: id },
@@ -438,6 +452,13 @@ export class AdminMusicService {
    * was removed outside this service. They cost storage, are invisible to every
    * screen, and — because catalog audio deliberately bypasses the `Media`
    * collection — no existing cleanup job will ever find them.
+   *
+   * A **deactivated** track still references its audio: "Ngưng" is reversible,
+   * and `restore()` plays the same object. Counting that audio as orphaned here
+   * would let a routine "Kiểm kho" silently destroy the file behind a track an
+   * admin only meant to hide. Retiring a track *and* its audio is a separate,
+   * deliberate action — remove the row first, then this dialog reclaims the
+   * object on the next run.
    *
    * `graceMs` protects a file that is mid-flight: the presigned PUT writes the
    * object *before* the row is created, so anything newer than the grace window

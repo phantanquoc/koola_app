@@ -440,6 +440,15 @@ hậu tố `Signed`, giữ nguyên key gốc cho consumer khác (mobile tự ký
   **thủ công có xác nhận**: `GET /admin/music-tracks/orphans` đối chiếu kho với
   collection, `DELETE` cùng path xoá phần đủ điều kiện. Không tự động hoá vì xoá
   file là không hoàn tác được và chi phí lưu trữ nhỏ — quyết định xoá cần người.
+- **Track đã ngưng vẫn bảo vệ file của nó.** "Ngưng" đảo ngược được và
+  `POST /:id/restore` phát lại đúng object đó. Nếu bộ đối chiếu coi audio của track
+  inactive là mồ côi thì một lần "Kiểm kho" thường kỳ sẽ xoá file của track mà người
+  vận hành chỉ định ẩn — đúng thứ không thể hoàn tác. Muốn thu hồi cả file thì xoá
+  hẳn row trước; lần kiểm kho sau sẽ nhặt object.
+- **Khôi phục kiểm tra object còn tồn tại.** `restore()` stat key trước khi lật
+  `isActive`; thiếu file → 400, không đổi trạng thái, không ghi audit. Không có bước
+  này, khôi phục một row legacy (`music/…`, chưa từng upload) sẽ đưa track không phát
+  được trở lại picker — mở lại đúng lỗ mà `create()` đã bịt.
 - **Cửa sổ ân hạn 24h là bắt buộc, không phải cho đẹp.** Presigned PUT ghi object
   *trước* khi row được tạo, nên một file "mồ côi" lúc này có thể là track đang tạo
   dở. Purge re-list và re-diff tại thời điểm xoá chứ không tin danh sách client

@@ -160,10 +160,39 @@ The system SHALL expose `PATCH /admin/music-tracks/:id` limited to `title`, `art
 - **WHEN** an admin calls `POST /admin/music-tracks/:id/restore`
 - **THEN** `isActive` SHALL become `true` and an audit entry `restore_music_track` SHALL be written; restoring an already-active track SHALL be a no-op with no second audit entry
 
+#### Scenario: Restore refuses a track whose audio is gone
+
+- **WHEN** an admin restores a track whose `audioKey` names no object in the catalog bucket
+- **THEN** the system SHALL reject with 400, SHALL leave `isActive` unchanged, and SHALL write no audit entry — reactivating a row with no file behind it would put an unplayable track back in the picker, which `create` exists to prevent
+
 #### Scenario: Non-admin blocked
 
 - **WHEN** a non-admin calls any endpoint in this capability
 - **THEN** the system SHALL return 403
+
+### Requirement: Catalog storage reconciliation
+
+The system SHALL expose `GET /admin/music-tracks/orphans` reporting every object under the `music-catalog/` prefix that no track row references, and `DELETE /admin/music-tracks/orphans` deleting only those outside a 24-hour grace window.
+
+#### Scenario: Report separates reclaimable objects from in-flight ones
+
+- **WHEN** an admin opens the reconciliation view
+- **THEN** the response SHALL carry `{ objects, referenced, orphans, pending, eligible, graceHours }`, where an orphan's `eligible` flag is `false` while its object is newer than the grace window
+
+#### Scenario: Deactivated tracks still protect their audio
+
+- **WHEN** an object is referenced only by a track with `isActive: false`
+- **THEN** it SHALL NOT be reported as orphaned — deactivation is reversible and `restore` replays the same object, so retiring a track's audio requires removing the row first
+
+#### Scenario: Purge re-diffs instead of trusting the caller
+
+- **WHEN** an admin confirms the purge
+- **THEN** the server SHALL re-list the prefix and re-query references rather than accept a key list from the client, so an object that became referenced between report and purge SHALL survive
+
+#### Scenario: Purge is audited
+
+- **WHEN** a purge deletes at least one object
+- **THEN** the system SHALL write one `purge_music_orphans` audit entry carrying the deleted count, byte total, and failure count
 
 ### Requirement: Provenance export
 
