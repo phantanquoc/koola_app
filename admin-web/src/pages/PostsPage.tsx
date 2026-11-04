@@ -521,6 +521,10 @@ export default function PostsPage() {
                     onSort={toggleSort}
                     className="col-num col-hide-mobile"
                   />
+                  {/* Chia sẻ không sort được: chưa nằm trong allow-list server
+                      (`POST_SORT_FIELDS`) nên chỉ hiện số — một nút sort gọi
+                      API trả 400 còn tệ hơn không có nút. */}
+                  <th scope="col" className="col-num col-hide-mobile">Chia sẻ</th>
                   <th scope="col" className="col-num col-hide-mobile">Báo cáo</th>
                   <th scope="col">Trạng thái</th>
                   <ColumnHeader
@@ -536,7 +540,7 @@ export default function PostsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       {hasActiveFilter ? (
                         <EmptyState
                           title="Không khớp bài đăng nào"
@@ -627,6 +631,9 @@ export default function PostsPage() {
                       </td>
                       <td className="col-num col-hide-mobile">{formatNumber(p.likeCount ?? 0)}</td>
                       <td className="col-num col-hide-mobile">{formatNumber(p.commentCount ?? 0)}</td>
+                      <td className="col-num col-hide-mobile">
+                        {formatNumber(p.shareCount ?? 0)}
+                      </td>
                       <td className="col-num col-hide-mobile">
                         {(p.pendingReportCount ?? 0) > 0
                           ? <strong title={`${formatNumber(p.pendingReportCount ?? 0)} báo cáo chờ`}>

@@ -3849,9 +3849,10 @@ th.sortable:hover {
 }
 
 /* Cột nội dung là cột duy nhất được co giãn — nhãn khác đã cố định nghĩa.
-   215px là mức đo được để 10 cột vừa khung 1298px ở màn 1440 (sidebar mở). */
+   180px là mức đo được để 11 cột vừa khung 1298px ở màn 1440 (sidebar mở);
+   đo lại sau khi thêm cột Chia sẻ: bảng 1332 → 1298. */
 .col-caption {
-  min-width: 215px;
+  min-width: 180px;
 }
 
 /* "Danh sách: Seed – Nhóm bạn thân" dài gấp đôi mọi nhãn khác và đẩy bảng vượt
