@@ -169,6 +169,44 @@ const TRACKS: SeedTrack[] = [
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     mime: 'audio/wav',
   },
+
+  // ─── Việt Nam, nhạc nền (Freesound CC0) ───────────────────────────────────
+  // Freesound is where the real Vietnamese *background-music* catalog lives.
+  // SieuAmThanh writes original game loops; CC0 means no attribution
+  // obligation and no NC/ND clause to trip over. Preview MP3s are what the
+  // CDN serves without an API key — the originals are WAV and far larger.
+  {
+    title: 'Tuyết Sơn Lấp Lán',
+    artist: 'SieuAmThanh',
+    tags: ['viet', 'game-loop', 'winter'],
+    url: 'https://cdn.freesound.org/previews/557/557624_7554526-hq.mp3',
+    sourceUrl: 'https://freesound.org/people/SieuAmThanh/sounds/557624',
+    attribution: 'SieuAmThanh — Tuyết Sơn Lấp Lán, CC0 1.0 (Freesound)',
+  },
+  {
+    title: 'Ngồi Thiền',
+    artist: 'SieuAmThanh',
+    tags: ['viet', 'thiền', 'calm'],
+    url: 'https://cdn.freesound.org/previews/544/544306_7554526-hq.mp3',
+    sourceUrl: 'https://freesound.org/people/SieuAmThanh/sounds/544306',
+    attribution: 'SieuAmThanh — Ngồi Thiền, CC0 1.0 (Freesound)',
+  },
+  {
+    title: 'Rừng Sáng Sắc',
+    artist: 'SieuAmThanh',
+    tags: ['viet', 'rừng', 'ambient'],
+    url: 'https://cdn.freesound.org/previews/423/423350_7554526-hq.mp3',
+    sourceUrl: 'https://freesound.org/people/SieuAmThanh/sounds/423350',
+    attribution: 'SieuAmThanh — Rừng Sáng Sắc, CC0 1.0 (Freesound)',
+  },
+  {
+    title: 'Bay Trong Bầu Trời Băng',
+    artist: 'SieuAmThanh',
+    tags: ['viet', 'ambient', 'space'],
+    url: 'https://cdn.freesound.org/previews/545/545014_7554526-hq.mp3',
+    sourceUrl: 'https://freesound.org/people/SieuAmThanh/sounds/545014',
+    attribution: 'SieuAmThanh — Bay Trong Bầu Trời Băng, CC0 1.0 (Freesound)',
+  },
 ];
 
 /**

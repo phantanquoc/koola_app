@@ -67,17 +67,30 @@ cd chat-backend
 npx ts-node -r tsconfig-paths/register scripts/seed-music-audio.ts
 ```
 
-Downloads 12 tracks from Wikimedia Commons — 7 public-domain instrumentals
-plus 5 Vietnamese (folk field recording, Nguyễn-court anthem, AFVN sign-on,
-and two CC BY-SA instrumentals) — uploads each through the same presigned path
-the admin UI uses, and derives `durationMs` from the file, so they actually
-play. Idempotent on `sourceUrl`; retries with a `content-length` check because
-Wikimedia truncates large transfers under load. Requires MinIO + MongoDB up.
+Downloads 16 tracks from Wikimedia Commons + Freesound — 7 public-domain
+instrumentals plus 9 Vietnamese (folk field recording, Nguyễn-court anthem,
+AFVN sign-on, two CC BY-SA instrumentals, and four CC0 game loops by
+SieuAmThanh) — uploads each through the same presigned path the admin UI uses,
+and derives `durationMs` from the file, so they actually play. Idempotent on
+`sourceUrl`; retries with a `content-length` check because Wikimedia truncates
+large transfers under load. Requires MinIO + MongoDB up.
 
-**There is almost no commercially usable Vietnamese music on Commons.** The
-folk/pop collections there are NC/ND, and everything else is pronunciation
-clips — those five are the whole usable set. For real V-pop you need a licensed
-source (Epidemic Sound, Artlist, or direct publisher deals), not a public dump.
+**Where to get more Vietnamese music** (researched 2026-11; there is no
+one-stop licensed API):
+
+| Nguồn | Có gì | Dùng được? |
+|---|---|---|
+| **Freesound** (`license=cc0`) | Nhạc nền Việt do người Việt viết (SieuAmThanh: game loop, ambient, thiền) | ✅ CC0, thương mại được |
+| **Openverse API** | Gộp Freesound + Jamendo + Wikimedia + ccMixter, lọc `license=cc0,by,by-sa` được | ✅ nguồn tìm tốt nhất |
+| **Jamendo** | Cần đăng ký `client_id`; catalog Việt rất mỏng | ⚠️ mỏng |
+| **VCPMC** (`vcpmc.org`) | Tổ chức thu quyền tác giả VN — cấp phép qua hợp đồng cho "sao chép trực tuyến"/"truyền đạt" | 💰 đúng đường cho V-pop thật |
+| **Zing MP3 / NhacCuaTui API** (GitHub) | Đều là crawler trái phép, không có license | ❌ |
+| **Audius** | Có nhạc Việt do user đăng lại, `is_verified: false`, phần lớn `is_downloadable: false` | ❌ không rõ nguồn gốc |
+| **Epidemic / Artlist** | Trang tìm "vietnamese" không trả track Việt nào | ❌ |
+
+V-pop thương mại thật thì **không có bản miễn phí hợp pháp** — phải mua
+(Epidemic/Artlist cho nhạc nền phong cách Á, hoặc hợp đồng trực tiếp với
+label/VCPMC cho bản gốc).
 
 `scripts/seed-music-tracks.ts` is the older metadata-only seeder: its rows
 point at `music/…` keys that were never uploaded, so **every one of them fails
