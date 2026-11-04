@@ -389,3 +389,85 @@
   flex: 0 0 26px;
   font-size: 11.5px;
 }
+
+/* ─── Panel người đã thích ─────────────────────────────────────────────────── */
+
+/* Số lượt thích ở rail là nút: nó mở danh sách, nên phải trông bấm được. */
+.post-rail-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--koola-primary);
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 120ms ease;
+}
+
+.post-rail-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.post-rail-link:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.likers-dialog {
+  max-width: 460px;
+}
+
+.likers-list {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.likers-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.likers-row + .likers-row {
+  border-top: 1px solid var(--koola-line);
+}
+
+.likers-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.likers-avatar--initial {
+  display: grid;
+  place-items: center;
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.likers-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.likers-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--koola-ink);
+  overflow-wrap: anywhere;
+}

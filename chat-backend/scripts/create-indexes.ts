@@ -33,6 +33,7 @@ import { MessageSchema } from '../src/messages/message.schema';
 import { StorySchema } from '../src/moments/schemas/story.schema';
 import { PostSchema } from '../src/moments/schemas/post.schema';
 import { PostCommentSchema } from '../src/moments/schemas/post-comment.schema';
+import { PostLikeSchema } from '../src/moments/schemas/post-like.schema';
 import { StoryViewSchema } from '../src/moments/schemas/story-view.schema';
 import { HighlightSchema } from '../src/moments/schemas/highlight.schema';
 import { AudienceListSchema } from '../src/moments/schemas/audience-list.schema';
@@ -62,6 +63,7 @@ const MODELS: Array<[string, mongoose.Schema]> = [
   // chúng chưa từng được tạo trên môi trường autoIndex:false.
   ['Post', PostSchema],
   ['PostComment', PostCommentSchema],
+  ['PostLike', PostLikeSchema],
   ['StoryView', StoryViewSchema],
   ['Highlight', HighlightSchema],
   ['AudienceList', AudienceListSchema],

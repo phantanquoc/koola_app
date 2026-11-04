@@ -21,6 +21,7 @@ import { AdminGuard } from '../../auth/guards/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AdminMomentsService } from './admin-moments.service';
 import { ListPostsDto } from '../dto/list-posts.dto';
+import { ListPostLikersDto } from '../dto/list-post-likers.dto';
 
 /**
  * Kiểm duyệt bài đăng.
@@ -60,6 +61,12 @@ export class AdminMomentsController {
   })
   findOne(@Param('id') id: string) {
     return this.moments.findOnePost(id);
+  }
+
+  @Get(':id/likers')
+  @ApiOperation({ summary: 'Người đã thích bài (phân trang bằng cursor)' })
+  listLikers(@Param('id') id: string, @Query() dto: ListPostLikersDto) {
+    return this.moments.listLikers(id, dto);
   }
 
   @Post(':id/takedown')

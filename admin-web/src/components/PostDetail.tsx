@@ -23,6 +23,7 @@ import { useToast } from './Toast';
 import { apiErrorMessage, formatDateTime, formatNumber, initials } from './formatters';
 import { auditActionLabel, auditActionTone, auditTargetLabel } from './audit-labels';
 import { scopeLabel, scopeTableLabel, scopeTone } from '../pages/PostsPage';
+import { PostLikersPanel } from './PostLikersPanel';
 
 interface PostMediaItem {
   mediaKey: string;
@@ -95,6 +96,7 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [likersOpen, setLikersOpen] = useState(false);
   const [confirm, setConfirm] = useState<
     | { kind: 'lifecycle' }
     | { kind: 'report'; id: string; action: 'resolve' | 'dismiss'; reason: string }
@@ -298,7 +300,19 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
             </div>
             <div className="post-rail-signal">
               <dt><Heart size={14} aria-hidden /> Lượt thích</dt>
-              <dd>{formatNumber(post.likeCount ?? 0)}</dd>
+              <dd>
+                {(post.likeCount ?? 0) > 0 ? (
+                  <button
+                    className="post-rail-link"
+                    type="button"
+                    onClick={() => setLikersOpen(true)}
+                  >
+                    {formatNumber(post.likeCount ?? 0)}
+                  </button>
+                ) : (
+                  <span className="cell-meta">0</span>
+                )}
+              </dd>
             </div>
             <div className="post-rail-signal">
               <dt><MessageCircle size={14} aria-hidden /> Bình luận</dt>
@@ -538,6 +552,14 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
           </button>
         )}
       </footer>
+
+      {likersOpen && (
+        <PostLikersPanel
+          postId={post._id}
+          total={post.likeCount ?? 0}
+          onClose={() => setLikersOpen(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={confirm?.kind === 'lifecycle'}

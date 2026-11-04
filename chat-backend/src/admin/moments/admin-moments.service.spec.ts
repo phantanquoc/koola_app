@@ -7,6 +7,7 @@ import { AdminMomentsService } from './admin-moments.service';
 import { Post } from '../../moments/schemas/post.schema';
 import { AudienceList } from '../../moments/schemas/audience-list.schema';
 import { Report } from '../schemas/report.schema';
+import { PostLike } from '../../moments/schemas/post-like.schema';
 import { User } from '../../users/user.schema';
 import { ModerationMediaService } from '../moderation-media.service';
 import { AdminAuditService } from '../admin-audit.service';
@@ -34,7 +35,13 @@ function leanChain(result: unknown) {
 function makePostModel(overrides: Record<string, unknown> = {}) {
   return {
     find: jest.fn().mockReturnValue(leanChain([])),
-    findById: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+    findById: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+      // `listLikers` project `.select('likes likeCount')` — mock phải theo chuỗi.
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    }),
     findByIdAndUpdate: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
     countDocuments: jest.fn().mockResolvedValue(0),
     aggregate: jest.fn().mockResolvedValue([]),
@@ -48,6 +55,7 @@ const reportModel = {
 };
 const userModel = { find: jest.fn().mockReturnValue(leanChain([])) };
 const audienceListModel = { find: jest.fn().mockReturnValue(leanChain([])) };
+const postLikeModel = { find: jest.fn().mockReturnValue(leanChain([])) };
 const media = { presignMany: jest.fn().mockResolvedValue(new Map()) };
 const audit = { log: jest.fn() };
 const emitMock = jest.fn();
@@ -61,6 +69,7 @@ async function build(postModel: ReturnType<typeof makePostModel>) {
       { provide: getModelToken(Report.name), useValue: reportModel },
       { provide: getModelToken(User.name), useValue: userModel },
       { provide: getModelToken(AudienceList.name), useValue: audienceListModel },
+      { provide: getModelToken(PostLike.name), useValue: postLikeModel },
       { provide: ModerationMediaService, useValue: media },
       { provide: AdminAuditService, useValue: audit },
       { provide: ChatGateway, useValue: gateway },
@@ -388,5 +397,80 @@ describe('AdminMomentsService.takedownPost / restorePost', () => {
     const svc = await build(makePostModel());
     await expect(svc.takedownPost(POST_ID2, 'a', null)).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.restorePost(POST_ID2, 'a', null)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('AdminMomentsService.listLikers', () => {
+  it('trả tên + avatar, dùng likeCount làm tổng, cursor khi còn trang', async () => {
+    const LIKER = '507f1f77bcf86cd799439060';
+    const NEXT = '507f1f77bcf86cd799439061';
+    const postModel = makePostModel({
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: POST_ID, likeCount: 2, likes: [] }),
+        }),
+      }),
+    });
+    postLikeModel.find.mockReturnValue(
+      leanChain([
+        { _id: NEXT, postId: POST_ID, userId: LIKER, createdAt: new Date('2026-11-01') },
+        { _id: '507f1f77bcf86cd799439062', postId: POST_ID, userId: LIKER, createdAt: new Date() },
+      ]),
+    );
+    userModel.find.mockReturnValue(
+      leanChain([{ _id: LIKER, displayName: 'Nguyễn Lan', avatar: 'lan.png' }]),
+    );
+    const svc = await build(postModel);
+
+    const res = await svc.listLikers(POST_ID, { limit: 1 });
+
+    expect(res.likers).toHaveLength(1);
+    expect(res.likers[0]).toMatchObject({
+      userId: LIKER,
+      name: 'Nguyễn Lan',
+      avatar: 'lan.png',
+    });
+    expect(res.nextCursor).toBe(NEXT);
+    expect(res.total).toBe(2);
+  });
+
+  it('gộp lượt thích legacy ở trang đầu, không trả trùng userId', async () => {
+    const A = '507f1f77bcf86cd799439070';
+    const B = '507f1f77bcf86cd799439071';
+    const postModel = makePostModel({
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            _id: POST_ID,
+            likeCount: 2,
+            // A có ở cả hai nguồn (migration dở dang) → chỉ xuất hiện một lần.
+            likes: [{ userId: A, createdAt: new Date('2026-10-01') }],
+          }),
+        }),
+      }),
+    });
+    postLikeModel.find.mockReturnValue(
+      leanChain([{ _id: '507f1f77bcf86cd799439072', postId: POST_ID, userId: A }]),
+    );
+    userModel.find.mockImplementation((filter: any) => {
+      const ids: string[] = filter._id?.$in ?? [];
+      return leanChain(
+        ids.flatMap((id) => [
+          { _id: id, displayName: id === A ? 'Người A' : 'Người B' },
+        ]).filter((u) => u._id === A || u._id === B),
+      );
+    });
+    const svc = await build(postModel);
+
+    const res = await svc.listLikers(POST_ID, {});
+
+    expect(res.likers.map((l) => l.userId)).toEqual([A]);
+    expect(res.likers[0].name).toBe('Người A');
+  });
+
+  it('404 khi bài không tồn tại hoặc id rác', async () => {
+    const svc = await build(makePostModel());
+    await expect(svc.listLikers('rac', {})).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.listLikers(POST_ID2, {})).rejects.toBeInstanceOf(NotFoundException);
   });
 });

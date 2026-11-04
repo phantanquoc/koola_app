@@ -15,6 +15,10 @@ import {
   AudienceListDocument,
 } from '../../moments/schemas/audience-list.schema';
 import { Report, ReportDocument } from '../schemas/report.schema';
+import {
+  PostLike,
+  PostLikeDocument,
+} from '../../moments/schemas/post-like.schema';
 import { User, UserDocument } from '../../users/user.schema';
 import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { AdminAuditService } from '../admin-audit.service';
@@ -26,6 +30,7 @@ import {
   POST_SORT_FIELDS,
   type PostScopeValue,
 } from '../dto/list-posts.dto';
+import { ListPostLikersDto } from '../dto/list-post-likers.dto';
 
 /** Một mục media đã ký, giữ nguyên key gốc cho "Chi tiết kỹ thuật". */
 export interface SignedPostMedia extends PostMediaItem {
@@ -66,6 +71,8 @@ export class AdminMomentsService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(AudienceList.name)
     private readonly audienceListModel: Model<AudienceListDocument>,
+    @InjectModel(PostLike.name)
+    private readonly postLikeModel: Model<PostLikeDocument>,
     private readonly moderationMedia: ModerationMediaService,
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
@@ -153,6 +160,101 @@ export class AdminMomentsService {
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * Danh sách người đã thích một bài.
+   *
+   * `PostLike` là nguồn đúng hiện tại (toggle ghi vào đó và tính lại
+   * `likeCount` từ số row), nhưng bài cũ chưa migrate vẫn còn mảng `likes`
+   * nhúng — đọc cả hai rồi gộp theo userId để không bỏ sót ai.
+   *
+   * Cursor `_id` thay vì offset: người dùng tiếp tục thích trong lúc moderator
+   * lật trang, offset sẽ trượt và lặp dòng.
+   */
+  async listLikers(postId: string, dto: ListPostLikersDto) {
+    this.assertObjectId(postId);
+    const post = await this.postModel
+      .findById(postId)
+      .select('likes likeCount')
+      .lean();
+    if (!post) throw new NotFoundException('Post not found');
+
+    const limit = Math.min(Math.max(dto.limit ?? 20, 1), 100);
+    const filter: Record<string, unknown> = { postId };
+    if (dto.cursor) {
+      if (!Types.ObjectId.isValid(dto.cursor)) {
+        throw new NotFoundException('Post not found');
+      }
+      filter._id = { $gt: new Types.ObjectId(dto.cursor) };
+    }
+
+    const rows = await this.postLikeModel
+      .find(filter)
+      .sort({ _id: 1 })
+      .limit(limit + 1)
+      .lean();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    const legacy = Array.isArray(post.likes)
+      ? (post.likes as { userId: string; createdAt?: Date }[])
+      : [];
+    const seen = new Set(page.map((r) => String(r.userId)));
+    // Legacy chỉ dùng cho TRANG ĐẦU: nó không phân trang được, và trộn nó vào
+    // các trang sau sẽ khiến người đã thấy ở trang 1 xuất hiện lại.
+    const extraLegacy =
+      dto.cursor || legacy.length === 0
+        ? []
+        : legacy.filter((l) => l.userId && !seen.has(String(l.userId)));
+
+    const userIds = [
+      ...new Set(
+        [...page.map((r) => String(r.userId)), ...extraLegacy.map((l) => String(l.userId))].filter(
+          (id) => Types.ObjectId.isValid(id),
+        ),
+      ),
+    ];
+    const users = userIds.length
+      ? await this.userModel
+          .find({ _id: { $in: userIds } })
+          .select('displayName avatar')
+          .lean()
+      : [];
+    const userById = new Map(
+      (users as { _id: unknown; displayName?: string; avatar?: string }[]).map((u) => [
+        String(u._id),
+        u,
+      ]),
+    );
+
+    const likers = [
+      ...page.map((r) => ({
+        userId: String(r.userId),
+        likedAt: (r as { createdAt?: Date }).createdAt ?? null,
+      })),
+      ...extraLegacy.map((l) => ({
+        userId: String(l.userId),
+        likedAt: l.createdAt ?? null,
+      })),
+    ].map((l) => {
+      const u = userById.get(l.userId);
+      return {
+        userId: l.userId,
+        name: u?.displayName ?? null,
+        avatar: u?.avatar ?? null,
+        likedAt: l.likedAt,
+      };
+    });
+
+    return {
+      likers,
+      nextCursor: hasMore ? String(page[page.length - 1]._id) : null,
+      // `likeCount` là số denormalize đã được toggle tính lại từ PostLike; dùng
+      // nó thay vì tự cộng hai nguồn (legacy + PostLike) — cộng dồn có thể lệch
+      // nếu một lượt thích tồn tại ở cả hai nơi sau migration dở dang.
+      total: post.likeCount ?? likers.length,
     };
   }
 
