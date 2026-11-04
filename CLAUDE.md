@@ -189,6 +189,16 @@ App launch
 
 ---
 
+## 👥 Business Members (multi-user businesses)
+
+Full reference: `docs/business-members.md`.
+
+- **Token = role in ONE business.** Switch mints `{ sub: businessId, act: humanId, accountType: 'business', role }`. Use `user.actorId` for "who did it", `user.userId` for "which business".
+- **New business-scoped route** → `@UseGuards(BusinessRoleGuard)` + `@BusinessRole('<min>')`. The guard also checks `:businessId`/`:id` equals the token's business — never trust the URL id without it.
+- **One device per member per business** — global `BusinessSessionGuard` returns 401 `BUSINESS_SESSION_ENDED`; mobile must NOT refresh on it (ping-pong eviction). Routes that claim/release the session use `@SkipBusinessSessionCheck()`.
+- **Lazy migration** — `ensureOwnerMembership` on switch; 11000 = already migrated. No migration scripts.
+- **Audit** — `BusinessAuditLogsService.auditLog()` after the write, attributed to `actorId`; never throws.
+
 ## ⚠️ High-Risk Areas
 
 Modify with extra care — failures are silent or hard to reproduce:
