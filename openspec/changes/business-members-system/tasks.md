@@ -17,7 +17,9 @@
 >
 > Bị chặn (cần user quyết): 2.3–2.5, 4.4–4.6, 9.3–9.5, 9.8, 16.4–16.6 — **không có endpoint/FAB bán hàng cho business** (mọi thao tác ghi sản phẩm là route admin). Cần một màn "người bán tự quản sản phẩm" thì mới gate/audit được.
 >
-> - Nhóm 21 docs xong: `docs/business-members.md` + mục mới trong `CLAUDE.md`. Còn lại: nhóm 20 (device test) → `detect_changes` → commit → archive.
+> - Nhóm 21 docs xong: `docs/business-members.md` + mục mới trong `CLAUDE.md`.
+> - **ĐÃ COMMIT (local, chưa push) 2026-11-04:** `5e6fe8a` backend · `1514fc4` mobile · `9bc6820` docs/openspec. `detect_changes` báo CRITICAL (36 file, 33 flow: reconnect socket, logout, AuthProvider) — đã soát, đều là phần của change này (header thiết bị khi re-switch, handler session-ended).
+> - Còn lại: nhóm 20 (device test, build perf) → sửa lỗi → archive. Task bị chặn → chuyển sang change mới (vd `commerce-seller-catalog`).
 >
 > Sửa lỗi phát hiện trong lúc làm (đáng biết khi review):
 > - **Bảo mật — lỗ hổng xuyên business:** `BusinessRoleGuard` chỉ xét `role` trong JWT mà không so `:id` trên URL với business đang switch → owner business A gọi `/businesses/<B>/members/...` là đổi role/xoá thành viên/đọc audit log của B. Thêm kiểm tra tenant scope trong guard (403 `Not acting as this business`). Đồng thời `GET /businesses/:id/members` trước đó KHÔNG có guard nào (ai đăng nhập cũng đọc được tên+email thành viên của mọi business) → thêm `@BusinessRole('viewer')`. 11 test HTTP mới trong `business-members-http.spec.ts`.
@@ -234,7 +236,7 @@ seller-facing product endpoint exists (see 4.4).
 - [ ] 20.2 Test device limit: login from device B force-logs-out device A
 - [ ] 20.3 Test role permissions: viewer cannot create product, editor can
 - [ ] 20.4 Test member removal: removed member loses business in account list immediately
-- [ ] 20.5 Test offline queue: invite acceptance queued offline, sent on reconnect
+- [ ] 20.5 Test offline queue: invite acceptance queued offline, sent on reconnect — NOT APPLICABLE as written: `OfflineQueueService` only queues `send_message`; accept is a direct `POST /invites/accept` (design.md: "invite acceptance requires network"). On device, check instead that accepting while offline shows the error state with retry, not a blank screen
 - [ ] 20.6 Test account switching: member can switch between personal, owned, and member businesses ← (verify: all critical flows work on real devices, no regressions)
 
 ## 21. Documentation
