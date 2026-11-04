@@ -25,6 +25,7 @@ import { MediaService } from '../../media/media.service';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { MessagesService } from '../../messages/messages.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { BusinessAuditLogsService } from '../../business-members/business-audit-logs.service';
 
 const s = (v: unknown) => String((v as { toString(): string }).toString());
 const normId = (v: unknown) =>
@@ -305,6 +306,7 @@ describe('OrdersService (Batch A)', () => {
     updateLastMessage: jest.Mock;
   };
   let media: { generatePresignedGetUrl: jest.Mock };
+  let auditLogs: { auditLog: jest.Mock };
 
   let sellerId: string;
   let buyerId: string;
@@ -345,6 +347,7 @@ describe('OrdersService (Batch A)', () => {
     const notificationsService = {
       sendOrderPush: jest.fn(async () => undefined),
     };
+    auditLogs = { auditLog: jest.fn(async () => undefined) };
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -356,6 +359,7 @@ describe('OrdersService (Batch A)', () => {
         { provide: ConversationsService, useValue: convs },
         { provide: MessagesService, useValue: messagesService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: BusinessAuditLogsService, useValue: auditLogs },
       ],
     }).compile();
     service = mod.get(OrdersService);
@@ -759,6 +763,76 @@ describe('OrdersService (Batch A)', () => {
       expect((await service.listAdmin({ status: 'PENDING' })).total).toBe(1);
       expect((await service.listAdmin({ status: 'SHIPPING' })).total).toBe(0);
       await expect(service.getAdminById(id)).resolves.toBeTruthy();
+    });
+  });
+
+  // ─── Business audit log (business-members task 9.6) ─────────────────────
+
+  describe('business audit log', () => {
+    it('attributes a staff member confirm to the human actor inside the seller business', async () => {
+      await build();
+      const id = await placed();
+      const staffId = hex(oid());
+
+      await service.confirmOrder(
+        { sub: sellerId, act: staffId, accountType: 'business' },
+        id,
+        {
+          shippingFee: 15000,
+          expectedDeliveryDate: new Date(Date.now() + 86400000).toISOString(),
+        },
+      );
+
+      expect(auditLogs.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: sellerId,
+          actorId: staffId,
+          eventType: 'order.status_changed',
+          resourceId: id,
+          changes: { status: { before: 'PENDING', after: 'CONFIRMED' } },
+          metadata: expect.objectContaining({ actedAs: 'seller' }),
+        }),
+      );
+    });
+
+    it('logs a seller rejection as order.cancelled with the reason', async () => {
+      await build();
+      const id = await placed();
+
+      await service.rejectOrder(sellerCaller(), id, { reason: 'Hết hàng' });
+
+      expect(auditLogs.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'order.cancelled',
+          metadata: expect.objectContaining({ note: 'Hết hàng' }),
+        }),
+      );
+    });
+
+    it('records a buyer cancel in the SELLER business log, marked as buyer-side', async () => {
+      await build();
+      const id = await placed();
+
+      await service.cancelOrder(buyerCaller(), id);
+
+      expect(auditLogs.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: sellerId,
+          actorId: buyerId,
+          eventType: 'order.cancelled',
+          metadata: expect.objectContaining({ actedAs: 'buyer' }),
+        }),
+      );
+    });
+
+    it('writes no entry for the system auto-deliver path', async () => {
+      await build();
+      const id = await placed('SHIPPING');
+      auditLogs.auditLog.mockClear();
+
+      await service.receiveOrder({ sub: 'system' }, id, { bySystem: true });
+
+      expect(auditLogs.auditLog).not.toHaveBeenCalled();
     });
   });
 });

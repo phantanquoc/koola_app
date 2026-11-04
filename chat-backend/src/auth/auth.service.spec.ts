@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { User } from '../users/user.schema';
 import { RefreshToken } from './refresh-token.schema';
+import { BusinessSession } from '../business-members/schemas/business-session.schema';
 import { UsersService } from '../users/users.service';
 import { RedisService } from '../common/redis/redis.service';
 import { EmailService } from './email.service';
@@ -31,6 +32,10 @@ const mockRefreshTokenModel = {
   create: jest.fn(),
   findByIdAndUpdate: jest.fn(),
   updateMany: jest.fn(),
+};
+
+const mockBusinessSessionModel = {
+  deleteMany: jest.fn().mockResolvedValue({ deletedCount: 0 }),
 };
 
 const mockJwtService = {
@@ -74,6 +79,10 @@ describe('AuthService', () => {
         {
           provide: getModelToken(RefreshToken.name),
           useValue: mockRefreshTokenModel,
+        },
+        {
+          provide: getModelToken(BusinessSession.name),
+          useValue: mockBusinessSessionModel,
         },
         { provide: JwtService, useValue: mockJwtService },
         { provide: UsersService, useValue: mockUsersService },
@@ -374,6 +383,46 @@ describe('AuthService', () => {
           newPassword: 'newpassword123',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── Logout (business-members task 8.9) ───────────────────────────────────
+
+  describe('logout', () => {
+    const rootId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+
+    it('releases every business device session held by the root actor', async () => {
+      mockJwtService.verify.mockReturnValue({ sub: rootId, jti: 'jti-1' });
+
+      await service.logout('refresh-token');
+
+      expect(mockRefreshTokenModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        'jti-1',
+        expect.objectContaining({ revokedAt: expect.any(Date) }),
+      );
+      expect(mockBusinessSessionModel.deleteMany).toHaveBeenCalledTimes(1);
+      const [filter] = mockBusinessSessionModel.deleteMany.mock.calls[0] as [
+        { userId: { toString(): string } },
+      ];
+      expect(filter.userId.toString()).toBe(rootId);
+    });
+
+    it('still completes logout when session cleanup fails', async () => {
+      mockJwtService.verify.mockReturnValue({ sub: rootId, jti: 'jti-1' });
+      mockBusinessSessionModel.deleteMany.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.logout('refresh-token')).resolves.toBeUndefined();
+      expect(mockUsersService.clearFcmTokens).toHaveBeenCalledWith(rootId);
+    });
+
+    it('touches no sessions when the refresh token is invalid', async () => {
+      mockJwtService.verify.mockImplementation(() => {
+        throw new Error('bad token');
+      });
+
+      await service.logout('garbage');
+
+      expect(mockBusinessSessionModel.deleteMany).not.toHaveBeenCalled();
     });
   });
 });

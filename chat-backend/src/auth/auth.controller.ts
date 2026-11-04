@@ -16,6 +16,7 @@ import { ResetPasswordVerifyDto } from './dto/reset-password-verify.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { SkipBusinessSessionCheck } from '../common/decorators/skip-business-session.decorator';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 @ApiTags('auth')
@@ -125,6 +126,9 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
+  // Releases the device session, so an already-evicted device must still be
+  // able to call it — otherwise it could never log out cleanly.
+  @SkipBusinessSessionCheck()
   @ApiOperation({ summary: 'Logout and revoke refresh token' })
   @ApiResponse({ status: 200, description: 'Logged out successfully' })
   async logout(@Body('refreshToken') refreshToken: string) {

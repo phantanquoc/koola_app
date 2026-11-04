@@ -11,6 +11,8 @@ export interface JwtPayload {
   /** RFC 8693 actor claim — set when acting as a business account (actor = root user id) */
   act?: string;
   accountType?: 'personal' | 'business';
+  /** Role for business members (owner/admin/editor/viewer) */
+  role?: string;
   iat?: number;
   exp?: number;
 }
@@ -31,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     email: string | undefined;
     actorId: string;
     accountType: 'personal' | 'business';
+    role: string;
   }> {
     const user = await this.userModel.findById(payload.sub).select('_id email');
     if (!user) {
@@ -46,6 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       actorId,
       accountType: payload.accountType ?? 'personal',
+      role: payload.role ?? 'owner', // Default to owner for backward compatibility
     };
   }
 }

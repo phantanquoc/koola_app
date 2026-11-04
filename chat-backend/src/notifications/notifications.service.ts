@@ -390,6 +390,148 @@ export class NotificationsService {
     }
   }
 
+  // ─── Business member pushes (business-members tasks 8.5, 9.11) ─────────────
+
+  /**
+   * Task 8.5 — tell a member their session was taken over by another device.
+   *
+   * Deliberately skips the `isOnline` gate that message/mention pushes use: the
+   * point is to reach the device that was just evicted, and that device is
+   * typically still "online" from the server's view. Without this, the evicted
+   * device would sit on a business screen until its next 401.
+   *
+   * Dedup per (user, business, device) over a short window so a reconnect loop
+   * on the new device cannot spam the old one.
+   */
+  async sendForcedLogoutPush(params: {
+    userId: string;
+    businessId: string;
+    businessName: string;
+    newDeviceModel?: string;
+    /** Device id that was evicted — lets the client ignore an echo of its own switch. */
+    evictedDeviceId?: string;
+  }): Promise<void> {
+    const { userId, businessId, businessName, newDeviceModel, evictedDeviceId } =
+      params;
+
+    const user = await this.usersService.findById(userId);
+    if (!user) return;
+    if (user.settings?.notificationsEnabled === false) return;
+    if (!user.fcmTokens || user.fcmTokens.length === 0) return;
+
+    const dedupKey = `notif:bizlogout:${userId}:${businessId}:${
+      evictedDeviceId ?? 'any'
+    }`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      NotificationsService.BUSINESS_PUSH_DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+
+    const body = newDeviceModel
+      ? `Bạn đã đăng nhập ${businessName} trên ${newDeviceModel}. Thiết bị này đã bị đăng xuất.`
+      : `Bạn đã đăng nhập ${businessName} trên một thiết bị khác. Thiết bị này đã bị đăng xuất.`;
+
+    await this.sendBusinessPush(userId, user, {
+      title: businessName,
+      body,
+      data: {
+        type: 'business_session_ended',
+        businessId,
+        ...(evictedDeviceId ? { evictedDeviceId } : {}),
+      },
+    });
+  }
+
+  /**
+   * Task 9.11 — notify an owner about a sensitive membership/business event.
+   *
+   * Called once per owner by BusinessMembersService. Keeps the `isOnline` gate
+   * off for the same reason as the forced-logout push: these are security
+   * events the owner should see even while the app is foregrounded elsewhere.
+   */
+  async sendBusinessSensitiveEventPush(params: {
+    ownerUserId: string;
+    businessId: string;
+    businessName: string;
+    title: string;
+    body: string;
+    eventType: string;
+    /** Distinguishes two events of the same type in the dedup window. */
+    resourceId?: string;
+  }): Promise<void> {
+    const {
+      ownerUserId,
+      businessId,
+      businessName,
+      title,
+      body,
+      eventType,
+      resourceId,
+    } = params;
+
+    const user = await this.usersService.findById(ownerUserId);
+    if (!user) return;
+    if (user.settings?.notificationsEnabled === false) return;
+    if (!user.fcmTokens || user.fcmTokens.length === 0) return;
+
+    const dedupKey = `notif:bizevent:${ownerUserId}:${businessId}:${eventType}:${
+      resourceId ?? 'none'
+    }`;
+    const set = await this.redisService.setNXEX(
+      dedupKey,
+      new Date().toISOString(),
+      NotificationsService.BUSINESS_PUSH_DEDUP_TTL_SECONDS,
+    );
+    if (!set) return;
+
+    await this.sendBusinessPush(ownerUserId, user, {
+      title: title || businessName,
+      body,
+      data: { type: 'business_event', businessId, eventType },
+    });
+  }
+
+  /** Dedup TTL for business member/session pushes. */
+  private static readonly BUSINESS_PUSH_DEDUP_TTL_SECONDS = 60;
+
+  /** Shared payload shape + multicast for the two business pushes above. */
+  private async sendBusinessPush(
+    recipientUserId: string,
+    user: { fcmTokens?: { token: string }[]; accountType?: unknown },
+    msg: { title: string; body: string; data: Record<string, string> },
+  ): Promise<void> {
+    const payload: FirebaseMessagingPayload = {
+      notification: { title: msg.title, body: msg.body },
+      data: {
+        ...msg.data,
+        accountId: recipientUserId,
+        accountType: (user.accountType as string) ?? 'personal',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          channelId: 'messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        payload: { aps: { sound: 'default', 'content-available': 1 } },
+      },
+    };
+
+    const tokens = (user.fcmTokens ?? []).map((t) => t.token);
+    try {
+      await this.sendMulticast(recipientUserId, tokens, payload);
+    } catch (err) {
+      this.logger.error(
+        `[Notifications] Failed to send business push to ${recipientUserId}:`,
+        err,
+      );
+    }
+  }
+
   private async sendMulticast(
     recipientId: string,
     tokens: string[],
