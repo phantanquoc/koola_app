@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { Eye, Search } from 'lucide-react';
 import { ListHeader } from '../components/ListHeader';
 import { TableShell } from '../components/TableShell';
 import { StatusTabs } from '../components/StatusTabs';
@@ -126,6 +126,22 @@ export default function MusicCatalogPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
+  // Restoring from the list needs its own busy flag per row so a slow request
+  // does not disable every other row's button.
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  async function restoreRow(id: string) {
+    setRestoringId(id);
+    try {
+      await musicApi.restore(id);
+      addToast('success', 'Đã khôi phục track — hiện lại trong thư viện app.');
+      refreshAll();
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Khôi phục thất bại'));
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   async function confirmDeactivate() {
     if (!deactivateId) return;
@@ -257,6 +273,10 @@ export default function MusicCatalogPage() {
         onChange={(k) => set({ status: k, page: '1' })}
       />
 
+      {/* Row click is the only way into the detail page on touch, where a
+          pointer cursor does not exist. Same hint the other list pages carry. */}
+      <span className="cell-meta show-under-860">Nhấn dòng để xem chi tiết</span>
+
       {hasActiveFilter && (
         <div className="filter-chip-row context-row" aria-label="Bộ lọc đang áp dụng">
           {values.license && (
@@ -324,7 +344,7 @@ export default function MusicCatalogPage() {
                     onSort={toggleSort}
                     className="col-hide-mobile"
                   />
-                  <th scope="col" className="th-center">Hành động</th>
+                  <th scope="col" className="th-center col-sticky">Hành động</th>
                 </tr>
               </thead>
               <tbody>
@@ -359,10 +379,21 @@ export default function MusicCatalogPage() {
                 {rows.map((t) => (
                   <tr
                     key={t._id}
-                    className="row-clickable"
+                    tabIndex={0}
+                    aria-label={`Xem chi tiết ${t.title}`}
+                    className={`row-clickable${player.playingId === t._id ? ' row-playing' : ''}`}
                     onClick={(e) => {
                       // Buttons (play, deactivate) stop propagation themselves.
                       if ((e.target as HTMLElement).closest('button,a')) return;
+                      openDetail(t._id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      // Enter/Space on a button inside the row belongs to that
+                      // button — otherwise keyboard-activating Ngưng would also
+                      // navigate.
+                      if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return;
+                      e.preventDefault();
                       openDetail(t._id);
                     }}
                   >
@@ -380,19 +411,44 @@ export default function MusicCatalogPage() {
                     <td className="col-hide-mobile">
                       <span className="cell-date">{formatDateTime(t.addedAt)}</span>
                     </td>
-                    <td className="th-center">
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeactivateId(t._id);
-                        }}
-                        disabled={!t.isActive}
-                        title={t.isActive ? 'Ngưng phát track này' : 'Track đã ngưng'}
-                      >
-                        Ngưng
-                      </button>
+                    <td className="col-sticky">
+                      <div className="table-actions table-actions--end">
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openDetail(t._id); }}
+                          aria-label={`Xem ${t.title}`}
+                          title="Chi tiết"
+                        >
+                          <Eye size={16} aria-hidden />
+                        </button>
+                        {t.isActive ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeactivateId(t._id);
+                            }}
+                            title="Ngưng phát track này"
+                          >
+                            Ngưng
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void restoreRow(t._id);
+                            }}
+                            disabled={restoringId === t._id}
+                            title="Cho track hiện lại trong thư viện app"
+                          >
+                            {restoringId === t._id ? 'Đang mở…' : 'Khôi phục'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -1909,6 +1909,24 @@ th.sortable:hover {
   cursor: pointer;
 }
 
+/* Hàng đang phát: nền nhẹ + vạch trái. Chỉ dựa vào icon pause là không đủ khi
+   bảng cuộn — người dùng mất dấu bài nào đang chạy.
+   Phải set cả `td`: cột sticky có background riêng để che nội dung cuộn bên
+   dưới, nên nền trên `tr` một mình sẽ bị chính cột đó che mất. */
+.data-table tbody tr.row-playing > td {
+  background: var(--koola-primary-soft);
+}
+
+.data-table tbody tr.row-playing > td:first-child {
+  box-shadow: inset 3px 0 0 var(--koola-primary);
+}
+
+/* Nút phát hỏng: trước đây `data-error` được gắn nhưng không có rule nào, nên
+   lỗi chỉ nằm trong `title` — vô hình trên thiết bị cảm ứng. */
+.data-table tbody td button[data-error] {
+  color: var(--koola-danger);
+}
+
 /* ─── Mảnh dùng lại trong form dialog ─────────────────────────────────────────
    Gộp các inline style từng rải rác ở `MusicCatalogPage` (dialog Thêm track). */
 .form-label-note {
@@ -2842,18 +2860,29 @@ th.sortable:hover {
   font-weight: 800;
   line-height: 1.2;
   margin: 0;
+  /* Tiêu đề ngắn ("Nhạc") từng bị bóp tới mức số đếm rơi xuống dòng riêng ở
+     390px; giữ cả cụm trên một dòng, nhường chỗ bằng cách đẩy nút xuống dưới
+     (`.list-header-top` đã flex-wrap). */
+  white-space: nowrap;
 }
 
 .list-count {
   font-size: 13px;
   font-weight: 700;
   color: var(--koola-muted);
+  /* Ở 390px "Nhạc 11" từng tách số xuống dòng riêng. */
+  white-space: nowrap;
 }
 
 .list-actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* Trang nhiều nút (Nhạc: Xuất CSV + Kiểm kho + Thêm track) không vừa một
+     hàng ở 390px. Cho cụm nút tự xuống dòng bên trong hộp của nó thay vì bóp
+     tiêu đề — bóp tiêu đề làm số đếm trượt xuống dưới nút. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Mobile: title và action GIỮ cùng hàng (title co lại, nút phụ bên phải) —
@@ -2866,12 +2895,15 @@ th.sortable:hover {
   }
 
   .list-title {
-    min-width: 0;
+    /* Không cho tiêu đề co: co tới 35px thì số đếm biến mất. Nhường chỗ bằng
+       cách để `.list-actions` (đã wrap) xuống hàng khi trang có nhiều nút. */
+    flex: 0 0 auto;
     font-size: 18px;
   }
 
   .list-actions {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .list-actions .btn {
