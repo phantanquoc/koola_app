@@ -1,0 +1,391 @@
+/* Trang chi tiết bài đăng — bố cục 2 cột theo khuôn §3B mà `UserDetail` đang
+   dùng: rail trái giữ danh tính + tín hiệu (những gì moderator cần để quyết
+   định), cột phải giữ nội dung và hành động.
+
+   Trước đây mọi thứ xếp dọc trong một card 760px: caption lặp hai lần (tiêu đề
+   + khối Nội dung), và ba hành động ngang hàng nhau nên không có gì nổi bật.
+   Rail gom tín hiệu, cột phải chỉ còn nội dung — mắt đọc một lần là hết. */
+
+.detail-page.detail-page--split.post-detail-page {
+  max-width: 1180px;
+}
+
+.post-detail-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  align-items: start;
+  position: relative;
+}
+
+/* Nền rail vẽ trên container chứ không trên chính rail: rail `sticky` chỉ cao
+   bằng nội dung của nó, đổ nền lên đó thì nửa dưới cột trái trắng trơn. */
+@media (min-width: 1101px) {
+  .post-detail-layout::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 320px;
+    border-right: 1px solid var(--koola-line);
+    border-radius: var(--radius-lg) 0 0 0;
+    /* canvas (#f5f5f4) chứ không surface-soft (#fafaf9): rail và card đều gần
+       trắng, dùng surface-soft thì ranh giới không nhìn thấy. */
+    background: var(--koola-canvas);
+  }
+}
+
+/* `.table-shell` đặt overflow clip; mở trên riêng trang split để bottombar
+   `sticky` bám được (cùng lý do đã ghi ở user-admin.css). */
+.detail-page--split .detail-card {
+  overflow: visible;
+}
+
+.detail-page--split .detail-card .detail-bottombar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.05);
+}
+
+/* ─── Rail ────────────────────────────────────────────────────────────────── */
+
+.post-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.post-rail-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.post-rail-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex: 0 0 48px;
+  object-fit: cover;
+}
+
+.post-rail-avatar--initial {
+  display: grid;
+  place-items: center;
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary);
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.post-rail-name {
+  min-width: 0;
+}
+
+.post-rail-name h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--koola-ink);
+  overflow-wrap: anywhere;
+}
+
+.post-rail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-basis: 100%;
+}
+
+.post-rail-signals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--koola-line);
+}
+
+.post-rail-signal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.post-rail-signal dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--koola-muted);
+  font-size: 12.5px;
+}
+
+.post-rail-signal dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.post-rail-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--koola-line);
+}
+
+.post-rail-id .k-mono {
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Cột nội dung ────────────────────────────────────────────────────────── */
+
+.post-body {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* Nội dung bài như người dùng nhìn thấy: một khối liền, không chia nhỏ thành
+   "Nội dung / Media" — đó là mảnh của schema, không phải của bài đăng. */
+.post-preview {
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--koola-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.post-caption {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--koola-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.post-caption--empty {
+  color: var(--koola-muted);
+  font-style: italic;
+}
+
+.post-media-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+/* Khung ảnh cố định tỉ lệ để một bài 1 ảnh và bài 3 ảnh cùng cao — trước đây
+   ảnh gốc tự do làm cột phải nhảy chiều cao theo từng bài. */
+.post-media-item {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--koola-canvas);
+  border: 1px solid var(--koola-line);
+}
+
+.post-media-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.post-media-item video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+.post-meta-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--koola-muted);
+  font-size: 12.5px;
+}
+
+.post-meta-line strong {
+  color: var(--koola-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Báo cáo ─────────────────────────────────────────────────────────────── */
+
+/* Mỗi báo cáo là MỘT dòng: lý do + người + thời gian bên trái, hai quyết định
+   bên phải. Trước đây mỗi báo cáo là một card ba tầng — ba báo cáo chiếm trọn
+   màn hình và đẩy phần bình luận xuống dưới đáy. */
+.post-report-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.post-report-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--koola-surface);
+}
+
+.post-report-item + .post-report-item {
+  border-top: 1px solid var(--koola-line);
+}
+
+/* Lý do bị báo là thứ moderator đọc để quyết định — cho nó phần rộng nhất. */
+.post-report-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.post-report-reason {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--koola-ink);
+  overflow-wrap: anywhere;
+}
+
+.post-report-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .post-report-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .post-report-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* ─── Bình luận ───────────────────────────────────────────────────────────── */
+
+.post-comment-item {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-2) 0;
+}
+
+.post-comment-item + .post-comment-item {
+  border-top: 1px solid var(--koola-line);
+}
+
+.post-comment-replies {
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 var(--space-4);
+  border-left: 2px solid var(--koola-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.post-comment-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.post-comment-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--koola-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.post-comment-text--removed {
+  color: var(--koola-muted);
+  text-decoration: line-through;
+}
+
+.post-comment-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--koola-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Hành động của từng dòng bình luận: icon-only, chỉ hiện khi hover/focus —
+   một danh sách 20 bình luận mà dòng nào cũng có nút chữ thì nút át nội dung.
+   Trên thiết bị cảm ứng vẫn hiện vì không có hover. */
+.post-comment-action {
+  opacity: 0;
+  transition: opacity 120ms ease;
+  flex: 0 0 auto;
+}
+
+.post-comment-item:hover .post-comment-action,
+.post-comment-item:focus-within .post-comment-action {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .post-comment-action {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .post-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .post-rail {
+    position: static;
+    max-height: none;
+    border-bottom: 1px solid var(--koola-line);
+    background: var(--koola-canvas);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
+/* Avatar của dòng bình luận — nhỏ hơn avatar rail, cùng khuôn tròn/chữ cái. */
+.post-comment-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  font-size: 13px;
+}
+
+.post-rail-avatar--small {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  font-size: 11.5px;
+}

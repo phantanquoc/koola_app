@@ -1,15 +1,28 @@
 import '../pages/moderation-media.css';
+import './post-admin.css';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  Flag,
+  Heart,
+  MessageCircle,
+  RotateCcw,
+  Share2,
+  Trash2,
+  Undo2,
+  Users,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import apiClient from '../apiClient';
 import { ConfirmDialog } from './ConfirmDialog';
 import { StatusBadge } from './StatusBadge';
 import { useToast } from './Toast';
-import { apiErrorMessage, formatDateTime, formatNumber } from './formatters';
+import { apiErrorMessage, formatDateTime, formatNumber, initials } from './formatters';
 import { auditActionLabel, auditActionTone, auditTargetLabel } from './audit-labels';
-import { scopeLabel, scopeTone } from '../pages/PostsPage';
+import { scopeLabel, scopeTableLabel, scopeTone } from '../pages/PostsPage';
 
 interface PostMediaItem {
   mediaKey: string;
@@ -231,132 +244,222 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
   }
 
   const hidden = post.isActive === false;
+  const media = post.media ?? [];
+  const mentions = post.mentionUserNames ?? [];
 
   return (
-    <section className="table-shell detail-card">
-      <header className="detail-header">
-        <div className="detail-heading">
-          <div className="detail-title-row">
-            <h2 className="detail-title">
-              {post.caption?.trim() ? post.caption.trim().slice(0, 120) : 'Bài đăng không có nội dung'}
-            </h2>
-            <div className="detail-header-badges">
+    <section className="table-shell detail-card detail-page--split">
+      <div className="post-detail-layout">
+        {/* Rail: danh tính + tín hiệu quyết định. Moderator mở bài để trả lời
+            "có nên gỡ không" — câu trả lời nằm ở đây, không nằm trong danh sách
+            field. */}
+        <aside className="post-rail" aria-label="Tóm tắt bài đăng">
+          <div className="post-rail-identity">
+            {post.authorAvatar ? (
+              <img
+                className="post-rail-avatar"
+                src={post.authorAvatar}
+                alt=""
+                width={48}
+                height={48}
+              />
+            ) : (
+              <div className="post-rail-avatar post-rail-avatar--initial" aria-hidden>
+                {initials(post.authorName ?? '?', '?')}
+              </div>
+            )}
+            <div className="post-rail-name">
+              <h2>{post.authorName ?? 'Tài khoản đã xoá'}</h2>
+              <p className="cell-meta">Đăng {formatDateTime(post.createdAt)}</p>
+            </div>
+            <div className="post-rail-badges">
               {hidden
                 ? <StatusBadge tone="muted" label="Đã gỡ" />
                 : <StatusBadge tone="success" label="Đang hiển thị" />}
-              {/* Phạm vi quyết định mức độ nghiêm trọng: gỡ một bài công khai
-                  khác hẳn gỡ một bài chỉ vài người trong danh sách thấy. */}
-              <StatusBadge tone={scopeTone(post.audienceScope)} label={scopeLabel(post)} />
-              {(post.pendingReportCount ?? 0) > 0 && (
+              <span title={scopeLabel(post)}>
                 <StatusBadge
-                  tone="warning"
-                  label={`${formatNumber(post.pendingReportCount ?? 0)} báo cáo chờ`}
+                  tone={scopeTone(post.audienceScope)}
+                  label={scopeTableLabel(post)}
                 />
-              )}
+              </span>
             </div>
           </div>
-          <p className="detail-subline">
-            {post.authorName ?? 'Tài khoản đã xoá'}
-            <span className="detail-dot" aria-hidden> · </span>
-            Đăng {formatDateTime(post.createdAt)}
-          </p>
-        </div>
-      </header>
 
-      <div className="detail-card-body page-stack">
-        <section className="detail-section">
-          <h3 className="detail-section-title">Nội dung</h3>
-          <div className="report-quote">
-            {post.caption?.trim() || 'Bài đăng chỉ có media, không có chữ.'}
-          </div>
-          <p className="cell-meta">
-            {formatNumber(post.likeCount ?? 0)} lượt thích ·{' '}
-            {formatNumber(post.commentCount ?? 0)} bình luận ·{' '}
-            {formatNumber(post.shareCount ?? 0)} chia sẻ
-          </p>
-          {(post.mentionUserNames ?? []).length > 0 && (
-            <p className="cell-meta">
-              Đã gắn thẻ: {(post.mentionUserNames ?? []).join(', ')}
-            </p>
-          )}
-        </section>
-
-        <section className="detail-section">
-          <h3 className="detail-section-title">Media ({(post.media ?? []).length})</h3>
-          {(post.media ?? []).length === 0 ? (
-            <p className="cell-meta">Bài đăng không có ảnh hoặc video.</p>
-          ) : (
-            (post.media ?? []).map((m, i) => (
-              <div key={`${m.mediaKey}-${i}`}>
-                {!m.mediaUrlSigned ? (
-                  <p className="alert" role="alert">Không tải được media — URL có thể đã hết hạn.</p>
-                ) : m.mediaType === 'video' ? (
-                  <video
-                    controls
-                    src={m.mediaUrlSigned}
-                    poster={m.thumbnailUrlSigned ?? undefined}
-                    className="mod-report-media"
-                  />
+          <dl className="post-rail-signals">
+            <div className="post-rail-signal">
+              <dt><Flag size={14} aria-hidden /> Báo cáo chờ</dt>
+              <dd>
+                {(post.pendingReportCount ?? 0) > 0 ? (
+                  <strong>{formatNumber(post.pendingReportCount ?? 0)}</strong>
                 ) : (
-                  <a
-                    href={m.mediaUrlSigned}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mod-report-media"
-                  >
-                    <img src={m.mediaUrlSigned} alt={`Media ${i + 1}`} />
-                  </a>
+                  <span className="cell-meta">Không có</span>
                 )}
+              </dd>
+            </div>
+            <div className="post-rail-signal">
+              <dt><Heart size={14} aria-hidden /> Lượt thích</dt>
+              <dd>{formatNumber(post.likeCount ?? 0)}</dd>
+            </div>
+            <div className="post-rail-signal">
+              <dt><MessageCircle size={14} aria-hidden /> Bình luận</dt>
+              <dd>{formatNumber(post.commentCount ?? 0)}</dd>
+            </div>
+            <div className="post-rail-signal">
+              <dt><Share2 size={14} aria-hidden /> Chia sẻ</dt>
+              <dd>{formatNumber(post.shareCount ?? 0)}</dd>
+            </div>
+            <div className="post-rail-signal">
+              <dt><Users size={14} aria-hidden /> Phạm vi</dt>
+              <dd>{scopeLabel(post)}</dd>
+            </div>
+            {mentions.length > 0 && (
+              <div className="post-rail-signal">
+                <dt>Gắn thẻ</dt>
+                <dd>{mentions.join(', ')}</dd>
               </div>
-            ))
-          )}
-        </section>
+            )}
+          </dl>
 
-        <section className="detail-section">
-          <h3 className="detail-section-title">
-            Bình luận ({formatNumber(commentsQuery.data?.total ?? 0)})
-          </h3>
-          {commentsQuery.isError ? (
-            <p className="cell-meta">Không tải được bình luận.</p>
-          ) : commentsQuery.isLoading ? (
-            <p className="cell-meta">Đang tải bình luận…</p>
-          ) : comments.length === 0 ? (
-            <p className="cell-meta">Bài đăng chưa có bình luận nào.</p>
-          ) : (
-            <ul className="audit-list" aria-label="Bình luận của bài đăng">
-              {comments.map((c) => (
-                <li key={c._id} className="audit-list-row">
-                  <div>
-                    <div className="cell-title">
-                      {c.content}
-                      {c.isActive === false && (
-                        <StatusBadge tone="muted" label="Đã gỡ" />
-                      )}
+          <div className="post-rail-id">
+            <span className="cell-meta">Mã bài đăng</span>
+            <span className="k-mono">{post._id}</span>
+          </div>
+        </aside>
+
+        <div className="post-body">
+          {/* Nội dung như người dùng thấy — một khối liền, không tách
+              "Nội dung / Media" theo schema. */}
+          <article className="post-preview" aria-label="Nội dung bài đăng">
+            <p className={`post-caption${post.caption?.trim() ? '' : ' post-caption--empty'}`}>
+              {post.caption?.trim() || 'Bài đăng chỉ có media, không có chữ.'}
+            </p>
+            {media.length > 0 && (
+              <div className="post-media-grid">
+                {media.map((m, i) => (
+                  <div key={`${m.mediaKey}-${i}`}>
+                    {!m.mediaUrlSigned ? (
+                      <p className="alert" role="alert">
+                        Không tải được media — URL có thể đã hết hạn.
+                      </p>
+                    ) : m.mediaType === 'video' ? (
+                      <video
+                        controls
+                        src={m.mediaUrlSigned}
+                        poster={m.thumbnailUrlSigned ?? undefined}
+                        className="post-media-item"
+                      />
+                    ) : (
+                      <a
+                        href={m.mediaUrlSigned}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="post-media-item"
+                      >
+                        <img src={m.mediaUrlSigned} alt={`Ảnh ${i + 1} của bài đăng`} loading="lazy" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="post-meta-line">
+              <span><strong>{formatNumber(post.likeCount ?? 0)}</strong> thích</span>
+              <span><strong>{formatNumber(post.commentCount ?? 0)}</strong> bình luận</span>
+              <span><strong>{formatNumber(post.shareCount ?? 0)}</strong> chia sẻ</span>
+            </p>
+          </article>
+
+          <section className="detail-section">
+            <h3 className="detail-section-title">
+              Báo cáo chờ xử lý ({reports.length})
+            </h3>
+            {reportsQuery.isError ? (
+              <p className="cell-meta">Không tải được báo cáo.</p>
+            ) : reports.length === 0 ? (
+              <p className="cell-meta">Không có báo cáo nào đang chờ.</p>
+            ) : (
+              <ul className="post-report-list" aria-label="Báo cáo đang chờ">
+                {reports.map((r) => (
+                  <li key={r._id} className="post-report-item">
+                    <div className="post-report-main">
+                      <p className="post-report-reason">{r.reason}</p>
+                      <p className="cell-meta">
+                        {r.reporterName ?? 'Không rõ'} · {formatDateTime(r.createdAt)}
+                      </p>
                     </div>
-                    <div className="cell-meta">
-                      {c.authorName ?? 'Tài khoản đã xoá'} · {formatDateTime(c.createdAt)}
+                    {/* Hai quyết định ngang hàng về nghiệp vụ, nhưng "Bỏ qua" là
+                        hành động phụ — để ghost để mắt không bị chia đôi. */}
+                    <div className="post-report-actions">
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setConfirm({ kind: 'report', id: r._id, action: 'dismiss', reason: r.reason })
+                        }
+                      >
+                        Bỏ qua
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setConfirm({ kind: 'report', id: r._id, action: 'resolve', reason: r.reason })
+                        }
+                      >
+                        <Check size={15} strokeWidth={2.2} aria-hidden /> Đã xử lý
+                      </button>
                     </div>
-                    {(c.replies ?? []).length > 0 && (
-                      <ul className="audit-list" aria-label="Trả lời">
-                        {(c.replies ?? []).map((r) => (
-                          <li key={r._id} className="audit-list-row">
-                            <div>
-                              <div className="cell-title">
-                                {r.content}
-                                {r.isActive === false && (
-                                  <StatusBadge tone="muted" label="Đã gỡ" />
-                                )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="detail-section">
+            <h3 className="detail-section-title">
+              Bình luận ({formatNumber(commentsQuery.data?.total ?? 0)})
+            </h3>
+            {commentsQuery.isError ? (
+              <p className="cell-meta">Không tải được bình luận.</p>
+            ) : commentsQuery.isLoading ? (
+              <p className="cell-meta">Đang tải bình luận…</p>
+            ) : comments.length === 0 ? (
+              <p className="cell-meta">Bài đăng chưa có bình luận nào.</p>
+            ) : (
+              <div>
+                {comments.map((c) => (
+                  <div key={c._id} className="post-comment-item">
+                    <CommentAvatar name={c.authorName} />
+                    <div className="post-comment-body">
+                      <p className={`post-comment-text${c.isActive === false ? ' post-comment-text--removed' : ''}`}>
+                        {c.content}
+                      </p>
+                      <p className="post-comment-meta">
+                        <span>{c.authorName ?? 'Tài khoản đã xoá'}</span>
+                        <span>·</span>
+                        <span>{formatDateTime(c.createdAt)}</span>
+                        {c.isActive === false && <StatusBadge tone="muted" label="Đã gỡ" />}
+                      </p>
+                      {(c.replies ?? []).length > 0 && (
+                        <div className="post-comment-replies">
+                          {(c.replies ?? []).map((r) => (
+                            <div key={r._id} className="post-comment-item">
+                              <CommentAvatar name={r.authorName} small />
+                              <div className="post-comment-body">
+                                <p className={`post-comment-text${r.isActive === false ? ' post-comment-text--removed' : ''}`}>
+                                  {r.content}
+                                </p>
+                                <p className="post-comment-meta">
+                                  <span>{r.authorName ?? 'Tài khoản đã xoá'}</span>
+                                  <span>·</span>
+                                  <span>{formatDateTime(r.createdAt)}</span>
+                                  {r.isActive === false && <StatusBadge tone="muted" label="Đã gỡ" />}
+                                </p>
                               </div>
-                              <div className="cell-meta">
-                                {r.authorName ?? 'Tài khoản đã xoá'} · {formatDateTime(r.createdAt)}
-                              </div>
-                            </div>
-                            <div className="table-actions table-actions--end">
-                              <button
-                                className={r.isActive === false
-                                  ? 'btn btn-secondary btn-sm'
-                                  : 'btn btn-danger-ghost btn-sm'}
-                                type="button"
+                              <CommentAction
+                                removed={r.isActive === false}
                                 disabled={busy}
                                 onClick={() =>
                                   setConfirm({
@@ -365,21 +468,14 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
                                     action: r.isActive === false ? 'restore' : 'takedown',
                                   })
                                 }
-                              >
-                                {r.isActive === false ? 'Khôi phục' : 'Gỡ'}
-                              </button>
+                              />
                             </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <div className="table-actions table-actions--end">
-                    <button
-                      className={c.isActive === false
-                        ? 'btn btn-secondary btn-sm'
-                        : 'btn btn-danger-ghost btn-sm'}
-                      type="button"
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <CommentAction
+                      removed={c.isActive === false}
                       disabled={busy}
                       onClick={() =>
                         setConfirm({
@@ -388,80 +484,33 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
                           action: c.isActive === false ? 'restore' : 'takedown',
                         })
                       }
-                    >
-                      {c.isActive === false ? 'Khôi phục' : 'Gỡ'}
-                    </button>
+                    />
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="detail-section">
-          <h3 className="detail-section-title">
-            Báo cáo chờ xử lý ({reports.length})
-          </h3>
-          {reportsQuery.isError ? (
-            <p className="cell-meta">Không tải được báo cáo.</p>
-          ) : reports.length === 0 ? (
-            <p className="cell-meta">Không có báo cáo nào đang chờ.</p>
-          ) : (
-            reports.map((r) => (
-              <div key={r._id} className="surface-card conv-report">
-                <div className="conv-report-history-head">
-                  <p className="cell-title">{r.reason}</p>
-                  <StatusBadge tone="warning" label="Chờ xử lý" />
-                </div>
-                <div className="cell-meta">
-                  {r.reporterName ?? 'Không rõ'} · {formatDateTime(r.createdAt)}
-                </div>
-                <div className="table-actions conv-report-actions">
-                  <button
-                    className="btn btn-primary btn-sm"
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setConfirm({ kind: 'report', id: r._id, action: 'resolve', reason: r.reason })
-                    }
-                  >
-                    <Check size={16} strokeWidth={2} aria-hidden /> Giải quyết
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setConfirm({ kind: 'report', id: r._id, action: 'dismiss', reason: r.reason })
-                    }
-                  >
-                    <X size={16} strokeWidth={2} aria-hidden /> Bỏ qua
-                  </button>
-                </div>
+                ))}
               </div>
-            ))
-          )}
-        </section>
+            )}
+          </section>
 
-        <section className="detail-section">
-          <h3 className="detail-section-title">Lịch sử thao tác</h3>
-          {auditQuery.isError ? (
-            <p className="cell-meta">Không tải được lịch sử.</p>
-          ) : (auditQuery.data ?? []).length === 0 ? (
-            <p className="cell-meta">Chưa có thao tác nào trên bài này.</p>
-          ) : (
-            <ul className="audit-list">
-              {(auditQuery.data ?? []).map((a) => (
-                <li key={a._id} className="audit-list-row">
-                  <StatusBadge tone={auditActionTone(a.action)} label={auditActionLabel(a.action)} />
-                  <span className="cell-meta">{a.actorName ?? 'Không rõ'}</span>
-                  <span className="cell-meta">{auditTargetLabel(a.targetType)}</span>
-                  <span className="cell-meta k-mono">{formatDateTime(a.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          <section className="detail-section">
+            <h3 className="detail-section-title">Lịch sử thao tác</h3>
+            {auditQuery.isError ? (
+              <p className="cell-meta">Không tải được lịch sử.</p>
+            ) : (auditQuery.data ?? []).length === 0 ? (
+              <p className="cell-meta">Chưa có thao tác nào trên bài này.</p>
+            ) : (
+              <ul className="audit-list">
+                {(auditQuery.data ?? []).map((a) => (
+                  <li key={a._id} className="audit-list-row">
+                    <StatusBadge tone={auditActionTone(a.action)} label={auditActionLabel(a.action)} />
+                    <span className="cell-meta">{a.actorName ?? 'Không rõ'}</span>
+                    <span className="cell-meta">{auditTargetLabel(a.targetType)}</span>
+                    <span className="cell-meta k-mono">{formatDateTime(a.createdAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       </div>
 
       <footer className="detail-bottombar">
@@ -471,12 +520,12 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
         <span className="detail-bottombar-spacer" />
         {hidden ? (
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-primary btn-sm"
             type="button"
             disabled={busy}
             onClick={() => setConfirm({ kind: 'lifecycle' })}
           >
-            Khôi phục bài đăng
+            <RotateCcw size={15} strokeWidth={2.2} aria-hidden /> Khôi phục bài đăng
           </button>
         ) : (
           <button
@@ -485,7 +534,7 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
             disabled={busy}
             onClick={() => setConfirm({ kind: 'lifecycle' })}
           >
-            Gỡ bài đăng
+            <Trash2 size={15} strokeWidth={2.2} aria-hidden /> Gỡ bài đăng
           </button>
         )}
       </footer>
@@ -559,5 +608,49 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
         }}
       />
     </section>
+  );
+}
+
+/** Avatar tròn nhỏ cho một dòng bình luận — cùng quy ước rail nhưng gọn hơn. */
+function CommentAvatar({ name, small }: { name?: string | null; small?: boolean }) {
+  return (
+    <span
+      className={`post-rail-avatar post-rail-avatar--initial ${small ? 'post-rail-avatar--small' : 'post-comment-avatar'}`}
+      aria-hidden
+    >
+      {initials(name ?? '?', '?')}
+    </span>
+  );
+}
+
+/**
+ * Nút gỡ/khôi phục của một bình luận: icon-only, hiện khi hover.
+ *
+ * Bình luận là nội dung để đọc; nếu mỗi dòng đều có nút chữ "Gỡ" thì nút át
+ * chính nội dung (đo trên bài 20 bình luận). Icon + `aria-label` + `title` vẫn
+ * đủ nghĩa cho screen reader và tooltip.
+ */
+function CommentAction({
+  removed,
+  disabled,
+  onClick,
+}: {
+  removed: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`btn btn-icon btn-sm post-comment-action ${removed ? 'btn-secondary' : 'btn-danger-ghost'}`}
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={removed ? 'Khôi phục bình luận' : 'Gỡ bình luận'}
+      aria-label={removed ? 'Khôi phục bình luận' : 'Gỡ bình luận'}
+    >
+      {removed
+        ? <Undo2 size={14} strokeWidth={2} aria-hidden />
+        : <Trash2 size={14} strokeWidth={2} aria-hidden />}
+    </button>
   );
 }

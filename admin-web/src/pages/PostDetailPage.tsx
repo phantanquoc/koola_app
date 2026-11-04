@@ -16,7 +16,7 @@ export default function PostDetailPage() {
   const backTo = (location.state as { from?: string } | null)?.from ?? '/posts';
 
   return (
-    <div className="page-stack detail-page">
+    <div className="page-stack detail-page detail-page--split post-detail-page">
       <button
         className="btn btn-ghost btn-sm detail-back"
         type="button"

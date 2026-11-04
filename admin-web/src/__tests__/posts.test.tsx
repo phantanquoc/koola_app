@@ -188,7 +188,7 @@ describe('PostDetailPage', () => {
 
     // Caption hiện hai lần: tiêu đề trang và khung "Nội dung".
     expect((await screen.findAllByText('Bài bán hàng giá rẻ')).length).toBeGreaterThan(0);
-    expect(screen.getByAltText('Media 1')).toBeTruthy();
+    expect(screen.getByAltText('Ảnh 1 của bài đăng')).toBeTruthy();
     expect(screen.getByText('Báo cáo chờ xử lý (1)')).toBeTruthy();
     expect(screen.getByText('spam')).toBeTruthy();
     // Action audit code được dịch, không phơi raw `takedown_post`.
@@ -200,7 +200,7 @@ describe('PostDetailPage', () => {
   it('giải quyết báo cáo gọi đúng endpoint sau confirm', async () => {
     renderPage('/posts/p1');
 
-    const resolveBtn = await screen.findByRole('button', { name: /Giải quyết/ });
+    const resolveBtn = await screen.findByRole('button', { name: /Đã xử lý/ });
     fireEvent.click(resolveBtn);
     expect(mockedPost).not.toHaveBeenCalled();
 
