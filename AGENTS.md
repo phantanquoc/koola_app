@@ -67,9 +67,17 @@ cd chat-backend
 npx ts-node -r tsconfig-paths/register scripts/seed-music-audio.ts
 ```
 
-Downloads 7 public-domain tracks (Wikimedia Commons), uploads each through the
-same presigned path the admin UI uses, and derives `durationMs` from the file —
-so they actually play. Idempotent on `sourceUrl`. Requires MinIO + MongoDB up.
+Downloads 12 tracks from Wikimedia Commons — 7 public-domain instrumentals
+plus 5 Vietnamese (folk field recording, Nguyễn-court anthem, AFVN sign-on,
+and two CC BY-SA instrumentals) — uploads each through the same presigned path
+the admin UI uses, and derives `durationMs` from the file, so they actually
+play. Idempotent on `sourceUrl`; retries with a `content-length` check because
+Wikimedia truncates large transfers under load. Requires MinIO + MongoDB up.
+
+**There is almost no commercially usable Vietnamese music on Commons.** The
+folk/pop collections there are NC/ND, and everything else is pronunciation
+clips — those five are the whole usable set. For real V-pop you need a licensed
+source (Epidemic Sound, Artlist, or direct publisher deals), not a public dump.
 
 `scripts/seed-music-tracks.ts` is the older metadata-only seeder: its rows
 point at `music/…` keys that were never uploaded, so **every one of them fails

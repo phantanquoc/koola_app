@@ -45,11 +45,16 @@ interface SeedTrack {
   title: string;
   artist: string;
   tags: string[];
-  /** Wikimedia Commons original file. Public domain. */
+  /** Wikimedia Commons original file. */
   url: string;
   /** Human-readable provenance for the clearance export. */
   sourceUrl: string;
   attribution: string;
+  /** Defaults to CC0; set explicitly for the few BY / BY-SA files. */
+  licenseType?: LicenseType;
+  licenseUrl?: string;
+  /** Extension of the object we store; derived from `url` when omitted. */
+  mime?: string;
 }
 
 const TRACKS: SeedTrack[] = [
@@ -109,14 +114,93 @@ const TRACKS: SeedTrack[] = [
     sourceUrl: 'https://commons.wikimedia.org/wiki/File:Hypnotic_ambient_electronic_music_by_MusicLM.mp3',
     attribution: 'Google MusicLM — public domain, Wikimedia Commons',
   },
+
+  // ─── Việt Nam ─────────────────────────────────────────────────────────────
+  // Commons has almost no modern Vietnamese music under a commercial-use
+  // licence: the folk/pop collections there are NC/ND, and the rest are
+  // pronunciation clips. These three are the usable ones — an early field
+  // recording, a royal-court anthem, and a radio sign-on — plus two CC BY-SA
+  // instrumentals from a Vietnamese producer.
+  {
+    title: 'Hát Trống Quân',
+    artist: 'Đỗ Văn Thâm',
+    tags: ['viet', 'dân ca', 'folk', 'truyền thống'],
+    url: 'https://upload.wikimedia.org/wikipedia/commons/3/3e/H%C3%A1t_tr%E1%BB%91ng_qu%C3%A2n_-_%C4%90%E1%BB%97_V%C4%83n_Th%C3%A2m.mp3',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:H%C3%A1t_tr%E1%BB%91ng_qu%C3%A2n_-_%C4%90%E1%BB%97_V%C4%83n_Th%C3%A2m.mp3',
+    attribution: 'Đỗ Văn Thâm — hát trống quân, public domain (Musée de la parole et du geste), Wikimedia Commons',
+  },
+  {
+    title: 'Đăng Đàn Cung',
+    artist: 'Lê Minh Khải (phục dựng)',
+    tags: ['viet', 'cung đình', 'lịch sử', 'instrumental'],
+    url: 'https://upload.wikimedia.org/wikipedia/commons/5/53/%C4%90%C4%83ng_%C4%90%C3%A0n_cung_%28%E7%99%BB%E5%A3%87%E5%AE%AE%29_-_1941_Annam_Anthem_-_Recreation_by_Prof._Liam_C._Kelley_%28L%C3%AA_Minh_Kh%E1%BA%A3i%29.mp3',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:%C4%90%C4%83ng_%C4%90%C3%A0n_cung_(%E7%99%BB%E5%A3%87%E5%AE%AE)_-_1941_Annam_Anthem_-_Recreation_by_Prof._Liam_C._Kelley_(L%C3%AA_Minh_Kh%E1%BA%A3i).mp3',
+    attribution: 'Quốc thiều triều Nguyễn (1941), phục dựng bởi Lê Minh Khải — CC BY 3.0, Wikimedia Commons',
+    licenseType: LicenseType.CC_BY,
+    licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+  },
+  {
+    title: 'Tiếng Gọi Công Dân (AFVN)',
+    artist: 'AFVN Radio',
+    tags: ['viet', 'lịch sử', 'quốc ca'],
+    url: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/South_Vietnamese_national_anthem_on_AFVN_radio.mp3',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:South_Vietnamese_national_anthem_on_AFVN_radio.mp3',
+    attribution: 'Quốc ca Việt Nam Cộng hoà, phát trên AFVN — public domain (PD US), Wikimedia Commons',
+  },
+  {
+    title: 'Ngẫu Hứng',
+    artist: 'Hoàng Đam Entertainment',
+    tags: ['viet', 'instrumental', 'chill'],
+    url: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/Ng%E1%BA%ABu_H%E1%BB%A9ng.wav',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Ng%E1%BA%ABu_H%E1%BB%A9ng.wav',
+    attribution: 'Hoàng Đam Entertainment — Ngẫu Hứng, CC BY-SA 4.0, Wikimedia Commons',
+    licenseType: LicenseType.CC_BY,
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    mime: 'audio/wav',
+  },
+  {
+    title: 'Nhạc Thư Giãn',
+    artist: 'Hoàng Đam Entertainment',
+    tags: ['viet', 'instrumental', 'relax'],
+    url: 'https://upload.wikimedia.org/wikipedia/commons/2/27/Nh%E1%BA%A1c_Th%C6%B0_Gi%E1%BA%A3n.wav',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Nh%E1%BA%A1c_Th%C6%B0_Gi%E1%BA%A3n.wav',
+    attribution: 'Hoàng Đam Entertainment — Nhạc Thư Giãn, CC BY-SA 4.0, Wikimedia Commons',
+    licenseType: LicenseType.CC_BY,
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    mime: 'audio/wav',
+  },
 ];
 
-async function download(url: string): Promise<Buffer> {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'koola-seed/1.0 (admin catalog seed)' },
-  });
-  if (!res.ok) throw new Error(`tải file thất bại: HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+/**
+ * Download with retries and a length check.
+ *
+ * Wikimedia resets or truncates large transfers under load — a 30 MB WAV can
+ * come back as a 2 KB error page with a 200 status, which the parser then
+ * rejects with a confusing "cannot read duration". Comparing the body against
+ * `content-length` turns that into a retryable failure instead.
+ */
+async function download(url: string, attempts = 5): Promise<Buffer> {
+  let lastError = 'không rõ';
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'koola-seed/1.0 (admin catalog seed)' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const expected = Number(res.headers.get('content-length') ?? 0);
+      if (expected > 0 && bytes.length !== expected) {
+        throw new Error(`nhận ${bytes.length}/${expected} byte`);
+      }
+      return bytes;
+    } catch (err) {
+      const cause = (err as { cause?: { code?: string } })?.cause?.code;
+      lastError = cause ?? (err as Error).message;
+      if (i < attempts) await new Promise((r) => setTimeout(r, 3000 * i));
+    }
+  }
+  throw new Error(`tải file thất bại sau ${attempts} lần (${lastError})`);
 }
 
 async function bootstrap() {
@@ -146,9 +230,10 @@ async function bootstrap() {
       }
 
       try {
+        const mime = t.mime ?? 'audio/mpeg';
         const bytes = await download(t.url);
         const { audioKey, uploadUrl } = await storage.presignUpload(
-          'audio/mpeg',
+          mime,
           bytes.length,
         );
 
@@ -156,12 +241,12 @@ async function bootstrap() {
         // a create failure leaves an orphan the "Kiểm kho" dialog will find.
         const put = await fetch(uploadUrl, {
           method: 'PUT',
-          headers: { 'Content-Type': 'audio/mpeg' },
+          headers: { 'Content-Type': mime },
           body: new Uint8Array(bytes),
         });
         if (!put.ok) throw new Error(`PUT MinIO thất bại: HTTP ${put.status}`);
 
-        const durationMs = await readDurationMs(bytes, 'audio/mpeg');
+        const durationMs = await readDurationMs(bytes, mime);
 
         await musicModel.create({
           title: t.title,
@@ -171,8 +256,8 @@ async function bootstrap() {
           // No separate preview is produced (that needs ffmpeg); aliasing
           // keeps the required field pointing at a real object.
           previewKey: audioKey,
-          licenseType: LicenseType.CC0,
-          licenseUrl: PD_MARK,
+          licenseType: t.licenseType ?? LicenseType.CC0,
+          licenseUrl: t.licenseUrl ?? PD_MARK,
           sourceUrl: t.sourceUrl,
           attribution: t.attribution,
           tags: t.tags,
