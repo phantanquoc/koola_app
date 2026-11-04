@@ -16,7 +16,9 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import {
   KoolaChip,
@@ -84,6 +86,17 @@ type Styles = ReturnType<typeof makeStyles>;
 // Filtering, sorting and pagination are done by the server
 // (GET /commerce/products) — never in the client.
 
+/** Snap lò xo cho nền search shopping — tương đương snapSubTabBar của tab chat. */
+const SHOPPING_SEARCH_SNAP_SPRING = { damping: 18, stiffness: 220, mass: 0.6 };
+
+function snapSearchBar(progress: SharedValue<number>, offsetY: number) {
+  'worklet';
+  const target = offsetY <= 4 || progress.value < 0.5 ? 0 : 1;
+  if (progress.value !== target) {
+    progress.value = withSpring(target, SHOPPING_SEARCH_SNAP_SPRING);
+  }
+}
+
 // ── Inline search field rendered inside the shared HeaderSearchDock frame ───
 // Same 36dp pill + 48dp dock actions as Connect/Chat: the pill keeps a live
 // TextInput (direct type-to-filter, 300 ms debounce) instead of a press-to-open
@@ -97,12 +110,20 @@ const ShoppingHeaderSearch: React.FC<{
   onChangeText: (t: string) => void;
   activeFilterCount: number;
   onOpenFilters: () => void;
-}> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters }) => {
+  hiddenProgress?: SharedValue<number>;
+}> = ({ semantic, value, onChangeText, activeFilterCount, onOpenFilters, hiddenProgress }) => {
   const [focused, setFocused] = useState(false);
+  // Chỉ fade lớp nền — nội dung (TextInput, icon, filter) giữ nguyên, vẫn bấm được.
+  const fillFadeStyle = useAnimatedStyle(() => {
+    if (!hiddenProgress) return { opacity: 1 };
+    const t = Math.min(1, Math.max(0, hiddenProgress.value));
+    const h = t * t * (3 - 2 * t);
+    return { opacity: 1 - h };
+  }, [hiddenProgress]);
   return (
     <View style={shoppingDockStyles.host}>
       <View pointerEvents="none" style={shoppingDockStyles.fillClip}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: semantic.border.subtle }]} />
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: semantic.border.subtle }, fillFadeStyle]} />
       </View>
       <View style={shoppingDockStyles.innerRow}>
         <View style={shoppingDockStyles.searchArea}>
@@ -475,6 +496,9 @@ const ShoppingHomeScreen: React.FC = () => {
   // chrome lift shadow.
   const scrolledProgress = useSharedValue(0);
   const chipsFade = useSharedValue(0);
+  // Ẩn nền ô search khi cuộn lên — cùng thuật toán hiddenProgress của tab chat.
+  const searchHidden = useSharedValue(0);
+  const previousScrollY = useSharedValue(0);
   // UI-thread copy of the reduce-motion flag (calling prefersReducedMotion()
   // inside a worklet would hop threads).
   const reduceMotionSV = useSharedValue(prefersReducedMotion());
@@ -500,6 +524,8 @@ const ShoppingHomeScreen: React.FC = () => {
       // Reduce-motion: chips stay pinned, only the lift shadow applies.
       if (reduceMotionSV.value) {
         if (chipsFade.value !== 0) chipsFade.value = 0;
+        if (searchHidden.value !== 0) searchHidden.value = 0;
+        previousScrollY.value = offsetY;
         return;
       }
       // Fade the in-content chips out over the first ~64px of scroll; at rest
@@ -508,6 +534,35 @@ const ShoppingHomeScreen: React.FC = () => {
       if (Math.abs(chipsFade.value - target) > 0.02) {
         chipsFade.value = withTiming(target, { duration: 160, easing: Easing.out(Easing.cubic) });
       }
+      // Nền search: continuous + dính hướng kéo, cùng thuật toán tab chat
+      // (ngưỡng delta 0.45px, làm mượt 0.72, reset về 0 khi offsetY <= 4).
+      if (offsetY <= 4) {
+        searchHidden.value = 0;
+      } else {
+        const cur = searchHidden.value as number;
+        const delta = offsetY - previousScrollY.value;
+        const absD = delta >= 0 ? delta : -delta;
+        if (absD > 0.45) {
+          const step = delta * 0.016;
+          let next = cur + step;
+          if (next < 0) next = 0;
+          else if (next > 1) next = 1;
+          searchHidden.value = cur + (next - cur) * 0.72;
+        }
+      }
+      previousScrollY.value = offsetY;
+    },
+    // Snap khi thả tay: không dừng ở trạng thái nửa ẩn nửa hiện.
+    onEndDrag: (event) => {
+      if (reduceMotionSV.value) return;
+      const vy = event.velocity?.y ?? 0;
+      if ((vy >= 0 ? vy : -vy) < 0.3) {
+        snapSearchBar(searchHidden, Math.max(0, event.contentOffset.y));
+      }
+    },
+    onMomentumEnd: (event) => {
+      if (reduceMotionSV.value) return;
+      snapSearchBar(searchHidden, Math.max(0, event.contentOffset.y));
     },
   });
 
@@ -792,7 +847,7 @@ const ShoppingHomeScreen: React.FC = () => {
         withGlass={false}
         onSearchPress={handleSearchPress}
         headerActions={headerActions}
-        dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} />}
+        dockContent={<ShoppingHeaderSearch semantic={semantic} value={query} onChangeText={setQuery} activeFilterCount={activeFilterCount} onOpenFilters={openFilterSheet} hiddenProgress={searchHidden} />}
       />
       <Animated.FlatList
         removeClippedSubviews={false}
