@@ -35,6 +35,9 @@ jest.mock('../../services/api/apiService', () => ({
   setAccessTokenInMemory: jest.fn(),
   getAccessTokenInMemory: jest.fn(() => 'at'),
   setForceLogoutHandler: jest.fn(),
+  // business-members task 17.1: AuthContext registers a handler for the
+  // "business session revoked on this device" 401.
+  setSessionEndedHandler: jest.fn(),
 }));
 jest.mock('../../services/storage/asyncStorage', () => ({
   asyncStorage: {

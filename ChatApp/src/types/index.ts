@@ -190,6 +190,72 @@ export interface MessageSearchItem {
 export type AccountType = 'personal' | 'business';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 
+/**
+ * Role inside a business account, highest to lowest privilege.
+ * Mirrors the backend's business_members.role values; the hierarchy is
+ * owner > admin > editor > viewer.
+ */
+export type BusinessRole = 'owner' | 'admin' | 'editor' | 'viewer';
+
+/**
+ * Privilege level per role. Mirrors the backend's roleHierarchy
+ * (business-members.controller.ts) — keep the two in sync.
+ */
+export const BUSINESS_ROLE_LEVEL: Record<BusinessRole, number> = {
+  owner: 4,
+  admin: 3,
+  editor: 2,
+  viewer: 1,
+};
+
+/**
+ * Actions guarded by a business role.
+ *
+ * Mirrors the matrix served by `GET /permissions/matrix`
+ * (business-members.controller.ts). The client copy lets the UI hide controls
+ * without a round-trip — the backend still enforces every action via
+ * BusinessRoleGuard, so this is a UX affordance, never the security boundary.
+ *
+ * Kept here (plain data, no imports) rather than inside the
+ * useBusinessPermissions module so tests and non-React callers can read the
+ * matrix without pulling in AuthContext and the navigator tree behind it.
+ */
+export type BusinessPermission =
+  | 'product.create'
+  | 'product.update'
+  | 'product.delete'
+  | 'order.process'
+  | 'order.refund'
+  | 'member.invite'
+  | 'member.remove'
+  | 'member.changeRole'
+  | 'business.settings'
+  | 'business.delete'
+  | 'analytics.view';
+
+/** Minimum role per action, from the backend matrix. */
+export const PERMISSION_MIN_ROLE: Record<BusinessPermission, BusinessRole> = {
+  'product.create': 'editor',
+  'product.update': 'editor',
+  'product.delete': 'editor',
+  'order.process': 'editor',
+  'order.refund': 'admin',
+  'member.invite': 'admin',
+  'member.remove': 'admin',
+  'member.changeRole': 'admin',
+  'business.settings': 'admin',
+  'business.delete': 'owner',
+  'analytics.view': 'viewer',
+};
+
+/** Vietnamese label per role, for toasts and badges. */
+export const BUSINESS_ROLE_LABEL: Record<BusinessRole, string> = {
+  owner: 'Chủ sở hữu',
+  admin: 'Quản trị viên',
+  editor: 'Biên tập viên',
+  viewer: 'Người xem',
+};
+
 export interface Account {
   _id: string;
   displayName: string;
@@ -199,6 +265,21 @@ export interface Account {
   logoKey?: string;
   /** Only set on business accounts */
   ownerUserId?: string;
+  /** Role for member businesses (owner/admin/editor/viewer). Undefined for personal accounts. */
+  role?: BusinessRole;
+  /** Display name of the business owner (only set for member businesses where user is not owner) */
+  ownerDisplayName?: string;
+  /**
+   * True when the user joined this business as a member rather than owning it.
+   * Lets the account switcher group "your accounts" vs "member accounts".
+   */
+  isMember?: boolean;
+  /**
+   * Active member count, set on OWNED businesses only (`GET /accounts`
+   * computes it with one grouped count over `business_members`). Absent on
+   * personal and member accounts.
+   */
+  memberCount?: number;
 }
 
 export interface CreateBusinessAccountPayload {

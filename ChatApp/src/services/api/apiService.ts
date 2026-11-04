@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import ENV from '../../config/env';
 import { asyncStorage } from '../storage/asyncStorage';
+import { getDeviceHeaders } from '../DeviceIdService';
 import type {
   LoginResponse,
   ConversationListResponse,
@@ -13,6 +14,7 @@ import type {
   User,
   MessageSearchItem,
   Account,
+  BusinessRole,
   CreateBusinessAccountPayload,
 } from '../../types';
 
@@ -31,25 +33,114 @@ export function setForceLogoutHandler(fn: ForceLogoutHandler | null): void {
   forceLogoutHandler = fn;
 }
 
+/**
+ * Device session headers for the raw-`axios` calls below.
+ *
+ * The refresh paths deliberately bypass `apiClient` (its response interceptor
+ * would recurse), which also means they bypass the request interceptor that
+ * normally attaches these headers. Each of those paths re-switches into the
+ * active business account, and the backend only creates/replaces the device
+ * session when X-Device-ID is present — without this the device limit would go
+ * unenforced on every refresh. Never throws: device metadata is best-effort.
+ */
+async function safeDeviceHeaders(): Promise<Record<string, string>> {
+  try {
+    return await getDeviceHeaders();
+  } catch {
+    return {};
+  }
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: ENV.API_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor — attach access token
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  if (accessToken && config.headers) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+// Request interceptor — attach access token + device session headers
+apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  if (config.headers) {
+    // Attach access token
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+
+    // Attach device session headers for business account tracking. The backend
+    // enforces 1 active device per business member off X-Device-ID, and
+    // refreshes the session's lastActiveAt on every business API call, so these
+    // go on every request rather than just /accounts/switch.
+    try {
+      const deviceHeaders = await getDeviceHeaders();
+      for (const [name, value] of Object.entries(deviceHeaders)) {
+        config.headers[name] = value;
+      }
+    } catch (err) {
+      // Non-fatal: proceed without device headers. Personal accounts don't
+      // require device tracking; business switches degrade to no session row.
+      console.warn('[apiService] Failed to resolve device headers:', err);
+    }
   }
   return config;
 });
+
+/**
+ * Marker the backend's BusinessSessionGuard sends when this device lost the
+ * business session to a newer login, or an admin forced it out. Matches
+ * `BUSINESS_SESSION_ENDED` in chat-backend/src/common/guards/business-session.guard.ts.
+ */
+const SESSION_ENDED_MARKER = 'BUSINESS_SESSION_ENDED';
+
+/** User-facing copy for that case (business-members task 17.1). */
+export const SESSION_ENDED_MESSAGE =
+  'Phiên làm việc đã kết thúc vì tài khoản được đăng nhập trên thiết bị khác.';
+
+type SessionEndedHandler = (message: string) => void;
+let sessionEndedHandler: SessionEndedHandler | null = null;
+
+/**
+ * Register the UI hook for "your business session was taken over".
+ *
+ * Separate from `setForceLogoutHandler`: a force-logout is a dead credential
+ * and the user must sign in again, whereas this is a live personal session
+ * whose BUSINESS context was revoked — the right response is to drop back to
+ * the personal account and say why, not to log the user out.
+ */
+export function setSessionEndedHandler(fn: SessionEndedHandler | null): void {
+  sessionEndedHandler = fn;
+}
+
+/** True when a 401 carries the guard's session-ended marker. */
+function isSessionEnded(error: {
+  response?: { data?: { message?: unknown } };
+}): boolean {
+  const msg = error?.response?.data?.message;
+  if (typeof msg === 'string') return msg.includes(SESSION_ENDED_MARKER);
+  if (Array.isArray(msg)) {
+    return msg.some((m) => typeof m === 'string' && m.includes(SESSION_ENDED_MARKER));
+  }
+  return false;
+}
 
 // Response interceptor — handle 401 + refresh
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    // Task 17.1: a revoked DEVICE session, not a dead token. Retrying the
+    // refresh would re-switch into the business and evict the device that just
+    // took over — a ping-pong between the two devices. Hand it to the UI
+    // instead so it can fall back to the personal account.
+    if (error.response?.status === 401 && isSessionEnded(error)) {
+      await asyncStorage.clearActiveAccountId();
+      try {
+        sessionEndedHandler?.(SESSION_ENDED_MESSAGE);
+      } catch {
+        // ignore — best effort
+      }
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
@@ -68,11 +159,20 @@ apiClient.interceptors.response.use(
         const activeAccountId = await asyncStorage.getActiveAccountId();
         if (activeAccountId) {
           try {
-            // Use the root token to switch into the business account
+            // Use the root token to switch into the business account.
+            // NOTE: raw `axios` here (not apiClient) to avoid recursing through
+            // this interceptor — so the device headers must be attached by hand,
+            // otherwise the backend skips session creation and the 1-device
+            // limit is silently bypassed on every token refresh.
             const { data: switchData } = await axios.post(
               `${ENV.API_URL}/accounts/switch`,
               { targetAccountId: activeAccountId },
-              { headers: { Authorization: `Bearer ${newAccessToken}` } },
+              {
+                headers: {
+                  Authorization: `Bearer ${newAccessToken}`,
+                  ...(await safeDeviceHeaders()),
+                },
+              },
             );
             newAccessToken = switchData.accessToken;
           } catch {
@@ -135,7 +235,12 @@ export async function refreshAccessTokenInMemory(): Promise<string | null> {
         const { data: switchData } = await axios.post(
           `${ENV.API_URL}/accounts/switch`,
           { targetAccountId: activeAccountId },
-          { headers: { Authorization: `Bearer ${newAccessToken}` } },
+          {
+            headers: {
+              Authorization: `Bearer ${newAccessToken}`,
+              ...(await safeDeviceHeaders()),
+            },
+          },
         );
         newAccessToken = switchData.accessToken;
       } catch {
@@ -193,7 +298,12 @@ export async function refreshAccessTokenForSocket(): Promise<{
         const { data: switchData } = await axios.post(
           `${ENV.API_URL}/accounts/switch`,
           { targetAccountId: activeAccountId },
-          { headers: { Authorization: `Bearer ${newAccessToken}` } },
+          {
+            headers: {
+              Authorization: `Bearer ${newAccessToken}`,
+              ...(await safeDeviceHeaders()),
+            },
+          },
         );
         newAccessToken = switchData.accessToken;
       } catch {
@@ -582,16 +692,61 @@ export const mediaApi = {
 
 // ─── Accounts API ─────────────────────────────────────────────────────────────
 
+/**
+ * Normalize one entry of `GET /accounts`.
+ *
+ * The backend returns three shapes from one array (AccountsService.listAccounts):
+ * the root personal user, owned businesses (`role: 'owner'`, `isMember: false`)
+ * and member businesses (`role` from business_members, plus `ownerDisplayName`
+ * and `isMember: true`). ObjectIds arrive serialized, and the root document has
+ * no `role`/`isMember` at all — so coerce ids to strings and only keep a role
+ * when it is one the app understands.
+ */
+function normalizeAccount(raw: unknown): Account {
+  const a = raw as Record<string, unknown>;
+  const role = a.role;
+  const accountType = a.accountType === 'business' ? 'business' : 'personal';
+
+  return {
+    _id: String(a._id),
+    displayName: typeof a.displayName === 'string' ? a.displayName : '',
+    avatar: typeof a.avatar === 'string' ? a.avatar : undefined,
+    accountType,
+    verificationStatus: a.verificationStatus as Account['verificationStatus'],
+    logoKey: typeof a.logoKey === 'string' ? a.logoKey : undefined,
+    ownerUserId: a.ownerUserId != null ? String(a.ownerUserId) : undefined,
+    role:
+      role === 'owner' || role === 'admin' || role === 'editor' || role === 'viewer'
+        ? role
+        : undefined,
+    ownerDisplayName:
+      typeof a.ownerDisplayName === 'string' ? a.ownerDisplayName : undefined,
+    // Member businesses are the ones the user joined rather than owns; the
+    // account switcher groups on this (owned vs joined).
+    isMember: a.isMember === true,
+    // Owned businesses only (task 13.5). The backend computes it with one
+    // grouped count, so this is never a per-row fetch.
+    memberCount:
+      typeof a.memberCount === 'number' && Number.isFinite(a.memberCount)
+        ? a.memberCount
+        : undefined,
+  };
+}
+
 export const accountsApi = {
   async list(): Promise<Account[]> {
     const { data } = await apiClient.get('/accounts');
-    return data;
+    return Array.isArray(data) ? data.map(normalizeAccount) : [];
   },
   async createBusiness(payload: CreateBusinessAccountPayload): Promise<{ account: Account }> {
     const { data } = await apiClient.post('/accounts/business', payload);
     return data;
   },
-  async switch(targetAccountId: string): Promise<{ accessToken: string }> {
+  /**
+   * `forcedLogout` is true when this switch evicted the member's session on
+   * another device (backend enforces 1 active device per business member).
+   */
+  async switch(targetAccountId: string): Promise<{ accessToken: string; forcedLogout?: boolean }> {
     const { data } = await apiClient.post('/accounts/switch', { targetAccountId });
     return data;
   },
@@ -927,6 +1082,392 @@ export const callLogsApi = {
   }): Promise<CallLogsResponse> {
     const { data } = await apiClient.get('/call-logs', { params });
     return data;
+  },
+};
+
+// ─── Business Members & Invites API (business-members-system) ───────────────
+// Mirrors BusinessMembersController + BusinessInvitesController. Every write
+// here is additionally guarded server-side by BusinessRoleGuard (admin+), so
+// the client-side PermissionGate is a UX affordance, never the boundary.
+
+/** A populated user reference as returned by Mongoose `.populate()`. */
+export interface BusinessMemberUser {
+  _id: string;
+  displayName: string;
+  avatar?: string;
+  email?: string;
+}
+
+export interface BusinessMember {
+  /** Membership row id — NOT the user id. Use `userId._id` for member routes. */
+  _id: string;
+  userId: BusinessMemberUser;
+  role: BusinessRole;
+  /** Populated to `{ displayName }` when the member arrived via an invite. */
+  invitedBy?: { _id?: string; displayName?: string } | null;
+  joinedAt?: string;
+  lastActiveAt?: string | null;
+  status: 'active' | 'suspended';
+}
+
+export interface BusinessInvite {
+  id: string;
+  email: string;
+  role: BusinessRole;
+  invitedBy?: { _id?: string; displayName?: string } | null;
+  createdAt?: string;
+  expiresAt?: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+}
+
+/** Roles an invite may offer — `owner` is never invitable (backend DTO). */
+export type InvitableRole = Exclude<BusinessRole, 'owner'>;
+
+function isBusinessRole(value: unknown): value is BusinessRole {
+  return value === 'owner' || value === 'admin' || value === 'editor' || value === 'viewer';
+}
+
+/**
+ * The backend returns raw Mongoose docs, so ids arrive as ObjectIds that
+ * serialise to strings and `userId` may be an unpopulated id if the referenced
+ * user was deleted. Normalising here keeps every screen off defensive casts.
+ */
+function normalizeMember(raw: unknown): BusinessMember {
+  const m = (raw ?? {}) as Record<string, unknown>;
+  const rawUser = m.userId;
+  const user = (typeof rawUser === 'object' && rawUser !== null ? rawUser : {}) as Record<
+    string,
+    unknown
+  >;
+  const invitedBy =
+    typeof m.invitedBy === 'object' && m.invitedBy !== null
+      ? (m.invitedBy as Record<string, unknown>)
+      : null;
+
+  return {
+    _id: String(m._id ?? ''),
+    userId: {
+      _id: String(user._id ?? (typeof rawUser === 'string' ? rawUser : '')),
+      displayName:
+        typeof user.displayName === 'string' && user.displayName
+          ? user.displayName
+          : 'Người dùng đã xoá',
+      avatar: typeof user.avatar === 'string' ? user.avatar : undefined,
+      email: typeof user.email === 'string' ? user.email : undefined,
+    },
+    role: isBusinessRole(m.role) ? m.role : 'viewer',
+    invitedBy: invitedBy
+      ? {
+          _id: invitedBy._id != null ? String(invitedBy._id) : undefined,
+          displayName:
+            typeof invitedBy.displayName === 'string' ? invitedBy.displayName : undefined,
+        }
+      : null,
+    joinedAt: typeof m.joinedAt === 'string' ? m.joinedAt : undefined,
+    lastActiveAt: typeof m.lastActiveAt === 'string' ? m.lastActiveAt : null,
+    status: m.status === 'suspended' ? 'suspended' : 'active',
+  };
+}
+
+function normalizeInvite(raw: unknown): BusinessInvite {
+  const i = (raw ?? {}) as Record<string, unknown>;
+  const invitedBy =
+    typeof i.invitedBy === 'object' && i.invitedBy !== null
+      ? (i.invitedBy as Record<string, unknown>)
+      : null;
+  const status = i.status;
+
+  return {
+    id: String(i.id ?? i._id ?? ''),
+    email: typeof i.email === 'string' ? i.email : '',
+    role: isBusinessRole(i.role) ? i.role : 'viewer',
+    invitedBy: invitedBy
+      ? {
+          _id: invitedBy._id != null ? String(invitedBy._id) : undefined,
+          displayName:
+            typeof invitedBy.displayName === 'string' ? invitedBy.displayName : undefined,
+        }
+      : null,
+    createdAt: typeof i.createdAt === 'string' ? i.createdAt : undefined,
+    expiresAt: typeof i.expiresAt === 'string' ? i.expiresAt : undefined,
+    status:
+      status === 'accepted' || status === 'revoked' || status === 'expired'
+        ? status
+        : 'pending',
+  };
+}
+
+export const businessMembersApi = {
+  /** Readable by any member (no role guard on the backend). */
+  async list(businessId: string): Promise<BusinessMember[]> {
+    const { data } = await apiClient.get(`/businesses/${businessId}/members`);
+    return Array.isArray(data) ? data.map(normalizeMember) : [];
+  },
+  /**
+   * Admin+. Rejected with 400 when changing your own role or demoting the last
+   * owner — surface `error.response.data.message` rather than a generic copy.
+   */
+  async changeRole(
+    businessId: string,
+    userId: string,
+    role: BusinessRole,
+  ): Promise<{ success: boolean }> {
+    const { data } = await apiClient.put(
+      `/businesses/${businessId}/members/${userId}/role`,
+      { role },
+    );
+    return data;
+  },
+  /** Admin+. 400 on self-removal or removing the last owner. */
+  async remove(businessId: string, userId: string): Promise<{ success: boolean }> {
+    const { data } = await apiClient.delete(
+      `/businesses/${businessId}/members/${userId}`,
+    );
+    return data;
+  },
+};
+
+export const businessInvitesApi = {
+  /** Admin+. 409 when the email already has a pending invite or is a member. */
+  async create(
+    businessId: string,
+    payload: { email: string; role: InvitableRole },
+  ): Promise<BusinessInvite> {
+    const { data } = await apiClient.post(`/businesses/${businessId}/invites`, payload);
+    return normalizeInvite(data);
+  },
+  /** Admin+. Backend returns pending invites only. */
+  async list(businessId: string): Promise<BusinessInvite[]> {
+    const { data } = await apiClient.get(`/businesses/${businessId}/invites`);
+    return Array.isArray(data) ? data.map(normalizeInvite) : [];
+  },
+  /** Admin+. 400 when the invite was already accepted. */
+  async revoke(businessId: string, inviteId: string): Promise<{ success: boolean }> {
+    const { data } = await apiClient.delete(
+      `/businesses/${businessId}/invites/${inviteId}`,
+    );
+    return data;
+  },
+  /** Admin+. 400 when the invite is expired or no longer pending. */
+  async resend(businessId: string, inviteId: string): Promise<{ success: boolean }> {
+    const { data } = await apiClient.post(
+      `/businesses/${businessId}/invites/${inviteId}/resend`,
+    );
+    return data;
+  },
+
+  /**
+   * Read an invite token without consuming it — powers the accept screen's
+   * "X mời bạn làm Y" preview. 400 on an expired/invalid token, 404 once the
+   * invite was revoked or already accepted.
+   *
+   * Requires a session (the route sits behind the global JwtAuthGuard), so the
+   * accept flow must send an anonymous user through login first, carrying the
+   * token along.
+   */
+  async verify(token: string): Promise<InvitePreview> {
+    const { data } = await apiClient.get('/invites/verify', { params: { token } });
+    return normalizeInvitePreview(data);
+  },
+
+  /**
+   * Consume the invite as the signed-in user. 403 when the session's email is
+   * not the invited one; `{ alreadyMember: true }` when the membership already
+   * existed — treat that as success and switch into the business.
+   */
+  async accept(token: string): Promise<AcceptInviteResult> {
+    const { data } = await apiClient.post('/invites/accept', { token });
+    const d = (data ?? {}) as Record<string, unknown>;
+    return {
+      success: d.success === true || d.alreadyMember === true,
+      alreadyMember: d.alreadyMember === true,
+      businessId: d.businessId != null ? String(d.businessId) : undefined,
+      role: isBusinessRole(d.role) ? d.role : undefined,
+    };
+  },
+};
+
+/** `GET /invites/verify` — the invite as shown before accepting. */
+export interface InvitePreview {
+  businessId: string;
+  businessName: string;
+  businessLogoKey?: string;
+  email: string;
+  role: BusinessRole;
+  inviterName?: string;
+  expiresAt?: string;
+}
+
+export interface AcceptInviteResult {
+  success: boolean;
+  /** The user was already a member; the invite was closed out. */
+  alreadyMember: boolean;
+  businessId?: string;
+  role?: BusinessRole;
+}
+
+/**
+ * `businessId` arrives populated (`{ _id, displayName, logoKey }`) but degrades
+ * to a bare id string if that populate ever drops, so handle both shapes.
+ */
+function normalizeInvitePreview(raw: unknown): InvitePreview {
+  const i = (raw ?? {}) as Record<string, unknown>;
+  const biz =
+    typeof i.businessId === 'object' && i.businessId !== null
+      ? (i.businessId as Record<string, unknown>)
+      : {};
+  const inviter =
+    typeof i.invitedBy === 'object' && i.invitedBy !== null
+      ? (i.invitedBy as Record<string, unknown>)
+      : {};
+
+  return {
+    businessId: String(
+      biz._id ?? (typeof i.businessId === 'string' ? i.businessId : ''),
+    ),
+    businessName:
+      typeof biz.displayName === 'string' && biz.displayName
+        ? biz.displayName
+        : 'Tài khoản kinh doanh',
+    businessLogoKey: typeof biz.logoKey === 'string' ? biz.logoKey : undefined,
+    email: typeof i.email === 'string' ? i.email : '',
+    role: isBusinessRole(i.role) ? i.role : 'viewer',
+    inviterName:
+      typeof inviter.displayName === 'string' ? inviter.displayName : undefined,
+    expiresAt: typeof i.expiresAt === 'string' ? i.expiresAt : undefined,
+  };
+}
+
+// ─── Business device sessions (business-members-system task 17) ─────────────
+
+export interface BusinessSession {
+  id: string;
+  user: { _id: string; displayName: string; avatar?: string };
+  deviceId: string;
+  deviceModel?: string;
+  osVersion?: string;
+  appVersion?: string;
+  createdAt?: string;
+  lastActiveAt?: string;
+}
+
+function normalizeSession(raw: unknown): BusinessSession {
+  const s = (raw ?? {}) as Record<string, unknown>;
+  const u =
+    typeof s.userId === 'object' && s.userId !== null
+      ? (s.userId as Record<string, unknown>)
+      : {};
+  return {
+    id: String(s.id ?? s._id ?? ''),
+    user: {
+      _id: String(u._id ?? (typeof s.userId === 'string' ? s.userId : '')),
+      displayName:
+        typeof u.displayName === 'string' && u.displayName
+          ? u.displayName
+          : 'Người dùng đã xoá',
+      avatar: typeof u.avatar === 'string' ? u.avatar : undefined,
+    },
+    deviceId: typeof s.deviceId === 'string' ? s.deviceId : '',
+    deviceModel: typeof s.deviceModel === 'string' ? s.deviceModel : undefined,
+    osVersion: typeof s.osVersion === 'string' ? s.osVersion : undefined,
+    appVersion: typeof s.appVersion === 'string' ? s.appVersion : undefined,
+    createdAt: typeof s.createdAt === 'string' ? s.createdAt : undefined,
+    lastActiveAt: typeof s.lastActiveAt === 'string' ? s.lastActiveAt : undefined,
+  };
+}
+
+export const businessSessionsApi = {
+  /** Admin+. One row per member holding an active device. */
+  async list(businessId: string): Promise<BusinessSession[]> {
+    const { data } = await apiClient.get(`/businesses/${businessId}/sessions`);
+    return Array.isArray(data) ? data.map(normalizeSession) : [];
+  },
+  /** Admin+. 400 when the session is the caller's own — log out instead. */
+  async forceLogout(
+    businessId: string,
+    sessionId: string,
+  ): Promise<{ success: boolean }> {
+    const { data } = await apiClient.delete(
+      `/businesses/${businessId}/sessions/${sessionId}`,
+    );
+    return data;
+  },
+};
+
+// ─── Business audit logs (business-members-system task 18) ─────────────────
+
+export interface BusinessAuditLogEntry {
+  id: string;
+  actor: { _id: string; displayName: string; avatar?: string };
+  eventType: string;
+  resourceId?: string;
+  changes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  deviceId?: string;
+  createdAt?: string;
+}
+
+export interface BusinessAuditLogPage {
+  logs: BusinessAuditLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+function normalizeAuditLog(raw: unknown): BusinessAuditLogEntry {
+  const l = (raw ?? {}) as Record<string, unknown>;
+  const a =
+    typeof l.actorId === 'object' && l.actorId !== null
+      ? (l.actorId as Record<string, unknown>)
+      : {};
+  return {
+    id: String(l.id ?? l._id ?? ''),
+    actor: {
+      _id: String(a._id ?? (typeof l.actorId === 'string' ? l.actorId : '')),
+      displayName:
+        typeof a.displayName === 'string' && a.displayName
+          ? a.displayName
+          : 'Người dùng đã xoá',
+      avatar: typeof a.avatar === 'string' ? a.avatar : undefined,
+    },
+    eventType: typeof l.eventType === 'string' ? l.eventType : 'unknown',
+    resourceId: typeof l.resourceId === 'string' ? l.resourceId : undefined,
+    changes:
+      typeof l.changes === 'object' && l.changes !== null
+        ? (l.changes as Record<string, unknown>)
+        : undefined,
+    metadata:
+      typeof l.metadata === 'object' && l.metadata !== null
+        ? (l.metadata as Record<string, unknown>)
+        : undefined,
+    deviceId: typeof l.deviceId === 'string' ? l.deviceId : undefined,
+    createdAt: typeof l.createdAt === 'string' ? l.createdAt : undefined,
+  };
+}
+
+export const businessAuditLogsApi = {
+  /** Admin+. Newest first; `page` is 1-based. */
+  async list(
+    businessId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      eventType?: string;
+      actorId?: string;
+      startDate?: string;
+      endDate?: string;
+    } = {},
+  ): Promise<BusinessAuditLogPage> {
+    const { data } = await apiClient.get(`/businesses/${businessId}/audit-logs`, {
+      params,
+    });
+    const d = (data ?? {}) as Record<string, unknown>;
+    return {
+      logs: Array.isArray(d.logs) ? d.logs.map(normalizeAuditLog) : [],
+      total: typeof d.total === 'number' ? d.total : 0,
+      page: typeof d.page === 'number' ? d.page : (params.page ?? 1),
+      limit: typeof d.limit === 'number' ? d.limit : (params.limit ?? 20),
+    };
   },
 };
 

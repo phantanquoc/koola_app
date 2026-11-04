@@ -63,6 +63,15 @@ export type PersonalTabStackParamList = {
   UpgradeAccount: undefined;
   PersonalOrders: undefined;
   PersonalOrderDetail: { orderId: string };
+  // ─── Business members system ──────────────────────────────────────────────
+  // All four act on the ACTIVE business account, so none takes a businessId:
+  // taking one as a param would let a stale link act on the wrong business.
+  ManageMembers: undefined;
+  InviteMember: undefined;
+  /** Reached from the `koola://invite?token=…` deep link. */
+  AcceptInvite: { token: string };
+  ActiveSessions: undefined;
+  AuditLog: undefined;
 };
 
 // ─── Shopping Tab Stack ───────────────────────────────────────────────────────

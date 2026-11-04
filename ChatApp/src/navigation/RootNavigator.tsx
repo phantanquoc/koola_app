@@ -6,6 +6,7 @@ import {
   DarkTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Linking } from 'react-native';
 import type { LinkingOptions, NavigationState, PartialState } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../ui';
@@ -22,6 +23,11 @@ import CoverPhotoViewerScreen from '../screens/main/CoverPhotoViewerScreen';
 import SplashScreen from '../components/SplashScreen';
 import type { RootStackParamList } from './types';
 import { momentsLinking } from './momentsLinking';
+import { inviteLinkingScreens, parseInviteToken } from './inviteLinking';
+import {
+  setPendingInviteToken,
+  takePendingInviteToken,
+} from './pendingInviteStore';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -37,6 +43,23 @@ export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 // new params into the CURRENT route, leaving the old screen underneath.
 const linking: LinkingOptions<RootStackParamList> = {
   ...momentsLinking,
+  config: {
+    ...momentsLinking.config,
+    screens: {
+      ...momentsLinking.config?.screens,
+      // `koola://invite?token=…` → PersonalTab › AcceptInvite (task 15.1).
+      // Merged at the `Main` level so both configs' tab subtrees survive:
+      // spreading only the top level would let one `Main` entry replace the
+      // other, silently killing the Moments links.
+      Main: {
+        screens: {
+          ...(momentsLinking.config?.screens?.Main as { screens?: object })
+            ?.screens,
+          ...inviteLinkingScreens.Main.screens,
+        },
+      },
+    },
+  },
   getStateFromPath: (path, options): PartialState<NavigationState> | undefined => {
     const state: PartialState<NavigationState> | undefined = require(
       '@react-navigation/native'
@@ -55,9 +78,65 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * Park an invite link that arrives while signed out, and replay it once the
+ * user is authenticated (task 15.3).
+ *
+ * While `isAuthenticated` is false the AcceptInvite route is not in the
+ * navigator (conditional screen groups), so React Navigation's own linking
+ * cannot deliver it and the OS will not hand the URL over twice. We intercept
+ * the URL ourselves, hold the token, and navigate after the auth group swaps.
+ */
+function usePendingInviteLink(isAuthenticated: boolean): void {
+  // Capture the cold-start URL and any while-running links, but only act on
+  // them when there is no session — an authenticated app is served by the
+  // normal `linking` config above.
+  React.useEffect(() => {
+    if (isAuthenticated) return;
+
+    let alive = true;
+    void Linking.getInitialURL().then((url) => {
+      if (!alive) return;
+      const token = parseInviteToken(url);
+      if (token) setPendingInviteToken(token);
+    });
+
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const token = parseInviteToken(url);
+      if (token) setPendingInviteToken(token);
+    });
+
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, [isAuthenticated]);
+
+  // Replay after login. `navigate` (not reset) so the user keeps the tab they
+  // landed on and can back out of the invite without being stranded.
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    const token = takePendingInviteToken();
+    if (!token) return;
+
+    // The navigator needs a frame to mount the authenticated group before it
+    // can accept a navigate() for a route inside it.
+    const timer = setTimeout(() => {
+      if (!navigationRef.isReady()) return;
+      navigationRef.navigate('Main', {
+        screen: 'PersonalTab',
+        params: { screen: 'AcceptInvite', params: { token } },
+      } as never);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isAuthenticated]);
+}
+
 const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const { palette, resolvedScheme } = useTheme();
+  usePendingInviteLink(isAuthenticated);
 
   // Derive a React Navigation theme from the active palette
   const isDark = resolvedScheme === 'dark';

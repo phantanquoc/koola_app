@@ -24,6 +24,7 @@ import {
 import UserAvatar from '../../components/UserAvatar';
 import ProvincePicker from '../../components/connect/ProvincePicker';
 import {
+  KoolaBadge,
   KoolaButton,
   KoolaDivider,
   KoolaSurface,
@@ -33,7 +34,12 @@ import {
   useTheme,
 } from '../../ui';
 import type { Palette } from '../../ui/theme';
-import type { Account, CreateBusinessAccountPayload } from '../../types';
+import RoleBadge from '../../components/business/RoleBadge';
+import type {
+  Account,
+  CreateBusinessAccountPayload,
+  VerificationStatus,
+} from '../../types';
 import { BUSINESS_CATEGORIES, RELATIONSHIP_LABELS } from '../connect/constants';
 import { useDocumentUpload } from './hooks/useDocumentUpload';
 import type { DocumentUploadStatus } from './hooks/useDocumentUpload';
@@ -46,13 +52,36 @@ const VERIFICATION_LABEL: Record<string, string> = {
   rejected: 'Bị từ chối',
 };
 
-const getVerificationColor = (status: string, p: Palette): string => {
-  switch (status) {
-    case 'pending': return p.warning;
-    case 'verified': return p.success;
-    case 'rejected': return p.danger;
-    default: return p.muted;
+/** Badge fill tone per verification status (task 13.4). */
+const VERIFICATION_TONE: Record<
+  VerificationStatus,
+  'success' | 'warning' | 'danger'
+> = {
+  verified: 'success',
+  pending: 'warning',
+  rejected: 'danger',
+};
+
+/**
+ * Splits the account list into the three sections the switcher renders:
+ * the personal root (always first, no header), businesses the user owns, and
+ * businesses the user merely joined as a member.
+ *
+ * `isMember` is set by `accountsApi.list()` from the backend's membership
+ * query, so ownership is decided by the server rather than inferred here.
+ */
+const groupAccounts = (accounts: Account[]) => {
+  const personal: Account[] = [];
+  const owned: Account[] = [];
+  const member: Account[] = [];
+
+  for (const account of accounts) {
+    if (account.accountType === 'personal') personal.push(account);
+    else if (account.isMember) member.push(account);
+    else owned.push(account);
   }
+
+  return { personal, owned, member };
 };
 
 // Labels come from the shared map so the sign-up picker shows exactly what
@@ -479,6 +508,93 @@ const AccountListScreen: React.FC = () => {
     [activeAccount, switchAccount],
   );
 
+  const { personal, owned, member } = useMemo(
+    () => groupAccounts(localAccounts),
+    [localAccounts],
+  );
+
+  /**
+   * One account row. Shared by all three sections so grouping stays purely a
+   * layout concern and every row keeps the same press/badge/active behaviour.
+   */
+  const renderAccount = useCallback(
+    (account: Account) => {
+      const isActive = activeAccount?._id === account._id;
+      // Verification badge is business-only: a personal account has no
+      // verification lifecycle, so showing one would be meaningless.
+      const status =
+        account.accountType === 'business' ? account.verificationStatus : undefined;
+
+      return (
+        <Pressable
+          style={styles.accountRow}
+          onPress={() => handleSelectAccount(account)}
+          accessibilityRole="button">
+          <View>
+            <UserAvatar
+              displayName={account.displayName}
+              avatar={account.avatar}
+              size={44}
+            />
+            {badgedAccounts.has(account._id) && !isActive && (
+              <View style={styles.notifBadge} accessibilityLabel="Thông báo mới" />
+            )}
+          </View>
+          <View style={styles.accountInfo}>
+            <KoolaText variant="label" numberOfLines={1}>{account.displayName}</KoolaText>
+            <View style={styles.accountMeta}>
+              <KoolaText variant="caption" tone="muted">
+                {account.accountType === 'personal' ? 'Cá nhân' : 'Doanh nghiệp'}
+              </KoolaText>
+              {!!status && (
+                <View style={styles.metaBadge}>
+                  <KoolaBadge
+                    label={VERIFICATION_LABEL[status] ?? status}
+                    tone={VERIFICATION_TONE[status]}
+                  />
+                </View>
+              )}
+              {account.role && (
+                <View style={styles.metaBadge}>
+                  <RoleBadge role={account.role} />
+                </View>
+              )}
+            </View>
+            {/* Task 13.5: team size on owned businesses. `memberCount` comes
+                from GET /accounts as one grouped count, so this is not a
+                per-row fetch. 1 = the owner alone, which needs no label. */}
+            {!account.isMember &&
+              account.accountType === 'business' &&
+              (account.memberCount ?? 1) > 1 && (
+                <KoolaText
+                  variant="caption"
+                  tone="muted"
+                  numberOfLines={1}
+                  style={styles.ownerLine}>
+                  {`${account.memberCount} thành viên`}
+                </KoolaText>
+              )}
+            {/* Member businesses name their owner so the user can tell whose
+                business they are acting inside after switching. */}
+            {account.isMember && !!account.ownerDisplayName && (
+              <KoolaText
+                variant="caption"
+                tone="muted"
+                numberOfLines={1}
+                style={styles.ownerLine}>
+                {`Sở hữu bởi ${account.ownerDisplayName}`}
+              </KoolaText>
+            )}
+          </View>
+          {isActive && (
+            <MaterialIcons name="check-circle" size={20} color={palette.primary} />
+          )}
+        </Pressable>
+      );
+    },
+    [activeAccount?._id, badgedAccounts, handleSelectAccount, palette.primary, styles],
+  );
+
   const handleCreated = useCallback(
     (account: Account) => {
       setLocalAccounts((prev) => [...prev, account]);
@@ -508,58 +624,61 @@ const AccountListScreen: React.FC = () => {
       <ScrollView style={styles.container} contentContainerStyle={[styles.listContent, { paddingTop: scrollPadTop }]}>
         <KoolaText variant="heading" style={styles.pageTitle}>Danh sách tài khoản</KoolaText>
 
-      <KoolaSurface variant="raised" style={styles.listCard}>
-        {localAccounts.map((account, index) => {
-          const isActive = activeAccount?._id === account._id;
-          const statusLabel = account.verificationStatus
-            ? VERIFICATION_LABEL[account.verificationStatus] ?? account.verificationStatus
-            : undefined;
-          const statusColor = account.verificationStatus
-            ? getVerificationColor(account.verificationStatus, palette)
-            : undefined;
-          return (
+      {personal.length > 0 && (
+        <KoolaSurface variant="raised" style={styles.listCard}>
+          {personal.map((account, index) => (
             <React.Fragment key={account._id}>
               {index > 0 && <KoolaDivider />}
-              <Pressable
-                style={styles.accountRow}
-                onPress={() => handleSelectAccount(account)}
-                accessibilityRole="button">
-                <View>
-                  <UserAvatar
-                    displayName={account.displayName}
-                    avatar={account.avatar}
-                    size={44}
-                  />
-                  {badgedAccounts.has(account._id) && !isActive && (
-                    <View style={styles.notifBadge} accessibilityLabel="Thông báo mới" />
-                  )}
-                </View>
-                <View style={styles.accountInfo}>
-                  <KoolaText variant="label" numberOfLines={1}>{account.displayName}</KoolaText>
-                  <View style={styles.accountMeta}>
-                    <KoolaText variant="caption" tone="muted">
-                      {account.accountType === 'personal' ? 'Cá nhân' : 'Doanh nghiệp'}
-                    </KoolaText>
-                    {statusLabel && (
-                      <KoolaText
-                        variant="caption"
-                        style={{ color: statusColor, marginLeft: 8 }}>
-                        {statusLabel}
-                      </KoolaText>
-                    )}
-                  </View>
-                </View>
-                {isActive && (
-                  <MaterialIcons name="check-circle" size={20} color={palette.primary} />
-                )}
-              </Pressable>
+              {renderAccount(account)}
             </React.Fragment>
-          );
-        })}
-      </KoolaSurface>
+          ))}
+        </KoolaSurface>
+      )}
+
+      {owned.length > 0 && (
+        <>
+          <KoolaText
+            variant="caption"
+            tone="muted"
+            weight="700"
+            accessibilityRole="header"
+            style={styles.sectionHeader}>
+            Tài khoản của bạn
+          </KoolaText>
+          <KoolaSurface variant="raised" style={styles.listCard}>
+            {owned.map((account, index) => (
+              <React.Fragment key={account._id}>
+                {index > 0 && <KoolaDivider />}
+                {renderAccount(account)}
+              </React.Fragment>
+            ))}
+          </KoolaSurface>
+        </>
+      )}
+
+      {member.length > 0 && (
+        <>
+          <KoolaText
+            variant="caption"
+            tone="muted"
+            weight="700"
+            accessibilityRole="header"
+            style={styles.sectionHeader}>
+            Tài khoản thành viên
+          </KoolaText>
+          <KoolaSurface variant="raised" style={styles.listCard}>
+            {member.map((account, index) => (
+              <React.Fragment key={account._id}>
+                {index > 0 && <KoolaDivider />}
+                {renderAccount(account)}
+              </React.Fragment>
+            ))}
+          </KoolaSurface>
+        </>
+      )}
 
       <KoolaButton
-        title="Thêm tài khoản doanh nghiệp"
+        title="Tạo tài khoản kinh doanh"
         icon="add-business"
         onPress={() => setShowCreateForm(true)}
         style={styles.addButton}
@@ -634,7 +753,23 @@ const makeStyles = (p: Palette) =>
     accountMeta: {
       flexDirection: 'row',
       alignItems: 'center',
+      flexWrap: 'wrap',
       marginTop: 2,
+    },
+    // Badges sit in a spacer view so font scaling can wrap the row without
+    // the pill itself stretching.
+    metaBadge: {
+      marginLeft: 8,
+      marginTop: 2,
+    },
+    ownerLine: {
+      marginTop: 2,
+    },
+    sectionHeader: {
+      textTransform: 'uppercase',
+      marginBottom: koolaSpacing.sm,
+      marginLeft: 4,
+      letterSpacing: 0.6,
     },
     addButton: {
       marginTop: koolaSpacing.sm,

@@ -20,10 +20,31 @@ export interface PendingNotificationTap {
   orderId?: string;
   accountId?: string;
   accountType?: string;
+  /** business_session_ended / business_event: the business the push is about. */
+  businessId?: string;
+  /** business_session_ended: device that lost the session. */
+  evictedDeviceId?: string;
+  /** business_event: audit event type (member.removed, …). */
+  eventType?: string;
   _receivedAt: number;
 }
 
 const PENDING_TAP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+type PendingTapListener = () => void;
+const pendingTapListeners = new Set<PendingTapListener>();
+
+/**
+ * Notified after a tap is parked. AppInner otherwise consumes taps only when
+ * `isAuthenticated` flips, which never happens for a tap that brings an
+ * already-signed-in app back from the background (onNotificationOpenedApp).
+ */
+export function onPendingNotificationTap(listener: PendingTapListener): () => void {
+  pendingTapListeners.add(listener);
+  return () => {
+    pendingTapListeners.delete(listener);
+  };
+}
 
 async function storePendingTap(tap: Omit<PendingNotificationTap, '_receivedAt'>): Promise<void> {
   try {
@@ -33,7 +54,15 @@ async function storePendingTap(tap: Omit<PendingNotificationTap, '_receivedAt'>)
     );
   } catch (err) {
     console.error('[Push] Failed to store pending tap:', err);
+    return;
   }
+  pendingTapListeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      // a listener failing must not block the others
+    }
+  });
 }
 
 export async function consumePendingNotificationTap(): Promise<PendingNotificationTap | null> {
@@ -193,6 +222,24 @@ class PushNotificationService {
         type,
         orderId,
         conversationId,
+        accountId,
+        accountType,
+      });
+      return;
+    }
+
+    // business-members 17.2. No account badge: `accountId` on these pushes is
+    // the recipient's ROOT id, so a badge would land on the personal account.
+    const { businessId, evictedDeviceId, eventType } = data;
+    if (
+      (type === 'business_session_ended' || type === 'business_event') &&
+      businessId
+    ) {
+      void storePendingTap({
+        type,
+        businessId,
+        evictedDeviceId,
+        eventType,
         accountId,
         accountType,
       });
