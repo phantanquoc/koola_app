@@ -30,6 +30,7 @@ import { MusicTrack } from './schemas/music-track.schema';
 import { Post } from './schemas/post.schema';
 import { PostComment } from './schemas/post-comment.schema';
 import { PostLike } from './schemas/post-like.schema';
+import { PostShare } from './schemas/post-share.schema';
 import { CommentLike } from './schemas/comment-like.schema';
 import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
@@ -113,6 +114,8 @@ describe('12.2 TTL behavior', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
+        { provide: getModelToken(PostShare.name), useValue: {} },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -264,6 +267,7 @@ describe('12.3 View dedupe race — E11000 is swallowed silently', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -398,6 +402,7 @@ describe('12.4 Redis flush — viewCount converges to Mongo', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -540,6 +545,7 @@ describe('12.5 Highlight media migration — happy path and rollback', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -680,6 +686,7 @@ describe('12.6 Audience-list cache invalidation on member change', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -817,6 +824,7 @@ describe('12.7 Comment-as-DM — message carries storyReply metadata', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -1011,6 +1019,7 @@ describe('D1: Cascade delete count', () => {
           useValue: postCommentModel,
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
@@ -1149,6 +1158,7 @@ describe('D3: Gateway cascade metadata', () => {
           useValue: postCommentModel,
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {
@@ -1285,6 +1295,7 @@ describe('D4: Batch query optimization', () => {
           useValue: postCommentModel,
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+          { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         { provide: getModelToken(CommentLike.name), useValue: makeModelMock() },
         { provide: getModelToken(Report.name), useValue: makeModelMock() },
         {

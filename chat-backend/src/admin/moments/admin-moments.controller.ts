@@ -22,6 +22,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AdminMomentsService } from './admin-moments.service';
 import { ListPostsDto } from '../dto/list-posts.dto';
 import { ListPostLikersDto } from '../dto/list-post-likers.dto';
+import { ListPostSharesDto } from '../dto/list-post-shares.dto';
 
 /**
  * Kiểm duyệt bài đăng.
@@ -67,6 +68,14 @@ export class AdminMomentsController {
   @ApiOperation({ summary: 'Người đã thích bài (phân trang bằng cursor)' })
   listLikers(@Param('id') id: string, @Query() dto: ListPostLikersDto) {
     return this.moments.listLikers(id, dto);
+  }
+
+  @Get(':id/shares')
+  @ApiOperation({
+    summary: 'Người đã chia sẻ bài (gộp theo người, kèm số lượt riêng)',
+  })
+  listShares(@Param('id') id: string, @Query() dto: ListPostSharesDto) {
+    return this.moments.listShares(id, dto);
   }
 
   @Post(':id/takedown')

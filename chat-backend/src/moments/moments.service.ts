@@ -28,6 +28,7 @@ import {
   PostCommentDocument,
 } from './schemas/post-comment.schema';
 import { PostLike, PostLikeDocument } from './schemas/post-like.schema';
+import { PostShare, PostShareDocument } from './schemas/post-share.schema';
 import {
   CommentLike,
   CommentLikeDocument,
@@ -110,6 +111,8 @@ export class MomentsService {
     private postCommentModel: Model<PostCommentDocument>,
     @InjectModel(PostLike.name)
     private postLikeModel: Model<PostLikeDocument>,
+    @InjectModel(PostShare.name)
+    private postShareModel: Model<PostShareDocument>,
     @InjectModel(CommentLike.name)
     private commentLikeModel: Model<CommentLikeDocument>,
     @InjectModel(Report.name)
@@ -1970,6 +1973,28 @@ export class MomentsService {
       { $inc: { shareCount: 1 } },
       { new: true, projection: { shareCount: 1 } },
     );
+
+    // Chỉ ghi khi THỰC SỰ tăng counter — nhánh Redis chặn ở trên đã return
+    // sớm, nên một lần bấm lặp trong 24h không tạo row rác trong danh sách
+    // admin. Best-effort: ghi lỗi không được làm hỏng lượt chia sẻ đã thành
+    // công (counter và link trả về vẫn đúng).
+    // Fire-and-forget: một lỗi ghi bản ghi chi tiết KHÔNG được làm hỏng lượt
+    // chia sẻ đã thành công (counter và link trả về vẫn đúng). `Promise.resolve`
+    // bọc ngoài để cả trường hợp model trả về giá trị đồng bộ cũng an toàn.
+    try {
+      void Promise.resolve(
+        this.postShareModel.create({ postId, userId: viewerId }),
+      ).catch((err: unknown) => {
+        this.logger.warn(
+          `[MomentsService] post share record failed for ${postId}: ${String(err)}`,
+        );
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[MomentsService] post share record threw for ${postId}: ${String(err)}`,
+      );
+    }
+
     return {
       shareCount: (updated as any)?.shareCount ?? (post.shareCount ?? 0) + 1,
       // Legacy field, kept for existing consumers.

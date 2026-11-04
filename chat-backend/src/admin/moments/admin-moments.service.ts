@@ -19,6 +19,10 @@ import {
   PostLike,
   PostLikeDocument,
 } from '../../moments/schemas/post-like.schema';
+import {
+  PostShare,
+  PostShareDocument,
+} from '../../moments/schemas/post-share.schema';
 import { User, UserDocument } from '../../users/user.schema';
 import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { AdminAuditService } from '../admin-audit.service';
@@ -31,6 +35,7 @@ import {
   type PostScopeValue,
 } from '../dto/list-posts.dto';
 import { ListPostLikersDto } from '../dto/list-post-likers.dto';
+import { ListPostSharesDto } from '../dto/list-post-shares.dto';
 
 /** Một mục media đã ký, giữ nguyên key gốc cho "Chi tiết kỹ thuật". */
 export interface SignedPostMedia extends PostMediaItem {
@@ -73,6 +78,8 @@ export class AdminMomentsService {
     private readonly audienceListModel: Model<AudienceListDocument>,
     @InjectModel(PostLike.name)
     private readonly postLikeModel: Model<PostLikeDocument>,
+    @InjectModel(PostShare.name)
+    private readonly postShareModel: Model<PostShareDocument>,
     private readonly moderationMedia: ModerationMediaService,
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
@@ -255,6 +262,106 @@ export class AdminMomentsService {
       // nó thay vì tự cộng hai nguồn (legacy + PostLike) — cộng dồn có thể lệch
       // nếu một lượt thích tồn tại ở cả hai nơi sau migration dở dang.
       total: post.likeCount ?? likers.length,
+    };
+  }
+
+  /**
+   * Danh sách người đã chia sẻ một bài.
+   *
+   * Khác lượt thích ở hai điểm, cả hai đều do cách app ghi share:
+   * - Một người có thể chia sẻ **nhiều lần** (Redis chỉ chặn lặp trong 24h),
+   *   nên gộp theo `userId` và giữ lần gần nhất — danh sách trả lời "ai đã
+   *   chia sẻ", không phải "có bao nhiêu lượt".
+   * - `shareCount` trên bài là số **lượt** (đã dedupe 24h), không phải số
+   *   người; vì vậy `total` ở đây là số người phân biệt trong collection, và
+   *   `shareCount` được trả riêng để UI nói rõ hai con số khác nhau.
+   *
+   * Cursor là `createdAt` ISO: sắp theo thời gian mới nhất trước.
+   */
+  async listShares(postId: string, dto: ListPostSharesDto) {
+    this.assertObjectId(postId);
+    const post = await this.postModel
+      .findById(postId)
+      .select('shareCount')
+      .lean();
+    if (!post) throw new NotFoundException('Post not found');
+
+    const limit = Math.min(Math.max(dto.limit ?? 20, 1), 100);
+    const filter: Record<string, unknown> = { postId };
+    if (dto.cursor) {
+      const before = new Date(dto.cursor);
+      if (Number.isNaN(before.getTime())) {
+        throw new BadRequestException('cursor không hợp lệ');
+      }
+      filter.createdAt = { $lt: before };
+    }
+
+    const rows = await this.postShareModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit + 1)
+      .lean();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    // Gộp theo người, giữ lượt gần nhất. Cùng lý do danh sách là "ai", không
+    // phải "lượt": một người bấm chia sẻ 3 ngày liền không nên chiếm 3 dòng.
+    const latestByUser = new Map<string, { userId: string; sharedAt: Date | null }>();
+    for (const r of page) {
+      const key = String(r.userId);
+      if (!latestByUser.has(key)) {
+        latestByUser.set(key, {
+          userId: key,
+          sharedAt: (r as { createdAt?: Date }).createdAt ?? null,
+        });
+      }
+    }
+
+    const userIds = [...latestByUser.keys()].filter((id) =>
+      Types.ObjectId.isValid(id),
+    );
+    const users = userIds.length
+      ? await this.userModel
+          .find({ _id: { $in: userIds } })
+          .select('displayName avatar')
+          .lean()
+      : [];
+    const userById = new Map(
+      (users as { _id: unknown; displayName?: string; avatar?: string }[]).map((u) => [
+        String(u._id),
+        u,
+      ]),
+    );
+
+    const sharers = [...latestByUser.values()].map((s) => {
+      const u = userById.get(s.userId);
+      return {
+        userId: s.userId,
+        name: u?.displayName ?? null,
+        avatar: u?.avatar ?? null,
+        sharedAt: s.sharedAt,
+      };
+    });
+
+    // Tổng số NGƯỜI chia sẻ (không phải số lượt) — một aggregate rẻ, chạy cùng
+    // lúc với trang để chân danh sách nói đúng "N người".
+    const distinctUsers = await this.postShareModel
+      .distinct('userId', { postId })
+      .catch(() => [] as unknown[]);
+
+    return {
+      sharers,
+      nextCursor: hasMore
+        ? ((page[page.length - 1] as { createdAt?: Date }).createdAt?.toISOString() ??
+          null)
+        : null,
+      /** Số người phân biệt đã chia sẻ. */
+      total: Array.isArray(distinctUsers) ? distinctUsers.length : sharers.length,
+      /**
+       * Số lượt trên bài (dedupe 24h). Khác `total`: người dùng bấm nhiều lần
+       * trong nhiều ngày vẫn là một người nhưng nhiều lượt. UI nói rõ hai số.
+       */
+      shareCount: (post as { shareCount?: number }).shareCount ?? 0,
     };
   }
 

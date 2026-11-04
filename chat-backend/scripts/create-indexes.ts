@@ -34,6 +34,7 @@ import { StorySchema } from '../src/moments/schemas/story.schema';
 import { PostSchema } from '../src/moments/schemas/post.schema';
 import { PostCommentSchema } from '../src/moments/schemas/post-comment.schema';
 import { PostLikeSchema } from '../src/moments/schemas/post-like.schema';
+import { PostShareSchema } from '../src/moments/schemas/post-share.schema';
 import { StoryViewSchema } from '../src/moments/schemas/story-view.schema';
 import { HighlightSchema } from '../src/moments/schemas/highlight.schema';
 import { AudienceListSchema } from '../src/moments/schemas/audience-list.schema';
@@ -64,6 +65,7 @@ const MODELS: Array<[string, mongoose.Schema]> = [
   ['Post', PostSchema],
   ['PostComment', PostCommentSchema],
   ['PostLike', PostLikeSchema],
+  ['PostShare', PostShareSchema],
   ['StoryView', StoryViewSchema],
   ['Highlight', HighlightSchema],
   ['AudienceList', AudienceListSchema],

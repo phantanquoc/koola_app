@@ -24,6 +24,7 @@ import { apiErrorMessage, formatDateTime, formatNumber, initials } from './forma
 import { auditActionLabel, auditActionTone, auditTargetLabel } from './audit-labels';
 import { scopeLabel, scopeTableLabel, scopeTone } from '../pages/PostsPage';
 import { PostLikersPanel } from './PostLikersPanel';
+import { PostSharesPanel } from './PostSharesPanel';
 
 interface PostMediaItem {
   mediaKey: string;
@@ -97,6 +98,7 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [likersOpen, setLikersOpen] = useState(false);
+  const [sharesOpen, setSharesOpen] = useState(false);
   const [confirm, setConfirm] = useState<
     | { kind: 'lifecycle' }
     | { kind: 'report'; id: string; action: 'resolve' | 'dismiss'; reason: string }
@@ -320,7 +322,19 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
             </div>
             <div className="post-rail-signal">
               <dt><Share2 size={14} aria-hidden /> Chia sẻ</dt>
-              <dd>{formatNumber(post.shareCount ?? 0)}</dd>
+              <dd>
+                {(post.shareCount ?? 0) > 0 ? (
+                  <button
+                    className="post-rail-link"
+                    type="button"
+                    onClick={() => setSharesOpen(true)}
+                  >
+                    {formatNumber(post.shareCount ?? 0)}
+                  </button>
+                ) : (
+                  <span className="cell-meta">0</span>
+                )}
+              </dd>
             </div>
             <div className="post-rail-signal">
               <dt><Users size={14} aria-hidden /> Phạm vi</dt>
@@ -559,6 +573,10 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
           total={post.likeCount ?? 0}
           onClose={() => setLikersOpen(false)}
         />
+      )}
+
+      {sharesOpen && (
+        <PostSharesPanel postId={post._id} onClose={() => setSharesOpen(false)} />
       )}
 
       <ConfirmDialog

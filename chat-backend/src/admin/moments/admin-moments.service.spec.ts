@@ -8,6 +8,7 @@ import { Post } from '../../moments/schemas/post.schema';
 import { AudienceList } from '../../moments/schemas/audience-list.schema';
 import { Report } from '../schemas/report.schema';
 import { PostLike } from '../../moments/schemas/post-like.schema';
+import { PostShare } from '../../moments/schemas/post-share.schema';
 import { User } from '../../users/user.schema';
 import { ModerationMediaService } from '../moderation-media.service';
 import { AdminAuditService } from '../admin-audit.service';
@@ -56,6 +57,10 @@ const reportModel = {
 const userModel = { find: jest.fn().mockReturnValue(leanChain([])) };
 const audienceListModel = { find: jest.fn().mockReturnValue(leanChain([])) };
 const postLikeModel = { find: jest.fn().mockReturnValue(leanChain([])) };
+const postShareModel = {
+  find: jest.fn().mockReturnValue(leanChain([])),
+  distinct: jest.fn().mockResolvedValue([]),
+};
 const media = { presignMany: jest.fn().mockResolvedValue(new Map()) };
 const audit = { log: jest.fn() };
 const emitMock = jest.fn();
@@ -70,6 +75,7 @@ async function build(postModel: ReturnType<typeof makePostModel>) {
       { provide: getModelToken(User.name), useValue: userModel },
       { provide: getModelToken(AudienceList.name), useValue: audienceListModel },
       { provide: getModelToken(PostLike.name), useValue: postLikeModel },
+      { provide: getModelToken(PostShare.name), useValue: postShareModel },
       { provide: ModerationMediaService, useValue: media },
       { provide: AdminAuditService, useValue: audit },
       { provide: ChatGateway, useValue: gateway },
@@ -472,5 +478,82 @@ describe('AdminMomentsService.listLikers', () => {
     const svc = await build(makePostModel());
     await expect(svc.listLikers('rac', {})).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.listLikers(POST_ID2, {})).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('AdminMomentsService.listShares', () => {
+  it('gộp theo người, giữ lần chia sẻ gần nhất, trả cả số lượt', async () => {
+    const A = '507f1f77bcf86cd799439080';
+    const B = '507f1f77bcf86cd799439081';
+    const postModel = makePostModel({
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: POST_ID, shareCount: 7 }),
+        }),
+      }),
+    });
+    postShareModel.find.mockReturnValue(
+      leanChain([
+        { _id: 'x1', postId: POST_ID, userId: A, createdAt: new Date('2026-11-04T10:00:00Z') },
+        { _id: 'x2', postId: POST_ID, userId: A, createdAt: new Date('2026-11-03T10:00:00Z') },
+        { _id: 'x3', postId: POST_ID, userId: B, createdAt: new Date('2026-11-02T10:00:00Z') },
+      ]),
+    );
+    postShareModel.distinct.mockResolvedValue([A, B]);
+    userModel.find.mockReturnValue(
+      leanChain([
+        { _id: A, displayName: 'Người A' },
+        { _id: B, displayName: 'Người B' },
+      ]),
+    );
+    const svc = await build(postModel);
+
+    const res = await svc.listShares(POST_ID, {});
+
+    // A chia sẻ 2 lần nhưng chỉ chiếm 1 dòng, giữ mốc mới nhất.
+    expect(res.sharers).toHaveLength(2);
+    expect(res.sharers[0]).toMatchObject({ userId: A, name: 'Người A' });
+    expect(res.sharers[0].sharedAt?.toISOString()).toBe('2026-11-04T10:00:00.000Z');
+    // Hai con số khác nghĩa: số người vs số lượt trên bài.
+    expect(res.total).toBe(2);
+    expect(res.shareCount).toBe(7);
+  });
+
+  it('cursor không hợp lệ → 400, không nuốt lỗi', async () => {
+    const postModel = makePostModel({
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: POST_ID, shareCount: 0 }),
+        }),
+      }),
+    });
+    const svc = await build(postModel);
+
+    await expect(svc.listShares(POST_ID, { cursor: 'khong-phai-ngay' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('cursor hợp lệ lọc theo createdAt < mốc', async () => {
+    const postModel = makePostModel({
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: POST_ID, shareCount: 0 }),
+        }),
+      }),
+    });
+    const svc = await build(postModel);
+
+    await svc.listShares(POST_ID, { cursor: '2026-11-04T10:00:00.000Z' });
+
+    const filter = postShareModel.find.mock.calls[0][0];
+    expect((filter.createdAt as { $lt: Date }).$lt.toISOString()).toBe(
+      '2026-11-04T10:00:00.000Z',
+    );
+  });
+
+  it('404 khi bài không tồn tại', async () => {
+    const svc = await build(makePostModel());
+    await expect(svc.listShares(POST_ID2, {})).rejects.toBeInstanceOf(NotFoundException);
   });
 });

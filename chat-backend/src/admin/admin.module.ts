@@ -59,6 +59,7 @@ import {
   PostCommentSchema,
 } from '../moments/schemas/post-comment.schema';
 import { PostLike, PostLikeSchema } from '../moments/schemas/post-like.schema';
+import { PostShare, PostShareSchema } from '../moments/schemas/post-share.schema';
 import { AdminMomentsController } from './moments/admin-moments.controller';
 import { AdminMomentsService } from './moments/admin-moments.service';
 import {
@@ -93,6 +94,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Post.name, schema: PostSchema },
       { name: PostComment.name, schema: PostCommentSchema },
       { name: PostLike.name, schema: PostLikeSchema },
+      { name: PostShare.name, schema: PostShareSchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
       { name: BroadcastLog.name, schema: BroadcastLogSchema },

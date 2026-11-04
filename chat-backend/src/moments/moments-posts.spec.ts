@@ -26,6 +26,7 @@ import { MusicTrack } from './schemas/music-track.schema';
 import { Post } from './schemas/post.schema';
 import { PostComment } from './schemas/post-comment.schema';
 import { PostLike } from './schemas/post-like.schema';
+import { PostShare } from './schemas/post-share.schema';
 import { CommentLike } from './schemas/comment-like.schema';
 import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
@@ -156,6 +157,7 @@ describe('MomentsService — posts', () => {
           useValue: postCommentModel,
         },
         { provide: getModelToken(PostLike.name), useValue: postLikeModel },
+        { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: commentLikeModel,

@@ -16,6 +16,7 @@ import { MusicTrack } from './schemas/music-track.schema';
 import { Post } from './schemas/post.schema';
 import { PostComment } from './schemas/post-comment.schema';
 import { PostLike } from './schemas/post-like.schema';
+import { PostShare } from './schemas/post-share.schema';
 import { CommentLike } from './schemas/comment-like.schema';
 import { Report } from '../admin/schemas/report.schema';
 import { RedisService } from '../common/redis/redis.service';
@@ -128,6 +129,7 @@ describe('MomentsService', () => {
           useValue: makeModelMock(),
         },
         { provide: getModelToken(PostLike.name), useValue: makeModelMock() },
+        { provide: getModelToken(PostShare.name), useValue: makeModelMock() },
         {
           provide: getModelToken(CommentLike.name),
           useValue: makeModelMock(),
@@ -1160,5 +1162,99 @@ describe('MomentsService', () => {
       expect(result.mediaKey).toBe('stories/abc/media.mp4');
       expect(result.mediaUrl).toBeDefined();
     });
+  });
+});
+
+describe('MomentsService.sharePost — ghi nhận người chia sẻ', () => {
+  it('lần chia sẻ đầu trong 24h: tăng counter và ghi một row PostShare', async () => {
+    const postShareModel: any = makeModelMock();
+    postShareModel.create = jest.fn().mockResolvedValue({});
+    const postModel: any = makeModelMock();
+    postModel.findById = jest.fn().mockReturnValue({
+      _id: 'p1',
+      isActive: true,
+      shareCount: 2,
+      authorId: 'u1',
+      audienceScope: 'public',
+      audienceListId: null,
+    });
+    postModel.findOneAndUpdate = jest.fn().mockResolvedValue({ shareCount: 3 });
+    const svc = new MomentsService(
+      makeModelMock() as any, // story
+      makeModelMock() as any, // storyView
+      makeModelMock() as any, // highlight
+      makeModelMock() as any, // audienceList
+      makeModelMock() as any, // musicTrack
+      postModel as any,
+      makeModelMock() as any, // postComment
+      makeModelMock() as any, // postLike
+      postShareModel as any,
+      makeModelMock() as any, // commentLike
+      makeModelMock() as any, // report
+      redisMock as any,
+      { create: jest.fn(), createMany: jest.fn(), sendPush: jest.fn() } as any,
+      { getConnectedUserIds: jest.fn().mockResolvedValue([]), isMember: jest.fn() } as any,
+      {} as any,
+      { findByIds: jest.fn().mockResolvedValue([]) } as any,
+    );
+
+    const res = await svc.sharePost('507f1f77bcf86cd799439030', 'u2');
+
+    expect(res.shareCount).toBe(3);
+    expect(postShareModel.create).toHaveBeenCalledWith({
+      postId: '507f1f77bcf86cd799439030',
+      userId: 'u2',
+    });
+  });
+
+  it('lần thứ hai trong 24h (Redis chặn): KHÔNG tăng counter, KHÔNG ghi row', async () => {
+    const postShareModel: any = makeModelMock();
+    postShareModel.create = jest.fn().mockResolvedValue({});
+    const postModel: any = makeModelMock();
+    // Nhánh Redis-chặn đọc lại counter bằng `findById(id, projection).lean()`;
+    // mock phải trả query có `.lean`, không phải object trần — nếu không nó
+    // rơi vào catch và chạy nhánh tăng counter, làm test pass sai.
+    const postDoc = {
+      _id: 'p1',
+      isActive: true,
+      shareCount: 5,
+      authorId: 'u1',
+      audienceScope: 'public',
+      audienceListId: null,
+    };
+    postModel.findById = jest.fn().mockImplementation(() => ({
+      lean: jest.fn().mockResolvedValue(postDoc),
+      _id: postDoc._id,
+      isActive: postDoc.isActive,
+      shareCount: postDoc.shareCount,
+      authorId: postDoc.authorId,
+      audienceScope: postDoc.audienceScope,
+      audienceListId: postDoc.audienceListId,
+    }));
+    postModel.findOneAndUpdate = jest.fn();
+    const redisBlocked = { ...redisMock, setNXEX: jest.fn().mockResolvedValue(false) };
+
+    const svc = new MomentsService(
+      makeModelMock() as any, makeModelMock() as any, makeModelMock() as any,
+      makeModelMock() as any, makeModelMock() as any,
+      postModel as any,
+      makeModelMock() as any,
+      makeModelMock() as any,
+      postShareModel as any,
+      makeModelMock() as any,
+      makeModelMock() as any,
+      redisBlocked as any,
+      { create: jest.fn(), createMany: jest.fn(), sendPush: jest.fn() } as any,
+      { getConnectedUserIds: jest.fn().mockResolvedValue([]), isMember: jest.fn() } as any,
+      {} as any,
+      { findByIds: jest.fn().mockResolvedValue([]) } as any,
+    );
+
+    const res = await svc.sharePost('507f1f77bcf86cd799439030', 'u2');
+
+    expect(res.shareCount).toBe(5);
+    expect(postModel.findOneAndUpdate).not.toHaveBeenCalled();
+    // Danh sách admin không được có dòng cho lần bấm mà Redis đã bỏ qua.
+    expect(postShareModel.create).not.toHaveBeenCalled();
   });
 });
