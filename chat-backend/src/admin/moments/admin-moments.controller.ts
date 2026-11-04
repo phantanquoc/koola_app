@@ -39,9 +39,19 @@ export class AdminMomentsController {
   constructor(private readonly moments: AdminMomentsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách bài đăng (lọc tác giả / trạng thái)' })
+  @ApiOperation({ summary: 'Danh sách bài đăng (lọc tác giả / trạng thái / phạm vi)' })
   list(@Query() dto: ListPostsDto) {
     return this.moments.listPosts(dto);
+  }
+
+  /**
+   * Đếm cho các tab. Phải khai báo TRƯỚC `:id`, nếu không Express khớp
+   * `stats` thành một id — cùng bẫy đã ghi ở `admin-music.controller.ts`.
+   */
+  @Get('stats')
+  @ApiOperation({ summary: 'Đếm theo trạng thái, phạm vi, và số bài có báo cáo chờ' })
+  stats() {
+    return this.moments.stats();
   }
 
   @Get(':id')

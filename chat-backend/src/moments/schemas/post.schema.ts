@@ -108,6 +108,11 @@ PostSchema.index({ authorId: 1, createdAt: -1 });
 // Feed visibility filter branches on audienceScope
 PostSchema.index({ audienceScope: 1 });
 
+// Admin list sorts the whole collection by createdAt — the author-prefixed
+// index below cannot serve that (it needs an authorId to be usable).
+PostSchema.index({ createdAt: -1 });
+PostSchema.index({ isActive: 1, createdAt: -1 });
+
 // Feed query: compound for the $or visibility filter
 PostSchema.index({ authorId: 1, isActive: 1 });
 

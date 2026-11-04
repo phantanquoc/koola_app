@@ -816,6 +816,12 @@ Nợ đã biết từ đợt Businesses (làm ở PR riêng, không nhân bản 
 - **Báo cáo bài đăng chỉ hiện media đầu tiên.** `ReportTargetMedia` render một khung; bài
   nhiều ảnh vẫn nhận diện được qua ảnh đầu + caption, mở `/posts/:id` để xem hết. Server
   ký **mọi** key của bài trong cùng batch nên cache đã ấm khi mở chi tiết.
+- **Quy ước dịch `audienceScope`** (một nguồn: `scopeLabel()` ở `pages/PostsPage.tsx`):
+  `public → "Công khai"`, `connections → "Người kết nối"`, `custom → "Danh sách: <tên>"`
+  (không có tên thì "Danh sách riêng"). **Không dùng "Bạn bè"** — app đã dùng "Người kết nối"
+  trong composer (`PostComposerScreen`), đổi ở admin sẽ khiến hai bên gọi cùng một thứ bằng
+  hai tên. Phạm vi phải hiện thành badge trên cả list và detail vì nó quyết định mức độ
+  nghiêm trọng của một lần gỡ: bài công khai ảnh hưởng toàn bộ người dùng.
 - **Báo cáo story không xem được ảnh**: report targetType story chỉ resolve được caption,
   ảnh cần presigned URL + lightbox (`LicensePreview` đã có, chỉ thiếu presign ở server).
 - **Seed data `_id` dạng chuỗi** (`scripts/seed-admin-reports.ts` tạo `seed-report-1`):

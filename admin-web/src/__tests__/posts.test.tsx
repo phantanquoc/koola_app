@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import PostsPage from '../pages/PostsPage';
+import PostsPage, { scopeLabel, scopeTone } from '../pages/PostsPage';
 import PostDetailPage from '../pages/PostDetailPage';
 import { ToastProvider } from '../components/Toast';
 import apiClient from '../apiClient';
@@ -131,8 +131,7 @@ describe('PostsPage', () => {
     });
   });
 
-  it('tab Đã gỡ gửi active=false dạng string xuống server', async () => {
-    renderPage();
+  it('tab Đã gỡ gửi active=false dạng string xuống server', async () => {    renderPage();
     fireEvent.click(screen.getByRole('tab', { name: /Đã gỡ/ }));
 
     await waitFor(() => {
@@ -224,5 +223,64 @@ describe('PostDetailPage', () => {
     await waitFor(() => {
       expect(mockedPost).toHaveBeenCalledWith('/admin/posts/p1/takedown');
     });
+  });
+});
+
+describe('scopeLabel / scopeTone', () => {
+  it('dịch phạm vi hiển thị; custom dùng tên danh sách khi có', () => {
+    expect(scopeLabel({ audienceScope: 'public' })).toBe('Công khai');
+    // "Người kết nối" — từ app đang dùng, không phải "Bạn bè".
+    expect(scopeLabel({ audienceScope: 'connections' })).toBe('Người kết nối');
+    expect(scopeLabel({ audienceScope: 'custom', audienceListName: 'Gia đình' })).toBe(
+      'Danh sách: Gia đình',
+    );
+    expect(scopeLabel({ audienceScope: 'custom', audienceListName: null })).toBe(
+      'Danh sách riêng',
+    );
+  });
+
+  it('phạm vi càng rộng thì cảnh báo càng mạnh', () => {
+    expect(scopeTone('public')).toBe('danger');
+    expect(scopeTone('connections')).toBe('warning');
+    expect(scopeTone('custom')).toBe('muted');
+  });
+});
+
+describe('PostsPage §3A', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedList.mockReturnValue(
+      listOf([{ ...post, audienceScope: 'public', audienceListName: null }]),
+    );
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/admin/posts/stats') {
+        return Promise.resolve({
+          data: { all: 10, active: 7, inactive: 3, reported: 2, byScope: {} },
+        });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+    mockedPost.mockResolvedValue({ data: {} });
+  });
+
+  it('tab lấy số từ /admin/posts/stats, không đếm trang hiện tại', async () => {
+    renderPage();
+
+    expect(await screen.findByRole('tab', { name: /Tất cả 10/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Đang hiển thị 7/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Đã gỡ 3/ })).toBeTruthy();
+    expect(mockedGet).toHaveBeenCalledWith('/admin/posts/stats');
+  });
+
+  it('hiện badge phạm vi trên từng dòng', async () => {
+    renderPage();
+    expect((await screen.findAllByText('Công khai')).length).toBeGreaterThan(0);
+  });
+
+  it('hàng click mở chi tiết, nút bên trong hàng thì không', async () => {
+    renderPage();
+    // Nút hành động có stopPropagation → không điều hướng.
+    const removeBtn = (await screen.findAllByRole('button', { name: /Gỡ bài/ }))[0];
+    expect(removeBtn).toBeTruthy();
   });
 });

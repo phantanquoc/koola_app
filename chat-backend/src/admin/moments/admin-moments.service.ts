@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,12 +10,22 @@ import {
   PostDocument,
   PostMediaItem,
 } from '../../moments/schemas/post.schema';
+import {
+  AudienceList,
+  AudienceListDocument,
+} from '../../moments/schemas/audience-list.schema';
 import { Report, ReportDocument } from '../schemas/report.schema';
 import { User, UserDocument } from '../../users/user.schema';
+import { escapeRegExp } from '../../common/utils/escape-regexp';
 import { AdminAuditService } from '../admin-audit.service';
 import { ModerationMediaService } from '../moderation-media.service';
 import { ChatGateway } from '../../gateway/chat.gateway';
-import { ListPostsDto } from '../dto/list-posts.dto';
+import {
+  ListPostsDto,
+  POST_SCOPE_VALUES,
+  POST_SORT_FIELDS,
+  type PostScopeValue,
+} from '../dto/list-posts.dto';
 
 /** Một mục media đã ký, giữ nguyên key gốc cho "Chi tiết kỹ thuật". */
 export interface SignedPostMedia extends PostMediaItem {
@@ -27,6 +38,10 @@ export interface AdminPostView extends Record<string, unknown> {
   authorAvatar: string | null;
   media: SignedPostMedia[];
   pendingReportCount: number;
+  /** Tên danh sách riêng khi `audienceScope = 'custom'`; null nếu đã bị xoá. */
+  audienceListName: string | null;
+  /** Tên người được gắn thẻ — không bao giờ trả ObjectId thô (§3B2). */
+  mentionUserNames: string[];
 }
 
 /**
@@ -49,10 +64,74 @@ export class AdminMomentsService {
     private readonly reportModel: Model<ReportDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(AudienceList.name)
+    private readonly audienceListModel: Model<AudienceListDocument>,
     private readonly moderationMedia: ModerationMediaService,
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
   ) {}
+
+  // ─── Filters ───────────────────────────────────────────────────────────────
+
+  /**
+   * Filter dùng chung cho list và stats.
+   *
+   * `q` phải là async vì caption và tên tác giả nằm ở hai collection: một
+   * `$regex` chỉ trên post không tìm được theo tên người đăng. Tra user trước
+   * rồi mới dựng `$or` — đây là đường duy nhất giữ được "gõ gì thấy nấy" mà
+   * không cần $lookup trên mỗi trang.
+   */
+  private async buildFilter(
+    dto: ListPostsDto,
+  ): Promise<Record<string, unknown>> {
+    const filter: Record<string, unknown> = {};
+
+    if (dto.authorId) filter.authorId = dto.authorId;
+    // `active` is the string form on purpose — see `ListPostsDto`.
+    if (dto.active === 'true' || dto.active === 'false') {
+      filter.isActive = dto.active === 'true';
+    }
+    if (dto.scope && POST_SCOPE_VALUES.includes(dto.scope as never)) {
+      filter.audienceScope = dto.scope as PostScopeValue;
+    }
+
+    const q = dto.q?.trim();
+    if (q) {
+      // Case-insensitive substring, not $text: there is no text index on posts,
+      // and $text would only match whole words anyway.
+      const re = new RegExp(escapeRegExp(q), 'i');
+      let authorIds: string[] = [];
+      try {
+        const authors = await this.userModel
+          .find({ displayName: re })
+          .select('_id')
+          .limit(200)
+          .lean();
+        authorIds = (authors as { _id: unknown }[]).map((u) => String(u._id));
+      } catch {
+        // A lookup failure must not drop the caption search on the floor.
+        authorIds = [];
+      }
+      filter.$or = [{ caption: re }, ...(authorIds.length ? [{ authorId: { $in: authorIds } }] : [])];
+    }
+
+    return filter;
+  }
+
+  /** Parse `field:dir`, rejecting anything outside the allow-list. */
+  private parseSort(sort?: string): Record<string, 1 | -1> {
+    if (!sort) return { createdAt: -1 };
+    const [field, dir] = sort.split(':');
+    if (!POST_SORT_FIELDS.includes(field as never)) {
+      throw new BadRequestException(
+        `sort không hợp lệ. Chấp nhận: ${POST_SORT_FIELDS.join('|')} × asc|desc`,
+      );
+    }
+    if (dir !== 'asc' && dir !== 'desc') {
+      throw new BadRequestException('sort phải có dạng field:asc|desc');
+    }
+    return { [field]: dir === 'asc' ? 1 : -1 };
+  }
 
   // ─── Reads ─────────────────────────────────────────────────────────────────
 
@@ -61,20 +140,11 @@ export class AdminMomentsService {
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
-    if (dto.authorId) filter.authorId = dto.authorId;
-    // `active` is the string form on purpose — see `ListPostsDto`.
-    if (dto.active === 'true' || dto.active === 'false') {
-      filter.isActive = dto.active === 'true';
-    }
+    const filter = await this.buildFilter(dto);
+    const sort = this.parseSort(dto.sort);
 
     const [data, total] = await Promise.all([
-      this.postModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      this.postModel.find(filter).sort(sort).skip(skip).limit(limit).lean(),
       this.postModel.countDocuments(filter),
     ]);
 
@@ -83,6 +153,46 @@ export class AdminMomentsService {
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * Đếm cho các tab. Luôn đếm trên TOÀN BỘ bài (không áp `active`) để mỗi tab
+   * hiện số thật — cùng lý do `AdminMusicService.stats` bỏ `defaultToActive`.
+   */
+  async stats() {
+    const base: Record<string, unknown> = {};
+
+    const [all, active, inactive, scopeAgg, reportedAgg] = await Promise.all([
+      this.postModel.countDocuments(base),
+      this.postModel.countDocuments({ ...base, isActive: true }),
+      this.postModel.countDocuments({ ...base, isActive: false }),
+      this.postModel.aggregate<{ _id: string; count: number }>([
+        { $match: base },
+        { $group: { _id: '$audienceScope', count: { $sum: 1 } } },
+      ]),
+      // Bài có ít nhất một báo cáo đang chờ — con số moderator cần trước tiên.
+      // `distinct` thay vì count để đếm đối tượng, không đếm lượt báo cáo.
+      this.reportModel
+        .distinct('targetId', { targetType: 'post', status: 'pending' })
+        .catch(() => [] as unknown[]),
+    ]);
+
+    const byScope: Record<string, number> = {
+      public: 0,
+      connections: 0,
+      custom: 0,
+    };
+    for (const row of scopeAgg) {
+      if (row._id in byScope) byScope[row._id] = row.count;
+    }
+
+    return {
+      all,
+      active,
+      inactive,
+      reported: Array.isArray(reportedAgg) ? reportedAgg.length : 0,
+      byScope,
     };
   }
 
@@ -202,7 +312,29 @@ export class AdminMomentsService {
     ];
     const postIds = rows.map((p) => String(p._id));
 
-    const [authors, pendingAgg] = await Promise.all([
+    // Mọi id được nhắc tới trên trang, để đổi thành tên (§3B2: không hiện id thô).
+    const mentionIds = [
+      ...new Set(
+        rows
+          .flatMap((p) =>
+            Array.isArray(p.mentions)
+              ? (p.mentions as { userId?: string }[])
+              : [],
+          )
+          .map((m) => String(m.userId ?? ''))
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    // Danh sách riêng chỉ cần cho bài có scope custom.
+    const listIds = [
+      ...new Set(
+        rows
+          .filter((p) => p.audienceScope === 'custom' && p.audienceListId)
+          .map((p) => String(p.audienceListId)),
+      ),
+    ];
+
+    const [authors, pendingAgg, mentionUsers, lists] = await Promise.all([
       authorIds.length
         ? this.userModel
             .find({ _id: { $in: authorIds } })
@@ -213,6 +345,18 @@ export class AdminMomentsService {
         { $match: { targetType: 'post', status: 'pending', targetId: { $in: postIds } } },
         { $group: { _id: '$targetId', count: { $sum: 1 } } },
       ]),
+      mentionIds.length
+        ? this.userModel
+            .find({ _id: { $in: mentionIds } })
+            .select('displayName')
+            .lean()
+        : [],
+      listIds.length
+        ? this.audienceListModel
+            .find({ _id: { $in: listIds } })
+            .select('name')
+            .lean()
+        : [],
     ]);
 
     const authorById = new Map(
@@ -221,6 +365,18 @@ export class AdminMomentsService {
       ),
     );
     const pendingById = new Map(pendingAgg.map((r) => [String(r._id), r.count]));
+    const mentionNameById = new Map(
+      (mentionUsers as { _id: unknown; displayName?: string }[]).map((u) => [
+        String(u._id),
+        u.displayName ?? null,
+      ]),
+    );
+    const listNameById = new Map(
+      (lists as { _id: unknown; name?: string }[]).map((l) => [
+        String(l._id),
+        l.name ?? null,
+      ]),
+    );
 
     // One presign batch across the whole page: every media key plus every
     // thumbnail key, because a post carries an ARRAY of media (unlike a story).
@@ -236,6 +392,13 @@ export class AdminMomentsService {
     return rows.map((p) => {
       const author = authorById.get(String(p.authorId));
       const media = Array.isArray(p.media) ? (p.media as PostMediaItem[]) : [];
+      const mentionNames = (
+        Array.isArray(p.mentions)
+          ? (p.mentions as { userId?: string }[])
+          : []
+      )
+        .map((m) => mentionNameById.get(String(m.userId ?? '')) ?? null)
+        .filter((n): n is string => Boolean(n));
       return {
         ...p,
         authorName: author?.displayName ?? null,
@@ -248,6 +411,11 @@ export class AdminMomentsService {
             : null,
         })),
         pendingReportCount: pendingById.get(String(p._id)) ?? 0,
+        audienceListName:
+          p.audienceScope === 'custom' && p.audienceListId
+            ? (listNameById.get(String(p.audienceListId)) ?? null)
+            : null,
+        mentionUserNames: mentionNames,
       };
     });
   }

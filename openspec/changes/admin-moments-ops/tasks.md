@@ -83,3 +83,32 @@
 - Nợ kỹ thuật đã biết, chưa làm: `MediaCleanupService` vẫn chưa đăng ký trong `MediaModule.providers`.
 - Spec `moments-music-library` vẫn mô tả các route `POST/PATCH/DELETE /moments/music-tracks` đã bị xoá —
   cập nhật khi archive `music-catalog-ops`.
+
+## 7. Bổ sung: §3A đầy đủ + bình luận
+
+- [x] 7.1 `ListPostsDto` thêm `q` (≤100), `sort` (allow-list `createdAt|likeCount|commentCount`),
+      `scope` (`public|connections|custom`); mirror `music.dto.ts`
+- [x] 7.2 Service: `buildFilter` async (resolve tên tác giả → `$or` caption/authorId, escape regex),
+      `parseSort` 2 lỗi 400, `stats()` trả `{all,active,inactive,reported,byScope}`
+- [x] 7.3 `enrich` thêm `audienceListName` (chỉ scope custom) + `mentionUserNames` (batch)
+- [x] 7.4 `GET /admin/posts/stats` khai báo trước `:id`
+- [x] 7.5 Index `{createdAt:-1}` + `{isActive:1,createdAt:-1}` trên `post.schema.ts`;
+      thêm `Post`/`PostComment` vào `scripts/create-indexes.ts` (trước đây cả hai chưa từng
+      được tạo index trên môi trường `autoIndex:false`)
+- [x] 7.6 `AdminPostCommentsService` + 2 controller (base `admin/posts` và `admin/posts/comments`
+      để không phụ thuộc thứ tự route): list kèm bình luận đã gỡ, takedown cascade + đếm lại
+      counter, restore chỉ chính nó, cả hai idempotent
+- [x] 7.7 Audit: `takedown_post_comment`, `restore_post_comment`, target `post_comment`
+- [x] 7.8 `PostsPage` viết lại theo `BusinessesPage`: tìm kiếm debounce 400ms + Enter, ColumnHeader
+      sort + filter phạm vi, tab count từ stats, chip lọc, page size 10/20/50, avatar,
+      J/K/Enter, badge phạm vi (`scopeLabel`/`scopeTone`), export CSV theo bộ lọc
+- [x] 7.9 `PostDetail`: badge phạm vi, "Đã gắn thẻ: …", mục Bình luận (top-level + reply, gỡ/khôi
+      phục có confirm, invalidate cả `post` vì counter đổi)
+- [x] 7.10 Jest: search theo caption/tác giả, escape regex, scope, sort 400, stats, enrich list+mentions,
+      comment list/cascade/recount/restore/idempotent (36 case mới ở 3 file)
+- [x] 7.11 Vitest: `scopeLabel`/`scopeTone`, tab count từ stats, badge phạm vi trên dòng
+- [x] 7.12 Live: 3 bài (public/connections/custom) + 2 bình luận lồng → stats `byScope` đúng,
+      `scope=custom` trả tên danh sách + tên người được thẻ, `q` theo caption và theo tên tác giả
+      đều đúng, `sort` rác 400; gỡ bình luận gốc cascade reply, `commentCount` 2→0, restore
+      → 1, reply vẫn ẩn. Fixture QA đã dọn.
+- [x] 7.13 `openspec validate admin-moments-ops --strict`; docs AGENTS/DESIGN cập nhật

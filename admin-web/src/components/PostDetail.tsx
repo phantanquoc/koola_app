@@ -9,6 +9,7 @@ import { StatusBadge } from './StatusBadge';
 import { useToast } from './Toast';
 import { apiErrorMessage, formatDateTime, formatNumber } from './formatters';
 import { auditActionLabel, auditActionTone, auditTargetLabel } from './audit-labels';
+import { scopeLabel, scopeTone } from '../pages/PostsPage';
 
 interface PostMediaItem {
   mediaKey: string;
@@ -31,8 +32,27 @@ interface PostDetailData {
   topLevelCommentCount?: number;
   shareCount?: number;
   pendingReportCount?: number;
+  /** Phạm vi hiển thị — quyết định mức độ nghiêm trọng khi gỡ. */
+  audienceScope?: 'public' | 'connections' | 'custom';
+  audienceListId?: string | null;
+  audienceListName?: string | null;
+  /** Tên người được gắn thẻ, server đã resolve — không phải ObjectId thô. */
+  mentionUserNames?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface PostCommentView {
+  _id: string;
+  content: string;
+  authorId?: string;
+  authorName?: string | null;
+  authorAvatar?: string | null;
+  isActive?: boolean;
+  parentId?: string | null;
+  likeCount?: number;
+  createdAt?: string;
+  replies?: PostCommentView[];
 }
 
 interface PostReport {
@@ -65,6 +85,7 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
   const [confirm, setConfirm] = useState<
     | { kind: 'lifecycle' }
     | { kind: 'report'; id: string; action: 'resolve' | 'dismiss'; reason: string }
+    | { kind: 'comment'; id: string; action: 'takedown' | 'restore' }
     | null
   >(null);
 
@@ -99,8 +120,22 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
     enabled: Boolean(id),
   });
 
+  // Bình luận, kèm cả bình luận đã gỡ — moderator cần thấy để khôi phục.
+  const commentsQuery = useQuery({
+    queryKey: ['post-comments', id],
+    queryFn: async () => {
+      const res = await apiClient.get<{ comments: PostCommentView[]; total: number }>(
+        `/admin/posts/${id}/comments`,
+        { params: { limit: 50 } },
+      );
+      return res.data;
+    },
+    enabled: Boolean(id),
+  });
+
   const post = postQuery.data;
   const reports = reportsQuery.data ?? [];
+  const comments = commentsQuery.data?.comments ?? [];
 
   async function toggleLifecycle() {
     if (!post) return;
@@ -149,6 +184,29 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
     }
   }
 
+  async function actOnComment(commentId: string, action: 'takedown' | 'restore') {
+    setBusy(true);
+    try {
+      await apiClient.post(`/admin/posts/comments/${commentId}/${action}`);
+      setConfirm(null);
+      addToast(
+        'success',
+        action === 'takedown' ? 'Đã gỡ bình luận.' : 'Đã khôi phục bình luận.',
+      );
+      // Counter bình luận trên bài đổi theo → nạp lại cả chi tiết.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['post-comments', id] }),
+        queryClient.invalidateQueries({ queryKey: ['post', id] }),
+        queryClient.invalidateQueries({ queryKey: ['posts'] }),
+        queryClient.invalidateQueries({ queryKey: ['post-audit', id] }),
+      ]);
+    } catch (err) {
+      addToast('error', apiErrorMessage(err, 'Thao tác bình luận thất bại.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (postQuery.isError) {
     return (
       <section className="table-shell detail-card">
@@ -186,6 +244,9 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
               {hidden
                 ? <StatusBadge tone="muted" label="Đã gỡ" />
                 : <StatusBadge tone="success" label="Đang hiển thị" />}
+              {/* Phạm vi quyết định mức độ nghiêm trọng: gỡ một bài công khai
+                  khác hẳn gỡ một bài chỉ vài người trong danh sách thấy. */}
+              <StatusBadge tone={scopeTone(post.audienceScope)} label={scopeLabel(post)} />
               {(post.pendingReportCount ?? 0) > 0 && (
                 <StatusBadge
                   tone="warning"
@@ -213,6 +274,11 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
             {formatNumber(post.commentCount ?? 0)} bình luận ·{' '}
             {formatNumber(post.shareCount ?? 0)} chia sẻ
           </p>
+          {(post.mentionUserNames ?? []).length > 0 && (
+            <p className="cell-meta">
+              Đã gắn thẻ: {(post.mentionUserNames ?? []).join(', ')}
+            </p>
+          )}
         </section>
 
         <section className="detail-section">
@@ -243,6 +309,92 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
                 )}
               </div>
             ))
+          )}
+        </section>
+
+        <section className="detail-section">
+          <h3 className="detail-section-title">
+            Bình luận ({formatNumber(commentsQuery.data?.total ?? 0)})
+          </h3>
+          {commentsQuery.isError ? (
+            <p className="cell-meta">Không tải được bình luận.</p>
+          ) : commentsQuery.isLoading ? (
+            <p className="cell-meta">Đang tải bình luận…</p>
+          ) : comments.length === 0 ? (
+            <p className="cell-meta">Bài đăng chưa có bình luận nào.</p>
+          ) : (
+            <ul className="audit-list" aria-label="Bình luận của bài đăng">
+              {comments.map((c) => (
+                <li key={c._id} className="audit-list-row">
+                  <div>
+                    <div className="cell-title">
+                      {c.content}
+                      {c.isActive === false && (
+                        <StatusBadge tone="muted" label="Đã gỡ" />
+                      )}
+                    </div>
+                    <div className="cell-meta">
+                      {c.authorName ?? 'Tài khoản đã xoá'} · {formatDateTime(c.createdAt)}
+                    </div>
+                    {(c.replies ?? []).length > 0 && (
+                      <ul className="audit-list" aria-label="Trả lời">
+                        {(c.replies ?? []).map((r) => (
+                          <li key={r._id} className="audit-list-row">
+                            <div>
+                              <div className="cell-title">
+                                {r.content}
+                                {r.isActive === false && (
+                                  <StatusBadge tone="muted" label="Đã gỡ" />
+                                )}
+                              </div>
+                              <div className="cell-meta">
+                                {r.authorName ?? 'Tài khoản đã xoá'} · {formatDateTime(r.createdAt)}
+                              </div>
+                            </div>
+                            <div className="table-actions table-actions--end">
+                              <button
+                                className={r.isActive === false
+                                  ? 'btn btn-secondary btn-sm'
+                                  : 'btn btn-danger-ghost btn-sm'}
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  setConfirm({
+                                    kind: 'comment',
+                                    id: r._id,
+                                    action: r.isActive === false ? 'restore' : 'takedown',
+                                  })
+                                }
+                              >
+                                {r.isActive === false ? 'Khôi phục' : 'Gỡ'}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="table-actions table-actions--end">
+                    <button
+                      className={c.isActive === false
+                        ? 'btn btn-secondary btn-sm'
+                        : 'btn btn-danger-ghost btn-sm'}
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        setConfirm({
+                          kind: 'comment',
+                          id: c._id,
+                          action: c.isActive === false ? 'restore' : 'takedown',
+                        })
+                      }
+                    >
+                      {c.isActive === false ? 'Khôi phục' : 'Gỡ'}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
@@ -379,6 +531,31 @@ export function PostDetail({ id, backTo }: { id: string; backTo: string }) {
         busy={busy}
         onConfirm={() => {
           if (confirm?.kind === 'report') void actOnReport(confirm.id, confirm.action);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirm?.kind === 'comment'}
+        onClose={() => {
+          if (!busy) setConfirm(null);
+        }}
+        title={
+          confirm?.kind === 'comment' && confirm.action === 'restore'
+            ? 'Khôi phục bình luận?'
+            : 'Gỡ bình luận?'
+        }
+        description={
+          confirm?.kind === 'comment'
+            ? confirm.action === 'restore'
+              ? 'Bình luận hiện lại. Các trả lời bị gỡ trước đó vẫn ẩn cho tới khi khôi phục riêng.'
+              : 'Bình luận bị ẩn khỏi bài, nội dung vẫn giữ trong DB. Nếu đây là bình luận gốc, các trả lời cũng bị ẩn theo.'
+            : undefined
+        }
+        confirmLabel={confirm?.kind === 'comment' && confirm.action === 'restore' ? 'Khôi phục' : 'Gỡ bình luận'}
+        variant={confirm?.kind === 'comment' && confirm.action === 'restore' ? 'primary' : 'danger'}
+        busy={busy}
+        onConfirm={() => {
+          if (confirm?.kind === 'comment') void actOnComment(confirm.id, confirm.action);
         }}
       />
     </section>

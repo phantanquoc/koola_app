@@ -67,6 +67,8 @@ export const ADMIN_AUDIT_ACTIONS = [
   'takedown_post',
   'restore_post',
   'restore_story',
+  'takedown_post_comment',
+  'restore_post_comment',
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -78,6 +80,7 @@ export const ADMIN_AUDIT_TARGET_TYPES = [
   'message',
   'story',
   'post',
+  'post_comment',
   'report',
   'product',
   'service',

@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { AdminMomentsService } from './admin-moments.service';
 import { Post } from '../../moments/schemas/post.schema';
+import { AudienceList } from '../../moments/schemas/audience-list.schema';
 import { Report } from '../schemas/report.schema';
 import { User } from '../../users/user.schema';
 import { ModerationMediaService } from '../moderation-media.service';
@@ -36,12 +37,17 @@ function makePostModel(overrides: Record<string, unknown> = {}) {
     findById: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
     findByIdAndUpdate: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
     countDocuments: jest.fn().mockResolvedValue(0),
+    aggregate: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
 
-const reportModel = { aggregate: jest.fn().mockResolvedValue([]) };
+const reportModel = {
+  aggregate: jest.fn().mockResolvedValue([]),
+  distinct: jest.fn().mockResolvedValue([]),
+};
 const userModel = { find: jest.fn().mockReturnValue(leanChain([])) };
+const audienceListModel = { find: jest.fn().mockReturnValue(leanChain([])) };
 const media = { presignMany: jest.fn().mockResolvedValue(new Map()) };
 const audit = { log: jest.fn() };
 const emitMock = jest.fn();
@@ -54,6 +60,7 @@ async function build(postModel: ReturnType<typeof makePostModel>) {
       { provide: getModelToken(Post.name), useValue: postModel },
       { provide: getModelToken(Report.name), useValue: reportModel },
       { provide: getModelToken(User.name), useValue: userModel },
+      { provide: getModelToken(AudienceList.name), useValue: audienceListModel },
       { provide: ModerationMediaService, useValue: media },
       { provide: AdminAuditService, useValue: audit },
       { provide: ChatGateway, useValue: gateway },
@@ -146,6 +153,125 @@ describe('AdminMomentsService.listPosts', () => {
 
     expect(reportModel.aggregate).toHaveBeenCalledTimes(1);
     expect(res.data[0].pendingReportCount).toBe(3);
+  });
+
+  it('tìm theo tên tác giả: resolve user trước rồi mới dựng $or', async () => {
+    const postModel = makePostModel();
+    userModel.find.mockReturnValue(leanChain([{ _id: AUTHOR }]));
+    const svc = await build(postModel);
+
+    await svc.listPosts({ q: 'Lan' });
+
+    // Bước 1: tra displayName; bước 2: filter post theo id tìm được.
+    expect(userModel.find).toHaveBeenCalledWith({ displayName: expect.any(RegExp) });
+    const filter = postModel.find.mock.calls[0][0];
+    expect(filter.$or).toEqual([
+      { caption: expect.any(RegExp) },
+      { authorId: { $in: [AUTHOR] } },
+    ]);
+  });
+
+  it('q chứa ký tự regex thì được escape, không đổi nghĩa query', async () => {
+    const postModel = makePostModel();
+    const svc = await build(postModel);
+
+    await svc.listPosts({ q: 'a.*b' });
+
+    const filter = postModel.find.mock.calls[0][0];
+    expect((filter.$or[0].caption as RegExp).source).toBe('a\\.\\*b');
+  });
+
+  it('lọc theo phạm vi hiển thị', async () => {
+    const postModel = makePostModel();
+    const svc = await build(postModel);
+
+    await svc.listPosts({ scope: 'custom' });
+
+    expect(postModel.find).toHaveBeenCalledWith({ audienceScope: 'custom' });
+  });
+
+  it('sort hợp lệ đổi thứ tự; field lạ và dir sai đều 400', async () => {
+    const postModel = makePostModel();
+    const svc = await build(postModel);
+
+    await svc.listPosts({ sort: 'likeCount:asc' });
+    expect(postModel.find.mock.calls[0][0]).toEqual({});
+    const chain = postModel.find.mock.results[0].value;
+    expect(chain.sort).toHaveBeenCalledWith({ likeCount: 1 });
+
+    await expect(svc.listPosts({ sort: 'hack:desc' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(svc.listPosts({ sort: 'likeCount:sideways' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('enrich: tên danh sách riêng + tên người được gắn thẻ, không trả id thô', async () => {
+    const LIST_ID = '507f1f77bcf86cd799439050';
+    const MENTION_A = '507f1f77bcf86cd799439051';
+    const postModel = makePostModel({
+      find: jest.fn().mockReturnValue(
+        leanChain([
+          {
+            _id: POST_ID,
+            authorId: AUTHOR,
+            caption: 'x',
+            media: [],
+            isActive: true,
+            audienceScope: 'custom',
+            audienceListId: LIST_ID,
+            mentions: [
+              { userId: MENTION_A, username: 'a', offset: 0, length: 2 },
+              { userId: 'not-an-id', username: 'b', offset: 3, length: 2 },
+            ],
+          },
+        ]),
+      ),
+    });
+    userModel.find.mockImplementation((filter: any) => {
+      if (filter.displayName) return leanChain([]);
+      // Tác giả và người được nhắc tới là hai query riêng — phân biệt bằng id.
+      const ids: string[] = filter._id?.$in ?? [];
+      if (ids.includes(AUTHOR)) return leanChain([{ _id: AUTHOR, displayName: 'Tác giả' }]);
+      return leanChain([{ _id: MENTION_A, displayName: 'Người được thẻ' }]);
+    });
+    audienceListModel.find.mockReturnValue(leanChain([{ _id: LIST_ID, name: 'Gia đình' }]));
+    const svc = await build(postModel);
+
+    const res = await svc.listPosts({});
+
+    expect(res.data[0].audienceListName).toBe('Gia đình');
+    expect(res.data[0].mentionUserNames).toEqual(['Người được thẻ']);
+  });
+});
+
+describe('AdminMomentsService.stats', () => {
+  it('đếm cả ba trạng thái + phạm vi + số bài có báo cáo chờ', async () => {
+    const postModel = makePostModel();
+    postModel.countDocuments
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(3);
+    postModel.aggregate.mockResolvedValue([
+      { _id: 'public', count: 6 },
+      { _id: 'connections', count: 3 },
+      { _id: 'custom', count: 1 },
+    ]);
+    reportModel.distinct.mockResolvedValue([POST_ID, POST_ID2]);
+    const svc = await build(postModel);
+
+    const res = await svc.stats();
+
+    expect(res).toEqual({
+      all: 10,
+      active: 7,
+      inactive: 3,
+      reported: 2,
+      byScope: { public: 6, connections: 3, custom: 1 },
+    });
+    // Tab count phải đếm toàn bộ, không áp tab đang chọn.
+    expect(postModel.countDocuments.mock.calls[0][0]).toEqual({});
   });
 });
 
