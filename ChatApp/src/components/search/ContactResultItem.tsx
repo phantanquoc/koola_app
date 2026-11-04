@@ -20,7 +20,12 @@ const ContactResultItem: React.FC<Props> = ({ contact, onPress }) => {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Xem hồ sơ ${contact.displayName}`}>
-      <UserAvatar displayName={contact.displayName} avatar={contact.avatar} size={44} />
+      <UserAvatar
+        displayName={contact.displayName}
+        avatar={contact.avatar}
+        size={44}
+        style={styles.avatar}
+      />
       <View style={styles.info}>
         <KoolaText weight="600" numberOfLines={1}>
           {contact.displayName}
@@ -47,8 +52,11 @@ const makeStyles = (semantic: SemanticTokens) =>
     },
     info: {
       flex: 1,
+      minWidth: 0,
+      flexShrink: 1,
       marginLeft: 12,
     },
+    avatar: { flexShrink: 0 },
     phone: {
       marginTop: 2,
     },

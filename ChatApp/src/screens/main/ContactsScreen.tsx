@@ -95,6 +95,11 @@ const ContactsScreen: React.FC = () => {
     return null;
   };
 
+  // Rows are detached cards: the gap between them is the 4px top + 4px bottom
+  // card margins (`CHAT_ROW_CARD_GAP`), so the separator only needs to paint
+  // nothing visible — same rule as the Messages list.
+  const SeparatorComponent = useCallback(() => <View style={styles.separator} />, [styles]);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <Animated.FlatList
@@ -115,7 +120,7 @@ const ContactsScreen: React.FC = () => {
         ListEmptyComponent={renderEmpty}
         onEndReached={hasMore ? loadMore : undefined}
         onEndReachedThreshold={0.5}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={SeparatorComponent}
         contentContainerStyle={{ paddingTop: headerInset, paddingBottom: tabBarInset }}
       />
     </SafeAreaView>
@@ -125,7 +130,8 @@ const ContactsScreen: React.FC = () => {
 const makeStyles = (semantic: SemanticTokens) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: semantic.bg.canvas },
-    separator: { height: 1, backgroundColor: semantic.border.subtle },
+    // Invisible hairline — the card margins carry the visual gap.
+    separator: { height: StyleSheet.hairlineWidth },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 120 },
   });
 

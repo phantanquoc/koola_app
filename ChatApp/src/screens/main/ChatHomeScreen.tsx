@@ -32,6 +32,7 @@ import ShortsScreen from './ShortsScreen';
 import QrScannerModal from './QrScannerModal';
 import GroupCreateModal from '../../components/GroupCreateModal';
 import ChatStartPopup from '../../components/ChatStartPopup';
+import { CHAT_ROW_CARD_GAP, makeChatRowCardStyle } from '../../components/chatRowCard';
 import { useChatHomeOverlay, type ChatHomeOverlay, type GroupCloseRequester } from './useChatHomeOverlay';
 import { useTabDockSuppression } from '../../navigation/MainNavigator';
 import { acquireBackIntercept } from '../../services/nativeBack';
@@ -667,7 +668,10 @@ const ChatHomeScreen: React.FC = () => {
     return () => task.cancel();
   }, []);
 
-  const screenStyles = useMemo(() => makeScreenStyles(tokens.semantic), [tokens.semantic]);
+  const screenStyles = useMemo(
+    () => makeScreenStyles(tokens.semantic, resolvedScheme),
+    [tokens.semantic, resolvedScheme],
+  );
 
   const handleSearchPress = useCallback(() => {
     navigation.navigate('UniversalSearch');
@@ -745,19 +749,24 @@ const ChatHomeShell: React.FC<{ styles: ReturnType<typeof makeScreenStyles> }> =
         </View>
       ))}
     </View>
-    {SHELL_ROW_KEYS.map((key) => (
-      <View key={key} style={styles.shellRow}>
-        <KoolaSkeleton width={48} height={48} radius={koolaRadii.pill} />
-        <View style={styles.shellRowContent}>
-          <KoolaSkeleton width="55%" height={14} />
-          <KoolaSkeleton width="80%" height={12} style={styles.shellRowPreview} />
+    {/* Rows mirror the real ConversationListItem card geometry (same
+        `chatRowCard` recipe, same 8px gutters) so the hand-off from skeleton to
+        list does not shift the first card by a few pixels. */}
+    <View style={styles.shellRows}>
+      {SHELL_ROW_KEYS.map((key) => (
+        <View key={key} style={styles.shellRow}>
+          <KoolaSkeleton width={48} height={48} radius={koolaRadii.pill} />
+          <View style={styles.shellRowContent}>
+            <KoolaSkeleton width="55%" height={14} />
+            <KoolaSkeleton width="80%" height={12} style={styles.shellRowPreview} />
+          </View>
         </View>
-      </View>
-    ))}
+      ))}
+    </View>
   </View>
 );
 
-function makeScreenStyles(semantic: SemanticTokens) {
+function makeScreenStyles(semantic: SemanticTokens, scheme: 'light' | 'dark') {
   return StyleSheet.create({
     container: {
       flex: 1,
@@ -778,15 +787,17 @@ function makeScreenStyles(semantic: SemanticTokens) {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    shellRows: {
+      flex: 1,
+      paddingTop: CHAT_ROW_CARD_GAP,
+    },
     shellRow: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: 72,
       paddingVertical: 10,
-      paddingHorizontal: 16,
-      backgroundColor: semantic.surface.level1,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: semantic.border.subtle,
+      paddingHorizontal: 12,
+      ...makeChatRowCardStyle(scheme),
     },
     shellRowContent: {
       flex: 1,
