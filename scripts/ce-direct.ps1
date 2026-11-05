@@ -5,7 +5,7 @@
   Thuc hien MCP handshake (initialize -> notifications/initialized -> tools/call)
   voi server o http://127.0.0.1:6699 va in ra cac snippet lien quan.
   Neu server chua chay: bat Context Engine (tray icon -> lang nghe 127.0.0.1:6699).
-  Toi uu: cache ket qua theo hash query, tai dung session, fail-fast handshake.
+  Toi uu: cache ket qua theo hash query, tai dung session, fail-fast handshake, auto cleanup.
 .EXAMPLE
   .\ce-direct.ps1 "Where is user authentication handled?"
   .\ce-direct.ps1 "How does AuthContext restore session and connect socket?" -TimeoutSec 120
@@ -19,11 +19,14 @@ param(
   [int]$HandshakeTimeoutSec = 15,
   [string]$Scope,
   [int]$CacheTtlSec = 3600,
+  [int]$SessionTtlSec = 1800,
+  [int]$MaxRetries = 1,
   [switch]$NoCache
 )
 # NOTE: TimeoutSec mac dinh 300s vi Context Engine goi LLM upstream (log cho thay
 # moi completion mat 30-120s, cong retry khi 524/503). Handshake chi ton vai chuc ms
 # tren localhost nen fail-fast rieng 15s de biet ngay engine chet.
+# SessionTtlSec = 30 phut (Context Engine session expiry default).
 
 Add-Type -AssemblyName System.Net.Http
 
@@ -36,6 +39,15 @@ function Get-StringHash {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
     return ([System.BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLower()
   } finally { $sha.Dispose() }
+}
+
+function Remove-StaleCache {
+  if (Test-Path $CacheDir) {
+    $now = Get-Date
+    Get-ChildItem $CacheDir -Filter "*.txt" | Where-Object {
+      ($now - $_.LastWriteTime).TotalSeconds -gt $CacheTtlSec
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Invoke-McpPost {  param(
@@ -84,7 +96,10 @@ function Build-CallBody {
   } | ConvertTo-Json -Depth 6 -Compress)
 }
 
-# 0. Cache hit? (bo qua khi -NoCache)
+# 0. Cleanup stale cache (async, non-blocking)
+Remove-StaleCache
+
+# 1. Cache hit? (bo qua khi -NoCache)
 $queryHash = Get-StringHash -Text "$Base`n$Scope`n$Query"
 $cacheFile = Join-Path $CacheDir "$queryHash.txt"
 if (-not $NoCache -and (Test-Path $cacheFile)) {
@@ -102,20 +117,23 @@ $callClient.Timeout = [System.TimeSpan]::FromSeconds($TimeoutSec)
 try {
   $callBody = Build-CallBody -Query $Query -Scope $Scope
 
-  # 1. Thu session cu truoc (chi 1 roundtrip neu con han)
+  # 1. Thu session cu truoc (chi 1 roundtrip neu con han VA chua qua TTL)
   if (Test-Path $sidFile) {
-    $savedSid = (Get-Content $sidFile -Raw).Trim()
-    if ($savedSid) {
-      try {
-        $retry = Invoke-McpPost -Client $callClient -Base $Base -SessionId $savedSid -Body $callBody
-        if ($retry -and $retry.IsSuccessStatusCode -and $retry.Content) {
-          $text = Get-ResultText -Raw $retry.Content.ReadAsStringAsync().Result
-          if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Force $CacheDir | Out-Null }
-          Set-Content $cacheFile $text -Encoding utf8 -NoNewline
-          Write-Output $text
-          exit 0
-        }
-      } catch { <# session het han hoac loi — roi xuong handshake lai #> }
+    $sidAge = ((Get-Date) - (Get-Item $sidFile).LastWriteTime).TotalSeconds
+    if ($sidAge -lt $SessionTtlSec) {
+      $savedSid = (Get-Content $sidFile -Raw).Trim()
+      if ($savedSid) {
+        try {
+          $retry = Invoke-McpPost -Client $callClient -Base $Base -SessionId $savedSid -Body $callBody
+          if ($retry -and $retry.IsSuccessStatusCode -and $retry.Content) {
+            $text = Get-ResultText -Raw $retry.Content.ReadAsStringAsync().Result
+            if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Force $CacheDir | Out-Null }
+            Set-Content $cacheFile $text -Encoding utf8 -NoNewline
+            Write-Output $text
+            exit 0
+          }
+        } catch { <# session het han hoac loi — roi xuong handshake lai #> }
+      }
     }
   }
 
@@ -139,12 +157,19 @@ try {
   if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Force $CacheDir | Out-Null }
   Set-Content $sidFile $sid -Encoding utf8 -NoNewline
 
-  # 3. tools/call (timeout dai cho LLM upstream)
-  try {
-    $callResp = Invoke-McpPost -Client $callClient -Base $Base -SessionId $sid -Body $callBody
-  } catch {
-    Write-Error "tools/call request that bai (timeout hoac mat ket noi sau $($TimeoutSec)s). Chi tiet: $($_.Exception.Message)"
-    exit 1
+  # 3. tools/call (timeout dai cho LLM upstream) voi retry
+  $callResp = $null
+  for ($i = 0; $i -le $MaxRetries; $i++) {
+    try {
+      $callResp = Invoke-McpPost -Client $callClient -Base $Base -SessionId $sid -Body $callBody
+      break  # Thanh cong → thoat loop
+    } catch {
+      if ($i -eq $MaxRetries) {
+        Write-Error "tools/call request that bai sau $($MaxRetries + 1) lan thu (timeout hoac mat ket noi sau $($TimeoutSec)s). Chi tiet: $($_.Exception.Message)"
+        exit 1
+      }
+      Start-Sleep -Seconds (2 * ($i + 1))  # Exponential backoff: 2s, 4s, ...
+    }
   }
   if (-not $callResp) { Write-Error "tools/call tra ve response rong (null). Server co the da dong session; thu chay lai."; exit 1 }
   if (-not $callResp.IsSuccessStatusCode) {
