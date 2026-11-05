@@ -1,11 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, SchemaTypes, Types } from 'mongoose';
 
 export type UserDocument = User & Document;
 
 export type AccountType = 'personal' | 'business';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 export type BusinessRelationshipType = 'partner' | 'supplier';
+export type AdminRole = 'super' | 'moderator' | 'support';
 
 @Schema({ timestamps: true })
 export class User {
@@ -15,7 +16,7 @@ export class User {
   accountType: AccountType;
 
   /** Set only on business accounts — references the root owner User */
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   ownerUserId?: Types.ObjectId;
 
   // ─── Credentials (optional at schema level; enforced by service for personal) ─
@@ -82,6 +83,12 @@ export class User {
   @Prop()
   contactPhone?: string;
 
+  @Prop()
+  taxCode?: string;
+
+  @Prop({ type: Date })
+  licenseExpiresAt?: Date;
+
   /** MinIO/S3 key for the business logo */
   @Prop()
   logoKey?: string;
@@ -102,6 +109,36 @@ export class User {
   @Prop()
   rejectionReason?: string;
 
+  @Prop({
+    type: [
+      {
+        status: { type: String },
+        at: { type: Date },
+        actorId: { type: String },
+        reason: { type: String },
+      },
+    ],
+    default: [],
+  })
+  verificationHistory?: {
+    status: string;
+    at: Date;
+    actorId?: string;
+    reason?: string;
+  }[];
+
+  @Prop({ default: false })
+  suspended?: boolean;
+
+  @Prop()
+  internalNote?: string;
+
+  @Prop()
+  assignee?: string;
+
+  @Prop({ type: Date, default: null })
+  deletedAt?: Date | null;
+
   @Prop({ default: false })
   isBanned: boolean;
 
@@ -110,6 +147,36 @@ export class User {
 
   @Prop({ type: Date, default: null })
   bannedUntil: Date | null;
+
+  /** Vai trò trong khu admin. null = super (tương thích admin cũ chưa có role). */
+  @Prop({ type: String, enum: ['super', 'moderator', 'support'], default: null })
+  adminRole?: AdminRole | null;
+
+  // ─── Admin login trail & 2FA ─────────────────────────────────────────────────
+
+  @Prop({ type: Date, default: null })
+  lastLoginAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  lastLoginIp?: string | null;
+
+  @Prop({ default: false })
+  twoFactorEnabled?: boolean;
+
+  /** Base32 TOTP secret — never returned by any admin projection. */
+  @Prop({ type: String, default: null })
+  twoFactorSecret?: string | null;
+
+  /** SHA-256 hashes of one-time recovery codes (plaintext shown once). */
+  @Prop({ type: [String], default: [] })
+  twoFactorRecoveryCodes?: string[];
+
+  /**
+   * Tỉ lệ hoa hồng nền tảng thu trên GMV (0..1). Chỉ có nghĩa với tài khoản
+   * doanh nghiệp; đối soát doanh thu nhân GMV với giá trị này.
+   */
+  @Prop({ type: Number, default: 0, min: 0, max: 1 })
+  commissionRate?: number;
 
   /** Platform administration authority — set out-of-band only (see scripts/grant-admin.ts) */
   @Prop({ default: false })
@@ -153,9 +220,14 @@ export const UserSchema = SchemaFactory.createForClass(User);
 // avoid the duplicate-index warning (CLAUDE.md: use schema.index() only).
 UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 UserSchema.index({ createdAt: -1 });
-UserSchema.index({ accountType: 1 });
+// accountType đơn lẻ đã bị phủ bởi compound bên dưới (prefix trái)
 UserSchema.index({ ownerUserId: 1 });
 UserSchema.index({ relationshipType: 1 });
 UserSchema.index({ province: 1 });
 UserSchema.index({ businessCategory: 1 });
 UserSchema.index({ verificationStatus: 1 });
+// Compound cho truy vấn chính của trang admin Doanh nghiệp:
+// accountType + deletedAt + verificationStatus + sort createdAt / licenseExpiresAt.
+UserSchema.index({ accountType: 1, deletedAt: 1, verificationStatus: 1, createdAt: -1 });
+UserSchema.index({ accountType: 1, deletedAt: 1, licenseExpiresAt: 1 });
+UserSchema.index({ ownerUserId: 1, accountType: 1, deletedAt: 1 });

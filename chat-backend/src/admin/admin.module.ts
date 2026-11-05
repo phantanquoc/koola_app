@@ -19,6 +19,28 @@ import {
 } from './schemas/admin-audit-log.schema';
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
+import { AdminReportService } from './admin-report.service';
+import { BroadcastService } from './broadcast.service';
+import { RatelimitMonitorService } from './ratelimit-monitor.service';
+import {
+  BroadcastLog,
+  BroadcastLogSchema,
+} from './schemas/broadcast-log.schema';
+import { ImpersonationController } from './impersonation.controller';
+import { ImpersonationService } from './impersonation.service';
+import { AuthModule } from '../auth/auth.module';
+import { AdminRoleGuard } from '../auth/guards/admin-role.guard';
+import { AppealController } from './appeal.controller';
+import { ModerationQueueController } from './moderation-queue.controller';
+import { AdminExportController } from './admin-export.controller';
+import { AppealService } from './appeal.service';
+import { ModerationQueueService } from './moderation-queue.service';
+import { AdminExportService } from './admin-export.service';
+import { Appeal, AppealSchema } from './schemas/appeal.schema';
+import { AdminSessionService } from './admin-session.service';
+import { AdminUnbanCron } from './admin-unban.cron';
+import { SessionController } from './session.controller';
+import { ModerationMediaService } from './moderation-media.service';
 import {
   ConversationDoc,
   ConversationDocSchema,
@@ -46,6 +68,8 @@ import {
       { name: Story.name, schema: StorySchema },
       { name: MusicTrack.name, schema: MusicTrackSchema },
       { name: AudienceList.name, schema: AudienceListSchema },
+      { name: BroadcastLog.name, schema: BroadcastLogSchema },
+      { name: Appeal.name, schema: AppealSchema },
     ]),
     MediaModule,
     // Dependency-free (User + CommerceProduct models only) — NOT CommerceModule,
@@ -54,9 +78,40 @@ import {
     GatewayModule,
     RedisModule,
     HealthModule,
+    // ImpersonationService cần JwtService; AuthModule đã export JwtModule.
+    AuthModule,
   ],
-  controllers: [AdminController, AdminModerationController, AdminOpsController],
-  providers: [AdminService, AdminGuard, AdminAuditService, CoturnHealthService],
+  // AdminExportController PHẢI đứng trước AdminModerationController:
+  // Express khớp theo thứ tự đăng ký nên nếu sau, GET /admin/reports/export
+  // bị @Get('reports/:id') bắt với id='export'.
+  controllers: [
+    AdminController,
+    AdminExportController,
+    AdminModerationController,
+    AdminOpsController,
+    SessionController,
+    AppealController,
+    ModerationQueueController,
+    ImpersonationController,
+  ],
+  providers: [
+    AdminService,
+    AdminGuard,
+    // @UseGuards(AdminRoleGuard) ở controller cần provider trong module này.
+    AdminRoleGuard,
+    AdminAuditService,
+    AdminReportService,
+    CoturnHealthService,
+    ModerationMediaService,
+    AdminSessionService,
+    AdminUnbanCron,
+    AppealService,
+    ModerationQueueService,
+    AdminExportService,
+    ImpersonationService,
+    BroadcastService,
+    RatelimitMonitorService,
+  ],
   exports: [AdminAuditService],
 })
 export class AdminModule {}

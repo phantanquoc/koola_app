@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import type { ExecutionContext } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
-import { BusinessSessionGuard } from './common/guards/business-session.guard';
-import { BusinessSessionActivityInterceptor } from './common/interceptors/business-session-activity.interceptor';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ConversationsModule } from './conversations/conversations.module';
@@ -26,11 +25,9 @@ import { AccountsModule } from './accounts/accounts.module';
 import { TranslationModule } from './translation/translation.module';
 import { AdminModule } from './admin/admin.module';
 import { CommerceModule } from './commerce/commerce.module';
-import { BusinessMembersModule } from './business-members/business-members.module';
-import {
-  BusinessSession,
-  BusinessSessionSchema,
-} from './business-members/schemas/business-session.schema';
+// Alias: trùng tên với ConfigModule của @nestjs/config dùng cho forRoot bên dưới.
+import { ConfigModule as AppConfigModule } from './config/config.module';
+import { OpsLogModule } from './ops/ops-log.module';
 
 @Module({
   imports: [
@@ -69,6 +66,15 @@ import {
           },
         ],
         storage: new RedisThrottlerStorage(redis),
+        // Nest mặc định băm sha256 cả key nên không còn dấu vết IP/user.
+        // Prefix + tracker (mặc định req.ip) ở cuối để SCAN của
+        // GET /admin/ratelimit/top tách được tracker.
+        generateKey: (
+          context: ExecutionContext,
+          tracker: string,
+          throttlerName: string,
+        ) =>
+          `throttler:${context.getClass().name}-${context.getHandler().name}-${throttlerName}-${tracker}`,
       }),
     }),
     AuthModule,
@@ -88,13 +94,9 @@ import {
     TranslationModule,
     AdminModule,
     CommerceModule,
-    BusinessMembersModule, // ← Business members system (multi-member accounts)
-    // The global BusinessSessionGuard injects this model directly, so it must
-    // be resolvable from the root module (a feature module's registration is
-    // not visible to APP_GUARD providers declared here).
-    MongooseModule.forFeature([
-      { name: BusinessSession.name, schema: BusinessSessionSchema },
-    ]),
+    AppConfigModule,
+    // @Global: một lần import là OpsLogService inject được ở Auth/Users/Notifications.
+    OpsLogModule,
   ],
   providers: [
     {
@@ -104,21 +106,6 @@ import {
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
-    },
-    // Tasks 8.3 / 17.1 — rejects a business request from a device that was
-    // evicted by a newer login. Registered AFTER JwtAuthGuard so `request.user`
-    // (and its role/accountType) is already populated. Exempt the routes that
-    // claim or release the session with @SkipBusinessSessionCheck().
-    {
-      provide: APP_GUARD,
-      useClass: BusinessSessionGuard,
-    },
-    // Task 8.8 — touch business_sessions.lastActiveAt after every successful
-    // business API call. Global so new routes are covered by default; it is a
-    // no-op for personal sessions. BusinessMembersModule exports the service.
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: BusinessSessionActivityInterceptor,
     },
   ],
 })

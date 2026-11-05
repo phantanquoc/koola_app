@@ -15,6 +15,7 @@ import { BusinessSession } from '../business-members/schemas/business-session.sc
 import { UsersService } from '../users/users.service';
 import { RedisService } from '../common/redis/redis.service';
 import { EmailService } from './email.service';
+import { AdminAuditLog } from '../admin/schemas/admin-audit-log.schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
@@ -88,6 +89,11 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: mockUsersService },
         { provide: RedisService, useValue: mockRedisService },
         { provide: EmailService, useValue: mockEmailService },
+        // Audit admin_login ghi qua model trực tiếp (tránh vòng module).
+        {
+          provide: getModelToken(AdminAuditLog.name),
+          useValue: { create: jest.fn().mockResolvedValue({}) },
+        },
       ],
     }).compile();
 

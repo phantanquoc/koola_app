@@ -1,0 +1,105 @@
+/* CSS riêng cho 4 trang vận hành mới (cấu hình, nhật ký, hàng đợi, kháng nghị).
+   Không sửa index.css; chỉ dùng token trong :root để đồng bộ giao diện. */
+
+.cfg-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Bật/tắt toàn hệ thống: checkbox cỡ ngón tay, nhãn đứng cạnh */
+.cfg-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 800;
+  color: var(--koola-ink);
+}
+
+.cfg-toggle input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--koola-primary);
+}
+
+.cfg-platform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cfg-flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Tên cờ | bật/tắt | xoá — tên co giãn, hai cột còn lại cố định */
+.cfg-flag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cfg-flag-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--koola-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.cfg-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  border-top: 1px solid var(--koola-line);
+  padding-top: var(--space-4);
+}
+
+.cfg-save-note {
+  margin-right: auto;
+  color: var(--koola-muted);
+  font-size: 13px;
+}
+
+/* Hàng đợi: badge ưu tiên + điểm số đứng cạnh nhau */
+.q-priority {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Nội dung kháng nghị dài: cắt 3 dòng, đọc đủ trong dialog quyết định */
+.appeal-message {
+  display: -webkit-box;
+  max-width: 52ch;
+  overflow: hidden;
+  color: var(--koola-ink);
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+@media (max-width: 560px) {
+  .cfg-flag-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cfg-flag-value {
+    grid-column: 1 / -1;
+  }
+
+  .cfg-save-bar {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .cfg-save-note {
+    flex: 1 1 100%;
+  }
+}

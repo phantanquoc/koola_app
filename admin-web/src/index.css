@@ -1,27 +1,45 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+/* Ẩn khỏi mắt nhưng vẫn đọc được bởi screen reader */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 :root {
-  --koola-ink: #101828;
-  --koola-muted: #667085;
-  --koola-faint: #98a2b3;
-  --koola-line: #e4e7ec;
-  --koola-line-strong: #d0d5dd;
-  --koola-canvas: #f7f9fc;
+  --koola-canvas: #f5f5f4;
   --koola-surface: #ffffff;
-  --koola-surface-soft: #f2f4f7;
-  --koola-primary: #2563eb;
-  --koola-primary-dark: #1d4ed8;
-  --koola-primary-soft: #dbeafe;
-  --koola-accent: #10b981;
-  --koola-warm: #f97316;
-  --koola-danger: #ef4444;
+  --koola-surface-soft: #fafaf9;
+  --koola-ink: #1c1917;
+  --koola-muted: #78716c;
+  --koola-faint: #a8a29e;
+  --koola-line: #e7e5e4;
+  --koola-line-strong: #d6d3d1;
+  --koola-primary: #4f46e5;
+  --koola-primary-dark: #4338ca;
+  --koola-primary-soft: #ede9fe;
+  --koola-danger: #dc2626;
   --koola-danger-dark: #b42318;
   --koola-danger-soft: #fee4e2;
-  --koola-warning: #f59e0b;
+  --koola-warning: #d97706;
+  --koola-warning-dark: #b45309;
   --koola-warning-soft: #fef3c7;
-  --koola-success: #12b76a;
+  --koola-success: #16a34a;
+  --koola-success-dark: #067647;
   --koola-success-soft: #dcfce7;
   --koola-info-soft: #eff6ff;
+  --koola-info-dark: #1d4ed8;
+  --koola-orb-mint: #a7e5d3;
+  --koola-orb-peach: #f4c5a8;
+  --koola-orb-lavender: #c8b8e0;
+  --koola-orb-sky: #a8c8e8;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -31,16 +49,16 @@
   --space-6: 32px;
   --space-7: 40px;
 
-  --radius-xs: 8px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
   --radius-pill: 999px;
 
-  --shadow-subtle: 0 3px 10px rgba(16, 24, 40, 0.08);
-  --shadow-soft: 0 8px 24px rgba(16, 24, 40, 0.1);
-  --shadow-lift: 0 18px 48px rgba(16, 24, 40, 0.14);
+  --shadow-subtle: 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-soft: 0 8px 24px rgba(0,0,0,0.06);
+  --shadow-lift: 0 18px 48px rgba(0,0,0,0.10);
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -68,9 +86,7 @@ html {
 body {
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.1), transparent 34rem),
-    var(--koola-canvas);
+  background: var(--koola-canvas);
 }
 
 button,
@@ -120,7 +136,7 @@ code,
 }
 
 :focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline: 2px solid var(--koola-primary);
   outline-offset: 2px;
 }
 
@@ -128,11 +144,71 @@ code,
   min-height: 100vh;
 }
 
+/* Skip link: ẩn khỏi mắt nhưng vẫn tab được; hiện khi focus (WCAG 2.4.1).
+   fixed để không bị .admin-shell{overflow:hidden} cắt và không chiếm layout. */
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-4);
+  z-index: 1300;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border-radius: var(--radius-sm);
+  background: var(--koola-ink);
+  color: var(--koola-surface);
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  padding: var(--space-2) var(--space-4);
+}
+
 /* Shell */
+.env-banner {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.env-banner--dev {
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+}
+
+.env-banner--prod {
+  background: var(--koola-danger-soft);
+  color: var(--koola-danger-dark);
+}
+
 .admin-shell {
   display: flex;
-  min-height: 100vh;
+  /* dvh: trên mobile, 100vh tính cả vùng thanh địa chỉ trình duyệt → đáy shell
+     nằm dưới màn hình và footer bị cắt. dvh theo chiều cao thật. */
+  height: 100vh;
+  height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
   color: var(--koola-ink);
+}
+
+.admin-shell-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .admin-sidebar {
@@ -140,45 +216,137 @@ code,
   top: 0;
   display: flex;
   width: 264px;
-  height: 100vh;
+  height: auto;
+  max-height: 100%;
   flex-direction: column;
   flex-shrink: 0;
-  border-right: 1px solid rgba(228, 231, 236, 0.82);
-  background: rgba(255, 255, 255, 0.92);
+  overflow: visible;
+  border-right: 1px solid var(--koola-line);
+  background: var(--koola-surface);
   padding: var(--space-5) var(--space-4);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.8) inset;
-  backdrop-filter: blur(14px);
+  transition: width 200ms ease, padding 200ms ease;
 }
 
 .admin-brand {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-6);
+  min-height: 44px;
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.admin-brand-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
+.admin-brand-logo {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.admin-brand-name {
+  color: var(--koola-ink);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.admin-sidebar--collapsed .admin-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-collapse-toggle {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
   place-items: center;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--koola-primary), var(--koola-accent));
-  color: var(--koola-surface);
-  font-weight: 800;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
 }
 
-.admin-brand-title {
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.admin-brand-subtitle {
+/* Floating rail toggle: slim rounded tab straddling the sidebar's right
+   edge, vertically centered (radius-sm to match the admin kit — not a circle) */
+.admin-edge-toggle {
+  position: absolute;
+  top: 50%;
+  right: -11px;
+  z-index: 30;
+  display: flex;
+  width: 22px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface);
   color: var(--koola-muted);
-  font-size: 12px;
-  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  transform: translateY(-50%);
+  transition: color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-edge-toggle > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-edge-toggle svg {
+  display: block;
+}
+
+.admin-edge-toggle:hover {
+  border-color: var(--koola-primary);
+  color: var(--koola-primary-dark);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+.admin-edge-toggle:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+}
+
+/* Collapsed rail: 76px icon-only, tooltip via title attr */
+.admin-sidebar--collapsed {
+  width: 76px;
+  padding: var(--space-5) var(--space-2);
+}
+
+.admin-sidebar--collapsed .admin-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.admin-sidebar--collapsed .admin-nav-section {
+  border-top: 1px solid var(--koola-line);
+  margin-bottom: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.admin-sidebar--collapsed .admin-nav-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.admin-sidebar--collapsed .admin-nav-link {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+.admin-sidebar--collapsed .admin-logout {
+  justify-content: center;
+  padding: 0;
+}
+
+.admin-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-2);
 }
 
 .admin-nav-section {
@@ -187,7 +355,7 @@ code,
 
 .admin-nav-label {
   margin: 0 0 var(--space-2) var(--space-3);
-  color: var(--koola-faint);
+  color: var(--koola-muted);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -204,7 +372,9 @@ code,
   font-weight: 700;
   padding: 0 var(--space-3);
   text-decoration: none;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease, padding 200ms ease;
 }
 
 .admin-nav-link:hover {
@@ -215,7 +385,6 @@ code,
 .admin-nav-link.active {
   background: var(--koola-primary-soft);
   color: var(--koola-primary-dark);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.16);
 }
 
 .admin-nav-icon {
@@ -225,28 +394,33 @@ code,
   flex-shrink: 0;
   place-items: center;
   border-radius: var(--radius-sm);
-  background: rgba(37, 99, 235, 0.08);
+  background: transparent;
+  color: inherit;
   font-size: 14px;
 }
 
+.admin-nav-link.active .admin-nav-icon {
+  background: var(--koola-primary-soft);
+}
+
 .admin-sidebar-footer {
-  margin-top: auto;
-  padding-top: var(--space-4);
-}
-
-.admin-profile-card {
-  border: 1px solid var(--koola-line);
-  border-radius: var(--radius-lg);
-  background: var(--koola-surface);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-subtle);
-}
-
-.admin-profile-row {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-top: 1px solid var(--koola-line);
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.admin-collapse-btn {
+  min-height: 40px;
+}
+
+.admin-logout {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
 }
 
 .admin-avatar {
@@ -256,16 +430,18 @@ code,
   flex-shrink: 0;
   place-items: center;
   border-radius: var(--radius-pill);
-  background: var(--koola-info-soft);
-  color: var(--koola-primary);
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
   font-weight: 800;
 }
 
 .admin-main {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .admin-topbar {
@@ -277,16 +453,40 @@ code,
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  border-bottom: 1px solid rgba(228, 231, 236, 0.82);
-  background: rgba(247, 249, 252, 0.86);
+  border-bottom: 1px solid var(--koola-line);
+  background: var(--koola-surface);
   padding: 0 var(--space-6);
-  backdrop-filter: blur(14px);
 }
 
 .admin-breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
   color: var(--koola-muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Route title dài (vd "Doanh nghiệp chờ duyệt") — cắt ellipsis thay vì đè
+   lên cụm action khi topbar hẹp (861–1100px, mobile). */
+.admin-breadcrumb [aria-current='page'] {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--koola-ink);
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+/* Legacy: route title lived in the topbar (double-header). Pages now own
+   their title via PageHeader; keep the class harmless for stale markup. */
+.admin-topbar-title {
+  color: var(--koola-ink);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .admin-topbar-actions {
@@ -295,8 +495,57 @@ code,
   gap: var(--space-3);
 }
 
+/* Badge cảnh báo sức khỏe trên topbar (chỉ render khi status != ok). */
+.admin-health-badge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+.admin-identity-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-1);
+}
+
+.admin-identity-chip:hover {
+  background: var(--koola-surface-soft);
+}
+
+.admin-identity-chip .admin-avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.admin-identity-text {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.admin-identity-text .cell-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Removed: .admin-command was the old interactive-looking command field.
    Now replaced by .admin-command-info (non-interactive). */
+
+.admin-topbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--koola-line);
+}
+
+.admin-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 .admin-content {
   width: min(100%, 1440px);
@@ -304,11 +553,320 @@ code,
   padding: var(--space-6);
 }
 
+/* Tablet (861–1100px): sidebar 264px + topbar actions (ô tìm 280 + chip 210)
+   chiếm gần hết bề ngang → breadcrumb từng tràn/đè. Co chip về avatar sớm hơn
+   breakpoint mobile để breadcrumb còn chỗ đọc. */
+@media (max-width: 1100px) {
+  .admin-identity-text {
+    display: none;
+  }
+}
+
+/* Laptop thấp (≤820px cao — 1366×768, 1440×900 đã trừ browser chrome): giữ
+   topbar/sidebar nguyên, chỉ nén khoảng đệm nội dung để bảng còn thêm ~2 dòng.
+   Chỉ áp khi đủ rộng; mobile cần đệm thoáng hơn cho ngón tay. */
+@media (max-height: 820px) and (min-width: 861px) {
+  .admin-content {
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .page-stack {
+    gap: var(--space-4);
+  }
+
+  .list-header {
+    gap: var(--space-2);
+  }
+}
+
+.admin-topbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.admin-search-icon {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--koola-muted);
+  pointer-events: none;
+}
+
+.admin-search-input.input {
+  width: min(280px, 32vw);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface-soft);
+  border-color: transparent;
+  padding-left: 38px;
+  padding-right: 38px;
+}
+
+.admin-search-input.input:focus {
+  background: var(--koola-surface);
+  border-color: var(--koola-primary);
+}
+
+.admin-search-kbd {
+  position: absolute;
+  right: var(--space-3);
+  border: 1px solid var(--koola-line);
+  border-radius: 6px;
+  background: var(--koola-surface);
+  color: var(--koola-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  pointer-events: none;
+}
+
+/* Command palette trigger — looks like the old search field, is a button */
+.admin-palette-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: min(280px, 32vw);
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface-soft);
+  color: var(--koola-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding-left: 38px;
+  padding-right: 38px;
+  text-align: left;
+}
+
+.admin-palette-trigger:hover {
+  border-color: var(--koola-line-strong);
+}
+
+.admin-palette-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--koola-ink) 42%, transparent);
+  backdrop-filter: blur(4px);
+  padding: 12vh var(--space-4) var(--space-4);
+}
+
+.palette-panel {
+  width: min(560px, 100%);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  color: var(--koola-muted);
+  padding: var(--space-3) var(--space-4);
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--koola-ink);
+  font-size: 15px;
+  outline: none;
+  padding: 0;
+}
+
+.palette-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+}
+
+.palette-group {
+  color: var(--koola-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--koola-ink);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-3);
+}
+
+.palette-item.active {
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+}
+
+.palette-item-icon {
+  display: flex;
+  align-items: center;
+  color: inherit;
+}
+
+.palette-empty {
+  color: var(--koola-muted);
+  font-size: 14px;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+/* ConfirmDialog shared blocks */
+.confirm-preview {
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  background: var(--koola-surface-soft);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.confirm-typing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.confirm-typing label {
+  color: var(--koola-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.confirm-actions {
+  justify-content: flex-end;
+}
+
 /* Page primitives */
 .page-stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+/* Khối đối chiếu nhanh: bằng chứng (giấy phép) + facts cạnh nhau, đứng đầu hồ sơ */
+.verify-block {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: var(--space-4);
+  align-items: start;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-lg);
+  background: var(--koola-surface-soft);
+  padding: var(--space-3);
+}
+
+.verify-media img,
+.verify-media .license-thumb {
+  width: 100%;
+  height: auto;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+}
+
+/* Nhiều ảnh bằng chứng (giấy phép + logo + bìa): xếp dọc, ảnh phụ gọn hơn
+   để khối Đối chiếu không cao gấp ba. */
+.verify-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.verify-media > :not(:first-child) img,
+.verify-media > :not(:first-child) .license-thumb {
+  max-height: 96px;
+}
+
+.verify-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+
+.verify-facts dt {
+  color: var(--koola-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.verify-facts dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .verify-block {
+    grid-template-columns: 1fr;
+  }
+  .verify-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.alert {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.alert--warning {
+  border-color: var(--koola-warning-soft);
+  background: var(--koola-warning-soft);
+  color: var(--koola-warning-dark);
+}
+
+.dup-item {
+  display: inline-block;
+  margin-right: var(--space-2);
+  font-weight: 800;
+}
+
+/* Timeline audit: summary bấm mở/đóng, không chiếm chỗ khi rỗng */
+.detail-section summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.detail-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-section summary::after {
+  content: '▾';
+  float: right;
+  color: var(--koola-muted);
+}
+
+.detail-section[open] summary::after {
+  content: '▴';
 }
 
 .page-header {
@@ -328,9 +886,9 @@ code,
 }
 
 .page-title {
-  font-size: clamp(28px, 4vw, 40px);
+  font-size: clamp(20px, 2.5vw, 24px);
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
 .page-description {
@@ -406,27 +964,18 @@ code,
   box-shadow: var(--shadow-subtle);
 }
 
-.metric-card::after {
-  position: absolute;
-  right: -34px;
-  top: -44px;
-  width: 120px;
-  height: 120px;
-  border-radius: var(--radius-pill);
-  background: rgba(37, 99, 235, 0.08);
-  content: '';
+.metric-card.warning,
+.metric-card.success,
+.metric-card.danger {
+  border-left: 3px solid var(--koola-warning);
 }
 
-.metric-card.warning::after {
-  background: rgba(245, 158, 11, 0.14);
+.metric-card.success {
+  border-left-color: var(--koola-success);
 }
 
-.metric-card.success::after {
-  background: rgba(18, 183, 106, 0.12);
-}
-
-.metric-card.danger::after {
-  background: rgba(239, 68, 68, 0.1);
+.metric-card.danger {
+  border-left-color: var(--koola-danger);
 }
 
 .metric-topline {
@@ -471,7 +1020,7 @@ code,
 }
 
 .kpi-link:hover .metric-card {
-  border-color: rgba(37, 99, 235, 0.32);
+  border-color: color-mix(in srgb, var(--koola-primary) 32%, transparent);
   box-shadow: var(--shadow-soft);
   transform: translateY(-1px);
 }
@@ -497,13 +1046,13 @@ code,
 }
 
 .btn-primary {
-  background: var(--koola-primary);
+  background: var(--koola-ink);
   color: var(--koola-surface);
-  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+  box-shadow: var(--shadow-soft);
 }
 
 .btn-primary:hover {
-  background: var(--koola-primary-dark);
+  background: color-mix(in srgb, var(--koola-ink) 88%, black);
 }
 
 .btn-secondary {
@@ -532,7 +1081,7 @@ code,
 }
 
 .btn-danger-ghost {
-  border-color: rgba(239, 68, 68, 0.24);
+  border-color: color-mix(in srgb, var(--koola-danger) 24%, transparent);
   background: var(--koola-danger-soft);
   color: var(--koola-danger-dark);
 }
@@ -555,6 +1104,82 @@ code,
   font-weight: 800;
 }
 
+.form-required {
+  color: var(--koola-danger);
+}
+
+.form-hint {
+  color: var(--koola-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.form-error {
+  color: var(--koola-danger-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.input--error {
+  border-color: var(--koola-danger);
+}
+
+.input--error:focus {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--koola-danger) 12%, transparent);
+}
+
+/* Ô nhập có định dạng (StructuredInput.tsx). Dấu phân cách thêm vào làm giá trị
+   dài hơn → font mono + canh trái để cột số không nhảy khi gõ. Riêng tiền canh
+   phải như mọi cột số trong bảng. */
+.money-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.phone-input,
+.integer-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Form 2 cột cho hồ sơ tạo mới; field dài chiếm cả hàng */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.form-grid-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Form tạo doanh nghiệp: sections + bottom bar gắn liền form */
+.create-business {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.create-business .detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.create-business .detail-bottombar {
+  margin: 0 calc(-1 * var(--space-5)) calc(-1 * var(--space-5));
+  padding: var(--space-3) var(--space-5);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
 .input,
 .select,
 .textarea {
@@ -571,7 +1196,7 @@ code,
 .select:focus,
 .textarea:focus {
   border-color: var(--koola-primary);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--koola-primary) 12%, transparent);
   outline: 0;
 }
 
@@ -599,12 +1224,12 @@ code,
 
 .badge-success {
   background: var(--koola-success-soft);
-  color: #067647;
+  color: var(--koola-success-dark);
 }
 
 .badge-warning {
   background: var(--koola-warning-soft);
-  color: #b54708;
+  color: var(--koola-warning-dark);
 }
 
 .badge-danger {
@@ -620,15 +1245,20 @@ code,
 .alert {
   border: 1px solid var(--koola-danger-soft);
   border-radius: var(--radius-md);
-  background: #fff7f7;
+  background: var(--koola-danger-soft);
   color: var(--koola-danger-dark);
   padding: var(--space-3) var(--space-4);
   font-weight: 700;
 }
 
 /* Data table */
+/* `clip` thay `hidden`: giữ bo góc nhưng KHÔNG tạo scroll container — nhờ vậy
+   thead sticky bám được vào .admin-content-scroll (scroller duy nhất của trang)
+   thay vì bám vào chính cái card và trôi mất.
+   `hidden` giữ làm fallback cho Safari < 16 (chưa hỗ trợ clip). */
 .table-shell {
   overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--koola-line);
   border-radius: var(--radius-lg);
   background: var(--koola-surface);
@@ -667,7 +1297,7 @@ code,
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(37, 99, 235, 0.2);
+  border: 1px solid color-mix(in srgb, var(--koola-primary) 20%, transparent);
   border-radius: var(--radius-pill);
   background: var(--koola-primary-soft);
   color: var(--koola-primary-dark);
@@ -676,8 +1306,83 @@ code,
   padding: 5px 10px;
 }
 
+.filter-chip-active {
+  border-color: var(--koola-primary);
+  background: var(--koola-primary);
+  color: #fff;
+}
+
+/* Chip bộ lọc đang áp dụng: có X để gỡ riêng từng điều kiện */
+.filter-chip-removable {
+  gap: 4px;
+  background: var(--koola-surface);
+  border-color: var(--koola-line-strong);
+  color: var(--koola-ink);
+  cursor: pointer;
+}
+
+.filter-chip-removable:hover {
+  border-color: var(--koola-danger);
+  color: var(--koola-danger);
+}
+
+/* Dải SLA ưu tiên duyệt: chip bấm được, đứng riêng dưới tabs */
+.sla-row {
+  align-items: center;
+  padding: 0;
+  margin: 0;
+}
+
+/* Hàng ngữ cảnh: SLA + bộ lọc đang áp dụng gộp một dòng, sát bảng */
+.context-row {
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  margin: calc(-1 * var(--space-2)) 0 0;
+}
+
+.context-row-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--koola-line-strong);
+  margin: 0 var(--space-1);
+}
+
+.sla-row .filter-chip,
+.context-row .filter-chip {
+  gap: 4px;
+  background: var(--koola-surface);
+  border-color: var(--koola-line-strong);
+  color: var(--koola-ink);
+}
+
+.sla-row .filter-chip-active,
+.context-row .filter-chip-active {
+  background: var(--koola-ink);
+  border-color: var(--koola-ink);
+  color: #fff;
+}
+
+/* Hàng nút cuối dialog: Hủy trái, hành động chính phải */
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .table-scroll {
-  overflow-x: auto;
+  overflow: auto;
+}
+
+/* Trang list: KHÔNG tự cuộn trong khung nữa.
+   Trước đây `.table-scroll--fit` đặt max-height: calc(100vh - 470px) → ở laptop
+   768px chỉ còn 298px, hiện được 4 dòng, và người dùng phải cuộn một ô nhỏ ở
+   giữa trang. Giờ cả vùng nội dung (.admin-content-scroll) là scroller duy nhất;
+   topbar/sidebar đứng yên vì chúng nằm ngoài vùng đó, và thead sticky bám mép
+   dưới topbar. */
+.table-scroll--fit {
+  overflow: visible;
+  min-height: 180px;
 }
 
 .data-table {
@@ -685,28 +1390,202 @@ code,
   min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
+  font-size: 13.5px;
 }
 
 .data-table th {
   position: sticky;
   top: 0;
   z-index: 1;
-  border-bottom: 1px solid var(--koola-line);
+  border-bottom: 1px solid var(--koola-line-strong);
   background: var(--koola-surface-soft);
   color: var(--koola-muted);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
-  padding: 13px 16px;
+  padding: 8px 16px;
   text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* .data-table th có specificity cao hơn — phải khai báo kèm để thắng */
+.data-table th.th-center {
+  text-align: center;
+}
+
+.data-table th.th-center .th-inner {
+  justify-content: center;
+}
+
+.th-check {
+  width: 40px;
+  padding-right: 0;
+}
+
+.th-inner {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Nút sort: nhãn + icon trạng thái (chevrons khi chưa sort, mũi tên khi đang sort) */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover {
+  color: var(--koola-ink);
+}
+
+.th-sort--active {
+  color: var(--koola-primary-dark);
+}
+
+.th-sort-icon {
+  flex-shrink: 0;
+  color: var(--koola-faint);
+}
+
+.th-sort:hover .th-sort-icon {
+  color: var(--koola-muted);
+}
+
+.th-sort--active .th-sort-icon {
+  color: var(--koola-primary);
+}
+
+.th-label {
+  display: inline-block;
+}
+
+/* Nút phễu lọc theo cột — chỉ hiện đậm khi cột đang có filter */
+.th-filter {
+  position: relative;
+  display: inline-flex;
+}
+
+.th-filter-btn {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--koola-faint);
+  cursor: pointer;
+}
+
+.th-filter-btn:hover {
+  background: var(--koola-line);
+  color: var(--koola-ink);
+}
+
+.th-filter-btn--active {
+  color: var(--koola-primary);
+}
+
+.th-filter-pop {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+  padding: var(--space-1);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.th-filter-option {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--koola-ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.th-filter-option:hover {
+  background: var(--koola-surface-soft);
+}
+
+.th-filter-option--active {
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+  font-weight: 800;
+}
+
+.th-sort:focus-visible,
+.th-filter-btn:focus-visible,
+.th-filter-option:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: var(--koola-ink);
+}
+
+/* Actions column pinned right on wide tables */
+.data-table th.col-actions,
+.data-table td.col-actions,
+.data-table th.col-sticky,
+.data-table td.col-sticky {
+  position: sticky;
+  right: 0;
+  background: var(--koola-surface);
+  box-shadow: -8px 0 12px -8px rgba(0, 0, 0, 0.12);
+}
+
+.data-table thead th.col-actions,
+.data-table thead th.col-sticky {
+  background: var(--koola-surface-soft);
+}
+
+/* Numeric / date / age columns: mono, right-aligned numbers */
+.data-table td.col-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table td.col-date {
+  font-family: var(--font-mono);
+  font-size: 13px;
   white-space: nowrap;
 }
 
 .data-table td {
   border-bottom: 1px solid var(--koola-line);
   color: var(--koola-ink);
-  padding: 15px 16px;
+  padding: 10px 16px;
   vertical-align: middle;
 }
 
@@ -715,7 +1594,7 @@ code,
 }
 
 .data-table tbody tr:hover {
-  background: rgba(37, 99, 235, 0.035);
+  background: color-mix(in srgb, var(--koola-primary) 4%, transparent);
 }
 
 .data-table tbody tr:last-child td {
@@ -754,6 +1633,15 @@ code,
   text-align: left;
 }
 
+/* Badge nhỏ nằm cạnh tên trong ô bảng (Bị cấm / Tạm ngưng) */
+.cell-badge {
+  margin-left: var(--space-2);
+  vertical-align: middle;
+  font-size: 11px;
+  min-height: 20px;
+  padding: 0 6px;
+}
+
 .cell-link:hover {
   color: var(--koola-primary-dark);
   text-decoration: underline;
@@ -765,10 +1653,68 @@ code,
   font-size: 12px;
 }
 
+.state-icon-spin {
+  animation: state-icon-spin 900ms linear infinite;
+}
+
+@keyframes state-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-icon-spin { animation: none; }
+}
+
+/* PII đã che: nút phẳng, icon mắt cho biết bấm được */
+.pii-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--koola-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.pii-toggle:hover {
+  color: var(--koola-ink);
+}
+
+.pii-toggle:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* Nhóm nút hành động trong ô bảng: canh phải cho thẳng cột tiêu đề */
+.table-actions--end {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+/* Cột hành động: đủ rộng cho tối đa 3 nút icon, không xuống dòng */
+.data-table th.col-sticky,
+.data-table td.col-sticky {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.data-table td.col-sticky .table-actions {
+  min-width: max-content;
+}
+
+/* Ngày giờ không được xuống dòng — "04:14 17/9/26" tách 2 dòng làm hàng cao lệch */
+.data-table td .cell-date {
+  white-space: nowrap;
 }
 
 .table-footer {
@@ -784,6 +1730,13 @@ code,
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* Footer xếp dọc ở ≤860px nhưng hàng nút vẫn cứng một dòng → "Đi tới"
+     tràn khỏi thẻ ở 390px. Cho phép xuống dòng thay vì cắt mất nút. */
+  flex-wrap: wrap;
+}
+
+.pagination-controls .btn {
+  white-space: nowrap;
 }
 
 .empty-state,
@@ -822,7 +1775,7 @@ code,
 .skeleton-card {
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: linear-gradient(90deg, #eef2f7, #f8fafc, #eef2f7);
+  background: var(--koola-surface-soft);
   background-size: 200% 100%;
   animation: shimmer 1.2s ease-in-out infinite;
 }
@@ -843,7 +1796,7 @@ code,
   z-index: 1000;
   display: flex;
   justify-content: flex-end;
-  background: rgba(16, 24, 40, 0.42);
+  background: color-mix(in srgb, var(--koola-ink) 42%, transparent);
   backdrop-filter: blur(4px);
 }
 
@@ -928,6 +1881,80 @@ code,
   box-shadow: var(--shadow-subtle);
 }
 
+/* Bulk bar: hàng hành động ngay dưới toolbar, dính trên cùng khi cuộn */
+.bulk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  background: var(--koola-primary-soft);
+  padding: var(--space-3) var(--space-5);
+}
+
+.bulk-bar-names {
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0;
+}
+
+.bulk-bar-spacer {
+  flex: 1;
+}
+
+/* Tabs / segmented control */
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--koola-surface);
+  padding: 3px;
+  gap: 2px;
+}
+
+.tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--koola-muted);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+/* Số hồ sơ trong tab: nhỏ, không tranh nhãn */
+.tab-count {
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--koola-ink) 8%, transparent);
+  color: var(--koola-ink);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 6px;
+  line-height: 1.5;
+}
+
+.tabs button[aria-selected="true"] .tab-count {
+  background: color-mix(in srgb, #fff 22%, transparent);
+  color: #fff;
+}
+
+.tabs button:hover {
+  color: var(--koola-ink);
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--koola-ink);
+  color: var(--koola-surface);
+}
+
 .queue-list {
   display: flex;
   flex-direction: column;
@@ -975,7 +2002,7 @@ code,
 .login-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--koola-primary), #0f172a);
+  background: var(--koola-ink);
   color: var(--koola-surface);
   padding: var(--space-7);
 }
@@ -987,7 +2014,7 @@ code,
   width: 260px;
   height: 260px;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--koola-orb-peach) 55%, transparent);
   content: '';
 }
 
@@ -1001,7 +2028,7 @@ code,
 .login-hero p {
   max-width: 420px;
   margin-top: var(--space-4);
-  color: rgba(255, 255, 255, 0.82);
+  color: color-mix(in srgb, var(--koola-surface) 82%, transparent);
   font-size: 16px;
 }
 
@@ -1053,10 +2080,10 @@ code,
 }
 
 @media (max-width: 860px) {
-  .admin-shell {
-    display: block;
-  }
-
+  /* KHÔNG đổi .admin-shell sang display:block: sidebar đã position:fixed nên
+     tự ra khỏi flow, còn display:block làm mất chuỗi flex (shell → body →
+     main) → `.admin-content-scroll` không còn là scroller, cả trang cao
+     2000px+ và topbar trôi theo. Giữ flex để chỉ vùng nội dung cuộn. */
   .admin-sidebar {
     position: fixed;
     top: 0;
@@ -1074,11 +2101,17 @@ code,
     transform: translateX(0);
   }
 
+  .admin-collapse-toggle,
+  .sidebar-collapse-toggle,
+  .admin-edge-toggle {
+    display: none;
+  }
+
   .mobile-nav-backdrop {
     position: fixed;
     inset: 0;
     z-index: 1050;
-    background: rgba(16, 24, 40, 0.42);
+    background: color-mix(in srgb, var(--koola-ink) 42%, transparent);
     backdrop-filter: blur(4px);
   }
 
@@ -1087,7 +2120,72 @@ code,
   }
 
   .admin-topbar {
+    gap: var(--space-2);
     padding: 0 var(--space-4);
+  }
+
+  /* 390px: bug report đo .admin-topbar scrollWidth 473 vs clientWidth 390 —
+     hint placeholder dài + breadcrumb nowrap + identity text. Giờ: icon vuông
+     44px thay ô search, identity chỉ còn avatar, breadcrumb co/ellipsis.
+     Kiểm chứng lại bằng headless Chrome: scrollWidth === clientWidth === 390
+     (320/560/860 cũng khớp), chip phải right=374 < 390. */
+  .admin-topbar-left {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .admin-topbar-actions {
+    flex-shrink: 0;
+    min-width: 0;
+    gap: var(--space-2);
+  }
+
+  .admin-palette-trigger,
+  .admin-identity-chip {
+    flex-shrink: 0;
+  }
+
+  .admin-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Mobile: chỉ giữ tiêu đề trang — "Koola /" chiếm chỗ và bị cắt cụt giữa
+     chữ khi co. Ngữ cảnh "đang ở admin" đã có logo/sidebar. */
+  .admin-breadcrumb > span:not([aria-current='page']) {
+    display: none;
+  }
+
+  .admin-palette-hint {
+    display: none;
+  }
+
+  .admin-palette-trigger {
+    width: 44px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .admin-palette-trigger .admin-search-icon {
+    position: static;
+  }
+
+  .admin-health-badge {
+    max-width: 120px;
+    font-size: 11px;
+  }
+
+  .admin-identity-text,
+  .admin-search-kbd,
+  .admin-topbar-divider {
+    display: none;
+  }
+
+  .admin-identity-chip {
+    border: 0;
+    background: transparent;
+    padding: 0;
   }
 
   .admin-command-info {
@@ -1138,6 +2236,7 @@ code,
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 /* Non-interactive command info (replaces the old interactive-looking command affordance) */
@@ -1174,12 +2273,12 @@ code,
 .toast-success {
   border: 1px solid var(--koola-success-soft);
   background: var(--koola-success-soft);
-  color: #067647;
+  color: var(--koola-success-dark);
 }
 
 .toast-error {
   border: 1px solid var(--koola-danger-soft);
-  background: #fff7f7;
+  background: var(--koola-danger-soft);
   color: var(--koola-danger-dark);
 }
 
@@ -1187,6 +2286,12 @@ code,
   border: 1px solid var(--koola-primary-soft);
   background: var(--koola-info-soft);
   color: var(--koola-primary-dark);
+}
+
+.toast-warning {
+  border: 1px solid var(--koola-warning-soft);
+  background: var(--koola-warning-soft);
+  color: var(--koola-ink);
 }
 
 .toast-text {
@@ -1209,7 +2314,7 @@ code,
 
 .toast-dismiss:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--koola-ink) 6%, transparent);
 }
 
 @keyframes toast-in {
@@ -1261,4 +2366,817 @@ code,
   gap: var(--space-3);
   padding: var(--space-5);
   text-align: center;
+}
+
+/* Confirm list + compact table */
+.confirm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.confirm-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--koola-line);
+}
+
+.confirm-list li:last-child {
+  border-bottom: 0;
+}
+
+.data-table--compact {
+  font-size: 13.5px;
+}
+
+.data-table--compact th {
+  padding: 10px 12px;
+}
+
+.data-table--compact td {
+  padding: 12px 16px;
+}
+
+.data-table--compact thead th {
+  position: sticky;
+  top: 0;
+}
+
+@media (max-width: 860px) {
+  .col-hide-mobile {
+    display: none;
+  }
+}
+
+/* Filter row: một hàng ngang — search + nút + selects + xóa lọc */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-row .filter-search {
+  width: 280px;
+  flex: 0 1 280px;
+}
+
+/* `.select` mặc định width:100% (dùng trong form dọc). Trong filter row phải
+   co lại, không thì mỗi select chiếm cả hàng và đẩy filter khác xuống dưới. */
+.filter-row .select {
+  width: auto;
+  flex: 0 1 220px;
+}
+
+/* List header gọn (mẫu chung): 1 hàng title + actions, 1 hàng filter */
+.list-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.list-title {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.list-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--koola-muted);
+}
+
+.list-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Mobile: title và action GIỮ cùng hàng (title co lại, nút phụ bên phải) —
+   xếp dọc làm header chiếm thêm một hàng trước khi tới bộ lọc. */
+@media (max-width: 560px) {
+  .list-header-top {
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: nowrap;
+  }
+
+  .list-title {
+    min-width: 0;
+    font-size: 18px;
+  }
+
+  .list-actions {
+    flex: 0 0 auto;
+  }
+
+  .list-actions .btn {
+    flex: 0 0 auto;
+  }
+
+  .filter-row .filter-search {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  /* Tabs cuộn ngang thay vì đẩy tràn viewport */
+  .filter-bar .tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .filter-bar .tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Tabs gọn nằm cùng hàng filter khi đủ chỗ */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-bar .tabs {
+  flex: 0 0 auto;
+}
+
+.toast-action {
+  border: 0;
+  background: transparent;
+  font-weight: 800;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  padding: 2px 4px;
+}
+
+.btn-icon {
+  padding: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Touch target tối thiểu 44px trên thiết bị cảm ứng */
+@media (hover: none) and (pointer: coarse) {
+  .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--koola-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Payload audit log: JSON thô, phải giữ xuống dòng và không đẩy cột rộng ra */
+.audit-payload {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--koola-canvas);
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+/* Dòng đang chọn bằng bàn phím (J/K) — khác focus ring, có thêm nền */
+.row-highlight {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: -2px;
+  background: var(--koola-primary-soft);
+}
+
+.row-highlight td {
+  background: var(--koola-primary-soft);
+}
+
+.license-thumb {
+  display: inline-block;
+  margin-top: 4px;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.license-thumb img {
+  object-fit: cover;
+  display: block;
+}
+
+.license-thumb:hover {
+  border-color: var(--koola-primary);
+}
+
+/* Pagination: một cỡ chữ 13px cho mọi control */
+.pagination-info {
+  font-size: 13px;
+  color: var(--koola-muted);
+  white-space: nowrap;
+}
+
+.pagination-page {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 48px;
+  text-align: center;
+}
+
+.input-sm {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.pagination-size {
+  width: auto;
+}
+
+.pagination-goto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pagination-goto .input {
+  width: 72px;
+}
+
+/* Inline edit trong drawer: giá trị + bút sửa, hover mới hiện bút */
+.inline-field dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-edit-btn {
+  display: none;
+}
+
+/* Hồ sơ người dùng sửa TỪNG field (không có chế độ "sửa tất cả" như hồ sơ
+   doanh nghiệp) → bút sửa phải hiện, chỉ mờ tới khi hover cho đỡ rối mắt. */
+.fields-editable .inline-edit-btn {
+  display: inline-flex;
+  opacity: 0.45;
+  transition: opacity 160ms ease;
+}
+
+.fields-editable .inline-field:hover .inline-edit-btn,
+.fields-editable .inline-edit-btn:focus-visible {
+  opacity: 1;
+}
+
+.inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  /* Hint (email → thu hồi phiên) xuống dòng riêng thay vì bóp input. */
+  flex-wrap: wrap;
+}
+
+.inline-edit .input,
+.inline-edit .textarea {
+  flex: 1;
+}
+
+/* Ghi chú cạnh ô sửa (VD: "Lưu sẽ đăng xuất mọi thiết bị") — không được đẩy
+   input co lại, nên chiếm trọn một dòng dưới. */
+.inline-edit-hint {
+  flex: 1 0 100%;
+  order: 3;
+}
+
+/* Detail page: form giữa, max 760px */
+.detail-page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.detail-back {
+  align-self: flex-start;
+}
+
+.detail-card {
+  margin-top: 0;
+}
+
+.detail-actions {
+  padding-bottom: var(--space-5);
+}
+
+/* Modal form chi tiết 720px giữa màn hình, scroll trong */
+.dialog--wide {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--koola-line);
+  border-radius: var(--radius-lg);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.dialog--wide .dialog-body {
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--space-5);
+}
+
+/* ─── Header hồ sơ: danh tính + trạng thái + ID, dùng chung modal & route ─── */
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  padding: var(--space-4) var(--space-5);
+}
+
+.detail-avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--koola-primary-soft);
+  color: var(--koola-primary-dark);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.detail-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.detail-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--koola-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Dòng phụ: danh mục · tỉnh · ID — một hàng, dấu phân cách mờ */
+.detail-subline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--koola-muted);
+  font-size: 12.5px;
+}
+
+.detail-dot {
+  color: var(--koola-faint);
+}
+
+.detail-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--koola-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.detail-id:hover {
+  border-color: var(--koola-line-strong);
+  background: var(--koola-surface-soft);
+  color: var(--koola-ink);
+}
+
+.detail-id:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 1px;
+}
+
+.detail-close {
+  flex-shrink: 0;
+  margin: -4px -4px 0 0;
+}
+
+/* Route /businesses/:id — cùng header, thân card tự padding */
+.detail-card-body {
+  padding: var(--space-5);
+}
+
+/* Bottom bar của hồ sơ: hành động phụ trái, quyết định phải */
+.detail-bottombar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--koola-line);
+  background: var(--koola-surface-soft);
+  padding: var(--space-3) var(--space-5);
+  /* Ở 390px nhãn nút bị bẻ đôi ("Về danh / sách") vì không còn chỗ — cho
+     xuống dòng cả cụm thay vì bẻ giữa nhãn. */
+  flex-wrap: wrap;
+}
+
+.detail-bottombar .btn {
+  white-space: nowrap;
+}
+
+.detail-bottombar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--koola-line-strong);
+  margin: 0 var(--space-1);
+}
+
+.detail-bottombar-spacer {
+  flex: 1;
+}
+
+/* Trạng thái sửa: đếm thay đổi bên trái, nút Lưu nổi bật bên phải */
+.detail-bottombar-edit-count {
+  color: var(--koola-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.detail-bottombar-note {
+  color: var(--koola-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+/* Section nhóm trong form chi tiết */
+.detail-section-body {
+  display: block;
+  margin: 0;
+}
+
+/* Xem: ẩn bút chì từng dòng, chỉ sửa qua bottom bar */
+.detail-sections:not(.edit-all-list) .inline-edit-btn {
+  display: none;
+}
+
+/* Detail sections: mỗi field là MỘT hàng nhãn | giá trị.
+   Trước đây .description-list (grid 2 cột) nhận .inline-field làm con trực tiếp
+   nên các field bị dồn xen kẽ vào cột 150px — sai hoàn toàn. */
+.detail-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.detail-section {
+  display: block;
+  min-width: 0;
+}
+
+.detail-section .description-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.detail-section .inline-field {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  align-items: start;
+}
+
+.detail-section .inline-field dt {
+  padding-top: 6px;
+}
+
+.detail-section .inline-field dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--koola-muted);
+  border-bottom: 1px solid var(--koola-line);
+  padding-bottom: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+/* Edit-all: input full-width ôm hết cột giá trị */
+.edit-all-list .inline-edit .input,
+.edit-all-list .inline-edit .textarea,
+.edit-all-list .inline-edit select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.edit-all-list .inline-edit {
+  min-width: 0;
+}
+
+/* Nhóm Liên hệ: field dài (email/SĐT/địa chỉ) — cùng grid, chỉ nới cột nhãn */
+.detail-section--stack .inline-field {
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+
+/* `.description-list` là grid 2 cột, nhưng một số chỗ (preview confirm, bảng
+   phím tắt) bọc từng cặp trong <div> để nhóm. Không có rule này thì mỗi <div>
+   thành một ô grid → nhãn và giá trị chồng nhau trong cột 150px.
+   Chỉ áp cho ngữ cảnh dùng kiểu bọc <div>; drawer chi tiết dùng .inline-field nên
+   không bị ảnh hưởng. */
+.confirm-preview .description-list > div,
+.dialog .description-list > div {
+  display: contents;
+}
+
+/* Nội dung bị báo cáo: trích nguyên văn, phải nhìn ra ngay là "nội dung của
+   người khác" chứ không phải mô tả của hệ thống. */
+.report-quote {
+  border-left: 3px solid var(--koola-line-strong);
+  background: var(--koola-surface-soft);
+  border-radius: var(--radius-xs);
+  padding: var(--space-3) var(--space-4);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Filter: ô tìm kiếm chính + panel nâng cao ────────────────────────────────
+   Trước đây audit log nhét 6 điều kiện vào một hàng: 2 ô search, 2 select, 2 ô
+   ngày → wrap thành 2–3 dòng, đẩy bảng xuống và trộn loại điều kiện khác nhau.
+   Mẫu mới: 1 ô tìm kiếm (gộp người + mã) → nút "Bộ lọc" có badge số điều kiện →
+   chip cho điều kiện đang bật. */
+.filter-search-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 1 340px;
+  align-items: center;
+}
+
+.filter-search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--koola-muted);
+  pointer-events: none;
+}
+
+.filter-row .filter-search--icon {
+  width: 100%;
+  flex: 1 1 auto;
+  padding-left: 34px;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.filter-toggle--open {
+  border-color: var(--koola-primary);
+  color: var(--koola-primary-dark);
+}
+
+/* Badge số điều kiện đang bật — để không phải mở panel mới biết đang lọc gì. */
+.filter-toggle-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--koola-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 5px;
+}
+
+.filter-panel {
+  z-index: 1200;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--koola-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--koola-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.filter-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--koola-line);
+  padding: var(--space-3) var(--space-4);
+}
+
+.filter-panel-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--koola-muted);
+}
+
+.filter-panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.filter-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+/* Panel dùng .form-field dọc: nhãn trên, control dưới — khác filter-row ngang. */
+.filter-panel .form-field {
+  gap: 6px;
+}
+
+.filter-panel .select,
+.filter-panel .input {
+  width: 100%;
+}
+
+/* Hai ô ngày cạnh nhau, mũi tên ở giữa — đọc như một khoảng, không phải 2 field rời. */
+.filter-date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-date-range .input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  /* Search và nút Bộ lọc nằm chung một hàng — tách hàng thì header chiếm 4–5
+     dòng trước khi tới bảng, đúng thứ §0.1 cấm. */
+  .filter-search-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+/* ─── Bảng: 3 mức ẩn cột theo bề ngang ─────────────────────────────────────────
+   .col-hide-mobile  ≤860px  giấu cột phụ (IP, đối tượng…)
+   .col-hide-xs      ≤1099px giấu cột thứ cấp (Liên hệ, Ngày, Người thao tác)
+   .col-hide-xxs     ≤560px  giấu cột còn đọc được qua dòng meta
+   .show-xs          chỉ hiện ≤560px (khi cột bị ẩn thì đưa dữ liệu vào dòng meta)
+   Trước đây mobile còn tràn ngang vì bảng min-width 760px mà chỉ ẩn 1 cột. */
+.col-hide-xs,
+.col-hide-xxs {
+  display: table-cell;
+}
+
+/* Dữ liệu của cột bị `.col-hide-xs` ẩn ở 861–1099px: hiện ở dòng meta thay vì
+   biến mất. Tách khỏi `.show-xs` vì mốc ẩn khác nhau (1099 vs 560). */
+.show-under-1100 {
+  display: none;
+}
+
+/* Dữ liệu của cột bị `.col-hide-mobile` ẩn ở ≤860px. */
+.show-under-860 {
+  display: none;
+}
+
+.show-xs {
+  display: none;
+}
+
+/* 861–1099px: vùng nội dung chỉ còn ~700–760px (sidebar 264 + padding 64), hẹp
+   hơn bảng 6 cột. Ẩn cột phụ sớm hơn để bảng vừa khung — nếu để tràn thì phải
+   bật overflow-x, mà `overflow-x:auto` kéo theo `overflow-y:auto` (spec), biến
+   khung bảng thành scroller thứ hai và thead sticky bám sai chỗ. */
+@media (max-width: 1099px) {
+  .col-hide-xs {
+    display: none;
+  }
+
+  .show-under-1100 {
+    display: block;
+  }
+
+  /* Cột hành động sticky chỉ có nghĩa khi bảng cuộn ngang. Từ 1099px trở
+     xuống khung bảng đã bỏ overflow ngang (xem `.data-table { min-width: 0 }`),
+     nên sticky không còn tác dụng mà lại kéo cột đè lên cột dữ liệu cuối. */
+  .data-table th.col-sticky,
+  .data-table td.col-sticky {
+    position: static;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .col-hide-xs,
+  .col-hide-xxs {
+    display: none;
+  }
+
+  .show-xs {
+    display: block;
+  }
+}
+
+/* Bảng rộng 760px là đúng ở desktop, nhưng ở mobile chỉ còn 2–3 cột hiển thị —
+   giữ min-width đó là bắt người dùng vuốt ngang để đọc một cột duy nhất.
+   §6 yêu cầu "bảng luôn có .table-scroll, không tràn ngang": hạ min-width theo
+   số cột còn lại thay vì để thanh cuộn ngang xuất hiện.
+   861–1099px cũng cần hạ: nội dung chỉ còn ~700px sau sidebar, đã ẩn cột Liên hệ
+   nên 5 cột còn lại vừa khung. */
+@media (max-width: 1099px) {
+  .data-table {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .data-table {
+    min-width: 520px;
+  }
+
+  .show-under-860 {
+    display: block;
+  }
+}
+
+@media (max-width: 560px) {
+  .data-table {
+    min-width: 0;
+  }
+
+  /* 390px: 3 cột còn lại (Thời gian 145 + Hành động 172 + Chi tiết 79) vẫn hơn
+     khung 358px. Padding 16px mỗi bên là 96px trong tổng đó — siết lại là đủ. */
+  .data-table th,
+  .data-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  /* Nhãn hành động dài ("Cập nhật tài khoản") một dòng = 160px, đẩy cột Hành
+     động rộng hơn cả cột Thời gian. Cho phép xuống dòng trong bảng ở mobile. */
+  .data-table .badge {
+    white-space: normal;
+  }
+
+  /* Detail: nhãn 150px + giá trị không còn chỗ ở 390px → email bị bẻ đôi giữa
+     chữ. Xếp nhãn lên trên, giá trị xuống dưới. */
+  .detail-section .inline-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .detail-section .inline-field dt {
+    padding-top: 0;
+  }
 }

@@ -16,6 +16,22 @@ import { RedisService } from '../common/redis/redis.service';
 import { PlivoService } from '../auth/plivo.service';
 import { RESERVED_USERNAMES } from './constants/reserved-usernames';
 
+/**
+ * Projection mặc định cho mọi truy vấn trả user ra ngoài service.
+ * FCM token chỉ dùng nội bộ cho push — lộ ra response là rò rỉ thiết bị.
+ */
+const SAFE_USER_PROJECTION =
+  '-passwordHash -fcmTokens -twoFactorSecret -twoFactorRecoveryCodes';
+
+/** Push notification cần token; chỉ dùng nội bộ, không trả thẳng cho client. */
+const PUSH_USER_PROJECTION =
+  '-passwordHash -twoFactorSecret -twoFactorRecoveryCodes';
+
+/** Tuỳ chọn cho các lời gọi nội bộ cần đọc fcmTokens. */
+export interface UserReadOptions {
+  withFcmTokens?: boolean;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -24,8 +40,15 @@ export class UsersService {
     private readonly plivoService: PlivoService,
   ) {}
 
-  async findById(id: string): Promise<UserDocument | null> {
-    return this.userModel.findById(id).select('-passwordHash');
+  private projectionFor(opts?: UserReadOptions): string {
+    return opts?.withFcmTokens ? PUSH_USER_PROJECTION : SAFE_USER_PROJECTION;
+  }
+
+  async findById(
+    id: string,
+    opts?: UserReadOptions,
+  ): Promise<UserDocument | null> {
+    return this.userModel.findById(id).select(this.projectionFor(opts));
   }
 
   /**
@@ -34,17 +57,24 @@ export class UsersService {
   async findByIdPublic(id: string): Promise<UserDocument | null> {
     return this.userModel
       .findById(id)
-      .select('-email -phone -dateOfBirth -passwordHash -fcmTokens -settings');
+      .select(
+        `-email -phone -dateOfBirth -settings ${SAFE_USER_PROJECTION}`,
+      );
   }
 
-  async findByIds(ids: string[]): Promise<UserDocument[]> {
-    return this.userModel.find({ _id: { $in: ids } }).select('-passwordHash');
+  async findByIds(
+    ids: string[],
+    opts?: UserReadOptions,
+  ): Promise<UserDocument[]> {
+    return this.userModel
+      .find({ _id: { $in: ids } })
+      .select(this.projectionFor(opts));
   }
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ email: email.toLowerCase() })
-      .select('-passwordHash');
+      .select(SAFE_USER_PROJECTION);
   }
 
   async findAll(): Promise<UserDocument[]> {
@@ -154,14 +184,14 @@ export class UsersService {
     if (Object.keys(update).length === 0) {
       const user = await this.userModel
         .findById(userId)
-        .select('-passwordHash');
+        .select(SAFE_USER_PROJECTION);
       if (!user) throw new NotFoundException('User not found');
       return user;
     }
 
     const user = await this.userModel
       .findByIdAndUpdate(userId, update, { new: true })
-      .select('-passwordHash');
+      .select(SAFE_USER_PROJECTION);
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -333,7 +363,7 @@ export class UsersService {
 
     const user = await this.userModel
       .findByIdAndUpdate(userId, { $set: { phone } }, { new: true })
-      .select('-passwordHash');
+      .select(SAFE_USER_PROJECTION);
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -341,7 +371,7 @@ export class UsersService {
   async removePhone(userId: string): Promise<UserDocument> {
     const user = await this.userModel
       .findByIdAndUpdate(userId, { $unset: { phone: 1 } }, { new: true })
-      .select('-passwordHash');
+      .select(SAFE_USER_PROJECTION);
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -392,7 +422,7 @@ export class UsersService {
     }
     const user = await this.userModel
       .findByIdAndUpdate(userId, { $set: update }, { new: true })
-      .select('-passwordHash');
+      .select(SAFE_USER_PROJECTION);
     if (!user) throw new NotFoundException('User not found');
     return this.applySettingsDefaults(user);
   }

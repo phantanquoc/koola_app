@@ -30,7 +30,7 @@ import {
 import { OrdersService } from './orders/orders.service';
 import { OrdersCronService } from './orders/orders-cron.service';
 import { OrdersController } from './orders/orders.controller';
-import { BusinessMembersModule } from '../business-members/business-members.module';
+import { AdminRevenueService } from './orders/admin-revenue.service';
 
 /**
  * Import graph (commerce-orders D1/D3/D4): CommerceModule → AdminModule,
@@ -63,15 +63,14 @@ import { BusinessMembersModule } from '../business-members/business-members.modu
     ConversationsModule,
     MessagesModule,
     NotificationsModule,
-    // business-members task 9.6: OrdersService writes business audit entries.
-    // (BusinessMembersModule itself imports NotificationsModule for tasks
-    // 8.5/9.11; NotificationsModule depends only on UsersModule, so no cycle.)
-    // BusinessMembersModule imports only AuthModule + Mongoose, so this adds
-    // no cycle back into commerce.
-    BusinessMembersModule,
   ],
   controllers: [CommerceController, AdminCommerceController, OrdersController],
-  providers: [CommerceService, OrdersService, OrdersCronService],
+  providers: [
+    CommerceService,
+    OrdersService,
+    OrdersCronService,
+    AdminRevenueService,
+  ],
   exports: [CommerceService, OrdersService],
 })
 export class CommerceModule {}

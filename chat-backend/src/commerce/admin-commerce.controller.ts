@@ -29,7 +29,17 @@ import {
 } from './dto/commerce.dto';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { OrdersService } from './orders/orders.service';
-import { AdminListOrdersQueryDto } from './orders/dto/orders.dto';
+import {
+  AdminListOrdersQueryDto,
+  ExportOrdersDto,
+} from './orders/dto/orders.dto';
+import {
+  AdminCancelOrderDto,
+  AdminOrderNoteDto,
+  AdminRefundOrderDto,
+} from './dto/admin-order-actions.dto';
+import { AdminRevenueQueryDto } from './dto/admin-revenue.dto';
+import { AdminRevenueService } from './orders/admin-revenue.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { Request } from 'express';
 
@@ -40,19 +50,107 @@ export class AdminCommerceController {
     private readonly commerce: CommerceService,
     private readonly orders: OrdersService,
     private readonly audit: AdminAuditService,
+    private readonly revenue: AdminRevenueService,
   ) {}
 
-  // ─── Orders (read-only, commerce-orders D9) ─────────────────────────────────
+  // ─── Orders — đọc + can thiệp (#20, #22) ────────────────────────────────────
 
-  /** All orders with status/seller/buyer filters. No mutation exists. */
+  /** All orders with status/seller/buyer filters. */
   @Get('orders')
   listOrders(@Query() dto: AdminListOrdersQueryDto) {
     return this.orders.listAdmin(dto);
   }
 
+  /**
+   * Xuất CSV. Đứng TRƯỚC `orders/:id` — Express khớp theo thứ tự đăng ký,
+   * nếu sau thì `orders/export` bị bắt với id='export'.
+   */
+  @Get('orders/export')
+  exportOrders(@Query() dto: ExportOrdersDto) {
+    return this.orders.exportAdmin(dto);
+  }
+
+  /** Đối soát GMV theo khoảng ngày (mặc định 30 ngày gần nhất). */
+  @Get('revenue')
+  revenueSummary(@Query() dto: AdminRevenueQueryDto) {
+    return this.revenue.summary(dto);
+  }
+
   @Get('orders/:id')
   getOrder(@Param('id') id: string) {
     return this.orders.getAdminById(id);
+  }
+
+  @Post('orders/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async cancelOrder(
+    @Param('id') id: string,
+    @Body() dto: AdminCancelOrderDto,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const order = await this.orders.adminCancelOrder(u.actorId, id, dto);
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'cancel_order',
+      targetType: 'order',
+      targetId: id,
+      payload: { reason: dto.reason },
+      ip: req.ip ?? null,
+    });
+    return order;
+  }
+
+  @Post('orders/:id/refund')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    short: { limit: 30, ttl: 60000 },
+    long: { limit: 200, ttl: 60000 },
+  })
+  async refundOrder(
+    @Param('id') id: string,
+    @Body() dto: AdminRefundOrderDto,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const order = await this.orders.adminRefundOrder(u.actorId, id, dto);
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'refund_order',
+      targetType: 'order',
+      targetId: id,
+      payload: { reason: dto.reason, amount: dto.amount },
+      ip: req.ip ?? null,
+    });
+    return order;
+  }
+
+  @Patch('orders/:id/note')
+  @Throttle({
+    short: { limit: 60, ttl: 60000 },
+    long: { limit: 600, ttl: 60000 },
+  })
+  async noteOrder(
+    @Param('id') id: string,
+    @Body() dto: AdminOrderNoteDto,
+    @CurrentUser() u: { actorId: string },
+    @Req() req: Request,
+  ) {
+    const order = await this.orders.adminNoteOrder(u.actorId, id, dto);
+    await this.audit.log({
+      actorId: u.actorId,
+      action: 'note_order',
+      targetType: 'order',
+      targetId: id,
+      // Whitelist field: không dump body để ghi chú dài không phình audit.
+      payload: { hasNote: dto.internalNote.length > 0 },
+      ip: req.ip ?? null,
+    });
+    return order;
   }
 
   // ─── Products ───────────────────────────────────────────────────────────────

@@ -10,9 +10,12 @@ export interface JwtPayload {
   email?: string;
   /** RFC 8693 actor claim — set when acting as a business account (actor = root user id) */
   act?: string;
+  /**
+   * Cờ xem-thay-người-dùng. Khi có, `act` là admin gốc và JwtAuthGuard chặn
+   * mọi thao tác ghi — token này chỉ để đọc.
+   */
+  imp?: boolean;
   accountType?: 'personal' | 'business';
-  /** Role for business members (owner/admin/editor/viewer) */
-  role?: string;
   iat?: number;
   exp?: number;
 }
@@ -33,7 +36,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     email: string | undefined;
     actorId: string;
     accountType: 'personal' | 'business';
-    role: string;
+    /** Chỉ có ở token xem-thay-người-dùng — giá trị là admin gốc. */
+    impersonatedBy?: string;
+    /** Cờ cho JwtAuthGuard: request chỉ được đọc. */
+    imp?: boolean;
+    /** id tài khoản trong token — trùng id/userId, giữ tên claim gốc cho rõ. */
+    sub: string;
   }> {
     const user = await this.userModel.findById(payload.sub).select('_id email');
     if (!user) {
@@ -43,13 +51,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // For a personal session, act is absent → actorId === sub (backward-compat).
     // For a business session, act = rootUserId → actorId = root.
     const actorId = payload.act ?? payload.sub;
+
+    // Xem thay: sub là người bị xem, act là admin thật. Giữ actorId = admin để
+    // audit ghi đúng người thao tác, không gán nhầm cho user.
+    if (payload.imp === true) {
+      return {
+        id: payload.sub,
+        sub: payload.sub,
+        userId: payload.sub,
+        email: payload.email,
+        actorId,
+        accountType: payload.accountType ?? 'personal',
+        impersonatedBy: actorId,
+        imp: true,
+      };
+    }
+
     return {
       id: payload.sub,
+      sub: payload.sub,
       userId: payload.sub,
       email: payload.email,
       actorId,
       accountType: payload.accountType ?? 'personal',
-      role: payload.role ?? 'owner', // Default to owner for backward compatibility
     };
   }
 }

@@ -8,12 +8,15 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from '../users/user.schema';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
-import {
-  BusinessSession,
-  BusinessSessionSchema,
-} from '../business-members/schemas/business-session.schema';
 import { UsersModule } from '../users/users.module';
+import { OpsLogModule } from '../ops/ops-log.module';
+import {
+  AdminAuditLog,
+  AdminAuditLogSchema,
+} from '../admin/schemas/admin-audit-log.schema';
 import { EmailService } from './email.service';
+import { PlivoService } from './plivo.service';
+import { TwoFactorService } from './two-factor.service';
 import type { StringValue } from 'ms';
 
 @Module({
@@ -32,15 +35,17 @@ import type { StringValue } from 'ms';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: RefreshToken.name, schema: RefreshTokenSchema },
-      // Task 8.9: logout releases the actor's business device sessions. The
-      // schema (not BusinessMembersModule) is registered here deliberately —
-      // see the note on AuthService's constructor.
-      { name: BusinessSession.name, schema: BusinessSessionSchema },
+      // Ghi audit admin_login trực tiếp qua model: import AdminModule sẽ tạo
+      // vòng AuthModule → AdminModule → (AdminGuard dùng User) → UsersModule.
+      { name: AdminAuditLog.name, schema: AdminAuditLogSchema },
     ]),
     forwardRef(() => UsersModule),
+    // EmailService/PlivoService nhận OpsLogService (optional) — import tường
+    // minh để không phụ thuộc thứ tự @Global trong AppModule.
+    OpsLogModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, EmailService],
-  exports: [AuthService, JwtModule],
+  providers: [AuthService, JwtStrategy, EmailService, PlivoService, TwoFactorService],
+  exports: [AuthService, JwtModule, TwoFactorService],
 })
 export class AuthModule {}

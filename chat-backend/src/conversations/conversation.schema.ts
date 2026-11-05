@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, SchemaTypes, Types } from 'mongoose';
 
 export type ConversationDocument = ConversationDoc & Document;
 
@@ -15,7 +15,7 @@ export enum MemberRole {
 
 @Schema()
 export class Member {
-  @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
+  @Prop({ required: true, type: SchemaTypes.ObjectId, ref: 'User' })
   userId: Types.ObjectId;
 
   @Prop({ required: true, enum: MemberRole, default: MemberRole.MEMBER })
@@ -55,7 +55,7 @@ export class ConversationDoc {
   @Prop({ required: true, type: [MemberSchema] })
   members: Member[];
 
-  @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
+  @Prop({ required: true, type: SchemaTypes.ObjectId, ref: 'User' })
   createdBy: Types.ObjectId;
 
   @Prop({ type: Date, default: null })

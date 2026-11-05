@@ -1,10 +1,12 @@
 import {
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { OpsLogService } from '../ops/ops-log.service';
 
 @Injectable()
 export class EmailService {
@@ -12,7 +14,10 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly fromEmail: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly opsLog?: OpsLogService,
+  ) {
     const host = this.configService.get<string>('SMTP_HOST', 'smtp.gmail.com');
     const port = this.configService.get<number>('SMTP_PORT', 587);
     const user = this.configService.get<string>('SMTP_USER');
@@ -46,7 +51,7 @@ export class EmailService {
   /**
    * Send OTP code to the given email address.
    */
-  async sendOtp(email: string, otp: string): Promise<void> {
+  async sendOtp(email: string, otp: string, purpose = 'otp'): Promise<void> {
     try {
       await this.transporter.sendMail({
         from: `"Koola Chat" <${this.fromEmail}>`,
@@ -69,8 +74,23 @@ export class EmailService {
         `,
       });
       this.logger.log(`[Email] OTP sent to ${email}`);
+      this.opsLog?.logOtp({
+        phone: email,
+        channel: 'email',
+        purpose,
+        success: true,
+        provider: 'smtp',
+      });
     } catch (error) {
       this.logger.error(`[Email] Failed to send OTP to ${email}:`, error);
+      this.opsLog?.logOtp({
+        phone: email,
+        channel: 'email',
+        purpose,
+        success: false,
+        provider: 'smtp',
+        error: (error as Error)?.message ?? 'unknown',
+      });
       throw new ServiceUnavailableException(
         'Không thể gửi mã xác thực. Vui lòng thử lại.',
       );

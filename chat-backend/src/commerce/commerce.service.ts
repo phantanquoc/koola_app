@@ -98,10 +98,8 @@ export interface SellerStorefront {
     description: string | null;
     logoUrl: string | null;
     coverImageUrl: string | null;
-    followerCount: number;
-    totalSoldCount: number;
-    rating: number;
-    reviewCount: number;
+    // followerCount/totalSoldCount/rating/reviewCount chưa có nguồn dữ liệu
+    // thật — trả số bịa sẽ hiển thị sai trên storefront, nên bỏ hẳn.
   };
   productCount: number;
 }
@@ -157,6 +155,7 @@ type LeanSeller = Pick<
   | 'accountType'
   | 'verificationStatus'
   | 'isBanned'
+  | 'suspended'
   | 'province'
   | 'businessCategory'
   | 'tagline'
@@ -166,7 +165,7 @@ type LeanSeller = Pick<
 > & { _id: Types.ObjectId };
 
 const SELLER_FIELDS =
-  '_id displayName accountType verificationStatus isBanned province businessCategory tagline description logoKey coverKey';
+  '_id displayName accountType verificationStatus isBanned suspended province businessCategory tagline description logoKey coverKey';
 
 /** Public visibility predicate shared by listing, detail, storefront, validate. */
 const PUBLIC_FILTER = { active: true, sellerActive: true } as const;
@@ -312,10 +311,6 @@ export class CommerceService {
               (seller as unknown as Record<string, string>).coverKey,
             )
           : null,
-        followerCount: 1200,
-        totalSoldCount: 15000,
-        rating: 4.8,
-        reviewCount: 324,
       },
       productCount,
     };
@@ -393,13 +388,14 @@ export class CommerceService {
     return { data, total, page, limit };
   }
 
-  /** Verified, non-banned businesses for the admin seller picker. */
+  /** Verified, non-banned, non-suspended businesses for the admin seller picker. */
   async listAdminSellers(): Promise<{ data: AdminSellerOption[] }> {
     const docs = await this.userModel
       .find({
         accountType: 'business',
         verificationStatus: 'verified',
         isBanned: { $ne: true },
+        suspended: { $ne: true },
       })
       .select('_id displayName businessCategory')
       .sort({ displayName: 1, _id: 1 })
@@ -687,6 +683,10 @@ export class CommerceService {
     }
     if (seller.isBanned === true) {
       throw new BadRequestException('sellerId references a banned business');
+    }
+    // Tạm ngưng bán: không tạo/sửa sản phẩm cho tới khi admin kích hoạt lại.
+    if (seller.suspended === true) {
+      throw new BadRequestException('sellerId references a suspended business');
     }
     return seller;
   }

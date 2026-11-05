@@ -1,0 +1,94 @@
+/* CSS riêng cho trang Broadcast — không sửa index.css.
+   Chỉ dùng token sẵn có để giữ đồng bộ giao diện. */
+
+/* Form dọc: mỗi field cách nhau một nhịp, không cần inline style trong TSX. */
+.bc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Cảnh báo phạm vi gửi: đứng ngay dưới header để người gửi đọc trước khi soạn. */
+.bc-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--koola-warning) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--koola-warning-soft);
+  color: var(--koola-warning-dark);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: var(--space-3) var(--space-4);
+}
+
+.bc-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* Segmented chọn đối tượng: .tabs lo phần khung, aria-pressed là trạng thái
+   chọn (group bật/tắt, không phải tab/radio). */
+.bc-audience button[aria-pressed="true"] {
+  background: var(--koola-ink);
+  color: var(--koola-surface);
+}
+
+.bc-audience button:focus-visible {
+  outline: 2px solid var(--koola-primary);
+  outline-offset: 2px;
+}
+
+/* Ô nhập id/username + nút Thêm trên một hàng. */
+.bc-ids-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bc-ids-entry .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bc-count {
+  margin-left: var(--space-2);
+  color: var(--koola-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bc-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Danh sách id trong confirm: dài thì xuống dòng, không đẩy dialog rộng. */
+.bc-preview-ids {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Nội dung broadcast trong bảng: cắt 2 dòng để hàng không cao vọt khi body dài. */
+.bc-log-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  max-width: 46ch;
+}
+
+@media (max-width: 560px) {
+  .bc-ids-entry {
+    flex-wrap: wrap;
+  }
+
+  .bc-ids-entry .input {
+    flex-basis: 100%;
+  }
+}

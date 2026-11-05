@@ -11,9 +11,10 @@ import {
 } from './accounts.service';
 import { User } from '../users/user.schema';
 import { AuthService } from '../auth/auth.service';
-import { BusinessMembersService } from '../business-members/business-members.service';
-import { BusinessSessionsService } from '../business-members/business-sessions.service';
-import { CreateBusinessAccountDto } from './dto/create-business-account.dto';
+import {
+  CreateBusinessAccountDto,
+  RelationshipType,
+} from './dto/create-business-account.dto';
 
 const mockUserModel = {
   findById: jest.fn(),
@@ -33,43 +34,18 @@ function mockFindOneQuery(value: unknown) {
   return { select: jest.fn().mockResolvedValue(value) };
 }
 
-/**
- * Mock query for find(...).sort(...).limit(...).select() and for the
- * find(...).select(...).lean() form listAccounts uses. `select` resolves (for
- * the await-on-select callers) AND carries `.lean()` for the chained callers:
- * a thenable, so both shapes read the same values.
- */
+// Helper: returns a mock query for find(...).sort(...).limit(...).select()
 function mockFindChain(values: unknown[]) {
-  const select = jest.fn(() => {
-    const result = Promise.resolve(values) as Promise<unknown> & {
-      lean: jest.Mock;
-    };
-    result.lean = jest.fn().mockResolvedValue(values);
-    return result;
-  });
-  return {
+  const chain = {
     sort: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
-    select,
-    lean: jest.fn().mockResolvedValue(values),
+    select: jest.fn().mockResolvedValue(values),
   };
+  return chain;
 }
 
 const mockAuthService = {
   mintAccessToken: jest.fn().mockReturnValue('minted-token'),
-};
-
-const mockBusinessMembersService = {
-  ensureOwnerMembership: jest.fn().mockResolvedValue(undefined),
-  getMemberRole: jest.fn().mockResolvedValue(null),
-  getMembershipsForUser: jest.fn().mockResolvedValue([]),
-  countActiveMembers: jest.fn().mockResolvedValue(new Map()),
-};
-
-const mockBusinessSessionsService = {
-  createOrReplaceSession: jest
-    .fn()
-    .mockResolvedValue({ forcedLogout: false, oldDeviceId: undefined }),
 };
 
 describe('AccountsService', () => {
@@ -82,26 +58,9 @@ describe('AccountsService', () => {
         AccountsService,
         { provide: getModelToken(User.name), useValue: mockUserModel },
         { provide: AuthService, useValue: mockAuthService },
-        {
-          provide: BusinessMembersService,
-          useValue: mockBusinessMembersService,
-        },
-        {
-          provide: BusinessSessionsService,
-          useValue: mockBusinessSessionsService,
-        },
       ],
     }).compile();
     service = module.get<AccountsService>(AccountsService);
-    // Restore the permissive defaults each test (clearAllMocks wipes them).
-    mockBusinessMembersService.ensureOwnerMembership.mockResolvedValue(undefined);
-    mockBusinessMembersService.getMemberRole.mockResolvedValue(null);
-    mockBusinessMembersService.getMembershipsForUser.mockResolvedValue([]);
-    mockBusinessMembersService.countActiveMembers.mockResolvedValue(new Map());
-    mockBusinessSessionsService.createOrReplaceSession.mockResolvedValue({
-      forcedLogout: false,
-    });
-    mockAuthService.mintAccessToken.mockReturnValue('minted-token');
   });
 
   // ─── switchAccount ────────────────────────────────────────────────────────
@@ -122,12 +81,10 @@ describe('AccountsService', () => {
 
       const result = await service.switchAccount(actorId, businessId);
       expect(result.accessToken).toBe('minted-token');
-      // Task 7.5: the owner's token carries role=owner.
       expect(mockAuthService.mintAccessToken).toHaveBeenCalledWith({
         sub: businessId,
         act: actorId,
         accountType: 'business',
-        role: 'owner',
       });
     });
 
@@ -151,7 +108,7 @@ describe('AccountsService', () => {
       expect(callArg).not.toHaveProperty('act');
     });
 
-    it('rejects switch to an account the caller neither owns nor joined (403)', async () => {
+    it('rejects switch to non-owned account (403)', async () => {
       mockUserModel.findById.mockReturnValue(
         mockFindByIdQuery({
           _id: businessId,
@@ -160,113 +117,10 @@ describe('AccountsService', () => {
           isBanned: false,
         }),
       );
-      // Not a member either — getMemberRole returns null by default.
 
       await expect(service.switchAccount(actorId, businessId)).rejects.toThrow(
         ForbiddenException,
       );
-    });
-
-    // ─── Member switching (task 7.4-7.6) ────────────────────────────────────
-
-    it('allows a member to switch into a business they do not own, with their role in the JWT', async () => {
-      mockUserModel.findById.mockReturnValue(
-        mockFindByIdQuery({
-          _id: businessId,
-          accountType: 'business',
-          ownerUserId: { toString: () => 'someoneElse1234567890ab' },
-          isBanned: false,
-        }),
-      );
-      mockBusinessMembersService.getMemberRole.mockResolvedValue('editor');
-
-      const result = await service.switchAccount(actorId, businessId);
-
-      expect(result.accessToken).toBe('minted-token');
-      expect(mockAuthService.mintAccessToken).toHaveBeenCalledWith({
-        sub: businessId,
-        act: actorId,
-        accountType: 'business',
-        role: 'editor',
-      });
-    });
-
-    it('rejects a suspended membership (getMemberRole returns null → 403)', async () => {
-      mockUserModel.findById.mockReturnValue(
-        mockFindByIdQuery({
-          _id: businessId,
-          accountType: 'business',
-          ownerUserId: { toString: () => 'someoneElse1234567890ab' },
-          isBanned: false,
-        }),
-      );
-      // getMemberRole filters on status:'active', so a suspended row reads null.
-      mockBusinessMembersService.getMemberRole.mockResolvedValue(null);
-
-      await expect(service.switchAccount(actorId, businessId)).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('creates a device session when a deviceId is supplied, and reports a forced logout', async () => {
-      mockUserModel.findById.mockReturnValue(
-        mockFindByIdQuery({
-          _id: businessId,
-          accountType: 'business',
-          ownerUserId: { toString: () => actorId },
-          isBanned: false,
-        }),
-      );
-      mockBusinessSessionsService.createOrReplaceSession.mockResolvedValue({
-        forcedLogout: true,
-        oldDeviceId: 'old-device',
-      });
-
-      const result = await service.switchAccount(actorId, businessId, 'device-b', {
-        deviceModel: 'Pixel 8',
-      });
-
-      expect(result.forcedLogout).toBe(true);
-      expect(
-        mockBusinessSessionsService.createOrReplaceSession,
-      ).toHaveBeenCalledWith(businessId, actorId, 'device-b', {
-        deviceModel: 'Pixel 8',
-      });
-    });
-
-    it('runs lazy owner migration before minting the token', async () => {
-      mockUserModel.findById.mockReturnValue(
-        mockFindByIdQuery({
-          _id: businessId,
-          accountType: 'business',
-          ownerUserId: { toString: () => actorId },
-          isBanned: false,
-        }),
-      );
-
-      await service.switchAccount(actorId, businessId);
-
-      expect(
-        mockBusinessMembersService.ensureOwnerMembership,
-      ).toHaveBeenCalledWith(businessId);
-    });
-
-    it('skips session creation entirely when no deviceId is sent', async () => {
-      mockUserModel.findById.mockReturnValue(
-        mockFindByIdQuery({
-          _id: businessId,
-          accountType: 'business',
-          ownerUserId: { toString: () => actorId },
-          isBanned: false,
-        }),
-      );
-
-      const result = await service.switchAccount(actorId, businessId);
-
-      expect(
-        mockBusinessSessionsService.createOrReplaceSession,
-      ).not.toHaveBeenCalled();
-      expect(result.forcedLogout).toBe(false);
     });
 
     it('rejects switch to banned account (403)', async () => {
@@ -316,7 +170,7 @@ describe('AccountsService', () => {
       displayName: 'Biz Co',
       businessCategory: 'retail',
       province: 'HCM',
-      relationshipType: 'partner',
+      relationshipType: RelationshipType.PARTNER,
       licenseImageKey: 'license/abc.jpg',
     };
 
@@ -330,7 +184,7 @@ describe('AccountsService', () => {
       };
       mockUserModel.create.mockResolvedValue(created);
 
-      const result: { accountType: string; verificationStatus: string } =
+      const result: { accountType: string; verificationStatus?: string } =
         await service.createBusinessAccount(actorId, dto);
       expect(result.accountType).toBe('business');
       expect(result.verificationStatus).toBe('pending');
@@ -372,78 +226,6 @@ describe('AccountsService', () => {
       expect(result[0]._id).toBe(actorId);
       expect(result[1]._id).toBe(biz1._id);
       expect(result[2]._id).toBe(biz2._id);
-      expect(result[1].role).toBe('owner');
-      expect(result[1].isMember).toBe(false);
-    });
-
-    // ─── Member businesses (task 7.1-7.3) ───────────────────────────────────
-
-    it('includes joined businesses with role, owner name and isMember', async () => {
-      const root = { _id: actorId, accountType: 'personal' };
-      const joinedId = 'ccc3333333333333333333cc';
-      const ownerId = 'ddd4444444444444444444dd';
-      mockUserModel.findById.mockReturnValue(mockFindByIdQuery(root));
-      mockBusinessMembersService.getMembershipsForUser.mockResolvedValue([
-        { businessId: joinedId, role: 'editor' },
-      ]);
-      // find() is called for owned businesses, then joined businesses, then owners.
-      mockUserModel.find
-        .mockReturnValueOnce(mockFindChain([]))
-        .mockReturnValueOnce(
-          mockFindChain([
-            {
-              _id: joinedId,
-              accountType: 'business',
-              displayName: 'Shop ABC',
-              ownerUserId: { toString: () => ownerId },
-            },
-          ]),
-        )
-        .mockReturnValueOnce(
-          mockFindChain([{ _id: ownerId, displayName: 'Chị Hà' }]),
-        );
-
-      const result = await service.listAccounts(actorId);
-
-      expect(result).toHaveLength(2);
-      expect(result[1]).toMatchObject({
-        _id: joinedId,
-        role: 'editor',
-        isMember: true,
-        ownerDisplayName: 'Chị Hà',
-      });
-    });
-
-    it('does not list an owned business twice when lazy migration created its owner membership', async () => {
-      const root = { _id: actorId, accountType: 'personal' };
-      mockUserModel.findById.mockReturnValue(mockFindByIdQuery(root));
-      // ensureOwnerMembership wrote an owner row for biz1, so it comes back as
-      // a "membership" as well as an owned business.
-      mockBusinessMembersService.getMembershipsForUser.mockResolvedValue([
-        { businessId: biz1._id, role: 'owner' },
-      ]);
-      mockUserModel.find.mockReturnValueOnce(mockFindChain([biz1]));
-
-      const result = await service.listAccounts(actorId);
-
-      expect(result).toHaveLength(2);
-      expect(result.filter((a: any) => a._id === biz1._id)).toHaveLength(1);
-      expect(result[1].isMember).toBe(false);
-    });
-
-    it('surfaces memberCount on owned businesses, defaulting to 1 before migration', async () => {
-      const root = { _id: actorId, accountType: 'personal' };
-      mockUserModel.findById.mockReturnValue(mockFindByIdQuery(root));
-      mockUserModel.find.mockReturnValue(mockFindChain([biz1, biz2]));
-      mockBusinessMembersService.countActiveMembers.mockResolvedValue(
-        new Map([[biz1._id, 3]]),
-      );
-
-      const result = await service.listAccounts(actorId);
-
-      expect(result[1].memberCount).toBe(3);
-      // biz2 has no membership rows yet → the owner alone.
-      expect(result[2].memberCount).toBe(1);
     });
 
     it('throws 404 when root account is not found', async () => {
@@ -473,7 +255,7 @@ describe('AccountsService', () => {
       accountType: 'business',
       verificationStatus: 'verified',
       isBanned: false,
-      relationshipType: 'partner',
+      relationshipType: RelationshipType.PARTNER,
       province: 'HCM',
       businessCategory: 'retail',
     };

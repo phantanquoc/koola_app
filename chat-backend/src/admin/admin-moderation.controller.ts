@@ -15,28 +15,42 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Throttle } from '@nestjs/throttler';
+import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { PaginationDto } from './dto/pagination.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
+import { ConversationDetailDto } from './dto/conversation-detail.dto';
 import { SearchMessagesDto } from './dto/search-messages.dto';
+import { ListStoriesDto } from './dto/list-stories.dto';
 import {
   CreateMusicTrackDto,
   UpdateMusicTrackDto,
 } from './dto/music-track.dto';
 import { escapeRegExp } from '../common/utils/escape-regexp';
 import { ConversationDoc } from '../conversations/conversation.schema';
+import { User } from '../users/user.schema';
 import { Message } from '../messages/message.schema';
 import { Story } from '../moments/schemas/story.schema';
 import { MusicTrack } from '../moments/schemas/music-track.schema';
 import { AudienceList } from '../moments/schemas/audience-list.schema';
 import { Report } from './schemas/report.schema';
 import { AdminAuditService } from './admin-audit.service';
+import { AdminReportService } from './admin-report.service';
+import { ModerationMediaService } from './moderation-media.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChatGateway } from '../gateway/chat.gateway';
 import type { Request } from 'express';
+
+/**
+ * `includeDeleted` phải nằm trong DTO: ValidationPipe dùng
+ * forbidNonWhitelisted nên query param không khai báo sẽ bị 400.
+ */
+class SearchMessagesQueryDto extends SearchMessagesDto {
+  @IsOptional() @IsString() includeDeleted?: string;
+}
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
@@ -44,6 +58,7 @@ export class AdminModerationController {
   constructor(
     @InjectModel(ConversationDoc.name)
     private convModel: Model<ConversationDoc>,
+    @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Message.name) private msgModel: Model<Message>,
     @InjectModel(Story.name) private storyModel: Model<Story>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
@@ -53,7 +68,43 @@ export class AdminModerationController {
     private audienceListModel: Model<AudienceList>,
     private readonly audit: AdminAuditService,
     private readonly chatGateway: ChatGateway,
+    private readonly reportService: AdminReportService,
+    private readonly moderationMedia: ModerationMediaService,
   ) {}
+
+  private displayNameFor(conv: any, members: any[]): string {
+    if (conv?.name) return conv.name;
+    if (conv?.type === 'direct') {
+      const names = (members ?? [])
+        .map((m) => m?.displayName)
+        .filter((n) => typeof n === 'string' && n.trim().length > 0);
+      if (names.length > 0) return names.join(' - ');
+      return 'Hội thoại trực tiếp';
+    }
+    return conv?.name ?? 'Hội thoại';
+  }
+
+  private async memberSummaries(conv: any) {
+    const memberIds = ((conv as any).members ?? []).map((m: any) =>
+      String(m.userId ?? m),
+    );
+    const users = memberIds.length
+      ? await this.userModel
+          .find({ _id: { $in: memberIds } })
+          .select('displayName avatar accountType')
+          .lean()
+      : [];
+    const byId = new Map(users.map((u: any) => [String(u._id), u]));
+    return ((conv as any).members ?? []).map((m: any) => {
+      const info: any = byId.get(String(m.userId ?? m)) ?? {};
+      return {
+        ...m,
+        displayName: info.displayName ?? null,
+        avatar: info.avatar ?? null,
+        accountType: info.accountType ?? null,
+      };
+    });
+  }
 
   @Get('conversations')
   async listConversations(@Query() dto: ListConversationsDto) {
@@ -62,38 +113,267 @@ export class AdminModerationController {
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
     if (dto.type) filter['type'] = dto.type;
+    if (dto.activeAfter) {
+      const d = new Date(dto.activeAfter);
+      if (!Number.isNaN(d.getTime())) filter['lastMessageAt'] = { $gte: d };
+    }
     if (dto.search && dto.search.trim().length > 0) {
       const escaped = escapeRegExp(dto.search.trim());
-      const regex = new RegExp(escaped, 'i');
-      filter['$or'] = [{ name: regex }, { topic: regex } as any];
+      const nameRegex = new RegExp(escaped, 'i');
+      // Match displayName too: direct conversations have null name, so also
+      // match member displayNames via user lookup.
+      const matchedUsers = await this.userModel
+        .find({ displayName: nameRegex })
+        .select('_id')
+        .lean();
+      const orConds: unknown[] = [{ name: nameRegex }];
+      if (matchedUsers.length > 0) {
+        orConds.push({
+          'members.userId': {
+            $in: matchedUsers.map((u: any) => u._id),
+          },
+        });
+      }
+      filter['$or'] = orConds;
     }
+    if (dto.minMembers != null || dto.maxMembers != null) {
+      const conds: unknown[] = [];
+      if (dto.minMembers != null) conds.push({ $gte: [{ $size: '$members' }, dto.minMembers] });
+      if (dto.maxMembers != null) conds.push({ $lte: [{ $size: '$members' }, dto.maxMembers] });
+      filter['$expr'] = conds.length === 1 ? conds[0] : { $and: conds };
+    }
+    // Collect _id $in constraints (pending reports, minReports, media) and intersect.
+    const idSets: Set<string>[] = [];
+    if (dto.hasPendingReport === 'true') {
+      const pending = await this.reportModel
+        .find({ targetType: 'conversation', status: 'pending' })
+        .select('targetId')
+        .lean();
+      idSets.push(
+        new Set(
+          pending
+            .map((r: any) => String(r.targetId ?? ''))
+            .filter((t: string) => Types.ObjectId.isValid(t)),
+        ),
+      );
+    }
+    if (dto.minReports != null) {
+      const grouped = await this.reportModel.aggregate([
+        { $match: { targetType: 'conversation', status: 'pending' } },
+        { $group: { _id: '$targetId', n: { $sum: 1 } } },
+      ]);
+      idSets.push(
+        new Set(
+          grouped
+            .filter((r: any) => r.n >= (dto.minReports as number))
+            .map((r: any) => String(r._id ?? ''))
+            .filter((t: string) => Types.ObjectId.isValid(t)),
+        ),
+      );
+    }
+    if (dto.hasMedia === 'true') {
+      const mediaConvIds: unknown[] = await this.msgModel.distinct('conversationId', {
+        $or: [
+          { mediaUrl: { $exists: true, $ne: '' } },
+          { type: { $in: ['image', 'voice', 'video', 'file'] } },
+        ],
+      });
+      idSets.push(
+        new Set(
+          mediaConvIds
+            .map((t) => String(t ?? ''))
+            .filter((t: string) => Types.ObjectId.isValid(t)),
+        ),
+      );
+    }
+    if (idSets.length > 0) {
+      let intersect = idSets[0];
+      for (const s of idSets.slice(1)) {
+        intersect = new Set([...intersect].filter((id) => s.has(id)));
+      }
+      filter['_id'] = {
+        $in: [...intersect].map((id) => new Types.ObjectId(id)),
+      };
+    }
+    // sort=reported: order by pending-report count desc via single aggregation,
+    // paginate the ordered ids so pages stay stable.
+    if (dto.sort === 'reported') {
+      const grouped = await this.reportModel.aggregate([
+        { $match: { targetType: 'conversation', status: 'pending' } },
+        { $group: { _id: '$targetId', n: { $sum: 1 } } },
+        { $sort: { n: -1 } },
+      ]);
+      const matchingIds: unknown[] = await this.convModel.distinct('_id', filter as any);
+      const allowed = new Set(matchingIds.map((id) => String(id)));
+      const min = dto.minReports ?? 1;
+      const ordered = grouped.filter(
+        (r: any) => allowed.has(String(r._id ?? '')) && r.n >= min,
+      );
+      const total = ordered.length;
+      const slice = ordered.slice(skip, skip + limit);
+      const convs =
+        slice.length > 0
+          ? await this.convModel
+              .find({ _id: { $in: slice.map((r: any) => r._id) } })
+              .lean()
+          : [];
+      const byId = new Map(convs.map((c: any) => [String(c._id), c]));
+      const data = slice.map((r: any) => byId.get(String(r._id))).filter(Boolean);
+      const withDisplay = await this.withDisplayNames(data as any[]);
+      const counts = new Map(slice.map((r: any) => [String(r._id), r.n]));
+      return {
+        data: (withDisplay as any[]).map((c: any) => ({
+          ...c,
+          pendingReportCount: counts.get(String(c._id)) ?? 0,
+        })),
+        total,
+        page,
+        limit,
+      };
+    }
+    const sortStage =
+      dto.sort === 'created'
+        ? { createdAt: -1, _id: -1 }
+        : { __noMsg: 1, lastMessageAt: -1, _id: -1 };
     const [data, total] = await Promise.all([
       this.convModel
-        .find(filter)
-        .sort({ updatedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+        .aggregate([
+          { $match: filter as any },
+          { $addFields: { __noMsg: { $cond: [{ $ifNull: ['$lastMessageAt', true] }, 1, 0] } } },
+          { $sort: sortStage as any },
+          { $skip: skip },
+          { $limit: limit },
+          { $project: { __noMsg: 0 } },
+        ]),
       this.convModel.countDocuments(filter),
     ]);
-    return { data, total, page, limit };
+    const withDisplay = await this.withDisplayNames(data as any[]);
+    // Batch pending-report counts for the returned rows (single query).
+    const rowIds = (withDisplay as any[]).map((c: any) => String(c._id));
+    const countAgg = rowIds.length
+      ? await this.reportModel.aggregate([
+          {
+            $match: {
+              targetType: 'conversation',
+              status: 'pending',
+              targetId: { $in: rowIds },
+            },
+          },
+          { $group: { _id: '$targetId', n: { $sum: 1 } } },
+        ])
+      : [];
+    const countById = new Map(countAgg.map((r: any) => [String(r._id), r.n]));
+    return {
+      data: (withDisplay as any[]).map((c: any) => ({
+        ...c,
+        pendingReportCount: countById.get(String(c._id)) ?? 0,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  // ponytail: batch member-displayName lookup shared by both list branches; N+1 if called per-row
+  private async withDisplayNames(data: any[]) {
+    // Batch-populate member displayNames once for all rows so direct
+    // conversations can render "Tên A - Tên B" without N+1 queries.
+    const allMemberIds = [
+      ...new Set(
+        (data as any[]).flatMap((c: any) =>
+          (c.members ?? []).map((m: any) => String(m.userId ?? m)),
+        ),
+      ),
+    ];
+    const displayUsers = allMemberIds.length
+      ? await this.userModel.find({ _id: { $in: allMemberIds } }).select('displayName').lean()
+      : [];
+    const byId = new Map(displayUsers.map((u: any) => [String(u._id), u.displayName]));
+    return (data as any[]).map((c: any) => ({
+      ...c,
+      displayName: this.displayNameFor(
+        c,
+        (c.members ?? []).map((m: any) => ({
+          displayName: byId.get(String(m.userId ?? m)) ?? null,
+        })),
+      ),
+    }));
+  }
+
+  /**
+   * Gắn bản URL đã ký cho media của message. `mediaUrl` là MinIO key (mobile tự
+   * ký), nên admin-web cần thêm field *Signed; không ghi đè key gốc.
+   */
+  private async withSignedMedia(data: any[]) {
+    if (data.length === 0) return data;
+    const keyOf = (v: unknown) =>
+      typeof v === 'string' && v.trim() ? v.trim() : undefined;
+    const keys = data.flatMap((m: any) => [
+      keyOf(m.mediaUrl),
+      keyOf(m.metadata?.storyReply?.mediaKeyPreview),
+    ]);
+    const signed = await this.moderationMedia.presignMany(keys);
+    return data.map((m: any) => {
+      const mediaKey = keyOf(m.mediaUrl);
+      const previewKey = keyOf(m.metadata?.storyReply?.mediaKeyPreview);
+      const out: any = { ...m };
+      if (mediaKey) out.mediaUrlSigned = signed.get(mediaKey) ?? null;
+      if (previewKey) {
+        out.mediaKeyPreviewSigned = signed.get(previewKey) ?? null;
+      }
+      return out;
+    });
   }
 
   @Get('conversations/:id')
-  async getConversation(@Param('id') id: string) {
+  async getConversation(
+    @Param('id') id: string,
+    @Query() dto: ConversationDetailDto,
+  ) {
     const conv = await this.convModel.findById(id).lean();
     if (!conv) throw new NotFoundException('Conversation not found');
-    const members = (conv as any).members ?? [];
-    const recentMessages = await this.msgModel
-      .find({ conversationId: id })
+    const members = await this.memberSummaries(conv);
+    const msgLimit = dto.limit ?? 20;
+    const msgFilter: Record<string, unknown> = { conversationId: id };
+    if (dto.before) msgFilter['createdAt'] = { $lt: new Date(dto.before) };
+    // Fetch one extra to know whether older messages remain.
+    const fetched = await this.msgModel
+      .find(msgFilter)
       .sort({ createdAt: -1 })
-      .limit(20)
+      .limit(msgLimit + 1)
       .lean();
-    return { conversation: conv, members, recentMessages };
+    const hasMore = fetched.length > msgLimit;
+    const recentMessages = hasMore ? fetched.slice(0, msgLimit) : fetched;
+    // mediaUrl/metadata.storyReply.mediaKeyPreview là MinIO key; admin-web cần
+    // URL đọc được nên ký thêm bản *Signed, giữ nguyên key cho consumer khác.
+    const signedMessages = await this.withSignedMedia(recentMessages as any[]);
+    // Reported-message badge signal: pending message-report counts for shown msgs.
+    const shownIds = recentMessages.map((m: any) => String(m._id));
+    const msgCounts = shownIds.length
+      ? await this.reportModel.aggregate([
+          {
+            $match: {
+              targetType: 'message',
+              status: 'pending',
+              targetId: { $in: shownIds },
+            },
+          },
+          { $group: { _id: '$targetId', n: { $sum: 1 } } },
+        ])
+      : [];
+    return {
+      conversation: { ...(conv as any), displayName: this.displayNameFor(conv, members) },
+      members,
+      recentMessages: signedMessages,
+      hasMore,
+      reportedMessageCounts: Object.fromEntries(
+        msgCounts.map((r: any) => [String(r._id), r.n]),
+      ),
+    };
   }
 
   @Get('messages/search')
-  async searchMessages(@Query() dto: SearchMessagesDto) {
+  async searchMessages(@Query() dto: SearchMessagesQueryDto) {
     const q = dto.q?.trim() ?? '';
     if (!q) throw new BadRequestException('q is required');
     const page = dto.page ?? 1;
@@ -103,6 +383,9 @@ export class AdminModerationController {
     const regex = new RegExp(escaped, 'i');
     const filter: Record<string, unknown> = { content: regex };
     if (dto.conversationId) filter['conversationId'] = dto.conversationId;
+    // Bảng kiểm duyệt mặc định ẩn nội dung đã gỡ (deleted=true);
+    // includeDeleted=true để xem lại lịch sử. $ne:true bắt cả doc thiếu field.
+    if (dto.includeDeleted !== 'true') filter['deleted'] = { $ne: true };
     const [data, total] = await Promise.all([
       this.msgModel
         .find(filter)
@@ -112,7 +395,55 @@ export class AdminModerationController {
         .lean(),
       this.msgModel.countDocuments(filter),
     ]);
-    return { data, total, page, limit };
+    return { data: await this.withMessageNames(data as any[]), total, page, limit };
+  }
+
+  /**
+   * Gắn senderName + conversationName cho trang kết quả tìm kiếm — resolve lúc
+   * đọc, không denormalize. Ba query cho cả trang (sender, conversation, member
+   * của hội thoại direct), không N+1 theo từng message.
+   */
+  private async withMessageNames(data: any[]) {
+    if (data.length === 0) return data;
+    const senderIds = [
+      ...new Set(
+        data
+          .map((m: any) => String(m.senderId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const convIds = [
+      ...new Set(
+        data
+          .map((m: any) => String(m.conversationId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const [senders, convs] = await Promise.all([
+      senderIds.length
+        ? this.userModel.find({ _id: { $in: senderIds } }).select('displayName').lean()
+        : Promise.resolve([]),
+      convIds.length
+        ? this.convModel
+            .find({ _id: { $in: convIds } })
+            .select('name type members')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+    const senderNameById = new Map(
+      (senders as any[]).map((u: any) => [String(u._id), u.displayName]),
+    );
+    // withDisplayNames đã gom batch member displayName cho hội thoại direct.
+    const convsWithName = (await this.withDisplayNames(convs as any[])) as any[];
+    const convNameById = new Map(
+      convsWithName.map((c: any) => [String(c._id), c.displayName]),
+    );
+    const mapped = data.map((m: any) => ({
+      ...m,
+      senderName: senderNameById.get(String(m.senderId)) ?? null,
+      conversationName: convNameById.get(String(m.conversationId)) ?? null,
+    }));
+    return this.withSignedMedia(mapped);
   }
 
   @Post('messages/:id/soft-delete')
@@ -147,12 +478,15 @@ export class AdminModerationController {
   }
 
   @Get('stories')
-  async listStories(@Query() dto: PaginationDto & { authorId?: string }) {
+  async listStories(@Query() dto: ListStoriesDto) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
-    if ((dto as any).authorId) filter['authorId'] = (dto as any).authorId;
+    if (dto.authorId) filter['authorId'] = dto.authorId;
+    if (dto.active === 'true' || dto.active === 'false') {
+      filter['isActive'] = dto.active === 'true';
+    }
     const [data, total] = await Promise.all([
       this.storyModel
         .find(filter)
@@ -162,7 +496,54 @@ export class AdminModerationController {
         .lean(),
       this.storyModel.countDocuments(filter),
     ]);
-    return { data, total, page, limit };
+    const withNames = await this.withAuthorNames(data as any[]);
+    return {
+      data: await this.withStoryMedia(withNames),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /** Ký mediaKey/thumbnailKey để admin-web hiển thị story; key gốc giữ nguyên. */
+  private async withStoryMedia(data: any[]) {
+    if (data.length === 0) return data;
+    const signed = await this.moderationMedia.presignMany(
+      data.flatMap((s: any) => [s.mediaKey, s.thumbnailKey]),
+    );
+    return data.map((s: any) => ({
+      ...s,
+      mediaUrlSigned: s.mediaKey ? (signed.get(s.mediaKey) ?? null) : null,
+      thumbnailUrlSigned: s.thumbnailKey
+        ? (signed.get(s.thumbnailKey) ?? null)
+        : null,
+    }));
+  }
+
+  /** Gắn authorName/authorAvatar lúc đọc — 1 query cho cả trang. */
+  private async withAuthorNames(data: any[]) {
+    const authorIds = [
+      ...new Set(
+        data
+          .map((s: any) => String(s.authorId ?? ''))
+          .filter((id: string) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const authors = authorIds.length
+      ? await this.userModel
+          .find({ _id: { $in: authorIds } })
+          .select('displayName avatar')
+          .lean()
+      : [];
+    const byId = new Map((authors as any[]).map((u: any) => [String(u._id), u]));
+    return data.map((s: any) => {
+      const author = byId.get(String(s.authorId));
+      return {
+        ...s,
+        authorName: author?.displayName ?? null,
+        authorAvatar: author?.avatar ?? null,
+      };
+    });
   }
 
   @Post('stories/:id/takedown')
@@ -197,24 +578,19 @@ export class AdminModerationController {
 
   @Get('reports')
   async listReports(
-    @Query() dto: PaginationDto & { status?: string; targetType?: string },
+    @Query()
+    dto: PaginationDto & {
+      status?: string;
+      targetType?: string;
+      targetId?: string;
+    },
   ) {
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 20;
-    const skip = (page - 1) * limit;
-    const filter: Record<string, unknown> = {};
-    if ((dto as any).status) filter['status'] = (dto as any).status;
-    if ((dto as any).targetType) filter['targetType'] = (dto as any).targetType;
-    const [data, total] = await Promise.all([
-      this.reportModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      this.reportModel.countDocuments(filter),
-    ]);
-    return { data, total, page, limit };
+    return this.reportService.list(dto);
+  }
+
+  @Get('reports/:id')
+  async getReport(@Param('id') id: string) {
+    return this.reportService.findOne(id);
   }
 
   @Post('reports/:id/resolve')

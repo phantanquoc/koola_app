@@ -466,4 +466,64 @@ describe('UsersService', () => {
       expect(result).toBeDefined();
     });
   });
+
+  // ─── Không rò rỉ credential/2FA ra response ───
+
+  describe('safe projections', () => {
+    const selectOf = (query: { select: jest.Mock }) => query.select.mock.calls[0][0] as string;
+
+    it('findById loại bỏ 2FA + FCM mặc định', async () => {
+      mockUserModel.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+      await service.findById('user1');
+      const p = selectOf(mockUserModel.findById.mock.results[0].value);
+      expect(p).toContain('-twoFactorSecret');
+      expect(p).toContain('-twoFactorRecoveryCodes');
+      expect(p).toContain('-fcmTokens');
+      expect(p).toContain('-passwordHash');
+    });
+
+    it('findById(withFcmTokens) chỉ mở token đẩy, vẫn giấu 2FA', async () => {
+      mockUserModel.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+      await service.findById('user1', { withFcmTokens: true });
+      const p = selectOf(mockUserModel.findById.mock.results[0].value);
+      expect(p).toContain('-twoFactorSecret');
+      expect(p).toContain('-twoFactorRecoveryCodes');
+      expect(p).not.toContain('-fcmTokens');
+    });
+
+    it('findByIdPublic giấu email/phone/settings và 2FA', async () => {
+      mockUserModel.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+      await service.findByIdPublic('user1');
+      const p = selectOf(mockUserModel.findById.mock.results[0].value);
+      for (const field of ['-email', '-phone', '-settings', '-twoFactorSecret']) {
+        expect(p).toContain(field);
+      }
+    });
+
+    it('findByEmail giấu 2FA (login tự select riêng secret)', async () => {
+      mockUserModel.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+      await service.findByEmail('a@example.com');
+      const p = selectOf(mockUserModel.findOne.mock.results[0].value);
+      expect(p).toContain('-twoFactorSecret');
+      expect(p).toContain('-twoFactorRecoveryCodes');
+    });
+
+    it('findByIds mặc định giấu cả 2FA lẫn FCM', async () => {
+      mockUserModel.find.mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
+      await service.findByIds(['user1']);
+      const p = selectOf(mockUserModel.find.mock.results[0].value);
+      expect(p).toContain('-fcmTokens');
+      expect(p).toContain('-twoFactorSecret');
+    });
+
+    it('updateProfile không trả secret 2FA', async () => {
+      mockUserModel.findOne.mockResolvedValue(null);
+      const selectMock = jest.fn().mockResolvedValue({ _id: 'user1' });
+      mockUserModel.findByIdAndUpdate.mockReturnValue({ select: selectMock });
+      await service.updateProfile('user1', { displayName: 'An' } as any);
+      const p = selectMock.mock.calls[0][0] as string;
+      expect(p).toContain('-twoFactorSecret');
+      expect(p).toContain('-fcmTokens');
+    });
+  });
 });
