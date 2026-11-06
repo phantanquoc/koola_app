@@ -7,12 +7,14 @@ import {
   HttpStatus,
   Query,
   Param,
+  Headers,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccountsService } from './accounts.service';
 import { CreateBusinessAccountDto } from './dto/create-business-account.dto';
 import { SwitchAccountDto } from './dto/switch-account.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { SkipBusinessSessionCheck } from '../common/decorators/skip-business-session.decorator';
 
 @ApiTags('accounts')
 @Controller('accounts')
@@ -50,6 +52,10 @@ export class AccountsController {
 
   @Post('switch')
   @HttpCode(HttpStatus.OK)
+  // This route CLAIMS the device session, so it must run before the session
+  // exists for this device — the global guard would otherwise reject the very
+  // login that takes over from another device.
+  @SkipBusinessSessionCheck()
   @ApiOperation({
     summary: 'Mint a delegated access token for an owned account',
   })
@@ -59,10 +65,18 @@ export class AccountsController {
   async switchAccount(
     @CurrentUser() user: { actorId: string },
     @Body() dto: SwitchAccountDto,
+    @Headers('x-device-id') deviceId?: string,
+    @Headers('x-device-model') deviceModel?: string,
+    @Headers('x-os-version') osVersion?: string,
+    @Headers('x-app-version') appVersion?: string,
   ) {
     return this.accountsService.switchAccount(
       user.actorId,
       dto.targetAccountId,
+      deviceId,
+      deviceModel || osVersion || appVersion
+        ? { deviceModel, osVersion, appVersion }
+        : undefined,
     );
   }
 

@@ -186,6 +186,17 @@ export const asyncStorage = {
     await AsyncStorage.setItem(KEYS.NOTIFICATION_PREFS, JSON.stringify(prefs));
   },
 
+  // ─── Generic storage (for keys not in KEYS constant) ─────────────────────
+  async getItem(key: string): Promise<string | null> {
+    return AsyncStorage.getItem(key);
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    await AsyncStorage.setItem(key, value);
+  },
+  async removeItem(key: string): Promise<void> {
+    await AsyncStorage.removeItem(key);
+  },
+
   // ─── Clear all ────────────────────────────────────────────────────────────
   async clearAll(): Promise<void> {
     await AsyncStorage.multiRemove(Object.values(KEYS));

@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTabBarBottomInset, useTabDockSuppression } from '../../navigation/MainNavigator';
 import type { PersonalTabStackParamList } from '../../navigation/types';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBusinessPermissions } from '../../hooks/useBusinessPermissions';
 import { useComingSoonToast } from '../../hooks/useComingSoonToast';
 import { usePendingOrderCount } from '../../services/shopping/usePendingOrderCount';
 import { useTheme } from '../../ui';
@@ -33,6 +34,7 @@ const DOCK_H = 36;
  */
 const SettingsScreen: React.FC = () => {
   const { user, activeAccount, logout } = useAuth();
+  const { canManageMembers } = useBusinessPermissions();
   const tabBarInset = useTabBarBottomInset();
   const insets = useSafeAreaInsets();
   const navigation =
@@ -196,6 +198,41 @@ const SettingsScreen: React.FC = () => {
           userId={user?._id ? `KOOLA-${user._id.slice(-5).toUpperCase()}` : 'KOOLA-XXXXX'}
           onEdit={() => navigation.navigate('EditProfile')}
         />
+
+        {/* Business team management (business-members-system task 16.7).
+            Shown only inside a business session; the per-row gating is by
+            role — any member may read the roster, while devices and the audit
+            log are admin+. The backend guards all three regardless. */}
+        {activeAccount?.accountType === 'business' && (
+          <PersonalCard>
+            <PersonalIconRow
+              icon="group"
+              title="Thành viên"
+              subtitle={
+                activeAccount.memberCount
+                  ? `${activeAccount.memberCount} thành viên`
+                  : 'Mời và phân quyền cho đồng nghiệp'
+              }
+              onPress={() => navigation.navigate('ManageMembers')}
+            />
+            {canManageMembers && (
+              <>
+                <PersonalIconRow
+                  icon="devices"
+                  title="Thiết bị đang đăng nhập"
+                  subtitle="Mỗi thành viên một thiết bị"
+                  onPress={() => navigation.navigate('ActiveSessions')}
+                />
+                <PersonalIconRow
+                  icon="history"
+                  title="Lịch sử hoạt động"
+                  subtitle="Ai đã làm gì, khi nào"
+                  onPress={() => navigation.navigate('AuditLog')}
+                />
+              </>
+            )}
+          </PersonalCard>
+        )}
 
         {/* Settings & security — Figma 92:74 card. "Cài đặt" opens the detail
             screen where theme / translation / notifications / privacy / about /

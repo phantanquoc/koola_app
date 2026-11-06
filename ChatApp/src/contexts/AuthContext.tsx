@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import { AppState, AppStateStatus, Alert } from 'react-native';
-import { authApi, usersApi, accountsApi, conversationsApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler } from '../services/api/apiService';
+import { authApi, usersApi, accountsApi, conversationsApi, setAccessTokenInMemory, getAccessTokenInMemory, setForceLogoutHandler, setSessionEndedHandler } from '../services/api/apiService';
 import { asyncStorage } from '../services/storage/asyncStorage';
 import { socketService } from '../services/socket/SocketService';
 import { pushNotificationService } from '../services/push/pushNotificationService';
@@ -25,13 +25,45 @@ import { momentsService } from '../services/moments/momentsService';
 import { clearAccountBadge } from '../services/push/accountBadgeStorage';
 import * as conversationRepository from '../services/db/conversationRepository';
 import { cartStore } from '../services/shopping/cartStore';
-import type { User, Account } from '../types';
+import { BUSINESS_ROLE_LEVEL } from '../types';
+import type { User, Account, BusinessRole } from '../types';
 
 // ─── Local-first wiring teardown refs ─────────────────────────────────────────
 // Stored at module level so logout can call them regardless of React lifecycle.
 let _unwireSocketEvents: (() => void) | null = null;
 let _unwireSyncTriggers: (() => void) | null = null;
 let _unwireMediaPreloader: (() => void) | null = null;
+
+/**
+ * Parse role from JWT access token (if present).
+ * Business member tokens include a "role" claim; personal tokens do not.
+ * Returns undefined if token is invalid or role claim is missing.
+ */
+function parseRoleFromToken(token: string | null): BusinessRole | undefined {
+  if (!token) return undefined;
+
+  try {
+    // JWT format: header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) return undefined;
+
+    // Convert base64url → base64, then restore the padding JWT strips.
+    // atob rejects unpadded input, so a payload whose length isn't a multiple
+    // of 4 would otherwise throw and silently drop the role claim.
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded));
+
+    const role = decoded.role;
+    if (role === 'owner' || role === 'admin' || role === 'editor' || role === 'viewer') {
+      return role;
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Wire all local-first services after DB init.
@@ -116,10 +148,12 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  /** All accounts (root + owned businesses) for the signed-in user */
+  /** All accounts (root + owned businesses + member businesses) for the signed-in user */
   accounts: Account[];
   /** The currently active account (may be a business account) */
   activeAccount: Account | null;
+  /** Role in the active business account (owner/admin/editor/viewer). Undefined for personal accounts. */
+  currentRole?: BusinessRole;
   /** True while switchAccount is tearing down + re-initialising the new account */
   isSwitchingAccount: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -138,6 +172,22 @@ interface AuthContextType {
   switchAccount: (targetId: string) => Promise<void>;
   /** Convenience: switch back to the root personal account */
   switchBackToPersonal: () => Promise<void>;
+  /**
+   * Refetch the account list (owned + member businesses). Call after a
+   * membership change — accepting an invite, being removed — since `accounts`
+   * is otherwise only loaded on login/restore.
+   */
+  refreshAccounts: () => Promise<Account[]>;
+  /** Check if current user has at least the required role in active business account. Returns true for personal accounts. */
+  hasRole: (requiredRole: BusinessRole) => boolean;
+  /**
+   * Set when this device's BUSINESS session was revoked (another device logged
+   * in, or an admin forced it out). The app has already fallen back to the
+   * personal account; the UI shows this once, then calls
+   * `clearSessionEndedNotice`.
+   */
+  sessionEndedNotice: string | null;
+  clearSessionEndedNotice: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -146,9 +196,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [currentRole, setCurrentRole] = useState<BusinessRole | undefined>(undefined);
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  /**
+   * Set when the backend revoked this device's business session (task 17.1).
+   * Surfaced by the UI once, then cleared via `clearSessionEndedNotice()`.
+   */
+  const [sessionEndedNotice, setSessionEndedNotice] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
+  /**
+   * Lets the session-ended effect call switchAccount without re-subscribing
+   * every time that callback's identity changes (it depends on `accounts`).
+   */
+  const switchAccountRef = useRef<((targetId: string) => Promise<void>) | null>(null);
 
   // The ROOT human's user id. `user._id` tracks the ACTIVE identity (it changes
   // to the business id on switch so chat bubbles / "other member" detection are
@@ -201,6 +262,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rootUserIdRef.current = null;
     });
     return () => setForceLogoutHandler(null);
+  }, []);
+
+  // ─── Business session ended (business-members task 17.1) ──────────────────
+  // The BUSINESS context was revoked (another device took over, or an admin
+  // forced this one out) while the personal session is still perfectly valid.
+  // So this is NOT a logout: drop back to the root personal account and tell
+  // the user why. A full teardown here would be wrong — and retrying the
+  // refresh would re-claim the session and evict the device that just won it.
+  useEffect(() => {
+    setSessionEndedHandler((message) => {
+      setSessionEndedNotice(message);
+      const rootId = rootUserIdRef.current;
+      if (!rootId) return;
+      void switchAccountRef.current?.(rootId).catch((e) =>
+        console.warn('[AuthContext] session-ended fallback failed', e),
+      );
+    });
+    return () => setSessionEndedHandler(null);
   }, []);
 
   // ─── AppState listener — reconnect socket on foreground ────────────────────
@@ -284,6 +363,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           workingAccessToken = bizToken;
           setAccessTokenInMemory(bizToken);
           activeId = storedActiveAccountId;
+
+          // Parse role from business token
+          const role = parseRoleFromToken(bizToken);
+          setCurrentRole(role);
+
           // Adopt the business identity so `user._id` reflects the active
           // account after a cold start into a business account (parity with
           // switchAccount's getMe step).
@@ -297,15 +381,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Switch failed — fall back to personal
           await asyncStorage.clearActiveAccountId();
           activeId = me._id;
+          setCurrentRole(undefined);
         }
+      } else {
+        // Personal account — no role
+        setCurrentRole(undefined);
       }
 
-      const resolvedActive = loadedAccounts.find((a) => a._id === activeId) ?? {
-        _id: me._id,
-        displayName: me.displayName,
-        avatar: me.avatar,
-        accountType: 'personal' as const,
-      };
+      // Fallback covers "account list failed to load". If we restored into a
+      // business (activeId moved off the root id), label it as such instead of
+      // falling back to the root personal identity, which would hide
+      // business-only UI until the next successful /accounts fetch.
+      const resolvedActive: Account =
+        loadedAccounts.find((a) => a._id === activeId) ??
+        (activeId === me._id
+          ? {
+              _id: me._id,
+              displayName: me.displayName,
+              avatar: me.avatar,
+              accountType: 'personal',
+            }
+          : {
+              _id: activeId,
+              displayName: activeId,
+              accountType: 'business',
+              role: parseRoleFromToken(workingAccessToken),
+            });
       setActiveAccount(resolvedActive);
       // Shopping cart is per active account (commerce-catalog D11).
       cartStore.setAccount(activeId);
@@ -368,6 +469,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAccessTokenInMemory(newToken);
       await asyncStorage.setActiveAccountId(targetId);
 
+      // Parse role from JWT (business member tokens include role claim)
+      const role = parseRoleFromToken(newToken);
+      setCurrentRole(role);
+
       // (e) Re-init under the new account
       setCurrentUserId(targetId);
       momentsService.setCurrentUserId(targetId);
@@ -393,9 +498,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('[AuthContext] switchAccount: getMe failed', e);
       }
 
-      // (g) Update active account in state
+      // (g) Update active account in state. `accounts` holds owned AND member
+      // businesses (GET /accounts returns both), so a member business resolves
+      // here like an owned one. The fallback only fires when the account list
+      // failed to load: a role claim in the token means we switched into a
+      // business, so don't mislabel it as personal — `accountType` drives
+      // business-only UI (e.g. the Shopping orders entry).
       const found = accounts.find((a) => a._id === targetId);
-      setActiveAccount(found ?? { _id: targetId, displayName: targetId, accountType: 'personal' });
+      setActiveAccount(
+        found ?? {
+          _id: targetId,
+          displayName: targetId,
+          accountType: role ? 'business' : 'personal',
+          role,
+        },
+      );
       // Swap to the target account's shopping cart (commerce-catalog D11).
       cartStore.setAccount(targetId);
       // (h) Clear per-account notification badge now that this account is active
@@ -405,11 +522,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [accounts]);
 
+  // Keep the ref pointed at the live callback for the session-ended effect.
+  switchAccountRef.current = switchAccount;
+
   const switchBackToPersonal = useCallback(async () => {
     const rootId = rootUserIdRef.current ?? user?._id;
     if (!rootId) return;
     await switchAccount(rootId);
   }, [user, switchAccount]);
+
+  const clearSessionEndedNotice = useCallback(() => {
+    setSessionEndedNotice(null);
+  }, []);
+
+  /**
+   * Refetch `GET /accounts` into state.
+   *
+   * Needed whenever membership changes outside the switcher — accepting an
+   * invite adds a business, being removed takes one away — because `accounts`
+   * is otherwise only loaded on login/restore. `switchAccount` resolves its
+   * target from this list, so callers that then switch must refresh first.
+   *
+   * Returns the list so a caller can act on it without waiting for a re-render.
+   */
+  const refreshAccounts = useCallback(async (): Promise<Account[]> => {
+    try {
+      const loaded = await accountsApi.list();
+      setAccounts(loaded);
+      return loaded;
+    } catch (e) {
+      console.warn('[AuthContext] refreshAccounts failed', e);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Check if current user has at least the required role in active business account.
+   * Role hierarchy: owner > admin > editor > viewer
+   * Returns true for personal accounts (no restrictions).
+   */
+  const hasRole = useCallback((requiredRole: BusinessRole): boolean => {
+    // No role claim = personal account (or an owned business before the role
+    // claim lands) — unrestricted, matching the backend, which defaults a
+    // missing JWT role to "owner".
+    if (!currentRole) return true;
+
+    return BUSINESS_ROLE_LEVEL[currentRole] >= BUSINESS_ROLE_LEVEL[requiredRole];
+  }, [currentRole]);
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login(email, password);
@@ -421,6 +580,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     rootUserIdRef.current = me._id;
     setCurrentUserId(me._id);
     momentsService.setCurrentUserId(me._id);
+
+    // Login always starts as personal account (no role)
+    setCurrentRole(undefined);
 
     // Load accounts
     try {
@@ -587,6 +749,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       shutdownDb();
       setAccounts([]);
       setActiveAccount(null);
+      setCurrentRole(undefined);
       // Wipe the shopping cart storage for every account (commerce-catalog D11).
       cartStore.clearAllAccounts();
       rootUserIdRef.current = null;
@@ -605,6 +768,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         accounts,
         activeAccount,
+        currentRole,
         isSwitchingAccount,
         login,
         registerInit,
@@ -616,6 +780,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchAccount,
         switchBackToPersonal,
+        hasRole,
+        refreshAccounts,
+        sessionEndedNotice,
+        clearSessionEndedNotice,
       }}>
       {children}
     </AuthContext.Provider>

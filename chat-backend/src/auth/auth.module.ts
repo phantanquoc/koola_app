@@ -15,6 +15,8 @@ import {
   AdminAuditLogSchema,
 } from '../admin/schemas/admin-audit-log.schema';
 import { EmailService } from './email.service';
+import { PlivoService } from './plivo.service';
+import { TwoFactorService } from './two-factor.service';
 import type { StringValue } from 'ms';
 
 @Module({
@@ -43,7 +45,7 @@ import type { StringValue } from 'ms';
     OpsLogModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, EmailService],
-  exports: [AuthService, JwtModule],
+  providers: [AuthService, JwtStrategy, EmailService, PlivoService, TwoFactorService],
+  exports: [AuthService, JwtModule, TwoFactorService],
 })
 export class AuthModule {}

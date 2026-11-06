@@ -14,6 +14,11 @@ import UpgradeScreen from '../screens/main/UpgradeScreen';
 import SettingsDetailScreen from '../screens/main/SettingsDetailScreen';
 import PersonalOrdersScreen from '../screens/main/personal/PersonalOrdersScreen';
 import PersonalOrderDetailScreen from '../screens/main/personal/PersonalOrderDetailScreen';
+import ManageMembersScreen from '../screens/business/ManageMembersScreen';
+import InviteMemberScreen from '../screens/business/InviteMemberScreen';
+import AcceptInviteScreen from '../screens/business/AcceptInviteScreen';
+import ActiveSessionsScreen from '../screens/business/ActiveSessionsScreen';
+import AuditLogScreen from '../screens/business/AuditLogScreen';
 
 const Stack = createNativeStackNavigator<PersonalTabStackParamList>();
 
@@ -58,6 +63,13 @@ const PersonalTabStack: React.FC = () => {
           <Stack.Screen name="UpgradeAccount" component={UpgradeScreen} />
           <Stack.Screen name="PersonalOrders" component={PersonalOrdersScreen} />
           <Stack.Screen name="PersonalOrderDetail" component={PersonalOrderDetailScreen} />
+          {/* Business members system — each screen claims the shared notch
+              header via usePersonalNavHeader, like the rest of this stack. */}
+          <Stack.Screen name="ManageMembers" component={ManageMembersScreen} />
+          <Stack.Screen name="InviteMember" component={InviteMemberScreen} />
+          <Stack.Screen name="AcceptInvite" component={AcceptInviteScreen} />
+          <Stack.Screen name="ActiveSessions" component={ActiveSessionsScreen} />
+          <Stack.Screen name="AuditLog" component={AuditLogScreen} />
         </Stack.Navigator>
       </View>
     </PersonalHeaderContext.Provider>

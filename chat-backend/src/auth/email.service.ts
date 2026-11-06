@@ -96,4 +96,64 @@ export class EmailService {
       );
     }
   }
+
+  /**
+   * Send business invite email with deep link.
+   */
+  async sendInviteEmail(
+    email: string,
+    businessName: string,
+    inviterName: string,
+    role: string,
+    inviteLink: string,
+  ): Promise<void> {
+    const roleLabels: Record<string, string> = {
+      owner: 'Chủ sở hữu',
+      admin: 'Quản trị viên',
+      editor: 'Biên tập viên',
+      viewer: 'Người xem',
+    };
+
+    const roleLabel = roleLabels[role] || role;
+
+    try {
+      await this.transporter.sendMail({
+        from: `"Koola Chat" <${this.fromEmail}>`,
+        to: email,
+        subject: `Lời mời tham gia ${businessName}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+            <h2 style="color:#2196F3;text-align:center;">Koola Chat</h2>
+            <p>Xin chào,</p>
+            <p><strong>${inviterName}</strong> đã mời bạn tham gia <strong>${businessName}</strong> với vai trò <strong>${roleLabel}</strong>.</p>
+            <div style="text-align:center;margin:32px 0;">
+              <a href="${inviteLink}"
+                 style="display:inline-block;background:#2196F3;color:#fff;
+                        padding:12px 32px;border-radius:8px;text-decoration:none;
+                        font-weight:600;">
+                Chấp nhận lời mời
+              </a>
+            </div>
+            <p>Hoặc sao chép liên kết này vào trình duyệt:</p>
+            <p style="background:#f5f5f5;padding:12px;border-radius:4px;word-break:break-all;font-size:12px;">
+              ${inviteLink}
+            </p>
+            <p>Lời mời này có hiệu lực trong <strong>7 ngày</strong>.</p>
+            <p>Nếu bạn không yêu cầu lời mời này, vui lòng bỏ qua email này.</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+            <p style="color:#999;font-size:12px;text-align:center;">© Koola Chat</p>
+          </div>
+        `,
+      });
+      this.logger.log(`[Email] Business invite sent to ${email}`);
+    } catch (error) {
+      this.logger.error(
+        `[Email] Failed to send invite to ${email}:`,
+        error,
+      );
+      throw new ServiceUnavailableException(
+        'Không thể gửi lời mời. Vui lòng thử lại.',
+      );
+    }
+  }
 }

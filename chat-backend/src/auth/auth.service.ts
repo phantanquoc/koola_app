@@ -17,6 +17,10 @@ import * as crypto from 'crypto';
 import type { StringValue } from 'ms';
 import { User, UserDocument } from '../users/user.schema';
 import { RefreshToken, RefreshTokenDocument } from './refresh-token.schema';
+import {
+  BusinessSession,
+  BusinessSessionDocument,
+} from '../business-members/schemas/business-session.schema';
 import { LoginDto } from './dto/login.dto';
 import { RegisterInitDto } from './dto/register-init.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -72,6 +76,19 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
+    /**
+     * Task 8.9 — business device sessions, cleared on logout.
+     *
+     * The MODEL is injected rather than BusinessSessionsService on purpose:
+     * AuthModule is imported by almost every feature module (including
+     * BusinessMembersModule, for EmailService + JwtModule), so depending on
+     * that service would add a forwardRef cycle through the one module whose
+     * boot order everything else depends on. Injecting the schema keeps logout
+     * self-contained — `business_sessions` is the only foreign collection this
+     * service touches, and only to delete the caller's own rows.
+     */
+    @InjectModel(BusinessSession.name)
+    private businessSessionModel: Model<BusinessSessionDocument>,
     private jwtService: JwtService,
     @Inject(forwardRef(() => UsersService))
     private usersService: UsersService,
@@ -668,6 +685,22 @@ export class AuthService {
     // Clear all FCM tokens on logout
     if (userId) {
       await this.usersService.clearFcmTokens(userId);
+
+      // Task 8.9: Release every business device session held by this actor, so
+      // the member's next login (on any device) is not treated as a second
+      // device and does not force-logout a session nobody is using.
+      //
+      // `userId` here is the ROOT human (refresh tokens are only ever issued to
+      // the root account — a business switch mints an access token only), which
+      // is exactly the `userId` column on business_sessions.
+      try {
+        await this.businessSessionModel.deleteMany({
+          userId: new Types.ObjectId(userId),
+        });
+      } catch {
+        // Never fail a logout over session bookkeeping: the row expires in
+        // practice anyway (replaced on the next switch from any device).
+      }
     }
   }
 
@@ -691,6 +724,7 @@ export class AuthService {
     sub: string;
     act?: string;
     accountType: 'personal' | 'business';
+    role?: string;
   }): string {
     const payload: Record<string, string> = {
       sub: params.sub,
@@ -698,6 +732,9 @@ export class AuthService {
     };
     if (params.act) {
       payload.act = params.act;
+    }
+    if (params.role) {
+      payload.role = params.role;
     }
     return this.jwtService.sign(payload, {
       expiresIn: (process.env.JWT_ACCESS_EXPIRY ||

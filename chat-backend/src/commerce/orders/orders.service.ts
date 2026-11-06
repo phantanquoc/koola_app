@@ -23,6 +23,7 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { MessagesService } from '../../messages/messages.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { applyCreatedAtRange } from '../../common/utils/date-range';
+import { BusinessAuditLogsService } from '../../business-members/business-audit-logs.service';
 import type {
   AdminListOrdersQueryDto,
   ConfirmOrderDto,
@@ -101,7 +102,53 @@ export class OrdersService {
     private readonly conversations: ConversationsService,
     private readonly messagesService: MessagesService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditLogs: BusinessAuditLogsService,
   ) {}
+
+  // ═══ Audit (business-members task 9.6) ══════════════════════════════════════
+
+  /**
+   * Record an order transition against the SELLER's business.
+   *
+   * The audit log answers "who did what inside this business", so the business
+   * is always the seller — a buyer-side cancel still belongs in the seller's
+   * log, because it changed the seller's order. `actorId` is the human who acted
+   * (`caller.act` for a business session, else `caller.sub`).
+   *
+   * Skipped when there is no human actor (the auto-deliver cron passes
+   * `bySystem`): `actorId` is a required ObjectId ref on the schema, and
+   * inventing one would attribute a system action to a person.
+   *
+   * Never throws — `auditLog` already swallows its own failures, and an order
+   * transition must not be rolled back because its log line failed.
+   */
+  private async auditOrderEvent(params: {
+    order: LeanOrder;
+    caller: OrderCaller;
+    eventType: 'order.status_changed' | 'order.cancelled';
+    fromStatus: OrderStatus;
+    note?: string | null;
+  }): Promise<void> {
+    const { order, caller, eventType, fromStatus, note } = params;
+    const actorId = caller.act ?? caller.sub;
+    if (!actorId || !Types.ObjectId.isValid(actorId)) return;
+    if (!Types.ObjectId.isValid(order.sellerId)) return;
+
+    await this.auditLogs.auditLog({
+      businessId: order.sellerId,
+      actorId,
+      eventType,
+      resourceId: String(order._id),
+      changes: { status: { before: fromStatus, after: order.status } },
+      metadata: {
+        orderCode: order.orderCode,
+        // Which side acted — the actor alone cannot say, since a seller's
+        // staff and the buyer are both "a user id".
+        actedAs: caller.sub === order.sellerId ? 'seller' : 'buyer',
+        ...(note ? { note } : {}),
+      },
+    });
+  }
 
   // ═══ Placement (D2) ═════════════════════════════════════════════════════════
 
@@ -260,6 +307,12 @@ export class OrdersService {
       systemLine: `Shop đã xác nhận đơn #${updated.orderCode} · Phí ship ${formatVnd(dto.shippingFee)}`,
       notifyUserId: updated.buyerId,
     });
+    await this.auditOrderEvent({
+      order: updated,
+      caller,
+      eventType: 'order.status_changed',
+      fromStatus: 'PENDING',
+    });
     return this.toPublic(updated);
   }
 
@@ -286,6 +339,13 @@ export class OrdersService {
     await this.afterTransition(updated, {
       systemLine: `Shop đã từ chối đơn #${updated.orderCode}: ${reason}`,
       notifyUserId: updated.buyerId,
+    });
+    await this.auditOrderEvent({
+      order: updated,
+      caller,
+      eventType: 'order.cancelled',
+      fromStatus: 'PENDING',
+      note: reason,
     });
     return this.toPublic(updated);
   }
@@ -316,6 +376,12 @@ export class OrdersService {
     await this.afterTransition(updated, {
       systemLine: trackingLine(updated),
       notifyUserId: updated.buyerId,
+    });
+    await this.auditOrderEvent({
+      order: updated,
+      caller,
+      eventType: 'order.status_changed',
+      fromStatus: 'CONFIRMED',
     });
     return this.toPublic(updated);
   }
@@ -355,6 +421,15 @@ export class OrdersService {
       systemLine: `Đơn #${updated.orderCode} đã hoàn tất. Cảm ơn bạn đã mua hàng!`,
       notifyUserId: opts.bySystem ? updated.buyerId : updated.sellerId,
     });
+    // The cron path has no human actor, so auditOrderEvent skips it (see note).
+    if (!opts.bySystem) {
+      await this.auditOrderEvent({
+        order: updated,
+        caller,
+        eventType: 'order.status_changed',
+        fromStatus: 'SHIPPING',
+      });
+    }
     return this.toPublic(updated);
   }
 
@@ -388,6 +463,13 @@ export class OrdersService {
         systemLine: `Shop đã huỷ đơn #${updated.orderCode}: ${r}`,
         notifyUserId: updated.buyerId,
       });
+      await this.auditOrderEvent({
+        order: updated,
+        caller,
+        eventType: 'order.cancelled',
+        fromStatus: 'PENDING',
+        note: r,
+      });
       return this.toPublic(updated);
     }
     // Buyer: PENDING or CONFIRMED (covers "disagrees with ship fee"), no reason.
@@ -405,6 +487,12 @@ export class OrdersService {
     await this.afterTransition(updated, {
       systemLine: `Khách đã huỷ đơn #${updated.orderCode}`,
       notifyUserId: updated.sellerId,
+    });
+    await this.auditOrderEvent({
+      order: updated,
+      caller,
+      eventType: 'order.cancelled',
+      fromStatus: from,
     });
     return this.toPublic(updated);
   }

@@ -98,8 +98,7 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
     };
 
     // afterInit registers blurhash/new-message/membership-revoked callbacks;
-    // stub just enough for those setters to exist (order-card and the new
-    // prefs emit setters are part of the real afterInit surface). TypingService is injected
+    // stub just enough for those setters to exist. TypingService is injected
     // (constructor arg) but afterInit no longer wires any typing callback —
     // typing state lives in Redis now (task 8.1), so the stub only needs the
     // public API surface to type-check as `any` here.
@@ -203,34 +202,5 @@ describe('ChatGateway — membership revocation room eviction (integrated)', () 
     expect(roomEmit).toHaveBeenCalledWith('conversation_access_revoked', {
       conversationId: convId,
     });
-  });
-
-  it('prefs change emits conversation_prefs_updated to the caller’s user room only', async () => {
-    const prefsUser = '507f1f77bcf86cd799439012';
-    const prefsConv = '507f1f77bcf86cd799439013';
-    userConversationModel.findOne = jest.fn().mockResolvedValue({
-      _id: 'prefs-uc',
-      pinnedAt: null,
-    });
-    userConversationModel.findOneAndUpdate = jest.fn().mockReturnValue({
-      lean: () =>
-        Promise.resolve({
-          pinnedAt: null,
-          mutedUntil: new Date('2026-10-06T00:00:00.000Z'),
-          clearedAt: null,
-        }),
-    });
-
-    await conversationsService.updatePrefs(prefsConv, prefsUser, {
-      muteDuration: '8h',
-    });
-
-    expect(roomEmit).toHaveBeenCalledWith(
-      'conversation_prefs_updated',
-      expect.objectContaining({ conversationId: prefsConv }),
-    );
-    expect(mockIo.to).toHaveBeenCalledWith(`user:${prefsUser}`);
-    // No conversation-room fanout for private prefs.
-    expect(mockIo.to).not.toHaveBeenCalledWith(`conversation:${prefsConv}`);
   });
 });

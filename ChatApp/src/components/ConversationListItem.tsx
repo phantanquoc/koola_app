@@ -14,15 +14,9 @@ import {
 } from '../ui';
 import type { SemanticTokens } from '../ui/tokens/semantic';
 import { formatShortTimestamp } from '../utils/formatViTimestamp';
+import { makeChatRowCardStyle } from './chatRowCard';
 import { webrtcService } from '../services/webrtc/WebRTCService';
 import type { RootStackParamList } from '../navigation/types';
-
-/**
- * Card fill for the conversation list — matched to the frosted chrome header
- * band above the list (sampled #F7F7F7 on device), so a card reads as part of
- * the same surface family instead of a separate white block.
- */
-const CHROME_CARD_FILL_LIGHT = '#F7F7F7';
 
 interface Props {
   conversation: Conversation;
@@ -329,37 +323,26 @@ function makeItemStyles(
   semantic: SemanticTokens,
   scheme: 'light' | 'dark',
 ): ReturnType<typeof StyleSheet.create> {
-  // Card recipe: the fill matches the frosted chrome header above the list
-  // (sampled #F7F7F7 on device) so the first card reads as a continuation of
-  // the header band rather than a foreign white block. No shadow — rows stay
-  // cheap to render. Dark keeps token surfaces + a subtle border so it never
-  // goes brighter than the canvas. Either way the row is still ONE root View.
-  const container = scheme === 'dark'
-    ? {
-        backgroundColor: semantic.surface.level1,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: semantic.border.subtle,
-      }
-    : {
-        backgroundColor: CHROME_CARD_FILL_LIGHT,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: semantic.border.subtle,
-      };
+  // Card recipe is shared with ContactsScreen via `chatRowCard` so both lists
+  // in Chat Home read as one card language: white fill + the Personal tab's
+  // glow elevation in light, and surface tint + colored rim in dark (where a
+  // black shadow would be invisible). Still ONE root View per row — elevation
+  // lives on that same view, so no extra layer per card.
+  const card = makeChatRowCardStyle(scheme);
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: 72,
       paddingVertical: 10,
-      // Near-edge card: a 4px gutter two sides keeps each row reading as its
-      // own box while almost touching the screen edge; vertical margin is 1px
-      // per side so cards sit just 2px apart. Insets stay inside the card so
-      // avatar/text never sit on the corner.
+      // Insets stay inside the card so avatar/text never sit on the corner.
       paddingHorizontal: 12,
-      marginHorizontal: 4,
+      ...card,
+      // 2px outer gutter: card sits ~2px from screen edges, ~2px apart.
+      marginHorizontal: 2,
       marginVertical: 1,
-      borderRadius: koolaRadii.md,
-      ...container,
+      // Tighter corners than the shared md(14) recipe.
+      borderRadius: 8,
     },
     pressableContent: {
       flex: 1,

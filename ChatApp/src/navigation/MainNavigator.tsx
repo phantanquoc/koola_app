@@ -62,7 +62,7 @@ function useIsTabDockSuppressed(): boolean {
 }
 
 const FULLSCREEN_CHAT_ROUTES: Record<string, true> = { Chat: true, MomentViewer: true, MomentComposer: true };
-const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true, PersonalOrders: true, PersonalOrderDetail: true };
+const FULLSCREEN_PERSONAL_ROUTES: Record<string, true> = { EditProfile: true, StorageSettings: true, SettingsDetail: true, UpgradeAccount: true, AccountList: true, PersonalOrders: true, PersonalOrderDetail: true, ManageMembers: true, InviteMember: true, AcceptInvite: true, ActiveSessions: true, AuditLog: true };
 const FULLSCREEN_SHOPPING_ROUTES: Record<string, true> = { ShoppingProductDetail: true, ShoppingStorefront: true, ShoppingCart: true, ShoppingCheckout: true, ShoppingOrders: true, ShoppingOrderDetail: true };
 const FULLSCREEN_CONNECT_ROUTES: Record<string, true> = { BusinessProfile: true, BusinessSearch: true };
 export const TAB_BAR_FLOATING_INSET = 86;

@@ -674,7 +674,10 @@ const ConversationListScreen: React.FC = () => {
         // the first row sits just below it and later rows scroll behind it.
         contentContainerStyle={[
           screenStyles.listContent,
-          { paddingTop: headerInset, paddingBottom: tabBarInset },
+          // +2px clears room above the first card: its 1px margin
+          // alone would leave the top half of the shadow tucked under the
+          // sub-tab bar.
+          { paddingTop: headerInset + 2, paddingBottom: tabBarInset },
         ]}
         // Offline banner scrolls with the list, directly below the chrome.
         ListHeaderComponent={
